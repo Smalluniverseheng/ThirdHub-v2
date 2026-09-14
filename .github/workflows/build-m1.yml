@@ -44,7 +44,7 @@ jobs:
       - run: |
           cd flutter_app
           flutter pub get
-          cd android && gradle wrapper --gradle-version 8.7 --no-daemon || true
+          cd android && gradle wrapper --gradle-version 8.14 --no-daemon || true
           cd .. && flutter build apk --release
       - uses: actions/upload-artifact@v4
         with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
