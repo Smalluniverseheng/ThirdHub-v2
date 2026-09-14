@@ -252,6 +252,38 @@ async function handle(req, res, body) {
     saveSources(sources);
     return send(200, { object:'meta', data:{ added, total: sources.length }});
   }
+  if (p.startsWith('/v1/search/all')) {
+    // 聚合搜索: 书+漫画+视频 并行, 统一返回三分组
+    const q = u.searchParams.get('q');
+    const [books, comics, videos] = await Promise.all([
+      (async () => {
+        const pool = sources.filter(s => s.enabled !== false);
+        const rs = await Promise.all(pool.slice(0, 3).map(async (s) => {
+          try { return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true,
+            books: (await engine.search(s, q)).slice(0, 5) }; }
+          catch (e) { return { source: s.bookSourceName, ok: false }; }
+        }));
+        return rs.filter(r => r.ok);
+      })(),
+      (async () => {
+        const rs = await Promise.all(comicSources.slice(0, 2).map(async (s) => {
+          const t0 = Date.now();
+          const r = comic.irComicList(await comic.runSource(s.code, 'search', [q, 1]));
+          return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
+        }));
+        return rs.filter(r => r.ok);
+      })(),
+      (async () => {
+        const rs = await Promise.all(drpySources.slice(0, 2).map(async (s) => {
+          const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
+          return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
+        }));
+        return rs.filter(r => r.ok);
+      })(),
+    ]);
+    return send(200, { object:'meta', data: { q, books, comics, videos,
+      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length } }});
+  }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
     const pool = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
