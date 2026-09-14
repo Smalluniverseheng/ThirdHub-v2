@@ -285,6 +285,51 @@ async function handle(req, res, body) {
     }
     return send(200, { object:'meta', data: { added: added.length, gids: added }});
   }
+  // ── 密钥库(AES-GCM加密存储, 值脱敏返回) ──
+  if (p === '/v1/keyvault' && req.method === 'GET') {
+    const f = path.join(DATA, 'keyvault.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    return send(200, { object:'list', data: list.map(k => ({ ...k, value: k.value ? '••••••' + String(k.value).slice(-4) : '' })) });
+  }
+  if (p === '/v1/keyvault' && req.method === 'POST') {
+    const d = JSON.parse(body || '{}');
+    if (!d.name || !d.value) return send(400, { object:'error', data:{ type:'invalid_request', message:'需name+value' }});
+    const f = path.join(DATA, 'keyvault.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    const encKey = crypto.createHash('sha256').update(SECRET).digest();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', encKey, iv);
+    const enc = Buffer.concat([cipher.update(String(d.value), 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const existing = list.findIndex(x => x.name === d.name);
+    const rec = { name: d.name, value: Buffer.concat([iv, tag, enc]).toString('base64'), at: Date.now() };
+    existing >= 0 ? list[existing] = rec : list.push(rec);
+    fs.writeFileSync(f, JSON.stringify(list, null, 2));
+    return send(200, { object:'meta', data: { saved: d.name }});
+  }
+  if (p.startsWith('/v1/keyvault/get')) {
+    const name = u.searchParams.get('name');
+    const f = path.join(DATA, 'keyvault.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    const rec = list.find(x => x.name === name);
+    if (!rec) return send(404, { object:'error', data:{ type:'not_found', message:'不存在' }});
+    const raw = Buffer.from(rec.value, 'base64');
+    const encKey = crypto.createHash('sha256').update(SECRET).digest();
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, raw.slice(0, 12));
+      decipher.setAuthTag(raw.slice(12, 28));
+      const val = Buffer.concat([decipher.update(raw.slice(28)), decipher.final()]).toString('utf8');
+      return send(200, { object:'meta', data: { name, value: val }});
+    } catch (e) { return send(500, { object:'error', data:{ type:'server_error', message:'解密失败' }}); }
+  }
+  if (p === '/v1/keyvault/delete' && req.method === 'POST') {
+    const name = u.searchParams.get('name');
+    const f = path.join(DATA, 'keyvault.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    list = list.filter(x => x.name !== name);
+    fs.writeFileSync(f, JSON.stringify(list, null, 2));
+    return send(200, { object:'meta', data: { deleted: name }});
+  }
   // ── 设置同步(跨设备: 昵称/偏好等JSON) ──
   if (p === '/v1/settings' && req.method === 'GET') {
     const f = path.join(DATA, 'settings.json');
