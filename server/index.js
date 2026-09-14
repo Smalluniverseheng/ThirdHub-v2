@@ -285,6 +285,20 @@ async function handle(req, res, body) {
     }
     return send(200, { object:'meta', data: { added: added.length, gids: added }});
   }
+  // ── 设置同步(跨设备: 昵称/偏好等JSON) ──
+  if (p === '/v1/settings' && req.method === 'GET') {
+    const f = path.join(DATA, 'settings.json');
+    let s = {}; try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    return send(200, { object:'meta', data: s });
+  }
+  if (p === '/v1/settings' && req.method === 'POST') {
+    const f = path.join(DATA, 'settings.json');
+    let s = {}; try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    const incoming = JSON.parse(body || '{}');
+    Object.assign(s, incoming.data || incoming);
+    fs.writeFileSync(f, JSON.stringify(s, null, 2));
+    return send(200, { object:'meta', data: { saved: true, keys: Object.keys(s) }});
+  }
   // ── 相册同步(手机相册→后端) ──
   if (p === '/v1/album/upload' && req.method === 'POST') {
     const d = JSON.parse(body || '{}');
