@@ -114,20 +114,35 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true;
     setState(() => loading = false); }
   Future<void> save() async { await Book.addToShelf(widget.book);
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入书架'))); }
+  int lastRead = -1;
   void openAt(int i) => Navigator.push(c0, MaterialPageRoute(builder: (_) => ReadPage(
-    sourceId: widget.book.sourceId, chapters: chapters, index: i, bookName: widget.book.name))).then((_) => setState(() {}));
+    sourceId: widget.book.sourceId, chapters: chapters, index: i, bookName: widget.book.name, bookUrl: widget.book.bookUrl))).then((_) => loadProgress());
+  Future<void> loadProgress() async {
+    final p = await SharedPreferences.getInstance();
+    lastRead = p.getInt('progress_${widget.book.bookUrl}') ?? -1;
+    if (mounted) setState(() {}); }
   late BuildContext c0;
+  @override
+  void initState() { super.initState(); load(); loadProgress(); }
   @override Widget build(BuildContext context) { c0 = context;
     return Scaffold(appBar: AppBar(title: Text(widget.book.name), actions: [
       IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
       Text('  ${chapters.length}章  ', style: const TextStyle(color: Colors.grey))]),
-    body: loading ? const Center(child: CircularProgressIndicator()) : ListView.builder(
-      itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
-        title: Text(chapters[i]['name'] ?? ''), onTap: () => openAt(i)))); } }
+    body: loading ? const Center(child: CircularProgressIndicator()) : Column(children: [
+      if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(
+        content: Text('上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text('继续阅读')),
+                  TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
+      Expanded(child: ListView.builder(
+        itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
+          title: Text(chapters[i]['name'] ?? ''),
+          trailing: i == lastRead ? const Icon(Icons.history, size: 16, color: Colors.tealAccent) : null,
+          onTap: () => openAt(i)))),
+    ])); } }
 
 class ReadPage extends StatefulWidget {
-  final String sourceId; final List chapters; final int index; final String bookName;
-  const ReadPage({super.key, required this.sourceId, required this.chapters, required this.index, required this.bookName});
+  final String sourceId; final List chapters; final int index; final String bookName; final String bookUrl;
+  const ReadPage({super.key, required this.sourceId, required this.chapters, required this.index, required this.bookName, required this.bookUrl});
   @override State<ReadPage> createState() => _R(); }
 class _R extends State<ReadPage> {
   String text = ''; List<String> images = []; bool loading = true; double fontSize = 18;
@@ -138,10 +153,14 @@ class _R extends State<ReadPage> {
   Future<void> load() async { setState(() => loading = true); try {
       final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(chapter['url'])}');
       text = r['data']?['text'] as String? ?? ''; images = List<String>.from(r['data']?['images'] ?? []);
-      if (text.isEmpty && images.isEmpty) text = '本章无内容'; } catch (e) { text = '错误: $e'; }
+      if (text.isEmpty && images.isEmpty) text = '本章无内容';
+      // 阅读进度记忆
+      final p = await SharedPreferences.getInstance();
+      await p.setInt('progress_${widget.bookUrl}', idx);
+    } catch (e) { text = '错误: $e'; }
     setState(() => loading = false); }
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ReadPage(
-    sourceId: widget.sourceId, chapters: widget.chapters, index: i, bookName: widget.bookName)));
+    sourceId: widget.sourceId, chapters: widget.chapters, index: i, bookName: widget.bookName, bookUrl: widget.bookUrl)));
   String imgProxy(String u) => '${Api.base}/v1/img?url=${Uri.encodeComponent(u)}';
   @override
   Widget build(BuildContext c) {
