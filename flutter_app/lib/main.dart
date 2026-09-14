@@ -128,8 +128,9 @@ class ThSearchDelegate extends SearchDelegate {
   @override Widget buildSuggestions(BuildContext c) => _body(c);
   Widget _body(BuildContext c) {
     if (tab == 0) return NovelSearchResults(query: query);
+    if (tab == 2) return VideoSearchResults(query: query);
     return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
-      '${['小说','漫画','视频'][tab]}搜索\n\n数据源: 后端${['novel','comic','video'][tab]}引擎\n状态: 待后端接口就绪后接入\n(板块UI已就位)', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey))));
+      '漫画搜索: 后端comic引擎(Venera图源)接入后可用', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey))));
   }
 }
 
@@ -268,25 +269,79 @@ class _Vs extends State<VideoSection> { int sub = 0;
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: sub == 0
       ? const ShelfPage(kind: 'video', builder: _videoDetail)
-      : const Center(child: Text('视频搜索: 后端drpy引擎接入后可用', style: TextStyle(color: Colors.grey)))),
+      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找片\n源导入: POST /v1/video/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
   ]); }
-Widget _videoDetail(Book b) => const VideoPlayPage();
+Widget _videoDetail(Book b) => VideoDetailPage(sourceId: b.sourceId, vodId: b.bookUrl, title: b.name);
 
-class VideoPlayPage extends StatefulWidget { const VideoPlayPage({super.key}); @override State<VideoPlayPage> createState() => _Vp(); }
+class VideoSearchResults extends StatefulWidget { final String query; const VideoSearchResults({super.key, required this.query}); @override State<VideoSearchResults> createState() => _VSR(); }
+class _VSR extends State<VideoSearchResults> {
+  List<Map> groups = []; bool loading = false; String lastQ = '';
+  Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
+    setState(() { loading = true; groups = []; });
+    try { final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
+    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    setState(() => loading = false); }
+  @override void initState() { super.initState(); if (widget.query.isNotEmpty) go(widget.query); }
+  @override void didUpdateWidget(VideoSearchResults old) { super.didUpdateWidget(old); if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query); }
+  @override Widget build(BuildContext c) => Column(children: [
+    if (loading) const LinearProgressIndicator(),
+    Expanded(child: ListView(children: [
+      for (final g in groups) ...[
+        if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+        for (final b in (g['items'] as List? ?? [])) ListTile(
+          leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+            child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
+          title: Text(b['name'] ?? ''), subtitle: Text('${b['type'] ?? ''} ${b['year'] ?? ''}'.trim()),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(
+            sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? '')))),
+      ],
+      if (groups.isNotEmpty) for (final g in groups) if (g['ok'] == false)
+        Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']}: ${g['error'] ?? '失败'}', style: const TextStyle(color: Colors.redAccent, fontSize: 12))),
+      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入drpy源)', style: TextStyle(color: Colors.grey))),
+    ])), ]); }
+
+class VideoDetailPage extends StatefulWidget { final String sourceId, vodId, title; const VideoDetailPage({super.key, required this.sourceId, required this.vodId, required this.title}); @override State<VideoDetailPage> createState() => _Vd(); }
+class _Vd extends State<VideoDetailPage> {
+  Map<String, dynamic>? info; List episodes = []; bool loading = true; String? err;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { try {
+      final r = await Api.get('/v1/video/detail?sourceId=${Uri.encodeComponent(widget.sourceId)}&id=${Uri.encodeComponent(widget.vodId)}');
+      if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
+      else { info = r['data']; episodes = info?['episodes'] ?? []; }
+    } catch (e) { err = '$e'; }
+    setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title)), body: loading
+    ? const Center(child: CircularProgressIndicator())
+    : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
+    : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if ((info?['intro'] ?? '') != '') Padding(padding: const EdgeInsets.all(12), child: Text(info!['intro'], maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12))),
+        Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 4), child: Text('选集 (${episodes.length})', style: const TextStyle(color: Colors.tealAccent))),
+        Expanded(child: ListView.builder(itemCount: episodes.length, itemBuilder: (_, i) => ListTile(
+          dense: true, title: Text(episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 13)),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
+            sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', title: episodes[i]['name'] ?? '')))),
+        ))])); }
+
+class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, title; const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.title}); @override State<VideoPlayPage> createState() => _Vp(); }
 class _Vp extends State<VideoPlayPage> {
   VideoPlayerController? _vc; ChewieController? _cc; bool loading = true; String? err;
   @override void initState() { super.initState(); initPlayer(); }
   Future<void> initPlayer() async {
-    // M2: 占位视频(验证播放器UI); 正式版从 /v1/video/play 取真实地址
     try {
-      _vc = VideoPlayerController.networkUrl(Uri.parse('https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4'));
+      final r = await Api.get('/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=&id=${Uri.encodeComponent(widget.epUrl)}');
+      if (r['object'] == 'error') { setState(() { loading = false; err = r['data']?['message'] ?? '解析失败'; }); return; }
+      final url = r['data']?['url'] as String? ?? '';
+      if (url.isEmpty) { setState(() { loading = false; err = '播放地址为空'; }); return; }
+      _vc = VideoPlayerController.networkUrl(Uri.parse(url));
       await _vc!.initialize();
-      _cc = ChewieController(videoPlayerController: _vc!, autoPlay: false, aspectRatio: _vc!.value.aspectRatio);
+      _cc = ChewieController(videoPlayerController: _vc!, autoPlay: true, aspectRatio: _vc!.value.aspectRatio,
+        allowedScreenSleep: false);
       setState(() => loading = false);
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
   @override void dispose() { _cc?.dispose(); _vc?.dispose(); super.dispose(); }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('视频播放器')),
-    body: err != null ? Center(child: Text('播放器错误: $err'))
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title)),
+    body: err != null ? Center(child: Text('播放错误: $err', style: const TextStyle(color: Colors.red)))
       : loading ? const Center(child: CircularProgressIndicator())
-      : Column(children: [AspectRatio(aspectRatio: _cc!.aspectRatio ?? 16 / 9, child: Chewie(controller: _cc!)),
-        const Expanded(child: Center(child: Text('选集列表(数据源二期)\n播放地址走 /v1/video/play', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))])); }
+      : Center(child: AspectRatio(aspectRatio: _cc!.aspectRatio ?? 16 / 9, child: Chewie(controller: _cc!)))); }
