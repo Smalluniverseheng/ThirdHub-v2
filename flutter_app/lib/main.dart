@@ -86,7 +86,7 @@ class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override S
 class _Orb extends State<OrbShell> {
   int tab = 0; bool menu = false;
   Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const tabs = [('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('资源库', Icons.link)];
+  static const tabs = [('首页', Icons.home), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('资源库', Icons.link)];
   void snap() { final w = MediaQuery.of(context).size.width;
     setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
   @override
@@ -94,14 +94,14 @@ class _Orb extends State<OrbShell> {
     final size = MediaQuery.of(context).size;
     return Scaffold(
       appBar: AppBar(title: Text(tabs[tab].$1), actions: [
-        if (tab < 3) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
+        if (tab < 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
         IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
       ]),
       body: Stack(children: [
-        [const NovelSection(), const ComicSection(), const VideoSection(),
-         const Center(child: Text('资源库状态正常\nIP与密钥在悬浮球菜单长按资源库查看', textAlign: TextAlign.center))][tab],
+        [const HomeSection(), const NovelSection(), const ComicSection(), const VideoSection(),
+         const Center(child: Text('资源库状态正常\n连接信息在"连接资源库"页查看', textAlign: TextAlign.center))][tab],
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
-        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 250).clamp(70.0, size.height - 320),
+        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 310).clamp(70.0, size.height - 400),
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
             child: GestureDetector(onTap: () => setState(() { tab = i; menu = false; }),
               child: Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle,
@@ -132,6 +132,47 @@ class ThSearchDelegate extends SearchDelegate {
     return ComicSearchResults(query: query);
   }
 }
+
+// ═══ 首页: 聚合搜索(书+漫+影一次搜) ═══
+class HomeSection extends StatefulWidget { const HomeSection({super.key}); @override State<HomeSection> createState() => _Home(); }
+class _Home extends State<HomeSection> {
+  final ctrl = TextEditingController(); Map<String, dynamic>? agg; bool loading = false;
+  Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
+    setState(() { loading = true; agg = null; });
+    try { final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}'); setState(() { agg = r['data']; }); }
+    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    setState(() => loading = false); }
+  Widget group(String title, List items, Widget Function(Map) tile) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Text('$title (${items.length})', style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+    for (final it in items) tile(it),
+  ]);
+  @override Widget build(BuildContext c) => Column(children: [
+    Padding(padding: const EdgeInsets.all(8), child: Row(children: [
+      Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '一次搜索: 书 / 漫画 / 视频', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)), onSubmitted: (_) => go())),
+      IconButton(icon: const Icon(Icons.arrow_forward), onPressed: go)])),
+    if (loading) const LinearProgressIndicator(),
+    if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
+      child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
+    Expanded(child: ListView(children: [
+      if (agg != null) ...[
+        for (final g in (agg!['books'] as List? ?? []))
+          group('📖 ${g['source']}', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
+            dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(b)))))),
+        for (final g in (agg!['comics'] as List? ?? []))
+          group('🎨 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+            dense: true, title: Text(b['title'] ?? ''),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? ''))))),
+        for (final g in (agg!['videos'] as List? ?? []))
+          group('🎬 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+            dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['type'] ?? ''),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? ''))))),
+        if (((agg!['books'] as List?) ?? []).isEmpty && ((agg!['comics'] as List?) ?? []).isEmpty && ((agg!['videos'] as List?) ?? []).isEmpty)
+          const Padding(padding: EdgeInsets.all(32), child: Text('无结果(先导入各类源)', style: TextStyle(color: Colors.grey))),
+      ],
+      if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词, 一次搜遍书/漫画/视频', style: TextStyle(color: Colors.grey))),
+    ])), ]); }
 
 // ═══ 板块一: 小说阅读器(功能完整) ═══
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
