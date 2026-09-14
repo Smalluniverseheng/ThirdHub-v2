@@ -12,8 +12,8 @@ android {
     signingConfigs {
         create("release") {
             val p = Properties()
-            p.load(File(rootDir, "../keystore.properties").inputStream())
-            storeFile = File(rootDir, "../" + p.getProperty("storeFile"))
+            p.load(File(rootDir, "keystore.properties").inputStream())
+            storeFile = File(rootDir, p.getProperty("storeFile"))
             storePassword = p.getProperty("storePassword")
             keyAlias = p.getProperty("keyAlias")
             keyPassword = p.getProperty("keyPassword")
