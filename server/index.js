@@ -268,6 +268,12 @@ async function handle(req, res, body) {
     const list = col.get();
     const item = list.find(x => x[col.idField] === id);
     if (!item) return send(404, { object:'error', data:{ type:'not_found', message:'源不存在' }});
+    if (action === 'export') {
+      const fname = { book: 'book-sources', video: 'video-sources', comic: 'comic-sources', music: 'music-sources' }[type] || 'sources';
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${fname}.json"` });
+      return res.end(JSON.stringify(list, null, 2));
+    }
     if (action === 'delete') {
       list.splice(list.indexOf(item), 1); col.save(list);
       return send(200, { object:'meta', data: { deleted: id }});
