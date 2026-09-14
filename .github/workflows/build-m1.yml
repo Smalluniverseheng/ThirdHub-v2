@@ -17,7 +17,7 @@ jobs:
       - name: 注入 Node 二进制 + 后端代码到 assets
         run: |
           mkdir -p android/app/src/main/assets/node/bin android/app/src/main/assets/server
-          curl -sL https://nodejs.org/dist/v20.17.0/node-v20.17.0-linux-arm64.tar.xz | tar xJ --strip-components=2 -C android/app/src/main/assets/node bin/node
+          curl -sL https://nodejs.org/dist/v20.17.0/node-v20.17.0-linux-arm64.tar.xz | tar xJ --strip-components=1 -C android/app/src/main/assets/node bin/node
           chmod +x android/app/src/main/assets/node/bin/node || true
           cp -r server/* android/app/src/main/assets/server/
       - uses: android-actions/setup-android@v3
