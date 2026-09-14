@@ -13,8 +13,9 @@ import 'package:just_audio/just_audio.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  final pin = prefs.getString('app_pin') ?? '';
   runApp(ThApp(ready: (prefs.getString('base') ?? '').isNotEmpty,
-    base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? ''));
+    base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? '', locked: pin.isNotEmpty));
 }
 
 class Api {
