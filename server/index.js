@@ -36,6 +36,24 @@ function loadSources() { try { return JSON.parse(fs.readFileSync(SOURCES_FILE, '
 function saveSources(s) { fs.writeFileSync(SOURCES_FILE, JSON.stringify(s, null, 2)); }
 let sources = loadSources();
 
+// 首启自动导入预置书源包(server/sources-preset/*.json, CI/手动放入)
+(function importPreset() {
+  const presetDir = path.join(__dirname, 'sources-preset');
+  if (!fs.existsSync(presetDir) || sources.length > 0) return;
+  try {
+    const files = fs.readdirSync(presetDir).filter(f => f.endsWith('.json'));
+    for (const f of files) {
+      const arr = JSON.parse(fs.readFileSync(path.join(presetDir, f), 'utf8'));
+      for (const item of (Array.isArray(arr) ? arr : [])) {
+        if (item.bookSourceUrl && item.bookSourceName && !sources.some(x => x.bookSourceUrl === item.bookSourceUrl)) {
+          sources.push({ ...item, enabled: true });
+        }
+      }
+    }
+    if (sources.length) { saveSources(sources); console.log(`[preset] 预置书源导入: ${sources.length} 条`); }
+  } catch (e) { console.log('[preset] 导入跳过:', e.message); }
+})();
+
 // ─── 内置演示书源(若空则提示导入; 不内置具体源, 见 sources/ 目录导入) ───
 
 // ─── mDNS 广播 ───
