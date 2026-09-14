@@ -76,13 +76,59 @@ class _Setup extends State<SetupPage> {
 }
 
 class HomePage extends StatefulWidget { const HomePage({super.key}); @override State<HomePage> createState() => _H(); }
-class _H extends State<HomePage> { int tab = 0;
+class _H extends State<HomePage> {
+  int tab = 0; bool menuOpen = false;
+  Offset orb = const Offset(16, 500); final orbSize = 56.0;
+  Size? screen;
+  static const tabs = [('搜索', Icons.search), ('书架', Icons.menu_book), ('设置', Icons.settings)];
   void reload() => setState(() {});
-  @override Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('ThirdHub v4'), actions: [IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const SetupPage())))]),
-    body: tab == 0 ? SearchPage(onBookOpen: reload) : ShelfPage(onChanged: reload),
-    bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (i) => setState(() => tab = i),
-      destinations: const [NavigationDestination(icon: Icon(Icons.search), label: '搜索'), NavigationDestination(icon: Icon(Icons.menu_book), label: '书架')])); }
+  void snapOrb() {
+    final w = screen?.width ?? 400;
+    final x = (orb.dx + orbSize / 2) < w / 2 ? 12.0 : w - orbSize - 12;
+    setState(() => orb = Offset(x, orb.dy.clamp(80.0, (screen?.height ?? 800) - 160)));
+  }
+  @override
+  Widget build(BuildContext context) {
+    screen = MediaQuery.of(context).size;
+    final ball = Positioned(
+      left: orb.dx, top: orb.dy,
+      child: GestureDetector(
+        onPanUpdate: (d) => setState(() => orb += d.delta),
+        onPanEnd: (_) => snapOrb(),
+        onTap: () => setState(() => menuOpen = !menuOpen),
+        child: Container(width: orbSize, height: orbSize,
+          decoration: BoxDecoration(shape: BoxShape.circle,
+            color: Colors.teal.withOpacity(0.9),
+            boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black45)],
+            border: Border.all(color: Colors.white24, width: 2)),
+          child: Icon(menuOpen ? Icons.close : Icons.hub, color: Colors.white)),
+      ));
+    final menu = menuOpen ? Positioned(
+      left: orb.dx.clamp(8, (screen?.width ?? 400) - 76),
+      top: (orb.dy - 190).clamp(70.0, (screen?.height ?? 800) - 260),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        for (var i = 0; i < tabs.length; i++) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: GestureDetector(
+            onTap: () => setState(() { tab = i; menuOpen = false; }),
+            child: Container(width: 52, height: 52,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                color: tab == i ? Colors.teal : Colors.grey.shade800,
+                border: Border.all(color: tab == i ? Colors.white : Colors.white24, width: 2)),
+              child: Icon(tabs[i].$2, color: Colors.white, size: 22)))),
+      ])) : const SizedBox.shrink();
+    return Scaffold(
+      appBar: AppBar(title: Text(tabs[tab].$1), actions: [
+        IconButton(icon: const Icon(Icons.link), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SetupPage())))]),
+      body: Stack(children: [
+        tab == 0 ? SearchPage(onBookOpen: reload) : ShelfPage(onChanged: reload),
+        if (menuOpen) GestureDetector(onTap: () => setState(() => menuOpen = false),
+          child: Container(color: Colors.black54)),
+        menu,
+        ball,
+      ]));
+  }
+}
 
 class SearchPage extends StatefulWidget { final VoidCallback onBookOpen; const SearchPage({super.key, required this.onBookOpen}); @override State<SearchPage> createState() => _S(); }
 class _S extends State<SearchPage> {
