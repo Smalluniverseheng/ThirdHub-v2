@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:photo_manager/photo_manager.dart' as pm;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -246,7 +247,69 @@ class _Tools extends State<ToolsSection> {
       ])),
       if (active.isEmpty && waiting.isEmpty) const Text('暂无任务', style: TextStyle(fontSize: 12, color: Colors.grey)),
     ]))),
+    const AlbumSyncCard(),
   ]);
+}
+
+// 相册同步: 选本地照片→上传后端→已同步网格
+class AlbumSyncCard extends StatefulWidget { const AlbumSyncCard({super.key}); @override State<AlbumSyncCard> createState() => _Asc(); }
+class _Asc extends State<AlbumSyncCard> {
+  List synced = []; bool loading = false; String? msg; int uploading = 0;
+  @override void initState() { super.initState(); loadSynced(); }
+  Future<void> loadSynced() async { try { final r = await Api.get('/v1/album/photos');
+    setState(() => synced = (r['data'] as List? ?? [])); } catch (_) {} }
+  Future<void> pickAndUpload() async {
+    final permitted = await pm.PhotoManager.requestPermissionExtend();
+    if (!permitted.isAuth) { setState(() => msg = '相册权限被拒'); return; }
+    final albums = await pm.PhotoManager.getAssetPathList(type: pm.RequestType.image);
+    if (albums.isEmpty) { setState(() => msg = '无相册'); return; }
+    final assets = await albums.first.getAssetListPaged(page: 0, size: 50);
+    if (!mounted) return;
+    final picked = await showDialog<List<pm.AssetEntity>>(context: context, builder: (c) => AlertDialog(
+      title: Text('选择照片 (${assets.length}张可选前50)'),
+      content: SizedBox(width: 300, height: 400, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
+        itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
+          onTap: () => Navigator.pop(c, [assets[i]]),
+          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
+        ))),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(c, assets), child: const Text('全选上传'))]));
+    if (picked == null || picked.isEmpty) return;
+    setState(() { uploading = picked.length; msg = null; });
+    int ok = 0, fail = 0;
+    for (final a in picked) {
+      try {
+        final file = await a.file; if (file == null) { fail++; continue; }
+        final bytes = await file.readAsBytes();
+        final b64 = base64Encode(bytes);
+        final r = await http.post(Uri.parse('${Api.base}/v1/album/upload'),
+          headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+          body: jsonEncode({'filename': a.title ?? 'photo.jpg', 'data': b64, 'mime': 'image/jpeg'}));
+        r.statusCode == 200 ? ok++ : fail++;
+      } catch (e) { fail++; }
+      setState(() => uploading--);
+    }
+    setState(() => msg = '完成: 成功$ok 失败$fail');
+    loadSynced();
+  }
+  Future<void> removePhoto(Map p) async { await Api.get('/v1/album/delete?id=${p['id']}'); loadSynced(); }
+  @override Widget build(BuildContext c) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [ const Text('相册同步', style: TextStyle(fontWeight: FontWeight.bold)), const Spacer(),
+      TextButton.icon(onPressed: loading ? null : pickAndUpload, icon: const Icon(Icons.cloud_upload, size: 18), label: Text(uploading > 0 ? '上传中$uploading…' : '选照片同步')) ]),
+    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+    const SizedBox(height: 8),
+    Text('已同步 ${synced.length} 张(点右上角管理删除)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+    const SizedBox(height: 8),
+    if (synced.isNotEmpty) GridView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4),
+      itemCount: synced.length > 8 ? 8 : synced.length,
+      itemBuilder: (_, i) { final p = synced[i]; return GestureDetector(
+        onLongPress: () => removePhoto(Map<String, dynamic>.from(p)),
+        child: Padding(padding: const EdgeInsets.all(2), child: Image.network('${Api.base}/v1/album/file?id=${p['id']}',
+          fit: BoxFit.cover, headers: {'X-TH-Token': Api.token},
+          errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26, child: Icon(Icons.broken_image, size: 18))))); }),
+    if (synced.length > 8) Text('…还有 ${synced.length - 8} 张', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+  ])));
 }
 
 // ═══ 首页: 聚合搜索(书+漫+影一次搜) ═══
