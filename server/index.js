@@ -352,6 +352,23 @@ const server = https.createServer({ key: fs.readFileSync(KEY), cert: fs.readFile
   }));
 });
 
+// ─── 启动自检 ───
+(function selfcheck() {
+  const checks = [];
+  checks.push(['Node版本', process.version >= 'v20' ? 'ok' : 'warn: 建议v20+']);
+  checks.push(['证书', fs.existsSync(CERT) ? 'ok' : 'fail: 运行 npm run gencert']);
+  checks.push(['依赖cheerio', (() => { try { require('cheerio'); return 'ok'; } catch (e) { return 'fail: npm install'; } })()]);
+  try { require('bonjour-service'); checks.push(['依赖bonjour', 'ok']); } catch (e) { checks.push(['依赖bonjour', 'warn: mDNS不可用']); }
+  checks.push(['drpy引擎', fs.existsSync(path.join(__dirname, 'vendor/drpy/drpy2.min.js')) ? 'ok' : 'warn: 缺vendor']);
+  checks.push(['书源', sources.length + '条']);
+  checks.push(['漫画源', comicSources.length + '条']);
+  checks.push(['影视源', drpySources.length + '条']);
+  console.log('─── 自检 ───');
+  for (const [k, v] of checks) console.log(`  ${k}: ${v}`);
+  const fails = checks.filter(c => String(c[1]).startsWith('fail'));
+  if (fails.length) console.log('⚠️ 存在失败项, 功能可能不完整:', fails.map(f => f[0]).join(', '));
+})();
+
 server.listen(9527, '0.0.0.0', () => {
   const os = require('os');
   const nets = Object.values(os.networkInterfaces()).flat().filter(n => n && n.family === 'IPv4' && !n.internal);
