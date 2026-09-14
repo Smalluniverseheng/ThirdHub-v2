@@ -9,11 +9,11 @@
 | bookshelf/search/detail/shelf-view | ✅ 已有(小说) | — |
 | board-media(影视) | ✅ 已有(视频) | — |
 | board-album(相册) | ❌ | 新建: 本地相册+云同步(后端已有/v1/album设计) |
-| live(直播) | ❌ | 新建: 接入 drpy 直播源(import-drpy 已含) |
+| live(直播) | ✅ 已完成(iter1: 频道搜索+网格+热词+直接播放) | — |
 | download(下载管理) | ❌ | 新建: 走 Cloudreve/aria2(存储插件启用后) |
 | board-clouddrive(网盘) | ❌ | 新建: Cloudreve 文件浏览 |
 | register-page/onboarding/welcome | 半(引导页) | 完善首启流程 |
-| applock(应用锁) | ❌ | 新建: 本地PIN锁 |
+| applock(应用锁) | ✅ 已完成(iter2/3: PIN启动锁+设置入口) | — |
 
 ## 批次 P1: AI 系（3-5 天, 12 模块）——DSH 解封后
 | 模块 | 大小 | 说明 |
