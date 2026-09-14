@@ -160,6 +160,15 @@ async function fetchPage(url, source) {
     if (headers['User-Agent'] || headers['user-agent'])
       headers['User-Agent'] = headers['User-Agent'] || headers['user-agent'];
   }
+  // 失败重试1次(仅网络错误/5xx, 4xx不重试)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await tryFetch(url, headers);
+    if (r.ok || (r.status && r.status < 500)) return r;
+  }
+  return { ok: false, url, html: '' };
+}
+
+async function tryFetch(url, headers) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
