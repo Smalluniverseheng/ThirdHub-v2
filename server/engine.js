@@ -287,51 +287,63 @@ async function catalog(source, bookUrl) {
 
 async function content(source, chapterUrl) {
   const rule = source.ruleContent || {};
-  const { html, url } = await fetchPage(chapterUrl, source);
-  const $ = cheerio.load(html);
+  const nextRule = rget(rule, 'nextContentUrl');
   const ctx = { source, baseUrl: source.bookSourceUrl };
-  let text = null;
-  const r = rget(rule, 'content') || rget(rule, 'contentStr');
-  if (r && r.startsWith('/')) {
-    const xp = xpathToCheerio(r);
-    text = $(xp.selector).first().html() || '';
-  } else if (r) {
-    text = applyRule($, $.root(), r, ctx);
-    if (text && typeof text === 'string' && !/<[a-z]/i.test(text)) {
-      // 纯文本规则: 包成段落
+  let allParas = []; let allImgs = []; let finalUrl = chapterUrl;
+
+  // 正文翻页: 有 nextContentUrl 规则时循环抓下一页拼接(上限10页)
+  let curUrl = chapterUrl;
+  for (let page = 0; page < 10; page++) {
+    const { html, url } = await fetchPage(curUrl, source);
+    finalUrl = url;
+    const $ = cheerio.load(html);
+    let text = null;
+    const r = rget(rule, 'content') || rget(rule, 'contentStr');
+    if (r && String(r).startsWith('/')) {
+      const xp = xpathToCheerio(String(r));
+      text = $(xp.selector).first().html() || '';
+    } else if (r) {
+      text = applyRule($, $.root(), r, ctx);
     }
+    if (!text) {
+      let best = ''; let bestLen = 0;
+      $('div,p,section,article').each((i, el) => {
+        const t = $(el).text().trim();
+        if (t.length > bestLen) { bestLen = t.length; best = t; }
+      });
+      text = best;
+    }
+    const htmlStr = String(text);
+    // 图片收集
+    if (/<img[\s>]/i.test(htmlStr)) {
+      const $c = cheerio.load('<div>' + htmlStr + '</div>');
+      $c('img').each((i, el) => {
+        const s = $c(el).attr('src') || $c(el).attr('data-src');
+        if (s && !/loading|blank|spacer/i.test(s)) allImgs.push(absUrl(s, url));
+      });
+    }
+    // 净化分段
+    const $clean = cheerio.load('<div>' + htmlStr + '</div>');
+    $clean('script,style,iframe,noscript,ins,svg').remove();
+    $clean('div[class*=ad],div[id*=ad],p[class*=ad]').remove();
+    const $cd = $clean('div');
+    let paras = $cd.find('p').length
+      ? $cd.find('p').map((i, el) => $clean(el).text().trim()).get().filter(Boolean)
+      : $cd.text().split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
+    paras = paras.filter(p => p.length > 1 && !/chaptererror|请收藏|天才一秒记住|www\.\w+\.\w{2,}$/i.test(p));
+    allParas = allParas.concat(paras);
+    // 下一页?
+    if (!nextRule) break;
+    const nextUrl = applyRule($, $.root(), nextRule, ctx);
+    if (!nextUrl) break;
+    const abs = absUrl(nextUrl, url);
+    if (!abs || abs === curUrl) break;
+    curUrl = abs;
   }
-  if (!text) {
-    // 兜底: 正文页最长文本块
-    let best = ''; let bestLen = 0;
-    $('div,p,section,article').each((i, el) => {
-      const t = $(el).text().trim();
-      if (t.length > bestLen) { bestLen = t.length; best = t; }
-    });
-    text = best;
-  }
-  // 图片章节检测: 内容含 img → 返回 images 数组(前端Gallery渲染)
-  const htmlStr = String(text);
-  if (/<img[\s>]/i.test(htmlStr)) {
-    const $c = cheerio.load('<div>' + htmlStr + '</div>');
-    const imgs = [];
-    $c('img').each((i, el) => {
-      const s = $c(el).attr('src') || $c(el).attr('data-src');
-      if (s && !/loading|blank| spacer/i.test(s)) imgs.push(absUrl(s, url));
-    });
-    if (imgs.length >= 1) return { text: '', images: imgs, chapterUrl: url };
-  }
-  // HTML→分段纯文本(先净化: script/style/iframe/广告标签去除, 防脚本残留混进正文)
-  const $clean = cheerio.load('<div>' + htmlStr + '</div>');
-  $clean('script,style,iframe,noscript,ins,iframe,svg').remove();
-  $clean('div[class*=ad],div[id*=ad],p[class*=ad]').remove();
-  const $cd = $clean('div');
-  let paras = $cd.find('p').length
-    ? $cd.find('p').map((i, el) => $clean(el).text().trim()).get().filter(Boolean)
-    : $cd.text().split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
-  // 广告行过滤: 脚本残留/纯域名行(保守策略, 只删明显垃圾)
-  paras = paras.filter(p => p.length > 1 && !/chaptererror|请收藏|天才一秒记住|www\.\w+\.\w{2,}$/i.test(p));
-  return { text: paras.join('\n\n'), paragraphs: paras.length, chapterUrl: url };
+
+  if (allImgs.length >= 1 && allParas.length < 3)
+    return { text: '', images: allImgs, chapterUrl: finalUrl };
+  return { text: allParas.join('\n\n'), paragraphs: allParas.length, chapterUrl: finalUrl };
 }
 
 module.exports = { search, detail, catalog, content };
