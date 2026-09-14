@@ -180,7 +180,7 @@ class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override S
 class _Orb extends State<OrbShell> {
   int tab = 0; bool menu = false;
   Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const tabs = [('搜索', Icons.search), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('资源库', Icons.link)];
+  static const tabs = [('搜索', Icons.search), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('后端', Icons.dns), ('资源库', Icons.link)];
   void snap() { final w = MediaQuery.of(context).size.width;
     setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
   @override
@@ -189,14 +189,14 @@ class _Orb extends State<OrbShell> {
     return Scaffold(
       appBar: AppBar(leading: IconButton(icon: const Icon(Icons.person_outline), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
         title: Text(tabs[tab].$1), actions: [
-        if (tab >= 2 && tab <= 5) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab - 1))),
+        if (tab >= 1 && tab <= 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
         IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
       ]),
       body: Stack(children: [
         [const SearchSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
-         const ToolsSection()][tab],
+         const EnginesPage(), const ToolsSection()][tab],
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
-        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 380).clamp(70.0, size.height - 470),
+        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 440).clamp(70.0, size.height - 540),
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
             child: GestureDetector(onTap: () => setState(() { tab = i; menu = false; }),
               child: Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle,
@@ -288,6 +288,57 @@ class _Nd extends State<NetDiskPage> {
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('网盘')),
     body: err != null ? Center(child: Text(err!))
       : Stack(children: [ if (ctrl != null) WebViewWidget(controller: ctrl!), if (loading) const Center(child: CircularProgressIndicator()) ])); }
+
+// ═══ 后端管理台: 引擎拓扑(谁在线/什么能力) ═══
+class EnginesPage extends StatefulWidget { const EnginesPage({super.key}); @override State<EnginesPage> createState() => _Eng(); }
+class _Eng extends State<EnginesPage> {
+  List builtin = []; List network = []; Map<String, int> meta = {}; bool loading = true; Timer? timer;
+  @override void initState() { super.initState(); load(); timer = Timer.periodic(const Duration(seconds: 10), (_) => load()); }
+  @override void dispose() { timer?.cancel(); super.dispose(); }
+  Future<void> load() async { try { final r = await Api.get('/v1/engines');
+    setState(() { builtin = (r['data']?['builtin'] as List? ?? []); network = (r['data']?['network'] as List? ?? []);
+      meta = Map<String, int>.from(r['meta'] ?? {}); loading = false; }); } catch (_) { setState(() => loading = false); } }
+  Color statusColor(String s) => s == 'online' ? Colors.teal : s == 'standby' ? Colors.orange : Colors.red;
+  String statusText(String s) => s == 'online' ? '在线' : s == 'standby' ? '待机' : s == 'error' ? '故障' : '离线';
+  Widget engineCard(Map e) => Card(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), child: Padding(
+    padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [
+      Text('${e['icon'] ?? '🔧'}', style: const TextStyle(fontSize: 20)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(e['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(e['kind'] == 'network' ? (e['id'] ?? '') : (e['detail'] ?? '内置引擎'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ])),
+      Column(children: [ Icon(Icons.circle, size: 10, color: statusColor(e['status'] ?? 'offline')),
+        Text(statusText(e['status'] ?? 'offline'), style: TextStyle(fontSize: 10, color: statusColor(e['status'] ?? 'offline'))) ]),
+    ]),
+    const SizedBox(height: 8),
+    Wrap(spacing: 6, runSpacing: 4, children: [
+      for (final cap in (e['caps'] as List? ?? [])) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: Colors.teal.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+        child: Text(cap, style: const TextStyle(fontSize: 10, color: Colors.tealAccent))),
+      if ((e['sources'] ?? 0) > 0) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: Colors.grey.shade800, borderRadius: BorderRadius.circular(10)),
+        child: Text('${e['sources']} 源', style: const TextStyle(fontSize: 10, color: Colors.grey))),
+      if (e['health'] != null && e['health']['rate'] != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: Colors.grey.shade800, borderRadius: BorderRadius.circular(10)),
+        child: Text('成功率${e['health']['rate']}%', style: const TextStyle(fontSize: 10, color: Colors.grey))),
+      if (e['lastSeen'] != null) Text('最后在线 ${DateTime.fromMillisecondsSinceEpoch(e['lastSeen']).toString().substring(11, 16)}',
+        style: const TextStyle(fontSize: 10, color: Colors.grey)),
+    ]),
+  ])));
+  @override Widget build(BuildContext c) => loading && builtin.isEmpty ? const Center(child: CircularProgressIndicator())
+    : RefreshIndicator(onRefresh: load, child: ListView(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(
+        '内置引擎 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络引擎 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
+        style: const TextStyle(fontSize: 12, color: Colors.grey))),
+      for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
+      if (network.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text('网络引擎(局域网设备)', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      for (final e in network) engineCard(Map<String, dynamic>.from(e)),
+      if (network.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('暂无网络引擎
+改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
+    ]));
+}
 
 // ═══ 资源库: 存储服务状态 + 下载管理 ═══
 class ToolsSection extends StatefulWidget { const ToolsSection({super.key}); @override State<ToolsSection> createState() => _Tools(); }
