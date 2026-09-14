@@ -24,6 +24,12 @@ if (!fs.existsSync(KEY) || !fs.existsSync(CERT)) {
 const fingerprint = crypto.createHash('sha256')
   .update(fs.readFileSync(CERT)).digest('hex').match(/.{4}/g).join(':');
 
+// ─── 设备存储(网络插件: Legado等局域网设备) ───
+const DEVICES_FILE = path.join(DATA, 'devices.json');
+function loadDevices() { try { return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8')); } catch (e) { return []; } }
+function saveDevices(d) { fs.writeFileSync(DEVICES_FILE, JSON.stringify(d, null, 2)); }
+let devices = loadDevices();
+
 // ─── 书源存储 ───
 const SOURCES_FILE = path.join(DATA, 'sources.json');
 function loadSources() { try { return JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf8')); } catch (e) { return []; } }
@@ -56,13 +62,27 @@ async function handle(req, res, body) {
   // 健康+指纹(免鉴权, 供前端TOFU)
   if (p === '/v1/meta') return send(200, { v: 1, object: 'meta', data: {
     name: 'ThirdHub', version: '4.0.0-m1', fingerprint,
-    capabilities: { novel: sources.length > 0, sources: sources.length },
+    capabilities: { novel: sources.length > 0, sources: sources.length, devices: devices.length },
     encrypted: true, time: Date.now()
   }});
 
   // 其余全需鉴权
   if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
 
+  if (p === '/v1/pair' && req.method === 'POST') {
+    // 设备自注册(免鉴权, 凭设备token校验在调用设备API时进行)
+    try {
+      const d = JSON.parse(body || '{}');
+      if (!d.device_url || !d.device_type) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺device_url/type' }});
+      const existing = devices.find(x => x.device_url === d.device_url);
+      if (existing) Object.assign(existing, d, { last_seen: Date.now() });
+      else devices.push({ ...d, paired_at: Date.now(), last_seen: Date.now() });
+      saveDevices(devices);
+      console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
+      return send(200, { object:'meta', data: { paired: true, total: devices.length }});
+    } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+  if (p === '/v1/devices') return send(200, { object:'list', data: devices });
   if (p === '/v1/status') return send(200, { object:'meta', data: {
     uptime: Math.floor(process.uptime()), version: '4.0.0-m1',
     sources: { total: sources.length, enabled: sources.filter(s => s.enabled !== false).length },
