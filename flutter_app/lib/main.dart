@@ -127,17 +127,38 @@ class ReadPage extends StatefulWidget { final String sourceId, url, title, bookN
   const ReadPage({super.key, required this.sourceId, required this.url, required this.title, required this.bookName});
   @override State<ReadPage> createState() => _R(); }
 class _R extends State<ReadPage> {
-  String text = ''; bool loading = true; double fontSize = 18;
+  String text = ''; List<String> images = []; bool loading = true; double fontSize = 18;
   @override void initState() { super.initState(); load(); }
   Future<void> load() async { try {
       final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(widget.url)}');
-      text = (r['data']?['text'] as String?) ?? '加载失败'; } catch (e) { text = '错误: $e'; }
+      text = r['data']?['text'] as String? ?? '';
+      images = List<String>.from(r['data']?['images'] ?? []);
+      if (text.isEmpty && images.isEmpty) text = '本章无内容'; } catch (e) { text = '错误: $e'; }
     setState(() => loading = false); }
-  @override Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: Text(widget.title), actions: [IconButton(icon: const Icon(Icons.text_increase), onPressed: () => setState(() => fontSize += 1)),
-      IconButton(icon: const Icon(Icons.text_decrease), onPressed: () => setState(() => fontSize = (fontSize - 1).clamp(12, 32)))]),
-    body: loading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(padding: const EdgeInsets.all(16),
-      child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8)))); }
+  String imgProxy(String u) => '${Api.base}/v1/img?url=${Uri.encodeComponent(u)}';
+  @override
+  Widget build(BuildContext c) {
+    final isImgs = images.isNotEmpty;
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title), actions: [
+        if (!isImgs) IconButton(icon: const Icon(Icons.text_increase), onPressed: () => setState(() => fontSize += 1)),
+        if (!isImgs) IconButton(icon: const Icon(Icons.text_decrease), onPressed: () => setState(() => fontSize = (fontSize - 1).clamp(12, 32))),
+      ]),
+      body: loading ? const Center(child: CircularProgressIndicator())
+        : isImgs
+          ? ListView.builder(
+              itemCount: images.length,
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: InteractiveViewer(child: Image.network(imgProxy(images[i]),
+                  fit: BoxFit.fitWidth, errorBuilder: (_, __, ___) => const SizedBox(
+                    height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey))))),
+              ))
+          : SingleChildScrollView(padding: const EdgeInsets.all(16),
+              child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8))),
+    );
+  }
+}
 
 class ShelfPage extends StatelessWidget { final List<Book> shelf; const ShelfPage({super.key, required this.shelf});
   @override Widget build(BuildContext c) => shelf.isEmpty ? const Center(child: Text('书架为空, 从搜索进入书籍后自动记录'))
