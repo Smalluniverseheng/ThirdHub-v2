@@ -277,16 +277,28 @@ class NovelReadPage extends StatefulWidget { final String sourceId, bookName, bo
   @override State<NovelReadPage> createState() => _NR(); }
 class _NR extends State<NovelReadPage> {
   String text = ''; List<String> images = []; bool loading = true; double fontSize = 18;
+  final Map<int, Map> chapCache = {}; // 预加载: 章index → content数据
   int theme = 0; // 0夜间 1白天 2护眼
   static const themes = [(Color(0xFF121212), Color(0xFFE0E0E0)), (Colors.white, Colors.black87), (Color(0xFFF5F0E1), Color(0xFF4A3F30))];
   int get idx => widget.index; Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
   @override void initState() { super.initState(); load(); }
+  Future<void> preload(int i) async { if (i < 0 || i >= widget.chapters.length || chapCache.containsKey(i)) return;
+    try { final ch = widget.chapters[i];
+      final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(ch['url'])}');
+      if (r['object'] != 'error') chapCache[i] = Map<String, dynamic>.from(r['data']);
+    } catch (_) {} }
   Future<void> load() async { setState(() => loading = true); try {
-      final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(chapter['url'])}');
-      text = r['data']?['text'] as String? ?? ''; images = List<String>.from(r['data']?['images'] ?? []);
+      if (chapCache.containsKey(idx)) { final d = chapCache[idx]!;
+        text = d['text'] as String? ?? ''; images = List<String>.from(d['images'] ?? []); }
+      else {
+        final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(chapter['url'])}');
+        text = r['data']?['text'] as String? ?? ''; images = List<String>.from(r['data']?['images'] ?? []);
+        chapCache[idx] = Map<String, dynamic>.from(r['data'] ?? {});
+      }
       if (text.isEmpty && images.isEmpty) text = '本章无内容';
       final p = await SharedPreferences.getInstance(); await p.setInt('progress_${widget.bookUrl}', idx);
+      preload(idx + 1); preload(idx - 1); // 预加载前后章
     } catch (e) { text = '错误: $e'; }
     setState(() => loading = false); }
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NovelReadPage(
