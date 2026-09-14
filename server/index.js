@@ -89,6 +89,7 @@ let drpySources = loadDrpy();
 
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
+const contentCache = new Map(); // 正文缓存30分钟(重看同章不重复抓)
 const health = new Map();   // sourceId → {ok, fail, totalLatency}
 function tocGet(k) { const e = tocCache.get(k); if (e && Date.now() - e.at < 600000) return e.data; return null; }
 function healthHit(id, ok, latency) {
@@ -395,8 +396,14 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/content')) {
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
-    try { return send(200, { object:'novel-content', data: await engine.content(s, u.searchParams.get('url')) }); }
-    catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
+    const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
+    const cached = contentCache.get(ck);
+    if (cached && Date.now() - cached.at < 1800000) return send(200, { object:'novel-content', data: cached.data, meta: { cached: true }});
+    try {
+      const data = await engine.content(s, u.searchParams.get('url'));
+      contentCache.set(ck, { at: Date.now(), data });
+      return send(200, { object:'novel-content', data });
+    } catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
   }
   return send(404, { object:'error', data:{ type:'not_found', message: p }});
 }
