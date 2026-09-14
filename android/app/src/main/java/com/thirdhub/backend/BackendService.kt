@@ -8,6 +8,14 @@ class BackendService : Service() {
     private var proc: Process? = null
     private val CH = "th-backend"
     override fun onBind(i: Intent?) = null
+    override fun onCreate() {
+        super.onCreate()
+        // Android 8+ 必须创建渠道, 否则通知不显示
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(NotificationChannel(CH, "后端服务", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "ThirdHub 后端运行状态"
+        })
+    }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(1, notif("启动中…"))
         Thread {
