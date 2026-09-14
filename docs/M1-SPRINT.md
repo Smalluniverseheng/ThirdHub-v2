@@ -67,3 +67,15 @@ ThirdHub-Android老壳的assets内嵌模式。installer/目录的Termux脚本降
 - 今晚 commit 全部带 [m1-sprint] 前缀
 - 每完成一项在本文档勾选 + evidence 截图
 - 23:59 前完不成: 在 HANDOFF 如实登记卡点和明日第一个动作, 禁止虚报完成
+
+
+## 进度对账（iter23时点）
+- ☑ 加密两层(TLS自签+TOFU / 共享密钥) — iter2指纹确认+iter1信封
+- ☑ 安卓后端APK方案(内嵌node, 禁Termux) — android/ 6文件, 通知渠道iter15修复
+- ☑ 书源引擎核心 — 链式+XPath+JSONPath+POST+@js沙箱(主流书源格式覆盖)
+- ☑ 目录分页/正文翻页/图片章节/正文净化 — 看书体验全链路
+- ☑ Flutter前端 — 引导页/悬浮球/搜索历史/翻章/书架/进度记忆/图片Gallery
+- ☑ Legado三自动补丁 — legado-patch/ (注入指南+AutoPairer, 待编译验证)
+- ☑ CI自动构建 — tag v4* 双APK
+- ☑ Linux运行器 — systemd+install脚本
+- ⏳ 待用户侧: 打tag→CI出包→验货清单8条
