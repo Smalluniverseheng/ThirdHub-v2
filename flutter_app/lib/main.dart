@@ -180,7 +180,7 @@ class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override S
 class _Orb extends State<OrbShell> {
   int tab = 0; bool menu = false;
   Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const tabs = [('首页', Icons.home), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('资源库', Icons.link)];
+  static const tabs = [('搜索', Icons.search), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('资源库', Icons.link)];
   void snap() { final w = MediaQuery.of(context).size.width;
     setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
   @override
@@ -189,11 +189,11 @@ class _Orb extends State<OrbShell> {
     return Scaffold(
       appBar: AppBar(leading: IconButton(icon: const Icon(Icons.person_outline), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
         title: Text(tabs[tab].$1), actions: [
-        if (tab >= 1 && tab <= 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
+        if (tab >= 2 && tab <= 5) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab - 1))),
         IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
       ]),
       body: Stack(children: [
-        [const HomeSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
+        [const SearchSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
          const ToolsSection()][tab],
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
         if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 380).clamp(70.0, size.height - 470),
@@ -445,14 +445,23 @@ class _Asc extends State<AlbumSyncCard> {
   ])));
 }
 
-// ═══ 首页: 聚合搜索(书+漫+影一次搜) ═══
-class HomeSection extends StatefulWidget { const HomeSection({super.key}); @override State<HomeSection> createState() => _Home(); }
-class _Home extends State<HomeSection> {
+// ═══ 搜索板块: 统一入口, 选类型(全部/小说/漫画/视频/音乐), 后端按能力路由 ═══
+class SearchSection extends StatefulWidget { const SearchSection({super.key}); @override State<SearchSection> createState() => _Home(); }
+class _Home extends State<SearchSection> {
   final ctrl = TextEditingController(); Map<String, dynamic>? agg; bool loading = false;
+  int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
+  static const typeNames = ['全部', '小说', '漫画', '视频', '音乐'];
+  static const typeKeys = ['', 'novel', 'comic', 'video', 'music'];
   Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
     setState(() { loading = true; agg = null; });
-    try { final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}'); setState(() { agg = r['data']; }); }
-    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    try {
+      if (typeFilter == 0) { final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}'); setState(() { agg = r['data']; }); }
+      else {
+        // 单类型: 走统一路由, 后端按能力分发到对应引擎集合
+        final r = await Api.get('/v1/search?type=${typeKeys[typeFilter]}&q=${Uri.encodeComponent(q)}');
+        setState(() { agg = { 'single': r['data'], 'q': q }; });
+      }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
     setState(() => loading = false); }
   Widget group(String title, List items, Widget Function(Map) tile) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -460,14 +469,24 @@ class _Home extends State<HomeSection> {
     for (final it in items) tile(it),
   ]);
   @override Widget build(BuildContext c) => Column(children: [
+    Padding(padding: const EdgeInsets.fromLTRB(8, 8, 8, 0), child: Wrap(spacing: 6, children: [
+      for (var i = 0; i < typeNames.length; i++) ChoiceChip(
+        label: Text(typeNames[i], style: const TextStyle(fontSize: 12)), selected: typeFilter == i,
+        onSelected: (_) { setState(() => typeFilter = i); if (ctrl.text.trim().isNotEmpty) go(); }),
+    ])),
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
-      Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '一次搜索: 书 / 漫画 / 视频', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)), onSubmitted: (_) => go())),
+      Expanded(child: TextField(controller: ctrl, decoration: InputDecoration(hintText: typeFilter == 0 ? '一次搜索: 书/漫画/视频/音乐' : '搜索${typeNames[typeFilter]}', border: const OutlineInputBorder(), prefixIcon: const Icon(Icons.search)), onSubmitted: (_) => go())),
       IconButton(icon: const Icon(Icons.arrow_forward), onPressed: go)])),
     if (loading) const LinearProgressIndicator(),
     if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
       child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
     Expanded(child: ListView(children: [
-      if (agg != null) ...[
+      if (agg != null && agg!['single'] != null) ...[
+        for (final g in ((agg!['single'] as List?) ?? [])) ...[
+          if (g['ok'] == true) Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency'] ?? 0}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          for (final it in ((g['items'] ?? g['books']) as List? ?? [])) _singleTile(typeFilter, g['sourceId'] ?? '', it),
+        ],
+      ] else if (agg != null) ...[
         for (final g in (agg!['books'] as List? ?? []))
           group('📖 ${g['source']}', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
@@ -488,8 +507,23 @@ class _Home extends State<HomeSection> {
         if (((agg!['books'] as List?) ?? []).isEmpty && ((agg!['comics'] as List?) ?? []).isEmpty && ((agg!['videos'] as List?) ?? []).isEmpty)
           const Padding(padding: EdgeInsets.all(32), child: Text('无结果(先导入各类源)', style: TextStyle(color: Colors.grey))),
       ],
-      if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词, 一次搜遍书/漫画/视频', style: TextStyle(color: Colors.grey))),
+      if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词, 全类型或按类型搜索\n后端按引擎能力自动路由', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
     ])), ]); }
+
+  Widget _singleTile(int type, String sourceId, Map it) {
+    switch (type) {
+      case 1: return ListTile(dense: true, title: Text(it['name'] ?? ''), subtitle: Text(it['author'] ?? ''),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(it)))));
+      case 2: return ListTile(dense: true, title: Text(it['title'] ?? ''),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: sourceId, comicId: it['id'] ?? '', title: it['title'] ?? ''))));
+      case 3: return ListTile(dense: true, title: Text(it['name'] ?? ''), subtitle: Text(it['type'] ?? ''),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: sourceId, vodId: it['id'] ?? '', title: it['name'] ?? ''))));
+      case 4: return ListTile(dense: true, leading: const Icon(Icons.music_note, size: 18),
+        title: Text(it['name'] ?? ''), subtitle: Text(it['artist'] ?? ''),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(it), sourceId: sourceId))));
+      default: return const SizedBox.shrink();
+    }
+  }
 
 // ═══ 板块一: 小说阅读器(功能完整) ═══
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
