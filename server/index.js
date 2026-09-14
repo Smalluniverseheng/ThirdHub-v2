@@ -576,15 +576,23 @@ async function handle(req, res, body) {
     if (legadoDev && !sid) {
       try {
         const t0 = Date.now();
-        const r2 = await fetch(legadoDev.device_url + '/searchBook?key=' + encodeURIComponent(q),
-          { headers: { Authorization: legadoDev.token || '' }, signal: AbortSignal.timeout(10000) });
-        const data = await r2.json();
-        const books = (Array.isArray(data) ? data : data.data || []).map(b => ({
+        // 官方api.md: 搜索走WebSocket ws://设备:1235/searchBook, Message={key}, 流式返回每本结果
+        const wsBase = legadoDev.device_url.replace(/^http/, 'ws');
+        const books = await new Promise((resolve, reject) => {
+          const out = [];
+          const ws = new WebSocket(wsBase + ':1235/searchBook');
+          const timer = setTimeout(() => { try { ws.close(); } catch (e) {} resolve(out); }, 12000);
+          ws.onopen = () => ws.send(JSON.stringify({ key: q }));
+          ws.onmessage = (ev) => { try { const b = JSON.parse(ev.data); if (b && b.name) out.push(b); } catch (e) {} };
+          ws.onerror = () => { clearTimeout(timer); reject(new Error('ws error')); };
+          ws.onclose = () => { clearTimeout(timer); resolve(out); };
+        });
+        const items = books.map(b => ({
           name: b.name, author: b.author || '', coverUrl: b.coverUrl || '',
           intro: (b.intro || '').slice(0, 200), bookUrl: b.bookUrl, sourceId: 'legado:' + legadoDev.device_url
-        })).filter(b => b.name);
-        return send(200, { object:'list', data: [{ source: 'Legado(原版引擎)', sourceId: 'legado:' + legadoDev.device_url,
-          ok: true, latency: Date.now() - t0, books }], meta: { engine: 'legado-native' }});
+        }));
+        return send(200, { object:'list', data: [{ source: 'Legado(官方引擎)', sourceId: 'legado:' + legadoDev.device_url,
+          ok: true, latency: Date.now() - t0, books: items }], meta: { engine: 'legado-native', via: 'websocket' }});
       } catch (e) { /* 不可达→内置引擎兜底 */ } }
     const pool_list = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
     // 限流并行(最多3个源同时请求, 防小站被封)
@@ -620,9 +628,9 @@ async function handle(req, res, body) {
       meta: { total: results.length, ok: results.filter(r => r.ok).length, deduped: true } });
   }
   // ── Legado 原版引擎转发(引擎零改动: 官方Web服务→结果转IR) ──
-  const legadoForward = async (dev, apiPath, url) => {
-    const r2 = await fetch(dev.device_url + '/' + apiPath + '?url=' + encodeURIComponent(url),
-      { headers: { Authorization: dev.token || '' }, signal: AbortSignal.timeout(12000) });
+  const legadoForward = async (dev, apiPath, url, extra) => {
+    const r2 = await fetch(dev.device_url + '/' + apiPath + '?url=' + encodeURIComponent(url) + (extra || ''),
+      { signal: AbortSignal.timeout(12000) });
     return await r2.json();
   };
   const legadoFromSourceId = (sid) => {
@@ -644,7 +652,10 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/toc')) {
     const dev = legadoFromSourceId(u.searchParams.get('sourceId'));
     if (dev) { try { const list = await legadoForward(dev, 'getChapterList', u.searchParams.get('url'));
-      const chapters = (Array.isArray(list) ? list : list.data || []).map(c => ({ name: c.title || c.name, url: c.url || c.chapterUrl }));
+      const raw = Array.isArray(list) ? list : list.data || [];
+      const bookUrl0 = u.searchParams.get('url');
+      const chapters = raw.map((c, i) => ({ name: c.title || c.name, url: c.url || c.chapterUrl, index: i, bookUrl: bookUrl0 }));
+      tocCache.set(dev.device_url + '|toc', { at: Date.now(), data: chapters });
       return send(200, { object:'list', data: chapters.filter(c => c.name && c.url) });
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
@@ -662,7 +673,15 @@ async function handle(req, res, body) {
   }
   if (p.startsWith('/v1/content')) {
     const dev = legadoFromSourceId(u.searchParams.get('sourceId'));
-    if (dev) { try { const c = await legadoForward(dev, 'getBookContent', u.searchParams.get('url'));
+    if (dev) { try {
+      // 官方api.md: getBookContent?url=书url&index=章节序号 → 从目录缓存反查index
+      const chapUrl = u.searchParams.get('url');
+      const tocKey = dev.device_url + '|toc';
+      const tocList = tocCache.get(tocKey)?.data || [];
+      let bookUrl = chapUrl, index = 0;
+      const hit = tocList.find(c => c.url === chapUrl);
+      if (hit) { bookUrl = hit.bookUrl || chapUrl; index = hit.index ?? 0; }
+      const c = await legadoForward(dev, 'getBookContent', bookUrl, '&index=' + index);
       const text = c.content || c.text || '';
       return send(200, { object:'novel-content', data: { text: Array.isArray(text) ? text.join('\n\n') : String(text), chapterUrl: u.searchParams.get('url') }});
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
