@@ -142,10 +142,24 @@ function rget(ruleObj, key) {
 // ─── HTTP 抓取(伪装UA, 超时) ───
 async function fetchPage(url, source) {
   const headers = {
-    'User-Agent': (source && source.header) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9'
   };
+  // 书源自定义header(可为JSON字符串或"Key: Value"多行)
+  const h = source && source.header;
+  if (h) {
+    try { if (h.trim().startsWith('{')) Object.assign(headers, JSON.parse(h)); } catch (e) {}
+    if (h.includes(':') && !h.trim().startsWith('{')) {
+      for (const line of h.split('\n')) {
+        const i = line.indexOf(':');
+        if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      }
+    }
+    // header里若单独给了UA则覆盖
+    if (headers['User-Agent'] || headers['user-agent'])
+      headers['User-Agent'] = headers['User-Agent'] || headers['user-agent'];
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
