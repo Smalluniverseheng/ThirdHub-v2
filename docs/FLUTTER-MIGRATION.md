@@ -8,11 +8,11 @@
 |---|---|---|
 | bookshelf/search/detail/shelf-view | ✅ 已有(小说) | — |
 | board-media(影视) | ✅ 已有(视频) | — |
-| board-album(相册) | ❌ | 新建: 本地相册+云同步(后端已有/v1/album设计) |
+| board-album(相册) | ✅ 已完成(iter6/7: 选照片上传+已同步网格+长按删) | — |
 | live(直播) | ✅ 已完成(iter1: 频道搜索+网格+热词+直接播放) | — |
 | download(下载管理) | ✅ 已完成(iter4/5: aria2任务3s轮询+进度条+添加链接) | — |
 | board-clouddrive(网盘) | ◐ 部分(iter4/5: cloudreve自动spawn+状态面板+直达; 完整文件浏览待建) | — |
-| register-page/onboarding/welcome | 半(引导页) | 完善首启流程 |
+| register-page/onboarding/welcome | ✅ 已完成(iter8: 三页滑屏引导) | — |
 | applock(应用锁) | ✅ 已完成(iter2/3: PIN启动锁+设置入口) | — |
 
 ## 批次 P1: AI 系（3-5 天, 12 模块）——DSH 解封后
