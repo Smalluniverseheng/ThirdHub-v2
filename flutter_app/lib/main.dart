@@ -321,16 +321,16 @@ class _Vd extends State<VideoDetailPage> {
         Expanded(child: ListView.builder(itemCount: episodes.length, itemBuilder: (_, i) => ListTile(
           dense: true, title: Text(episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 13)),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
-            sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', title: episodes[i]['name'] ?? '')))),
+            sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', flag: episodes[i]['flag'] ?? '', title: episodes[i]['name'] ?? '')))),
         ))])); }
 
-class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, title; const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.title}); @override State<VideoPlayPage> createState() => _Vp(); }
+class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, flag, title; const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.flag, required this.title}); @override State<VideoPlayPage> createState() => _Vp(); }
 class _Vp extends State<VideoPlayPage> {
   VideoPlayerController? _vc; ChewieController? _cc; bool loading = true; String? err;
   @override void initState() { super.initState(); initPlayer(); }
   Future<void> initPlayer() async {
     try {
-      final r = await Api.get('/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=&id=${Uri.encodeComponent(widget.epUrl)}');
+      final r = await Api.get('/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
       if (r['object'] == 'error') { setState(() { loading = false; err = r['data']?['message'] ?? '解析失败'; }); return; }
       final url = r['data']?['url'] as String? ?? '';
       if (url.isEmpty) { setState(() { loading = false; err = '播放地址为空'; }); return; }
