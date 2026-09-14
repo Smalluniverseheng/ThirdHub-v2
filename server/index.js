@@ -6,6 +6,7 @@ const fs = require('fs'); const path = require('path');
 const crypto = require('crypto');
 const engine = require('./engine');
 const drpy = require('./engine-drpy');
+const comic = require('./engine-comic');
 const { Bonjour } = require('bonjour-service');
 
 const DATA = path.join(__dirname, 'data');
@@ -67,6 +68,12 @@ try {
 // ─── 极简静态(前端flutter build web产物可选挂载) ───
 const PUB = path.join(__dirname, 'public');
 
+// ─── 漫画图源存储(Venera格式) ───
+const COMIC_FILE = path.join(DATA, 'comic-sources.json');
+function loadComic() { try { return JSON.parse(fs.readFileSync(COMIC_FILE, 'utf8')); } catch (e) { return []; } }
+function saveComic(d) { fs.writeFileSync(COMIC_FILE, JSON.stringify(d, null, 2)); }
+let comicSources = loadComic();
+
 // ─── drpy影视源存储 ───
 const DRPY_FILE = path.join(DATA, 'drpy-sources.json');
 function loadDrpy() { try { return JSON.parse(fs.readFileSync(DRPY_FILE, 'utf8')); } catch (e) { return []; } }
@@ -115,6 +122,45 @@ async function handle(req, res, body) {
       console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+  // ── 漫画(Venera图源) ──
+  if (p === '/v1/comic/sources' && req.method === 'GET')
+    return send(200, { object:'list', data: comicSources.map(s => ({ id: s.id, name: s.name })) });
+  if (p === '/v1/comic/sources' && req.method === 'POST') {
+    const d = JSON.parse(body || '{}');
+    if (!d.code || !d.name) return send(400, { object:'error', data:{ type:'invalid_request', message:'需name+code' }});
+    const id = d.id || 'comic_' + crypto.randomBytes(4).toString('hex');
+    const i = comicSources.findIndex(x => x.id === id);
+    i >= 0 ? comicSources[i] = { id, name: d.name, code: d.code } : comicSources.push({ id, name: d.name, code: d.code });
+    saveComic(comicSources);
+    return send(200, { object:'meta', data: { id, total: comicSources.length }});
+  }
+  if (p.startsWith('/v1/comic/search')) {
+    const q = u.searchParams.get('q');
+    const pool = comicSources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
+    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+      const t0 = Date.now();
+      const r = comic.irComicList(await comic.runSource(s.code, 'search', [q, 1]));
+      return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0,
+        ...(r.error ? { error: r.error } : { items: r.items, maxPage: r.maxPage }) };
+    }));
+    results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    return send(200, { object:'list', data: results });
+  }
+  if (p.startsWith('/v1/comic/info')) {
+    const s = comicSources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'图源不存在, 请先POST /v1/comic/sources导入' }});
+    const r = comic.irComicInfo(await comic.runSource(s.code, 'comicInfo', [u.searchParams.get('id')]));
+    if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
+    return send(200, { object:'comic', data: { ...r, sourceId: s.id } });
+  }
+  if (p.startsWith('/v1/comic/pages')) {
+    const s = comicSources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'图源不存在' }});
+    const chapId = u.searchParams.get('chapterId') || '';
+    const r = comic.irPages(await comic.runSource(s.code, 'comicPages', [chapId]));
+    if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
+    return send(200, { object:'comic-pages', data: r });
   }
   // ── drpy 影视 ──
   if (p === '/v1/video/sources' && req.method === 'GET')
