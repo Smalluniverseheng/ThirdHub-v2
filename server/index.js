@@ -109,6 +109,7 @@ async function handle(req, res, body) {
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
   }
+  if (p === '/v1/sources/export') return send(200, { object:'list', data: sources, meta: { exported_at: Date.now(), count: sources.length } });
   if (p === '/v1/devices') return send(200, { object:'list', data: devices });
   if (p.startsWith('/v1/img')) {
     // 图片代理: 前端走自签HTTPS证书问题+图床防盗链, 统一走后端转发
