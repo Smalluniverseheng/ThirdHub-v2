@@ -246,6 +246,32 @@ async function handle(req, res, body) {
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'video-play', data: r });
   }
+  // ── 四类源统一删除/启停 ──
+  const srcCollections = {
+    book:   { get: () => sources,       save: saveSources, idField: 'bookSourceUrl' },
+    video:  { get: () => drpySources,   save: saveDrpy,    idField: 'id' },
+    comic:  { get: () => comicSources,  save: saveComic,   idField: 'id' },
+    music:  { get: () => musicSources,  save: saveMusic,   idField: 'id' }
+  };
+  if (p.startsWith('/v1/src/')) {
+    const parts = p.split('/');           // /v1/src/{type}/{action}
+    const type = parts[3], action = parts[4];
+    const col = srcCollections[type];
+    if (!col) return send(404, { object:'error', data:{ type:'not_found', message:'未知源类型' }});
+    const id = u.searchParams.get('id');
+    const list = col.get();
+    const item = list.find(x => x[col.idField] === id);
+    if (!item) return send(404, { object:'error', data:{ type:'not_found', message:'源不存在' }});
+    if (action === 'delete') {
+      list.splice(list.indexOf(item), 1); col.save(list);
+      return send(200, { object:'meta', data: { deleted: id }});
+    }
+    if (action === 'toggle') {
+      item.enabled = item.enabled === false ? true : false; col.save(list);
+      return send(200, { object:'meta', data: { id, enabled: item.enabled }});
+    }
+    return send(400, { object:'error', data:{ type:'invalid_request', message:'action须为delete/toggle' }});
+  }
   if (p === '/v1/sources/export') return send(200, { object:'list', data: sources, meta: { exported_at: Date.now(), count: sources.length } });
   if (p === '/v1/devices') return send(200, { object:'list', data: devices });
   if (p.startsWith('/v1/img')) {
