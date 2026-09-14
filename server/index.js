@@ -619,13 +619,34 @@ async function handle(req, res, body) {
     return send(200, { object:'list', data: results,
       meta: { total: results.length, ok: results.filter(r => r.ok).length, deduped: true } });
   }
+  // ── Legado 原版引擎转发(引擎零改动: 官方Web服务→结果转IR) ──
+  const legadoForward = async (dev, apiPath, url) => {
+    const r2 = await fetch(dev.device_url + '/' + apiPath + '?url=' + encodeURIComponent(url),
+      { headers: { Authorization: dev.token || '' }, signal: AbortSignal.timeout(12000) });
+    return await r2.json();
+  };
+  const legadoFromSourceId = (sid) => {
+    if (!sid || !sid.startsWith('legado:')) return null;
+    const durl = sid.slice(7);
+    return devices.find(d => d.device_url === durl);
+  };
   if (p.startsWith('/v1/book')) {
+    const dev = legadoFromSourceId(u.searchParams.get('sourceId'));
+    if (dev) { try { const d = await legadoForward(dev, 'getBookInfo', u.searchParams.get('url'));
+      return send(200, { object:'novel', data: { name: d.name, author: d.author || '', coverUrl: d.coverUrl || '',
+        intro: d.intro || '', kind: d.kind || '', tocUrl: d.tocUrl || u.searchParams.get('url'), sourceId: u.searchParams.get('sourceId') }});
+    } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
     try { return send(200, { object:'novel', data: await engine.detail(s, u.searchParams.get('url')) }); }
     catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
   }
   if (p.startsWith('/v1/toc')) {
+    const dev = legadoFromSourceId(u.searchParams.get('sourceId'));
+    if (dev) { try { const list = await legadoForward(dev, 'getChapterList', u.searchParams.get('url'));
+      const chapters = (Array.isArray(list) ? list : list.data || []).map(c => ({ name: c.title || c.name, url: c.url || c.chapterUrl }));
+      return send(200, { object:'list', data: chapters.filter(c => c.name && c.url) });
+    } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
     const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
@@ -640,6 +661,11 @@ async function handle(req, res, body) {
       return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
   }
   if (p.startsWith('/v1/content')) {
+    const dev = legadoFromSourceId(u.searchParams.get('sourceId'));
+    if (dev) { try { const c = await legadoForward(dev, 'getBookContent', u.searchParams.get('url'));
+      const text = c.content || c.text || '';
+      return send(200, { object:'novel-content', data: { text: Array.isArray(text) ? text.join('\n\n') : String(text), chapterUrl: u.searchParams.get('url') }});
+    } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
     const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
