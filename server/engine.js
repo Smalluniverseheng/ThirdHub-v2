@@ -80,26 +80,11 @@ function applyRule($root, elements, rule, context) {
   for (const o of ops) {
     if (cur == null) return null;
     if (o.op === 'sel') {
-      let next = null;
-      const apply = ($ctx) => {
-        let found = $ctx.find ? $ctx.find(o.sel) : null;
-        if (o.idx != null && found && found.length) found = found.eq(o.idx);
-        return found;
-      };
-      if (cur.each) {
-        // cheerio 集合: 对每元素 find 合并
-        const arr = [];
-        cur.each((i, el) => { const f = apply(cheerio.load ? cur.eq ? null : null : null); });
-        // 简化: 直接以整体再查
-        next = cur.find(o.sel);
-        if (o.idx != null && next.length) next = next.eq(o.idx);
-      } else if (typeof cur === 'object' && cur.cheerio) {
-        next = cur.find(o.sel);
-        if (o.idx != null && next.length) next = next.eq(o.idx);
-      } else {
-        return null;
-      }
-      cur = next;
+      if (cur && cur.find) {
+        let n = cur.find(o.sel);
+        if (o.idx != null && n.length) n = n.eq(o.idx);
+        cur = n;
+      } else return null;
     } else if (o.op === 'text') {
       if (cur == null) return null;
       if (cur.text) return cur.text().trim();
@@ -171,54 +156,15 @@ async function search(source, key) {
   const rule = source.ruleSearch || {};
   const urlTpl = source.searchUrl || '';
   if (!urlTpl) return [];
-  const searchUrl = absUrl(urlTpl.replace('{{key}}', encodeURIComponent(key)).replace('%s', encodeURIComponent(key)), source.bookSourceUrl);
+  const searchUrl = absUrl(urlTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)), source.bookSourceUrl);
   const { html, url: finalUrl } = await fetchPage(searchUrl, source);
   const $ = cheerio.load(html);
   const ctx = { source, baseUrl: source.bookSourceUrl, key };
-  let listRule = rget(rule, 'bookList');
-  // XPath 模式
-  if (listRule && listRule.startsWith('/')) {
-    const { selector, take } = xpathToCheerio(listRule);
-    const listEl = take === 'text' ? $(selector).first() : $(selector);
-    const books = [];
-    const items = take ? $($(selector).toArray().length ? selector : selector) : $(selector);
-    $(selector).each((i, el) => {
-      const $el = $(el);
-      const pick = (k, attr) => {
-        let r = rget(rule, k);
-        if (!r) return null;
-        if (r.startsWith('/')) {
-          const xp = xpathToCheerio(r);
-          const found = xp.selector ? $el.find(xp.selector) : $el;
-          if (xp.take === 'text()') return found.first().text().trim();
-          if (xp.take && xp.take.startsWith('@')) return found.first().attr(xp.take.slice(1));
-          return found.first().text().trim();
-        }
-        return applyRule($, $el, r, ctx);
-      };
-      books.push({
-        name: pick('name'), author: pick('author') || '',
-        coverUrl: absUrl(pick('coverUrl') || pick('cover'), source.bookSourceUrl),
-        intro: pick('intro') || '', kind: pick('kind') || '',
-        bookUrl: absUrl(pick('bookUrl'), finalUrl) || finalUrl,
-        sourceId: source.bookSourceUrl
-      });
-    });
-    return books.filter(b => b.name);
-  }
-  // 链式模式
-  const items = $(parseChain(listRule).filter(o => o.op === 'sel').map(o => o.sel).join(' ')) || $();
-  const sel0 = parseChain(listRule)[0];
-  const list = $(sel0.sel + (sel0.idx != null ? `:eq(${sel0.idx})` : ''));
+  const list = resolveList($, rget(rule, 'bookList'));
   const books = [];
-  const ctx2 = { source, baseUrl: source.bookSourceUrl, key };
   list.each((i, el) => {
     const $el = $(el);
-    const pick = (k) => {
-      const r = rget(rule, k);
-      if (!r) return null;
-      return applyRule($, $el, r, ctx2);
-    };
+    const pick = (k) => { const r = rget(rule, k); return r ? applyRule($, $el, r, ctx) : null; };
     books.push({
       name: pick('name'), author: pick('author') || '',
       coverUrl: absUrl(pick('coverUrl') || pick('cover'), source.bookSourceUrl),
@@ -227,7 +173,21 @@ async function search(source, key) {
       sourceId: source.bookSourceUrl
     });
   });
-  return books.filter(b => b.name);
+  return books.filter(b => b.name && b.bookUrl);
+}
+
+// 统一列表解析: XPath 子集 或 Legado 链式(多段 sel 链)
+function resolveList($, listRule) {
+  if (!listRule) return $();
+  const lr = String(listRule).trim();
+  if (lr.startsWith('/')) { const { selector } = xpathToCheerio(lr); return $(selector); }
+  let cur = $.root();
+  for (const o of parseChain(lr)) {
+    if (o.op === 'sel') { cur = cur.find(o.sel); if (o.idx != null && cur.length) cur = cur.eq(o.idx); }
+    else if (o.op === 'js') { /* 列表级 js 暂不应用, 元素级在 pick 里 */ }
+    else break; // text/attr 不该出现在 bookList
+  }
+  return cur && cur.each ? cur : $();
 }
 
 async function detail(source, bookUrl) {
