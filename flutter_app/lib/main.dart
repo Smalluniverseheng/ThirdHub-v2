@@ -36,7 +36,12 @@ class Api {
 // 全局设置中心: 所有前端设置唯一入口, 本地存储+云端同步(1MB配额)骨架
 class AppSettings {
   static SharedPreferences? _p;
-  static Future<void> init() async { _p = await SharedPreferences.getInstance(); }
+  static Future<void> init() async { _p = await SharedPreferences.getInstance();
+    if (p.getString('identity_code') == null) {
+      final code = 'TH-' + DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()
+        + '-' + (p.getString('nickname')?.hashCode ?? 0).toRadixString(36).toUpperCase();
+      await p.setString('identity_code', code);
+    } }
   static SharedPreferences get p => _p!;
 
   // ── 计量: 1MB配额, 头像<0.5MB, 其余给设置 ──
@@ -48,6 +53,23 @@ class AppSettings {
     }
     return u;
   }
+
+  // ── 外观(网页版"我的"-主题外观) ──
+  static String get themeModeStr => p.getString('theme_mode') ?? 'dark'; // system|dark|light
+  static int get accentColor => p.getInt('accent_color') ?? 0xFF5B9BFF;   // 强调色
+  static bool get splashAnim => p.getBool('splash_anim') ?? true;         // 开屏动画
+  static Future<void> setThemeMode(String v) async { await p.setString('theme_mode', v); await sync(); }
+  static Future<void> setAccent(int v) async { await p.setInt('accent_color', v); await sync(); }
+  static Future<void> setSplashAnim(bool v) async { await p.setBool('splash_anim', v); await sync(); }
+
+  // ── 导航(网页版-手表端导航栏位置) ──
+  static String get navSide => p.getString('nav_side') ?? 'right'; // left|right(悬浮球默认吸附侧)
+  static Future<void> setNavSide(String v) async { await p.setString('nav_side', v); await sync(); }
+
+  // ── 资料(网页版-个人资料) ──
+  static String get bio => p.getString('bio') ?? '';
+  static String get identityCode => p.getString('identity_code') ?? ''; // 身份码(好友系统)
+  static Future<void> setBio(String v) async { await p.setString('bio', v); await sync(); }
 
   // ── 阅读偏好 ──
   static double get fontSize => p.getDouble('fontSize') ?? 18.0;
