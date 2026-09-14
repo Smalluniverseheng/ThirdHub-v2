@@ -301,7 +301,7 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/search/all')) {
     // 聚合搜索: 书+漫画+视频 并行, 统一返回三分组
     const q = u.searchParams.get('q');
-    const [books, comics, videos] = await Promise.all([
+    const [books, comics, videos, musics] = await Promise.all([
       (async () => {
         const pool = sources.filter(s => s.enabled !== false);
         const rs = await Promise.all(pool.slice(0, 3).map(async (s) => {
@@ -326,9 +326,16 @@ async function handle(req, res, body) {
         }));
         return rs.filter(r => r.ok);
       })(),
+      (async () => {
+        const rs = await Promise.all(musicSources.slice(0, 2).map(async (s) => {
+          const r = music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
+          return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
+        }));
+        return rs.filter(r => r.ok);
+      })(),
     ]);
-    return send(200, { object:'meta', data: { q, books, comics, videos,
-      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length } }});
+    return send(200, { object:'meta', data: { q, books, comics, videos, musics,
+      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length, musicSources: musicSources.length } }});
   }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
