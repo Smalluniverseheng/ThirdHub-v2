@@ -237,10 +237,16 @@ class _Pf extends State<ProfilePage> {
   @override void initState() { super.initState(); load(); }
   Future<void> load() async { final p = await SharedPreferences.getInstance();
     nickname = p.getString('nickname') ?? '';
+    try { final r = await Api.get('/v1/settings');
+      final nn = r['data']?['nickname'] as String?;
+      if (nn != null && nn.isNotEmpty) { nickname = nn; await p.setString('nickname', nn); } } catch (_) {}
     int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
     setState(() => stats = { '书架': count('shelf_novel'), '漫画': count('shelf_comic'), '片库': count('shelf_video'), '歌单': count('playlist') }); }
   Future<void> saveName() async { final p = await SharedPreferences.getInstance();
-    await p.setString('nickname', nameC.text.trim()); setState(() { nickname = nameC.text.trim(); }); }
+    await p.setString('nickname', nameC.text.trim());
+    try { await http.post(Uri.parse('${Api.base}/v1/settings'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+      body: jsonEncode({'data': {'nickname': nameC.text.trim()}})); } catch (_) {}
+    setState(() { nickname = nameC.text.trim(); }); }
   Future<void> clearHistory() async { final p = await SharedPreferences.getInstance();
     for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已清理搜索历史'))); }
