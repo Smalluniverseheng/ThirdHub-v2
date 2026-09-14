@@ -159,6 +159,9 @@ class _NSR extends State<NovelSearchResults> {
         if (g['ok'] == true && (g['books'] as List?)?.isNotEmpty == true)
           Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
         for (final b in (g['books'] as List? ?? [])) ListTile(
+          leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+            child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
           title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(b))))),
       ], if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('点右上角搜索找书', style: TextStyle(color: Colors.grey))),
@@ -173,7 +176,11 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
     await p.setString('shelf_${widget.kind}', jsonEncode(items.map((e) => e.toJson()).toList())); setState(() {}); }
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
     : items.isEmpty ? const Center(child: Text('书架为空\n进入书籍详情页加入', style: TextStyle(color: Colors.grey)))
-    : ListView(children: [ for (final b in items) ListTile(title: Text(b.name), subtitle: Text(b.author),
+    : ListView(children: [ for (final b in items) ListTile(
+        leading: b.coverUrl != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+          child: Image.network(Api.img(b.coverUrl), width: 40, height: 56, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
+        title: Text(b.name), subtitle: Text(b.author),
         onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => load()),
         trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => remove(b))) ]); }
 
@@ -207,6 +214,8 @@ class NovelReadPage extends StatefulWidget { final String sourceId, bookName, bo
   @override State<NovelReadPage> createState() => _NR(); }
 class _NR extends State<NovelReadPage> {
   String text = ''; List<String> images = []; bool loading = true; double fontSize = 18;
+  int theme = 0; // 0夜间 1白天 2护眼
+  static const themes = [(Color(0xFF121212), Color(0xFFE0E0E0)), (Colors.white, Colors.black87), (Color(0xFFF5F0E1), Color(0xFF4A3F30))];
   int get idx => widget.index; Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
   @override void initState() { super.initState(); load(); }
@@ -220,7 +229,9 @@ class _NR extends State<NovelReadPage> {
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NovelReadPage(
     sourceId: widget.sourceId, chapters: widget.chapters, index: i, bookName: widget.bookName, bookUrl: widget.bookUrl)));
   @override Widget build(BuildContext c) { final isImgs = images.isNotEmpty;
+    final t = themes[theme];
     return Scaffold(appBar: AppBar(title: Text('${chapter['name'] ?? ''}  (${idx + 1}/${widget.chapters.length})'), actions: [
+        IconButton(icon: const Icon(Icons.brightness_6_outlined), onPressed: () => setState(() => theme = (theme + 1) % 3)),
         if (!isImgs) IconButton(icon: const Icon(Icons.text_increase), onPressed: () => setState(() => fontSize += 1)),
         if (!isImgs) IconButton(icon: const Icon(Icons.text_decrease), onPressed: () => setState(() => fontSize = (fontSize - 1).clamp(12, 32)))]),
       body: Column(children: [
@@ -228,7 +239,8 @@ class _NR extends State<NovelReadPage> {
           ? ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 2),
               child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
                 errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))
-          : SingleChildScrollView(padding: const EdgeInsets.all(16), child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8)))),
+          : Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+              child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一章')),
           TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一章'), icon: const Icon(Icons.chevron_right)),
