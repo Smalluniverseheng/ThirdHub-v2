@@ -252,6 +252,39 @@ async function handle(req, res, body) {
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'video-play', data: r });
   }
+  // ── 存储服务状态+下载任务 ──
+  if (p === '/v1/storage/status') return send(200, { object:'meta', data: {
+    cloudreve: storageState.cloudreve, aria2: storageState.aria2,
+    ports: { cloudreve: 5212, aria2: 6800 },
+    downloadsDir: '/v1/storage/downloads',
+    hint: storageState.cloudreve === 'running' ? '网盘: http://后端IP:5212 (Cloudreve管理页)' : '放入vendor/cloudreve/cloudreve二进制后重启' }});
+  if (p === '/v1/download/tasks') {
+    // 代理aria2 RPC
+    if (storageState.aria2 !== 'running') return send(503, { object:'error', data:{ type:'server_error', message:'aria2未运行(放vendor/aria2/aria2c后重启)' }});
+    try {
+      const r2 = await fetch('http://127.0.0.1:6800/jsonrpc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'th', method: 'aria2.tellActive' }), signal: AbortSignal.timeout(5000) });
+      const act = (await r2.json()).result || [];
+      const r3 = await fetch('http://127.0.0.1:6800/jsonrpc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'th2', method: 'aria2.tellWaiting', params: [0, 20] }), signal: AbortSignal.timeout(5000) });
+      const wait = (await r3.json()).result || [];
+      const fmt = (t) => ({ gid: t.gid, name: (t.files[0] && t.files[0].path.split('/').pop()) || t.gid,
+        progress: t.totalLength > 0 ? Math.round(t.completedLength / t.totalLength * 100) : 0,
+        speed: t.downloadSpeed, size: t.totalLength, status: t.status });
+      return send(200, { object:'list', data: { active: act.map(fmt), waiting: wait.map(fmt) }});
+    } catch (e) { return send(502, { object:'error', data:{ type:'server_error', message: 'aria2 RPC失败: ' + e.message }}); }
+  }
+  if (p === '/v1/download/add' && req.method === 'POST') {
+    if (storageState.aria2 !== 'running') return send(503, { object:'error', data:{ type:'server_error', message:'aria2未运行' }});
+    const d = JSON.parse(body || '{}'); const urls = Array.isArray(d.urls) ? d.urls : [d.url].filter(Boolean);
+    const added = [];
+    for (const u of urls) {
+      const r2 = await fetch('http://127.0.0.1:6800/jsonrpc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'add', method: 'aria2.addUri', params: [[u]] }), signal: AbortSignal.timeout(5000) });
+      const j = await r2.json(); if (j.result) added.push(j.result);
+    }
+    return send(200, { object:'meta', data: { added: added.length, gids: added }});
+  }
   // ── 四类源统一删除/启停 ──
   const srcCollections = {
     book:   { get: () => sources,       save: saveSources, idField: 'bookSourceUrl' },
@@ -469,6 +502,34 @@ async function pool(items, n, fn) {
   await Promise.all(workers); return ret;
 }
 
+// ─── 存储服务: cloudreve(:5212) + aria2(:6800), vendor存在则spawn ───
+const { spawn } = require('child_process');
+const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
+function startStorage() {
+  const crDir = path.join(__dirname, 'vendor', 'cloudreve');
+  const crBin = ['cloudreve', 'cloudreve.exe'].map(n => path.join(crDir, n)).find(fs.existsSync);
+  if (crBin) {
+    try { fs.chmodSync(crBin, 0o755);
+      storageProcs.cloudreve = spawn(crBin, [], { cwd: crDir, env: { ...process.env, CR_PORT: '5212' } });
+      storageState.cloudreve = 'running';
+      storageProcs.cloudreve.on('exit', () => storageState.cloudreve = 'exited');
+    } catch (e) { storageState.cloudreve = 'error: ' + e.message; }
+  }
+  const arDir = path.join(__dirname, 'vendor', 'aria2');
+  const arBin = ['aria2c', 'aria2c.exe'].map(n => path.join(arDir, n)).find(fs.existsSync);
+  if (arBin) {
+    try { fs.chmodSync(arBin, 0o755);
+      storageProcs.aria2 = spawn(arBin, ['--enable-rpc', '--rpc-listen-port=6800', '--rpc-allow-origin-all',
+        '--dir=' + path.join(DATA, 'downloads'), '--seed-time=0', '--max-connection-per-server=16', '--split=16'],
+        { cwd: arDir });
+      storageState.aria2 = 'running';
+      storageProcs.aria2.on('exit', () => storageState.aria2 = 'exited');
+    } catch (e) { storageState.aria2 = 'error: ' + e.message; }
+  }
+  if (storageState.cloudreve === 'absent') console.log('[storage] cloudreve 未安装(放二进制到 vendor/cloudreve/, 官网 release 下载)');
+  if (storageState.aria2 === 'absent') console.log('[storage] aria2 未安装(放二进制到 vendor/aria2/, 或 apt install aria2)');
+}
+
 // ─── 启动自检 ───
 (function selfcheck() {
   const checks = [];
@@ -485,6 +546,7 @@ async function pool(items, n, fn) {
   const fails = checks.filter(c => String(c[1]).startsWith('fail'));
   if (fails.length) console.log('⚠️ 存在失败项, 功能可能不完整:', fails.map(f => f[0]).join(', '));
 })();
+startStorage();
 
 server.listen(9527, '0.0.0.0', () => {
   const os = require('os');
