@@ -111,7 +111,31 @@ class _Conn extends State<ConnectLibraryPage> {
       if (err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(err!, style: const TextStyle(color: Colors.red))),
       const SizedBox(height: 16),
       FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.link), label: Text(busy ? '连接中…' : '连接资源库')),
+      const SizedBox(height: 20),
+      const AppLockSettings(),
     ]))))));
+}
+
+class AppLockSettings extends StatefulWidget { const AppLockSettings({super.key}); @override State<AppLockSettings> createState() => _Als(); }
+class _Als extends State<AppLockSettings> {
+  bool enabled = false; final c = TextEditingController(); String msg = '';
+  @override void initState() { super.initState(); check(); }
+  Future<void> check() async { final p = await SharedPreferences.getInstance();
+    setState(() => enabled = (p.getString('app_pin') ?? '').isNotEmpty); }
+  Future<void> toggle(bool v) async { final p = await SharedPreferences.getInstance();
+    if (!v) { await p.remove('app_pin'); setState(() { enabled = false; msg = '已关闭'; }); }
+    else if (c.text.length >= 4) { await p.setString('app_pin', c.text); setState(() { enabled = true; msg = '已开启'; c.clear(); }); }
+    else setState(() => msg = '至少4位数字'); }
+  @override Widget build(BuildContext context) => Column(children: [
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Icon(Icons.lock_outline, size: 16, color: Colors.grey), const SizedBox(width: 6),
+      const Text('应用锁', style: TextStyle(color: Colors.grey, fontSize: 12)),
+      Switch(value: enabled, onChanged: toggle),
+    ]),
+    if (!enabled) SizedBox(width: 180, child: TextField(controller: c, obscureText: true, keyboardType: TextInputType.number,
+      maxLength: 6, decoration: const InputDecoration(hintText: '设置PIN(4-6位)', isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
+    if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+  ]);
 }
 
 // ═══ 悬浮球外壳: 板块切换 ═══
