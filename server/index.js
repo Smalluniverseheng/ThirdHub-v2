@@ -571,9 +571,24 @@ async function handle(req, res, body) {
   }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
+    // 原版引擎优先: 局域网Legado设备(官方Web服务)在→转发给它, 官方引擎自己解析规则(零适配), 后端只收结果
+    const legadoDev = devices.find(d => d.device_type === 'legado' && (Date.now() - (d.last_seen || 0)) < 300000);
+    if (legadoDev && !sid) {
+      try {
+        const t0 = Date.now();
+        const r2 = await fetch(legadoDev.device_url + '/searchBook?key=' + encodeURIComponent(q),
+          { headers: { Authorization: legadoDev.token || '' }, signal: AbortSignal.timeout(10000) });
+        const data = await r2.json();
+        const books = (Array.isArray(data) ? data : data.data || []).map(b => ({
+          name: b.name, author: b.author || '', coverUrl: b.coverUrl || '',
+          intro: (b.intro || '').slice(0, 200), bookUrl: b.bookUrl, sourceId: 'legado:' + legadoDev.device_url
+        })).filter(b => b.name);
+        return send(200, { object:'list', data: [{ source: 'Legado(原版引擎)', sourceId: 'legado:' + legadoDev.device_url,
+          ok: true, latency: Date.now() - t0, books }], meta: { engine: 'legado-native' }});
+      } catch (e) { /* 不可达→内置引擎兜底 */ } }
     const pool_list = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
     // 限流并行(最多3个源同时请求, 防小站被封)
-    const results = await pool(pool_list, 3, async (s) => {
+    const results = await pool(pool_list, 6, async (s) => {
       const t0 = Date.now();
       try {
         const books = await engine.search(s, q);
