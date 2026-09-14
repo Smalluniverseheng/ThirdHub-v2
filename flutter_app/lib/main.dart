@@ -1,7 +1,7 @@
 // ThirdHub v4 Flutter m2: 纯播放器前端 = 小说阅读器 + 漫画播放器 + 视频播放器
 // 定位: 零处理逻辑, 只渲染后端IR。净化在插件(Legado)完成, 后端转发。
 // 每个板块右上角: [搜索] [设置→连接资源库]
-import 'dart:convert'; import 'dart:io';
+import 'dart:async'; import 'dart:convert'; import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -156,7 +156,7 @@ class _Orb extends State<OrbShell> {
       ]),
       body: Stack(children: [
         [const HomeSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
-         const Center(child: Text('资源库状态正常\n连接信息在"连接资源库"页查看', textAlign: TextAlign.center))][tab],
+         const ToolsSection()][tab],
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
         if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 380).clamp(70.0, size.height - 470),
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
@@ -190,6 +190,63 @@ class ThSearchDelegate extends SearchDelegate {
     if (tab == 4) return MusicSearchResults(query: query);
     return const SizedBox.shrink();
   }
+}
+
+// ═══ 资源库: 存储服务状态 + 下载管理 ═══
+class ToolsSection extends StatefulWidget { const ToolsSection({super.key}); @override State<ToolsSection> createState() => _Tools(); }
+class _Tools extends State<ToolsSection> {
+  Map<String, dynamic>? st; List active = []; List waiting = []; final urlC = TextEditingController(); String? msg;
+  Timer? timer;
+  @override void initState() { super.initState(); load(); timer = Timer.periodic(const Duration(seconds: 3), (_) => loadTasks()); }
+  @override void dispose() { timer?.cancel(); super.dispose(); }
+  Future<void> load() async { try { final r = await Api.get('/v1/storage/status'); setState(() => st = r['data']); } catch (_) {}
+    loadTasks(); }
+  Future<void> loadTasks() async { try { final r = await Api.get('/v1/download/tasks');
+      setState(() { active = (r['data']?['active'] as List? ?? []); waiting = (r['data']?['waiting'] as List? ?? []); }); } catch (_) {} }
+  Future<void> addTask() async { final u = urlC.text.trim(); if (u.isEmpty) return;
+    try { final r = await http.post(Uri.parse('${Api.base}/v1/download/add'),
+      headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'}, body: jsonEncode({'url': u}));
+      setState(() { msg = r.statusCode == 200 ? '已添加下载' : '添加失败 ${r.statusCode}'; urlC.clear(); });
+      loadTasks();
+    } catch (e) { setState(() => msg = '错误: $e'); } }
+  Widget statusRow(String name, String state, int port) => Row(children: [
+    Icon(state == 'running' ? Icons.check_circle : Icons.error_outline, size: 18,
+      color: state == 'running' ? Colors.teal : Colors.orange),
+    const SizedBox(width: 8),
+    Expanded(child: Text(name, style: const TextStyle(fontSize: 13))),
+    Text(state == 'running' ? ':$port 运行中' : state == 'absent' ? '未安装' : state, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+  ]);
+  @override Widget build(BuildContext c) => ListView(padding: const EdgeInsets.all(12), children: [
+    Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('存储服务', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      if (st != null) ...[
+        statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212),
+        const SizedBox(height: 4),
+        statusRow('⬇️ 下载引擎 aria2', st!['aria2'] ?? '?', 6800),
+        const SizedBox(height: 4),
+        Text(st!['hint'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ] else const Text('加载中…'),
+    ]))),
+    Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('下载任务 (${active.length}进行中/${waiting.length}等待)', style: const TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: TextField(controller: urlC, decoration: const InputDecoration(hintText: '粘贴下载链接(HTTP/磁力/种子URL)', isDense: true, border: OutlineInputBorder()), style: const TextStyle(fontSize: 12))),
+        IconButton(icon: const Icon(Icons.add), onPressed: addTask),
+      ]),
+      if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+      const SizedBox(height: 8),
+      for (final t in [...active, ...waiting]) Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [ Expanded(child: Text(t['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))),
+          Text('${t['progress'] ?? 0}%', style: const TextStyle(fontSize: 11, color: Colors.tealAccent)) ]),
+        const SizedBox(height: 2),
+        LinearProgressIndicator(value: ((t['progress'] ?? 0) as int) / 100, minHeight: 3),
+        if ((t['speed'] ?? '') != '' && t['speed'] != '0') Text('${t['speed']} B/s', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ])),
+      if (active.isEmpty && waiting.isEmpty) const Text('暂无任务', style: TextStyle(fontSize: 12, color: Colors.grey)),
+    ]))),
+  ]);
 }
 
 // ═══ 首页: 聚合搜索(书+漫+影一次搜) ═══
