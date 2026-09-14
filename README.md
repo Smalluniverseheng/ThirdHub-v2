@@ -50,7 +50,7 @@ ThirdHub 的架构大版本跃迁——从"单体聚合站"进化为**局域网�
 | 📖 小说 | ✅ 全流程(搜索/目录分页/正文翻页/图片章节/净化/进度) | import-sources.js |
 | 🎨 漫画 | ✅ 全流程(Venera图源沙箱/画廊阅读器) | import-comic.js |
 | 🎬 视频 | ✅ 全流程(drpy沙箱/选集/播放) | import-drpy.js |
-| 🎵 音乐 | ✅ 引擎+端点通(MusicFree音源沙箱) | import-sources.js 扩展(二期) |
+| 🎵 音乐 | ✅ 全流程(MusicFree沙箱/歌单/播放/歌词) | import-music.js |
 | 🏠 首页 | ✅ 聚合搜索(一次搜三类) | — |
 | 🔌 插件 | ✅ Legado三自动补丁(零配对) | legado-patch/ |
 | 📦 出包 | ✅ tag v4* CI 双APK | — |
