@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:just_audio/just_audio.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +87,7 @@ class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override S
 class _Orb extends State<OrbShell> {
   int tab = 0; bool menu = false;
   Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const tabs = [('首页', Icons.home), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('资源库', Icons.link)];
+  static const tabs = [('首页', Icons.home), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('资源库', Icons.link)];
   void snap() { final w = MediaQuery.of(context).size.width;
     setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
   @override
@@ -94,14 +95,14 @@ class _Orb extends State<OrbShell> {
     final size = MediaQuery.of(context).size;
     return Scaffold(
       appBar: AppBar(title: Text(tabs[tab].$1), actions: [
-        if (tab < 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
+        if (tab >= 1 && tab <= 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
         IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
       ]),
       body: Stack(children: [
-        [const HomeSection(), const NovelSection(), const ComicSection(), const VideoSection(),
+        [const HomeSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
          const Center(child: Text('资源库状态正常\n连接信息在"连接资源库"页查看', textAlign: TextAlign.center))][tab],
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
-        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 310).clamp(70.0, size.height - 400),
+        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 380).clamp(70.0, size.height - 470),
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
             child: GestureDetector(onTap: () => setState(() { tab = i; menu = false; }),
               child: Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle,
@@ -121,15 +122,17 @@ class _Orb extends State<OrbShell> {
 // ═══ 全局搜索代理(按板块走各自API, 二期接后端) ═══
 class ThSearchDelegate extends SearchDelegate {
   final int tab; ThSearchDelegate(this.tab);
-  @override String get searchFieldLabel => ['搜小说', '搜漫画', '搜视频'][tab];
+  @override String get searchFieldLabel => ['', '搜小说', '搜漫画', '搜视频', '搜音乐'][tab];
   @override List<Widget> buildActions(BuildContext c) => [IconButton(icon: const Icon(Icons.clear), onPressed: () => query = '')];
   @override Widget buildLeading(BuildContext c) => IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => close(c, null));
   @override Widget buildResults(BuildContext c) => _body(c);
   @override Widget buildSuggestions(BuildContext c) => _body(c);
   Widget _body(BuildContext c) {
-    if (tab == 0) return NovelSearchResults(query: query);
-    if (tab == 2) return VideoSearchResults(query: query);
-    return ComicSearchResults(query: query);
+    if (tab == 1) return NovelSearchResults(query: query);
+    if (tab == 2) return ComicSearchResults(query: query);
+    if (tab == 3) return VideoSearchResults(query: query);
+    if (tab == 4) return MusicSearchResults(query: query);
+    return const SizedBox.shrink();
   }
 }
 
@@ -388,6 +391,117 @@ class _Cr extends State<ComicReaderPage> {
         TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一话')),
         TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一话'), icon: const Icon(Icons.chevron_right)),
       ]))])); }
+
+// ═══ 板块四: 音乐播放器 ═══
+class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
+class _Ms extends State<MusicSection> { int sub = 0;
+  @override Widget build(BuildContext c) => Column(children: [
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('歌单')), ButtonSegment(value: 1, label: Text('搜索'))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Expanded(child: sub == 0
+      ? const _MusicPlaylist()
+      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌\n音源导入: POST /v1/music/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
+  ]); }
+
+class _MusicPlaylist extends StatefulWidget { const _MusicPlaylist(); @override State<_MusicPlaylist> createState() => _MpList(); }
+class _MpList extends State<_MusicPlaylist> {
+  List<Map> items = []; bool loading = true;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async {
+    final p = await SharedPreferences.getInstance();
+    try { items = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>(); } catch (_) {}
+    setState(() => loading = false); }
+  Future<void> remove(Map m) async { final p = await SharedPreferences.getInstance();
+    items.removeWhere((x) => x['id'] == m['id']);
+    await p.setString('playlist', jsonEncode(items)); setState(() {}); }
+  @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
+    : items.isEmpty ? const Center(child: Text('歌单为空\n播放过的歌自动入单', style: TextStyle(color: Colors.grey)))
+    : ListView(children: [ for (final m in items) ListTile(
+        leading: (m['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+          child: Image.network(Api.img(m['coverUrl']), width: 44, height: 44, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox(width: 44, height: 44))) : const Icon(Icons.music_note),
+        title: Text(m['name'] ?? ''), subtitle: Text(m['artist'] ?? ''),
+        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: m))),
+        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => remove(m))) ]); }
+
+class MusicSearchResults extends StatefulWidget { final String query; const MusicSearchResults({super.key, required this.query}); @override State<MusicSearchResults> createState() => _MSR(); }
+class _MSR extends State<MusicSearchResults> {
+  List<Map> groups = []; bool loading = false; String lastQ = '';
+  Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
+    setState(() { loading = true; groups = []; });
+    try { final r = await Api.get('/v1/music/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
+    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    setState(() => loading = false); }
+  @override void initState() { super.initState(); if (widget.query.isNotEmpty) go(widget.query); }
+  @override void didUpdateWidget(MusicSearchResults old) { super.didUpdateWidget(old); if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query); }
+  Future<void> play(Map item, String sourceId) async {
+    // 入歌单
+    final p = await SharedPreferences.getInstance();
+    final list = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>();
+    if (!list.any((x) => x['id'] == item['id'])) { list.add(item); await p.setString('playlist', jsonEncode(list)); }
+    if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => MusicPlayPage(item: item, sourceId: sourceId)));
+  }
+  @override Widget build(BuildContext c) => Column(children: [
+    if (loading) const LinearProgressIndicator(),
+    Expanded(child: ListView(children: [
+      for (final g in groups) ...[
+        if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+        for (final m in (g['items'] as List? ?? [])) ListTile(
+          leading: (m['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+            child: Image.network(Api.img(m['coverUrl']), width: 44, height: 44, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(width: 44, height: 44))) : const Icon(Icons.music_note),
+          title: Text(m['name'] ?? ''), subtitle: Text('${m['artist'] ?? ''} · ${m['album'] ?? ''}'.trim()),
+          trailing: const Icon(Icons.play_arrow),
+          onTap: () => play(Map<String, dynamic>.from(m), g['sourceId'] ?? '')),
+      ],
+      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入音源)', style: TextStyle(color: Colors.grey))),
+    ])), ]); }
+
+class MusicPlayPage extends StatefulWidget { final Map item; final String sourceId; const MusicPlayPage({super.key, required this.item, this.sourceId = ''}); @override State<MusicPlayPage> createState() => _MPlay(); }
+class _MPlay extends State<MusicPlayPage> {
+  final AudioPlayer player = AudioPlayer(); bool loading = true; String? err; String lyric = '';
+  @override void initState() { super.initState(); start(); }
+  Future<void> start() async {
+    try {
+      String playUrl = widget.item['url'] as String? ?? '';
+      if (playUrl.isEmpty && widget.sourceId.isNotEmpty) {
+        final r = await Api.get('/v1/music/url?sourceId=${Uri.encodeComponent(widget.sourceId)}&item=${Uri.encodeComponent(jsonEncode(widget.item))}');
+        playUrl = r['data']?['url'] as String? ?? '';
+      }
+      if (playUrl.isEmpty) { setState(() { loading = false; err = '无播放地址(音源未实现getMediaSource?)'; }); return; }
+      await player.setUrl(playUrl);
+      await player.play();
+      setState(() => loading = false);
+      // 歌词(尽力而为)
+      if (widget.sourceId.isNotEmpty) {
+        try { final l = await Api.get('/v1/music/lyric?sourceId=${Uri.encodeComponent(widget.sourceId)}&item=${Uri.encodeComponent(jsonEncode(widget.item))}');
+          lyric = l['data']?['lyric'] as String? ?? ''; if (mounted) setState(() {}); } catch (_) {}
+      }
+    } catch (e) { setState(() { loading = false; err = '$e'; }); } }
+  @override void dispose() { player.dispose(); super.dispose(); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '')),
+    body: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const SizedBox(height: 20),
+      if ((widget.item['coverUrl'] ?? '') != '') ClipRRect(borderRadius: BorderRadius.circular(12),
+        child: Image.network(Api.img(widget.item['coverUrl']), width: 200, height: 200, fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 120))) else const Icon(Icons.music_note, size: 120),
+      const SizedBox(height: 16),
+      Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      Text(widget.item['artist'] ?? '', style: const TextStyle(color: Colors.grey)),
+      const SizedBox(height: 24),
+      if (loading) const CircularProgressIndicator()
+      else if (err != null) Text(err!, style: const TextStyle(color: Colors.red))
+      else StreamBuilder<PlayerState>(stream: player.playerStateStream, builder: (_, s) => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        IconButton(icon: const Icon(Icons.replay), iconSize: 36, onPressed: () => player.seek(Duration.zero)),
+        IconButton(icon: Icon(s.data?.playing == true ? Icons.pause_circle : Icons.play_circle), iconSize: 64,
+          onPressed: () => s.data?.playing == true ? player.pause() : player.play()),
+        IconButton(icon: const Icon(Icons.stop_circle), iconSize: 36, onPressed: () { player.stop(); Navigator.pop(c); }),
+      ])),
+      const SizedBox(height: 12),
+      if (lyric.isNotEmpty) Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+        child: Text(lyric, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.6)))),
+    ])); }
 
 // ═══ 板块三: 视频播放器(UI先行, 数据源待后端drpy引擎) ═══
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
