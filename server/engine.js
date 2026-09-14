@@ -300,11 +300,16 @@ async function content(source, chapterUrl) {
     });
     if (imgs.length >= 1) return { text: '', images: imgs, chapterUrl: url };
   }
-  // HTML→分段纯文本
-  const paras = cheerio.load('<div>' + htmlStr + '</div>')('div')
-    .find('p,br').length
-    ? cheerio.load('<div>' + htmlStr + '</div>')('div').find('p').map((i, el) => cheerio.load(el).text().trim()).get().filter(Boolean)
-    : htmlStr.split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
+  // HTML→分段纯文本(先净化: script/style/iframe/广告标签去除, 防脚本残留混进正文)
+  const $clean = cheerio.load('<div>' + htmlStr + '</div>');
+  $clean('script,style,iframe,noscript,ins,iframe,svg').remove();
+  $clean('div[class*=ad],div[id*=ad],p[class*=ad]').remove();
+  const $cd = $clean('div');
+  let paras = $cd.find('p').length
+    ? $cd.find('p').map((i, el) => $clean(el).text().trim()).get().filter(Boolean)
+    : $cd.text().split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
+  // 广告行过滤: 脚本残留/纯域名行(保守策略, 只删明显垃圾)
+  paras = paras.filter(p => p.length > 1 && !/chaptererror|请收藏|天才一秒记住|www\.\w+\.\w{2,}$/i.test(p));
   return { text: paras.join('\n\n'), paragraphs: paras.length, chapterUrl: url };
 }
 
