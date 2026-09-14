@@ -13,6 +13,7 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'core/neu.dart';
+import 'core/i18n.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +39,7 @@ class AppSettings {
   static SharedPreferences? _p;
   static void Function()? onChanged; // 主题变更回调
   static Future<void> init() async { _p = await SharedPreferences.getInstance();
+    I18n.instance.locale = p.getString('locale') ?? 'zh';
     if (p.getString('identity_code') == null) {
       final code = 'TH-' + DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()
         + '-' + (p.getString('nickname')?.hashCode ?? 0).toRadixString(36).toUpperCase();
@@ -55,6 +57,11 @@ class AppSettings {
     return u;
   }
 
+  // ── 语言(完全体: 调整语言全前端立即生效) ──
+  static String get locale => p.getString('locale') ?? 'zh';
+  static Future<void> setLocale(String v) async {
+    await p.setString('locale', v); await I18n.instance.setLocale(v); await sync();
+  }
   // ── 外观(网页版"我的"-主题外观) ──
   static String get themeModeStr => p.getString('theme_mode') ?? 'dark'; // system|dark|light
   static int get accentColor => p.getInt('accent_color') ?? 0xFF5B9BFF;   // 强调色
@@ -136,7 +143,10 @@ class ThApp extends StatefulWidget {
 }
 class _ThAppState extends State<ThApp> {
   @override void initState() { super.initState();
-    AppSettings.onChanged = () { if (mounted) setState(() {}); }; }
+    AppSettings.onChanged = () { if (mounted) setState(() {}); };
+    I18n.instance.addListener(_onLang); }
+  void _onLang() { if (mounted) setState(() {}); }
+  @override void dispose() { I18n.instance.removeListener(_onLang); super.dispose(); }
   @override Widget build(BuildContext c) { Api.base = widget.base; Api.token = widget.token;
     final accent = Color(AppSettings.accentColor);
     final mode = AppSettings.themeModeStr;
@@ -180,7 +190,7 @@ class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageControl
     Padding(padding: const EdgeInsets.all(20), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       TextButton(onPressed: finish, child: const Text('跳过')),
       FilledButton(onPressed: page < pages.length - 1 ? () => ctrl.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : finish,
-        child: Text(page < pages.length - 1 ? '下一页' : '开始连接')),
+        child: Text(page < pages.length - 1 ? '下一页' : tr('开始连接'))),
     ])),
   ])));
 }
@@ -194,7 +204,7 @@ class _Lock extends State<LockScreen> {
     final p = await SharedPreferences.getInstance();
     if (input == (p.getString('app_pin') ?? '')) {
       runApp(ThApp(ready: (p.getString('base') ?? '').isNotEmpty, base: p.getString('base') ?? '', token: p.getString('token') ?? ''));
-    } else { setState(() { checking = false; err = '密码错误'; input = ''; }); }
+    } else { setState(() { checking = false; err = tr('密码错误'); input = ''; }); }
   }
   void press(String d) { if (checking) return;
     if (d == 'DEL') { input = input.isEmpty ? '' : input.substring(0, input.length - 1); }
@@ -231,7 +241,7 @@ class _Conn extends State<ConnectLibraryPage> {
       if (!mounted) return; setState(() => busy = false);
       final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
         title: const Text('确认资源库指纹'), content: SelectableText('SHA256:\n$fp'),
-        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OrbShell())); }
@@ -241,12 +251,12 @@ class _Conn extends State<ConnectLibraryPage> {
       const Text('ThirdHub', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
       const Text('纯播放器前端 · 连接资源库开始', style: TextStyle(color: Colors.grey)),
       const SizedBox(height: 24),
-      TextField(controller: baseC, decoration: const InputDecoration(labelText: '资源库地址', hintText: 'https://192.168.x.x:9527', border: OutlineInputBorder())),
+      TextField(controller: baseC, decoration: const InputDecoration(labelText: tr('资源库地址'), hintText: 'https://192.168.x.x:9527', border: OutlineInputBorder())),
       const SizedBox(height: 12),
       TextField(controller: tokenC, decoration: const InputDecoration(labelText: '密钥', hintText: 'thsec_...', border: OutlineInputBorder())),
       if (err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(err!, style: const TextStyle(color: Colors.red))),
       const SizedBox(height: 16),
-      FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.link), label: Text(busy ? '连接中…' : '连接资源库')),
+      FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.link), label: Text(busy ? '连接中…' : tr('连接资源库'))),
       const SizedBox(height: 20),
       const AppLockSettings(),
     ]))))));
@@ -259,17 +269,17 @@ class _Als extends State<AppLockSettings> {
   Future<void> check() async { final p = await SharedPreferences.getInstance();
     setState(() => enabled = (p.getString('app_pin') ?? '').isNotEmpty); }
   Future<void> toggle(bool v) async { final p = await SharedPreferences.getInstance();
-    if (!v) { await p.remove('app_pin'); setState(() { enabled = false; msg = '已关闭'; }); }
-    else if (c.text.length >= 4) { await p.setString('app_pin', c.text); setState(() { enabled = true; msg = '已开启'; c.clear(); }); }
+    if (!v) { await p.remove('app_pin'); setState(() { enabled = false; msg = tr('已关闭'); }); }
+    else if (c.text.length >= 4) { await p.setString('app_pin', c.text); setState(() { enabled = true; msg = tr('已开启'); c.clear(); }); }
     else setState(() => msg = '至少4位数字'); }
   @override Widget build(BuildContext context) => Column(children: [
     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       const Icon(Icons.lock_outline, size: 16, color: Colors.grey), const SizedBox(width: 6),
-      const Text('应用锁', style: TextStyle(color: Colors.grey, fontSize: 12)),
+      const Text(tr('应用锁'), style: TextStyle(color: Colors.grey, fontSize: 12)),
       Switch(value: enabled, onChanged: toggle),
     ]),
     if (!enabled) SizedBox(width: 180, child: TextField(controller: c, obscureText: true, keyboardType: TextInputType.number,
-      maxLength: 6, decoration: const InputDecoration(hintText: '设置PIN(4-6位)', isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
+      maxLength: 6, decoration: const InputDecoration(hintText: tr('设置PIN(4-6位)'), isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
     if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
   ]);
 }
@@ -279,7 +289,8 @@ class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override S
 class _Orb extends State<OrbShell> {
   int tab = 0; bool menu = false;
   Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const tabs = [('搜索', Icons.search), ('小说', Icons.menu_book), ('漫画', Icons.photo_library), ('视频', Icons.play_circle), ('音乐', Icons.music_note), ('后端', Icons.dns), ('资源库', Icons.link)];
+  static const _tabIcons = [Icons.search, Icons.menu_book, Icons.photo_library, Icons.play_circle, Icons.music_note, Icons.dns, Icons.link];
+  List<(String, IconData)> get tabs => [(tr('搜索'), _tabIcons[0]), (tr('小说'), _tabIcons[1]), (tr('漫画'), _tabIcons[2]), (tr('视频'), _tabIcons[3]), (tr('音乐'), _tabIcons[4]), (tr('后端'), _tabIcons[5]), (tr('资源库'), _tabIcons[6])];
   void snap() { final w = MediaQuery.of(context).size.width;
     setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
   @override
@@ -333,7 +344,7 @@ class _Pf extends State<ProfilePage> {
   @override void initState() { super.initState(); load(); AppSettings.loadFromBackend().then((_) => setState(() {})); }
   Future<void> load() async { final p = await SharedPreferences.getInstance();
     int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
-    setState(() => stats = { '书架': count('shelf_novel'), '漫画': count('shelf_comic'), '片库': count('shelf_video'), '歌单': count('playlist') }); }
+    setState(() => stats = { tr('书架'): count('shelf_novel'), tr('漫画'): count('shelf_comic'), '片库': count('shelf_video'), tr('歌单'): count('playlist') }); }
 
   // ── 头像(网页版: 选择头像→压缩→更新) ──
   Future<void> pickAvatar() async {
@@ -349,7 +360,7 @@ class _Pf extends State<ProfilePage> {
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, assets[i]),
           child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text(tr('取消')))]));
     if (picked == null) return;
     try {
       final file = await picked.file; if (file == null) return;
@@ -372,7 +383,7 @@ class _Pf extends State<ProfilePage> {
     final avatar = AppSettings.avatarB64;
     final nameC = TextEditingController(text: AppSettings.nickname);
     final bioC = TextEditingController(text: AppSettings.bio);
-    return Scaffold(appBar: AppBar(title: const Text('我的')), body: ListView(padding: const EdgeInsets.all(12), children: [
+    return Scaffold(appBar: AppBar(title: const Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(12), children: [
       // ═══ ① 个人资料(网页版: 头像/昵称/简介/身份码) ═══
       Row(children: [
         GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 32,
@@ -380,15 +391,15 @@ class _Pf extends State<ProfilePage> {
           child: avatar.isEmpty ? Text(AppSettings.nickname.isEmpty ? 'T' : AppSettings.nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22)) : null)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: nameC, decoration: const InputDecoration(hintText: '昵称', isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          TextField(controller: nameC, decoration: const InputDecoration(hintText: tr('昵称'), isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             onSubmitted: (v) async { final p = await SharedPreferences.getInstance(); await p.setString('nickname', v.trim()); await AppSettings.sync(); }),
           GestureDetector(onTap: () async {
             final r = await showDialog<String>(context: c, builder: (c2) {
               final cc = TextEditingController(text: AppSettings.bio);
-              return AlertDialog(title: const Text('简介'), content: TextField(controller: cc, maxLines: 2, decoration: const InputDecoration(hintText: '这个人很懒，什么都没写')),
-                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text('保存'))]); });
+              return AlertDialog(title: const Text(tr('简介')), content: TextField(controller: cc, maxLines: 2, decoration: const InputDecoration(hintText: tr('这个人很懒，什么都没写'))),
+                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text(tr('取消'))), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text(tr('保存')))]); });
             if (r != null) { await AppSettings.setBio(r); setState(() {}); } },
-            child: Text(AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio, style: const TextStyle(fontSize: 12, color: Colors.grey))),
+            child: Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio, style: const TextStyle(fontSize: 12, color: Colors.grey))),
         ])),
       ]),
       const SizedBox(height: 6),
@@ -405,56 +416,64 @@ class _Pf extends State<ProfilePage> {
 
       // ═══ ② 外观(网页版: 主题外观/强调色/开屏动画) ═══
       section('个性化', [
-        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: const Text('主题外观', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.language, size: 20), title: const Text('语言', style: TextStyle(fontSize: 13)),
+          subtitle: Text(I18n.names[AppSettings.locale] ?? '中文', style: const TextStyle(fontSize: 10)),
+          onTap: () async {
+            final l = await showDialog<String>(context: c, builder: (c2) => SimpleDialog(title: const Text('语言 / Language'),
+              children: [ for (final lc in I18n.supported) SimpleDialogOption(onPressed: () => Navigator.pop(c2, lc),
+                child: Row(children: [ if (lc == AppSettings.locale) const Icon(Icons.check, size: 16, color: Colors.blueAccent),
+                  Text(I18n.names[lc] ?? lc) ])) ]));
+            if (l != null) { await AppSettings.setLocale(l); setState(() {}); } }),
+        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: const Text(tr('主题外观'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: const [ButtonSegment(value: 'system', label: Text('跟随系统', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text('深色', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text('浅色', style: TextStyle(fontSize: 10)))],
+            segments: const [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
-        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: const Text('强调色', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: const Text(tr('强调色'), style: TextStyle(fontSize: 13)),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF5B9BFF, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
             GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
               child: Container(width: 22, height: 22, margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(
                 color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: const Text('开屏动画', style: TextStyle(fontSize: 13)),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: const Text(tr('开屏动画'), style: TextStyle(fontSize: 13)),
           value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
       ]),
 
       // ═══ ③ 导航(网页版: 手表端导航栏位置→悬浮球默认侧) ═══
       section('导航', [
-        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: const Text('悬浮球默认位置', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: const Text(tr('悬浮球默认位置'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: const [ButtonSegment(value: 'left', label: Text('左侧', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text('右侧', style: TextStyle(fontSize: 10)))],
+            segments: const [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
       ]),
 
       // ═══ ④ 系统(网页版: 连接器管理/贤者模式/清理缓存/版本) ═══
       section('系统', [
-        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: const Text('连接器管理', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: const Text(tr('连接器管理'), style: TextStyle(fontSize: 13)),
           subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 10)), onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EnginesPage()))),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: const Text('贤者模式（内容保护）', style: TextStyle(fontSize: 13)),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: const Text(tr('贤者模式（内容保护）'), style: TextStyle(fontSize: 13)),
           subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 10)),
           value: (SharedPreferences.getInstance().then((p) => p.getString('app_pin') ?? '')).toString().isNotEmpty && false,
           onChanged: (_) => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
-        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text('清理缓存', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text(tr('清理缓存'), style: TextStyle(fontSize: 13)),
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
-        const ListTile(dense: true, leading: Icon(Icons.system_update_alt, size: 20), title: Text('版本与更新', style: TextStyle(fontSize: 13)),
+        const ListTile(dense: true, leading: Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: TextStyle(fontSize: 13)),
           subtitle: Text('v4.0.0-m2 · 自动检查已开启', style: TextStyle(fontSize: 10))),
       ]),
 
       // ═══ ⑤ 云端(网页版: 云存储用量/会员) — 会员冻结占位 ═══
       section('云端', [
-        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: const Text('云存储', style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: const Text(tr('云存储'), style: TextStyle(fontSize: 13)),
           subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB(头像限0.5MB) · 进度存自己后端不占配额', style: const TextStyle(fontSize: 10)),
           trailing: const Icon(Icons.refresh, size: 18)),
-        const ListTile(dense: true, leading: Icon(Icons.workspace_premium_outlined, size: 20), title: Text('会员等级', style: TextStyle(fontSize: 13)),
+        const ListTile(dense: true, leading: Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: TextStyle(fontSize: 13)),
           subtitle: Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 10)), enabled: false),
       ]),
 
       // ═══ ⑥ 关于(网页版: 使用指南/开源致谢) ═══
       section('关于', [
-        const ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 20), title: Text('使用指南', style: TextStyle(fontSize: 13)), enabled: false),
-        const ListTile(dense: true, leading: Icon(Icons.favorite_border, size: 20), title: Text('开源致谢', style: TextStyle(fontSize: 13)),
+        const ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: TextStyle(fontSize: 13)), enabled: false),
+        const ListTile(dense: true, leading: Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: TextStyle(fontSize: 13)),
           subtitle: Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 10))),
       ]),
       const SizedBox(height: 16),
@@ -476,7 +495,7 @@ class _Nd extends State<NetDiskPage> {
         ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) => setState(() => loading = false)))
         ..loadRequest(Uri.parse('http://$host:5212'));
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('网盘')),
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text(tr('网盘'))),
     body: err != null ? Center(child: Text(err!))
       : Stack(children: [ if (ctrl != null) WebViewWidget(controller: ctrl!), if (loading) const Center(child: CircularProgressIndicator()) ])); }
 
@@ -490,7 +509,7 @@ class _Eng extends State<EnginesPage> {
     setState(() { builtin = (r['data']?['builtin'] as List? ?? []); network = (r['data']?['network'] as List? ?? []);
       meta = Map<String, int>.from(r['meta'] ?? {}); loading = false; }); } catch (_) { setState(() => loading = false); } }
   Color statusColor(String s) => s == 'online' ? Colors.blue : s == 'standby' ? Colors.orange : Colors.red;
-  String statusText(String s) => s == 'online' ? '在线' : s == 'standby' ? '待机' : s == 'error' ? '故障' : '离线';
+  String statusText(String s) => s == 'online' ? tr('在线') : s == 'standby' ? tr('待机') : s == 'error' ? tr('故障') : tr('离线');
   Widget engineCard(Map e) => Card(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), child: Padding(
     padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [
@@ -524,7 +543,7 @@ class _Eng extends State<EnginesPage> {
         '内置引擎 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络引擎 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
         style: const TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
-      if (network.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text('网络引擎(局域网设备)', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      if (network.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in network) engineCard(Map<String, dynamic>.from(e)),
       if (network.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('暂无网络引擎
 改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
@@ -545,7 +564,7 @@ class _Tools extends State<ToolsSection> {
   Future<void> addTask() async { final u = urlC.text.trim(); if (u.isEmpty) return;
     try { final r = await http.post(Uri.parse('${Api.base}/v1/download/add'),
       headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'}, body: jsonEncode({'url': u}));
-      setState(() { msg = r.statusCode == 200 ? '已添加下载' : '添加失败 ${r.statusCode}'; urlC.clear(); });
+      setState(() { msg = r.statusCode == 200 ? tr('已添加下载') : '添加失败 ${r.statusCode}'; urlC.clear(); });
       loadTasks();
     } catch (e) { setState(() => msg = '错误: $e'); } }
   Widget statusRow(String name, String state, int port, [VoidCallback? onOpen]) => Row(children: [
@@ -558,7 +577,7 @@ class _Tools extends State<ToolsSection> {
   ]);
   @override Widget build(BuildContext c) => ListView(padding: const EdgeInsets.all(12), children: [
     Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('存储服务', style: TextStyle(fontWeight: FontWeight.bold)),
+      const Text(tr('存储服务'), style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
       if (st != null) ...[
         statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212, () => Navigator.push(c, MaterialPageRoute(builder: (_) => NetDiskPage(baseUrl: Api.base)))),
@@ -584,7 +603,7 @@ class _Tools extends State<ToolsSection> {
         LinearProgressIndicator(value: ((t['progress'] ?? 0) as int) / 100, minHeight: 3),
         if ((t['speed'] ?? '') != '' && t['speed'] != '0') Text('${t['speed']} B/s', style: const TextStyle(fontSize: 10, color: Colors.grey)),
       ])),
-      if (active.isEmpty && waiting.isEmpty) const Text('暂无任务', style: TextStyle(fontSize: 12, color: Colors.grey)),
+      if (active.isEmpty && waiting.isEmpty) const Text(tr('暂无任务'), style: TextStyle(fontSize: 12, color: Colors.grey)),
     ]))),
     const AlbumSyncCard(),
     const KeyVaultCard(),
@@ -647,7 +666,7 @@ class _Asc extends State<AlbumSyncCard> {
           onTap: () => Navigator.pop(c, [assets[i]]),
           child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
         ))),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(c, assets), child: const Text('全选上传'))]));
     if (picked == null || picked.isEmpty) return;
     setState(() { uploading = picked.length; msg = null; });
@@ -670,7 +689,7 @@ class _Asc extends State<AlbumSyncCard> {
   Future<void> removePhoto(Map p) async { await Api.get('/v1/album/delete?id=${p['id']}'); loadSynced(); }
   @override Widget build(BuildContext c) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [ const Text('相册同步', style: TextStyle(fontWeight: FontWeight.bold)), const Spacer(),
-      TextButton.icon(onPressed: loading ? null : pickAndUpload, icon: const Icon(Icons.cloud_upload, size: 18), label: Text(uploading > 0 ? '上传中$uploading…' : '选照片同步')) ]),
+      TextButton.icon(onPressed: loading ? null : pickAndUpload, icon: const Icon(Icons.cloud_upload, size: 18), label: Text(uploading > 0 ? '上传中$uploading…' : tr('选照片同步'))) ]),
     if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
     const SizedBox(height: 8),
     Text('已同步 ${synced.length} 张(点右上角管理删除)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
@@ -692,7 +711,7 @@ class SearchSection extends StatefulWidget { const SearchSection({super.key}); @
 class _Home extends State<SearchSection> {
   final ctrl = TextEditingController(); Map<String, dynamic>? agg; bool loading = false;
   int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
-  static const typeNames = ['全部', '小说', '漫画', '视频', '音乐'];
+  static const typeNames = [tr('全部'), tr('小说'), tr('漫画'), tr('视频'), tr('音乐')];
   static const typeKeys = ['', 'novel', 'comic', 'video', 'music'];
   Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
     setState(() { loading = true; agg = null; });
@@ -726,7 +745,7 @@ class _Home extends State<SearchSection> {
       const SizedBox(width: 8),
       FilledButton(onPressed: loading ? null : go, child: loading
         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-        : const Text('搜索'))])),
+        : const Text(tr('搜索')))])),
     if (loading) const LinearProgressIndicator(),
     if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
       child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
@@ -779,7 +798,7 @@ class _Home extends State<SearchSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: ''),
       const SourceManagerPage(kind: 'book')][sub]),
@@ -853,7 +872,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       if (remote != null) lastRead = remote['index'] ?? lastRead; } catch (_) {}
     setState(() => loading = false); }
   Future<void> save() async { await Book.add(widget.book, 'novel');
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入书架'))); }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => NovelReadPage(
     sourceId: widget.book.sourceId, chapters: chapters, index: i, bookName: widget.book.name, bookUrl: widget.book.bookUrl))).then((_) => load());
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.book.name), actions: [
@@ -861,7 +880,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       Text('  ${chapters.length}章  ', style: const TextStyle(color: Colors.grey))]),
     body: loading ? const Center(child: CircularProgressIndicator()) : Column(children: [
       if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
-        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text('继续阅读')),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text(tr('继续阅读'))),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
       Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
         title: Text(chapters[i]['name'] ?? ''), trailing: i == lastRead ? const Icon(Icons.history, size: 16, color: Colors.blueAccent) : null,
@@ -922,8 +941,8 @@ class _NR extends State<NovelReadPage> {
               child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
               child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一章')),
-          TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一章'), icon: const Icon(Icons.chevron_right)),
+          TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一章'))),
+          TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
 }
 
@@ -931,7 +950,7 @@ class _NR extends State<NovelReadPage> {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
       const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画', style: TextStyle(color: Colors.grey)))),
@@ -980,7 +999,7 @@ class _Cd extends State<ComicDetailPage> {
     } catch (e) { err = '$e'; }
     setState(() => loading = false); }
   Future<void> save() async { await Book.add(Book(widget.title, (info?['tags'] ?? []).join('/'), info?['coverUrl'] ?? '', info?['description'] ?? '', widget.comicId, widget.sourceId), 'comic');
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入书架'))); }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
     sourceId: widget.sourceId, comicId: widget.comicId, chapters: chapters, index: i))).then((_) => load());
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title), actions: [
@@ -990,7 +1009,7 @@ class _Cd extends State<ComicDetailPage> {
     : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
     : Column(children: [
       if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['title']}'),
-        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text('继续阅读')),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text(tr('继续阅读'))),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
       Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
         title: Text(chapters[i]['title'] ?? ''), subtitle: (chapters[i]['time'] ?? '') != '' ? Text(chapters[i]['time'], style: const TextStyle(fontSize: 11, color: Colors.grey)) : null,
@@ -1035,18 +1054,18 @@ class _Cr extends State<ComicReaderPage> {
               loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
               errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey))))))),
       SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一话')),
-        TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一话'), icon: const Icon(Icons.chevron_right)),
+        TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一话'))),
+        TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text(tr('下一话')), icon: const Icon(Icons.chevron_right)),
       ]))])); }
 
 // ═══ 源管理(四类通用: 列表/启停/删除/粘贴导入) ═══
 class SourceManagerPage extends StatefulWidget { final String kind; const SourceManagerPage({super.key, required this.kind}); @override State<SourceManagerPage> createState() => _SM(); }
 class _SM extends State<SourceManagerPage> {
   static const cfgs = {
-    'book':  (list: '/v1/sources', imp: '/v1/sources', label: '书源', hint: '粘贴书源JSON(单条或数组)'),
-    'video': (list: '/v1/video/sources', imp: '/v1/video/sources', label: '影视源', hint: '粘贴{name, code}JSON'),
-    'comic': (list: '/v1/comic/sources', imp: '/v1/comic/sources', label: '图源', hint: '粘贴{name, code}JSON'),
-    'music': (list: '/v1/music/sources', imp: '/v1/music/sources', label: '音源', hint: '粘贴{name, code}JSON'),
+    'book':  (list: '/v1/sources', imp: '/v1/sources', label: tr('书源'), hint: '粘贴书源JSON(单条或数组)'),
+    'video': (list: '/v1/video/sources', imp: '/v1/video/sources', label: tr('影视源'), hint: '粘贴{name, code}JSON'),
+    'comic': (list: '/v1/comic/sources', imp: '/v1/comic/sources', label: tr('图源'), hint: '粘贴{name, code}JSON'),
+    'music': (list: '/v1/music/sources', imp: '/v1/music/sources', label: tr('音源'), hint: '粘贴{name, code}JSON'),
   };
   List<Map> items = []; bool loading = true; final importC = TextEditingController(); String? msg;
   String get kind => widget.kind;
@@ -1088,7 +1107,7 @@ class _SM extends State<SourceManagerPage> {
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
       Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.$4, border: const OutlineInputBorder(), isDense: true))),
       const SizedBox(width: 8),
-      FilledButton(onPressed: doImport, child: const Text('导入')),
+      FilledButton(onPressed: doImport, child: const Text(tr('导入'))),
     ])),
     if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.blueAccent))),
   ]); }
@@ -1097,7 +1116,7 @@ class _SM extends State<SourceManagerPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('歌单')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [const _MusicPlaylist(),
       const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌', style: TextStyle(color: Colors.grey)))),
@@ -1208,7 +1227,7 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text('源'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage(),
       const SourceManagerPage(kind: 'video')][sub]),
@@ -1338,6 +1357,6 @@ class _Vp extends State<VideoPlayPage> {
             child: ChoiceChip(label: Text(widget.episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 11)),
               selected: i == idx, onSelected: (_) => goEpisode(i))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一集')),
-          TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: const Text('下一集'), icon: const Icon(Icons.chevron_right)),
+          TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一集'))),
+          TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: const Text(tr('下一集')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
