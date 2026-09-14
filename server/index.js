@@ -108,12 +108,22 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
     const pool = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
-    const results = [];
-    for (const s of pool.slice(0, 5)) {
-      try { const books = await engine.search(s, q); results.push({ source: s.bookSourceName, books: books.slice(0, 10) }); }
-      catch (e) { results.push({ source: s.bookSourceName, error: String(e.message||e).slice(0,120) }); }
-    }
-    return send(200, { object:'list', data: results });
+    // 并行搜索(每源独立超时, 全源并发, 不分批)
+    const results = await Promise.all(pool.map(async (s) => {
+      const t0 = Date.now();
+      try {
+        const books = await engine.search(s, q);
+        return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true,
+                 latency: Date.now() - t0, books: books.slice(0, 10) };
+      } catch (e) {
+        return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: false,
+                 latency: Date.now() - t0, error: String(e.message || e).slice(0, 120) };
+      }
+    }));
+    // 成功源排前, 失败的排后但保留可见性
+    results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    return send(200, { object:'list', data: results,
+      meta: { total: results.length, ok: results.filter(r => r.ok).length } });
   }
   if (p.startsWith('/v1/book')) {
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
