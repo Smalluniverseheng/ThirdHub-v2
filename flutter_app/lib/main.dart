@@ -294,44 +294,95 @@ class ThSearchDelegate extends SearchDelegate {
 // 个人中心: 昵称头像(本地)+收藏统计+清理+关于
 class ProfilePage extends StatefulWidget { const ProfilePage({super.key}); @override State<ProfilePage> createState() => _Pf(); }
 class _Pf extends State<ProfilePage> {
-  String nickname = ''; final nameC = TextEditingController(); Map<String, int> stats = {};
-  @override void initState() { super.initState(); load(); }
+  Map<String, int> stats = {};
+  @override void initState() { super.initState(); load(); AppSettings.loadFromBackend().then((_) => setState(() {})); }
   Future<void> load() async { final p = await SharedPreferences.getInstance();
-    nickname = p.getString('nickname') ?? '';
-    try { final r = await Api.get('/v1/settings');
-      final nn = r['data']?['nickname'] as String?;
-      if (nn != null && nn.isNotEmpty) { nickname = nn; await p.setString('nickname', nn); } } catch (_) {}
     int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
     setState(() => stats = { '书架': count('shelf_novel'), '漫画': count('shelf_comic'), '片库': count('shelf_video'), '歌单': count('playlist') }); }
-  Future<void> saveName() async { final p = await SharedPreferences.getInstance();
-    await p.setString('nickname', nameC.text.trim());
-    try { await http.post(Uri.parse('${Api.base}/v1/settings'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
-      body: jsonEncode({'data': {'nickname': nameC.text.trim()}})); } catch (_) {}
-    setState(() { nickname = nameC.text.trim(); }); }
-  Future<void> clearHistory() async { final p = await SharedPreferences.getInstance();
-    for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已清理搜索历史'))); }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('我的')), body: ListView(padding: const EdgeInsets.all(16), children: [
-    Row(children: [
-      CircleAvatar(radius: 30, child: Text(nickname.isEmpty ? 'T' : nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22))),
-      const SizedBox(width: 14),
-      Expanded(child: nickname.isEmpty
-        ? TextField(controller: nameC, decoration: const InputDecoration(hintText: '设置昵称', isDense: true, border: OutlineInputBorder()),
-          onSubmitted: (_) => saveName())
-        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(nickname, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            GestureDetector(onTap: () => setState(() => nickname = ''), child: const Text('点击修改', style: TextStyle(fontSize: 11, color: Colors.grey))) ])),
-    ]),
-    const SizedBox(height: 20),
-    Card(child: Padding(padding: const EdgeInsets.all(12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-      for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
-        Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey)) ]),
-    ]))),
-    ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: const Text('清理搜索历史'), onTap: clearHistory),
-    const ListTile(leading: Icon(Icons.info_outline), title: Text('关于 ThirdHub'),
-      subtitle: Text('v4.0.0-m2 · 纯播放器前端
-数据全在你的资源库, 本App只负责播放')),
-  ]))); }
+
+  // 头像: 选图→压缩到256px JPEG(~30KB, <0.5MB限制)→存本地
+  Future<void> pickAvatar() async {
+    final permitted = await pm.PhotoManager.requestPermissionExtend();
+    if (!permitted.isAuth) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('相册权限被拒'))); return; }
+    final albums = await pm.PhotoManager.getAssetPathList(type: pm.RequestType.image);
+    if (albums.isEmpty) return;
+    final assets = await albums.first.getAssetListPaged(page: 0, size: 30);
+    if (!mounted) return;
+    final picked = await showDialog<pm.AssetEntity>(context: context, builder: (c) => AlertDialog(
+      title: const Text('选择头像'),
+      content: SizedBox(width: 300, height: 300, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
+        itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
+          onTap: () => Navigator.pop(c, assets[i]),
+          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消'))]));
+    if (picked == null) return;
+    try {
+      final file = await picked.file; if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final decoded = img.decodeImage(bytes); if (decoded == null) return;
+      final resized = img.copyResize(decoded, width: 256);
+      final jpg = img.encodeJpg(resized, quality: 85);
+      final b64 = base64Encode(jpg);
+      await AppSettings.setAvatar(b64);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('头像已更新(压缩后 ${(jpg.length / 1024).toStringAsFixed(1)}KB)")));
+      setState(() {});
+    } catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); } }
+
+  @override Widget build(BuildContext c) {
+    final avatar = AppSettings.avatarB64;
+    final nameC = TextEditingController(text: AppSettings.nickname);
+    return Scaffold(appBar: AppBar(title: const Text('我的 · 设置中心')), body: ListView(padding: const EdgeInsets.all(16), children: [
+      // ── 账号区 ──
+      Row(children: [
+        GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 32,
+          backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
+          child: avatar.isEmpty ? Text(AppSettings.nickname.isEmpty ? 'T' : AppSettings.nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22)) : null)),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(controller: nameC, decoration: const InputDecoration(hintText: '昵称', isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            onSubmitted: (v) async { await SharedPreferences.getInstance().then((p) => p.setString('nickname', v.trim())); await AppSettings.sync(); setState(() {}); }),
+          const Text('点头像更换(自动压缩<0.5MB)', style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ])),
+      ]),
+      const SizedBox(height: 16),
+      // ── 收藏统计 ──
+      Card(child: Padding(padding: const EdgeInsets.all(12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
+          Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey)) ]),
+      ]))),
+      // ── 阅读设置 ──
+      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('阅读设置', style: TextStyle(fontSize: 13, color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+      Card(child: Column(children: [
+        ListTile(dense: true, title: const Text('字号', style: TextStyle(fontSize: 13)),
+          subtitle: Slider(value: AppSettings.fontSize, min: 12, max: 32, divisions: 20, label: AppSettings.fontSize.toStringAsFixed(0),
+            onChanged: (v) => setState(() {}), onChangeEnd: (v) => AppSettings.setFontSize(v))),
+        ListTile(dense: true, title: const Text('阅读主题', style: TextStyle(fontSize: 13)),
+          subtitle: Row(children: [ for (var i = 0; i < 3; i++)
+            Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(['夜间', '白天', '护眼'][i], style: const TextStyle(fontSize: 11)),
+              selected: AppSettings.readerTheme == i, onSelected: (_) => AppSettings.setReaderTheme(i).then((_) => setState(() {})))) ])),
+        ListTile(dense: true, title: const Text('翻页模式', style: TextStyle(fontSize: 13)),
+          subtitle: SegmentedButton<String>(segments: const [ButtonSegment(value: 'scroll', label: Text('滚动', style: TextStyle(fontSize: 11))),
+            ButtonSegment(value: 'paged', label: Text('分页(开发中)', style: TextStyle(fontSize: 11)))],
+            selected: {AppSettings.pageMode}, onSelectionChanged: (s) => AppSettings.setPageMode(s.first).then((_) => setState(() {})))),
+      ])),
+      // ── 同步设置 ──
+      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('多端同步', style: TextStyle(fontSize: 13, color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+      Card(child: Column(children: [
+        ListTile(dense: true, leading: const Icon(Icons.cloud_sync, size: 20), title: const Text('云端同步', style: TextStyle(fontSize: 13)),
+          subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB\n头像限0.5MB · 设置共享剩余配额 · CF账号接入后跨设备生效', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          trailing: Switch(value: AppSettings.syncEnabled, onChanged: (v) => setState(() => AppSettings.syncEnabled = v))),
+        const ListTile(dense: true, leading: Icon(Icons.history, size: 20), title: Text('阅读进度', style: TextStyle(fontSize: 13)),
+          subtitle: Text('存于你自己的资源库(不占云配额)', style: TextStyle(fontSize: 11, color: Colors.grey))),
+        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text('清理搜索历史', style: TextStyle(fontSize: 13)),
+          onTap: () async { final p = await SharedPreferences.getInstance();
+            for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已清理'))); }),
+      ])),
+      const SizedBox(height: 12),
+      const Center(child: Text('ThirdHub v4.0.0-m2 · 纯播放器前端\n数据全在你的资源库', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey))),
+    ]));
+  }
+}
 
 // 网盘: 内嵌Cloudreve Web UI(文件管理/上传/分享全功能)
 class NetDiskPage extends StatefulWidget { final String baseUrl; const NetDiskPage({super.key, required this.baseUrl}); @override State<NetDiskPage> createState() => _Nd(); }
