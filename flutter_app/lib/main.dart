@@ -636,12 +636,17 @@ class _Vd extends State<VideoDetailPage> {
         Expanded(child: ListView.builder(itemCount: episodes.length, itemBuilder: (_, i) => ListTile(
           dense: true, title: Text(episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 13)),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
-            sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', flag: episodes[i]['flag'] ?? '', title: episodes[i]['name'] ?? '')))),
+            sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', flag: episodes[i]['flag'] ?? '',
+            title: episodes[i]['name'] ?? '', episodes: episodes, index: i))),
         ))])); }
 
-class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, flag, title; const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.flag, required this.title}); @override State<VideoPlayPage> createState() => _Vp(); }
+class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, flag, title; final List episodes; final int index;
+  const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.flag, required this.title, this.episodes = const [], this.index = 0});
+  @override State<VideoPlayPage> createState() => _Vp(); }
 class _Vp extends State<VideoPlayPage> {
   VideoPlayerController? _vc; ChewieController? _cc; bool loading = true; String? err;
+  int get idx => widget.index;
+  bool get hasPrev => idx > 0; bool get hasNext => idx < widget.episodes.length - 1;
   @override void initState() { super.initState(); initPlayer(); }
   Future<void> initPlayer() async {
     try {
@@ -656,7 +661,21 @@ class _Vp extends State<VideoPlayPage> {
       setState(() => loading = false);
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
   @override void dispose() { _cc?.dispose(); _vc?.dispose(); super.dispose(); }
+  void goEpisode(int i) { final ep = widget.episodes[i];
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoPlayPage(
+      sourceId: widget.sourceId, epUrl: ep['url'] ?? '', flag: ep['flag'] ?? '', title: ep['name'] ?? '',
+      episodes: widget.episodes, index: i))); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title)),
     body: err != null ? Center(child: Text('播放错误: $err', style: const TextStyle(color: Colors.red)))
       : loading ? const Center(child: CircularProgressIndicator())
-      : Center(child: AspectRatio(aspectRatio: _cc!.aspectRatio ?? 16 / 9, child: Chewie(controller: _cc!)))); }
+      : Column(children: [
+        AspectRatio(aspectRatio: _cc!.aspectRatio ?? 16 / 9, child: Chewie(controller: _cc!)),
+        if (widget.episodes.isNotEmpty) SizedBox(height: 56, child: ListView.builder(
+          scrollDirection: Axis.horizontal, itemCount: widget.episodes.length,
+          itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: ChoiceChip(label: Text(widget.episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 11)),
+              selected: i == idx, onSelected: (_) => goEpisode(i))))),
+        SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一集')),
+          TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: const Text('下一集'), icon: const Icon(Icons.chevron_right)),
+        ]))])); }
