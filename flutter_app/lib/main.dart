@@ -314,7 +314,13 @@ class _NR extends State<NovelReadPage> {
           ? ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 2),
               child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
                 errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))
-          : Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+          : GestureDetector(
+              onHorizontalDragEnd: (d) {
+                final v = d.primaryVelocity ?? 0;
+                if (v < -300 && hasNext) goChapter(idx + 1);        // 左滑下一章
+                else if (v > 300 && hasPrev) goChapter(idx - 1);    // 右滑上一章
+              },
+              child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
               child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一章')),
