@@ -82,10 +82,11 @@ function irDetail(result) {
   for (const line of String(playUrl).split('$$$')) {
     const parts = line.split('$');
     const lineName = parts.length > 2 ? parts[0] : '';
+    const flag = lineName; // drpy play(flag, id) 的线路参数
     const eps = (parts.length > 2 ? parts.slice(1).join('$') : line).split('#');
     for (const ep of eps) {
       const si = ep.lastIndexOf('$');
-      if (si > 0) episodes.push({ name: (lineName ? lineName + '·' : '') + ep.slice(0, si), url: ep.slice(si + 1) });
+      if (si > 0) episodes.push({ name: (lineName ? lineName + '·' : '') + ep.slice(0, si), url: ep.slice(si + 1), flag });
     }
   }
   return { id: v.vod_id, name: v.vod_name, coverUrl: v.vod_pic,
