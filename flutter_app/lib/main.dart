@@ -385,14 +385,25 @@ class ComicReaderPage extends StatefulWidget { final String sourceId, comicId; f
   @override State<ComicReaderPage> createState() => _Cr(); }
 class _Cr extends State<ComicReaderPage> {
   List<String> images = []; bool loading = true; String? err; int get idx => widget.index;
+  final Map<int, List<String>> pageCache = {}; // 预加载缓存: 话index → 图片URL列表
   bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
   @override void initState() { super.initState(); load(); }
-  Future<void> load() async { setState(() { loading = true; err = null; images = []; }); try {
-      final ch = widget.chapters[idx];
+  Future<void> preload(int i) async { if (i < 0 || i >= widget.chapters.length || pageCache.containsKey(i)) return;
+    try { final ch = widget.chapters[i];
       final r = await Api.get('/v1/comic/pages?sourceId=${Uri.encodeComponent(widget.sourceId)}&chapterId=${Uri.encodeComponent(ch['id'] ?? '')}');
-      if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
-      else { images = List<String>.from(r['data']?['images'] ?? []); }
+      if (r['object'] != 'error') pageCache[i] = List<String>.from(r['data']?['images'] ?? []);
+    } catch (_) {} }
+  Future<void> load() async { setState(() { loading = true; err = null; images = []; }); try {
+      if (pageCache.containsKey(idx)) { images = pageCache[idx]!; }
+      else {
+        final ch = widget.chapters[idx];
+        final r = await Api.get('/v1/comic/pages?sourceId=${Uri.encodeComponent(widget.sourceId)}&chapterId=${Uri.encodeComponent(ch['id'] ?? '')}');
+        if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
+        else { images = List<String>.from(r['data']?['images'] ?? []); pageCache[idx] = images; }
+      }
       final p = await SharedPreferences.getInstance(); await p.setInt('cprog_${widget.comicId}', idx);
+      // 预加载下一话和上一话(翻话秒开)
+      preload(idx + 1); preload(idx - 1);
     } catch (e) { err = '$e'; }
     setState(() => loading = false); }
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
