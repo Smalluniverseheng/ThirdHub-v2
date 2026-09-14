@@ -289,11 +289,22 @@ async function content(source, chapterUrl) {
     });
     text = best;
   }
+  // 图片章节检测: 内容含 img → 返回 images 数组(前端Gallery渲染)
+  const htmlStr = String(text);
+  if (/<img[\s>]/i.test(htmlStr)) {
+    const $c = cheerio.load('<div>' + htmlStr + '</div>');
+    const imgs = [];
+    $c('img').each((i, el) => {
+      const s = $c(el).attr('src') || $c(el).attr('data-src');
+      if (s && !/loading|blank| spacer/i.test(s)) imgs.push(absUrl(s, url));
+    });
+    if (imgs.length >= 1) return { text: '', images: imgs, chapterUrl: url };
+  }
   // HTML→分段纯文本
-  const paras = cheerio.load('<div>' + String(text) + '</div>')('div')
+  const paras = cheerio.load('<div>' + htmlStr + '</div>')('div')
     .find('p,br').length
-    ? cheerio.load('<div>' + String(text) + '</div>')('div').find('p').map((i, el) => cheerio.load(el).text().trim()).get().filter(Boolean)
-    : String(text).split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
+    ? cheerio.load('<div>' + htmlStr + '</div>')('div').find('p').map((i, el) => cheerio.load(el).text().trim()).get().filter(Boolean)
+    : htmlStr.split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
   return { text: paras.join('\n\n'), paragraphs: paras.length, chapterUrl: url };
 }
 
