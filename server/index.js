@@ -134,7 +134,7 @@ async function handle(req, res, body) {
     const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
       const t0 = Date.now();
       const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
-      return { source: s.name, ok: !r.error, latency: Date.now() - t0, ...(r.error ? { error: r.error } : { items: r.items }) };
+      return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0, ...(r.error ? { error: r.error } : { items: r.items }) };
     }));
     results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
     return send(200, { object:'list', data: results });
