@@ -48,6 +48,15 @@ try {
 // ─── 极简静态(前端flutter build web产物可选挂载) ───
 const PUB = path.join(__dirname, 'public');
 
+// ─── TOC缓存+书源健康分 ───
+const tocCache = new Map(); // key: sourceId|url → {at, data}
+const health = new Map();   // sourceId → {ok, fail, totalLatency}
+function tocGet(k) { const e = tocCache.get(k); if (e && Date.now() - e.at < 600000) return e.data; return null; }
+function healthHit(id, ok, latency) {
+  const h = health.get(id) || { ok: 0, fail: 0, latency: 0 };
+  ok ? h.ok++ : h.fail++; h.latency += latency || 0; health.set(id, h);
+}
+
 // ─── API ───
 async function handle(req, res, body) {
   const u = new URL(req.url, 'https://localhost');
@@ -102,6 +111,7 @@ async function handle(req, res, body) {
   if (p === '/v1/status') return send(200, { object:'meta', data: {
     uptime: Math.floor(process.uptime()), version: '4.0.0-m1',
     sources: { total: sources.length, enabled: sources.filter(s => s.enabled !== false).length },
+    health: Object.fromEntries([...health.entries()].map(([k, v]) => [k, { ...v, rate: v.ok + v.fail ? Math.round(v.ok / (v.ok + v.fail) * 100) + '%' : '-' }])),
     memory: Math.round(process.memoryUsage().rss / 1048576) + 'MB' }});
   if (p === '/v1/sources' && req.method === 'GET') return send(200, { object:'list', data: sources.map(s => ({ id: s.bookSourceUrl, name: s.bookSourceName, enabled: s.enabled !== false })) });
   if (p.startsWith('/v1/sources/toggle') && req.method === 'POST') {
@@ -160,8 +170,16 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/toc')) {
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
-    try { return send(200, { object:'list', data: await engine.catalog(s, u.searchParams.get('url')) }); }
-    catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
+    const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
+    const cached = tocGet(ck); if (cached) return send(200, { object:'list', data: cached, meta: { cached: true }});
+    const t0 = Date.now();
+    try {
+      const data = await engine.catalog(s, u.searchParams.get('url'));
+      tocCache.set(ck, { at: Date.now(), data });
+      healthHit(s.bookSourceUrl, true, Date.now() - t0);
+      return send(200, { object:'list', data });
+    } catch (e) { healthHit(s.bookSourceUrl, false, Date.now() - t0);
+      return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
   }
   if (p.startsWith('/v1/content')) {
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
