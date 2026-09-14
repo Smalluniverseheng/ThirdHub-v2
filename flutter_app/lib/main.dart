@@ -186,9 +186,10 @@ class _Home extends State<HomeSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: sub == 0 ? ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)) : const NovelSearchResults(query: '')),
+    Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: ''),
+      const SourceManagerPage(kind: 'book')][sub]),
   ]); }
 
 class NovelSearchResults extends StatefulWidget { final String query; const NovelSearchResults({super.key, required this.query}); @override State<NovelSearchResults> createState() => _NSR(); }
@@ -300,11 +301,11 @@ class _NR extends State<NovelReadPage> {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: sub == 0
-      ? ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name))
-      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画\n图源导入: POST /v1/comic/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
+    Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
+      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画', style: TextStyle(color: Colors.grey)))),
+      const SourceManagerPage(kind: 'comic')][sub]),
   ]); }
 
 class ComicSearchResults extends StatefulWidget { final String query; const ComicSearchResults({super.key, required this.query}); @override State<ComicSearchResults> createState() => _CSR(); }
@@ -397,15 +398,69 @@ class _Cr extends State<ComicReaderPage> {
         TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一话'), icon: const Icon(Icons.chevron_right)),
       ]))])); }
 
+// ═══ 源管理(四类通用: 列表/启停/删除/粘贴导入) ═══
+class SourceManagerPage extends StatefulWidget { final String kind; const SourceManagerPage({super.key, required this.kind}); @override State<SourceManagerPage> createState() => _SM(); }
+class _SM extends State<SourceManagerPage> {
+  static const cfgs = {
+    'book':  (list: '/v1/sources', imp: '/v1/sources', label: '书源', hint: '粘贴书源JSON(单条或数组)'),
+    'video': (list: '/v1/video/sources', imp: '/v1/video/sources', label: '影视源', hint: '粘贴{name, code}JSON'),
+    'comic': (list: '/v1/comic/sources', imp: '/v1/comic/sources', label: '图源', hint: '粘贴{name, code}JSON'),
+    'music': (list: '/v1/music/sources', imp: '/v1/music/sources', label: '音源', hint: '粘贴{name, code}JSON'),
+  };
+  List<Map> items = []; bool loading = true; final importC = TextEditingController(); String? msg;
+  String get kind => widget.kind;
+  (String, String, String, String) get cfg => cfgs[kind]!;
+  Future<void> load() async { try {
+      final r = await Api.get(cfg.$1);
+      items = (r['data'] as List? ?? []).cast<Map>();
+    } catch (e) {}
+    setState(() => loading = false); }
+  @override void initState() { super.initState(); load(); }
+  Future<void> toggle(Map s) async { await Api.get('/v1/src/$kind/toggle?id=${Uri.encodeComponent(s['id'] ?? '')}'); load(); }
+  Future<void> remove(Map s) async { await Api.get('/v1/src/$kind/delete?id=${Uri.encodeComponent(s['id'] ?? '')}'); load(); }
+  Future<void> doImport() async { final t = importC.text.trim(); if (t.isEmpty) return;
+    setState(() => msg = '导入中…');
+    try {
+      http.Response r;
+      if (t.startsWith('http')) {
+        r = await http.post(Uri.parse('${Api.base}${cfg.$2}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+          body: jsonEncode(t.endsWith('.json') && kind == 'book' ? jsonDecode(await (await Api.client().get(Uri.parse(t))).body) : {'name': t.split('/').last, 'code': t}));
+      } else {
+        final j = jsonDecode(t);
+        r = await http.post(Uri.parse('${Api.base}${cfg.$2}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+          body: jsonEncode(kind == 'book' ? j : (j is Map ? j : {'name': '导入源', 'code': t})));
+      }
+      setState(() { msg = r.statusCode == 200 ? '导入成功' : '失败: ${r.statusCode}'; importC.clear(); });
+      load();
+    } catch (e) { setState(() => msg = '导入失败: $e'); } }
+  @override Widget build(BuildContext c) => Column(children: [
+    if (loading) const LinearProgressIndicator() else Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Align(alignment: Alignment.centerLeft,
+      child: Text('${cfg.$3} ${items.length} 个 (批量导入用命令行脚本)', style: const TextStyle(fontSize: 12, color: Colors.grey)))),
+    Expanded(child: ListView(children: [
+      for (final s in items) SwitchListTile(
+        title: Text(s['name'] ?? '', style: TextStyle(color: s['enabled'] == false ? Colors.grey : null)),
+        value: s['enabled'] != false, onChanged: (_) => toggle(s),
+        secondary: IconButton(icon: const Icon(Icons.delete_outline, size: 20), onPressed: () => remove(s)),
+      ),
+    ])),
+    const Divider(height: 1),
+    Padding(padding: const EdgeInsets.all(8), child: Row(children: [
+      Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.$4, border: const OutlineInputBorder(), isDense: true))),
+      const SizedBox(width: 8),
+      FilledButton(onPressed: doImport, child: const Text('导入')),
+    ])),
+    if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.tealAccent))),
+  ]); }
+
 // ═══ 板块四: 音乐播放器 ═══
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('歌单')), ButtonSegment(value: 1, label: Text('搜索'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('歌单')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: sub == 0
-      ? const _MusicPlaylist()
-      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌\n音源导入: POST /v1/music/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
+    Expanded(child: [const _MusicPlaylist(),
+      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌', style: TextStyle(color: Colors.grey)))),
+      const SourceManagerPage(kind: 'music')][sub]),
   ]); }
 
 class _MusicPlaylist extends StatefulWidget { const _MusicPlaylist(); @override State<_MusicPlaylist> createState() => _MpList(); }
@@ -512,11 +567,11 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('搜索'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: sub == 0
-      ? const ShelfPage(kind: 'video', builder: _videoDetail)
-      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找片\n源导入: POST /v1/video/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
+    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail),
+      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找片', style: TextStyle(color: Colors.grey)))),
+      const SourceManagerPage(kind: 'video')][sub]),
   ]); }
 Widget _videoDetail(Book b) => VideoDetailPage(sourceId: b.sourceId, vodId: b.bookUrl, title: b.name);
 
