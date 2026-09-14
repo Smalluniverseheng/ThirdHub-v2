@@ -147,3 +147,7 @@ node scripts/import-comic.js                # 默认前30个
 | iter11 | 音乐板块前端(搜索/歌单/播放页just_audio+歌词) |
 | iter12 | 聚合搜索四元(书漫影音) |
 | iter13 | import-music.js+正文缓存30分钟 |
+
+| iter14 | 搜索限流并发池(max3防封IP)+detail缓存5分钟 |
+| iter15 | 源管理页(四类板块"源"选项卡: 列表/启停/删除/粘贴导入) |
+| iter16 | 搜索历史补回(m2重构丢失修复) |
