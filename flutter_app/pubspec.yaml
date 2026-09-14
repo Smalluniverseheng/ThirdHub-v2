@@ -1,7 +1,7 @@
 name: thirdhub_app
-description: ThirdHub v4 Flutter M1
+description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.0.0-m1
+version: 4.0.0-m2
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   http: ^1.2.0
   shared_preferences: ^2.2.2
+  video_player: ^2.9.1
+  chewie: ^1.8.5
 
 dev_dependencies:
   flutter_test:
