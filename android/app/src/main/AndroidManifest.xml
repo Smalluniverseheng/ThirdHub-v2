@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <application android:label="ThirdHub 后端" android:icon="@drawable/ic_launcher"
+    <application android:label="第三方聚合" android:icon="@drawable/ic_launcher"
         android:name=".BackendApp" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar">
