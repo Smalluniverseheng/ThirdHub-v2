@@ -457,7 +457,7 @@ class _Pf extends State<ProfilePage> {
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
-        const ListTile(dense: true, leading: Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: TextStyle(fontSize: 13)),
           subtitle: Text('v4.0.0-m2 · 自动检查已开启', style: TextStyle(fontSize: 10))),
       ]),
 
@@ -466,14 +466,14 @@ class _Pf extends State<ProfilePage> {
         ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: Text(tr('云存储'), style: TextStyle(fontSize: 13)),
           subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB(头像限0.5MB) · 进度存自己后端不占配额', style: const TextStyle(fontSize: 10)),
           trailing: const Icon(Icons.refresh, size: 18)),
-        const ListTile(dense: true, leading: Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: TextStyle(fontSize: 13)),
           subtitle: Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 10)), enabled: false),
       ]),
 
       // ═══ ⑥ 关于(网页版: 使用指南/开源致谢) ═══
       section('关于', [
-        const ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: TextStyle(fontSize: 13)), enabled: false),
-        const ListTile(dense: true, leading: Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: TextStyle(fontSize: 13)), enabled: false),
+        ListTile(dense: true, leading: const Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: TextStyle(fontSize: 13)),
           subtitle: Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 10))),
       ]),
       const SizedBox(height: 16),
@@ -543,7 +543,7 @@ class _Eng extends State<EnginesPage> {
         '内置引擎 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络引擎 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
         style: const TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
-      if (network.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
+      if (network.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in network) engineCard(Map<String, dynamic>.from(e)),
       if (network.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('暂无网络引擎
 改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
@@ -872,7 +872,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       if (remote != null) lastRead = remote['index'] ?? lastRead; } catch (_) {}
     setState(() => loading = false); }
   Future<void> save() async { await Book.add(widget.book, 'novel');
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(tr('已加入书架')))); }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => NovelReadPage(
     sourceId: widget.book.sourceId, chapters: chapters, index: i, bookName: widget.book.name, bookUrl: widget.book.bookUrl))).then((_) => load());
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.book.name), actions: [
@@ -999,7 +999,7 @@ class _Cd extends State<ComicDetailPage> {
     } catch (e) { err = '$e'; }
     setState(() => loading = false); }
   Future<void> save() async { await Book.add(Book(widget.title, (info?['tags'] ?? []).join('/'), info?['coverUrl'] ?? '', info?['description'] ?? '', widget.comicId, widget.sourceId), 'comic');
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(tr('已加入书架')))); }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
     sourceId: widget.sourceId, comicId: widget.comicId, chapters: chapters, index: i))).then((_) => load());
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title), actions: [
