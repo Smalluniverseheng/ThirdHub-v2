@@ -194,17 +194,30 @@ class _Nv extends State<NovelSection> { int sub = 0;
 
 class NovelSearchResults extends StatefulWidget { final String query; const NovelSearchResults({super.key, required this.query}); @override State<NovelSearchResults> createState() => _NSR(); }
 class _NSR extends State<NovelSearchResults> {
-  List<Map> groups = []; bool loading = false; String lastQ = '';
+  List<Map> groups = []; bool loading = false; String lastQ = ''; List<String> history = [];
   Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
+    final p = await SharedPreferences.getInstance();
+    history.remove(q); history.insert(0, q); history = history.take(10).toList();
+    await p.setStringList('sh_novel', history);
     setState(() { loading = true; groups = []; });
     try { final r = await Api.get('/v1/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
     catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
     setState(() => loading = false); }
-  @override void initState() { super.initState(); if (widget.query.isNotEmpty) go(widget.query); }
+  Future<void> loadHistory() async { final p = await SharedPreferences.getInstance();
+    history = p.getStringList('sh_novel') ?? []; if (mounted) setState(() {}); }
+  @override void initState() { super.initState(); loadHistory(); if (widget.query.isNotEmpty) go(widget.query); }
   @override void didUpdateWidget(NovelSearchResults old) { super.didUpdateWidget(old); if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query); }
   @override Widget build(BuildContext c) => Column(children: [
     if (loading) const LinearProgressIndicator(),
     Expanded(child: ListView(children: [
+      if (widget.query.isEmpty && history.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Wrap(spacing: 8, runSpacing: 4, children: [
+          for (final h in history) ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)),
+            onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(1)..query = h)),
+          GestureDetector(onTap: () async { final p = await SharedPreferences.getInstance();
+            await p.remove('sh_novel'); setState(() => history = []); },
+            child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.clear_all, size: 18, color: Colors.grey))),
+        ])),
       for (final g in groups) ...[
         if (g['ok'] == true && (g['books'] as List?)?.isNotEmpty == true)
           Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
