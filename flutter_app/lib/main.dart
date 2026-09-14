@@ -156,7 +156,7 @@ class _Home extends State<HomeSection> {
       IconButton(icon: const Icon(Icons.arrow_forward), onPressed: go)])),
     if (loading) const LinearProgressIndicator(),
     if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
-      child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
+      child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
     Expanded(child: ListView(children: [
       if (agg != null) ...[
         for (final g in (agg!['books'] as List? ?? []))
@@ -171,6 +171,11 @@ class _Home extends State<HomeSection> {
           group('🎬 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['type'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? ''))))),
+        for (final g in (agg!['musics'] as List? ?? []))
+          group('🎵 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+            dense: true, leading: const Icon(Icons.music_note, size: 20),
+            title: Text(b['name'] ?? ''), subtitle: Text(b['artist'] ?? ''),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(b), sourceId: g['sourceId'] ?? ''))))),
         if (((agg!['books'] as List?) ?? []).isEmpty && ((agg!['comics'] as List?) ?? []).isEmpty && ((agg!['videos'] as List?) ?? []).isEmpty)
           const Padding(padding: EdgeInsets.all(32), child: Text('无结果(先导入各类源)', style: TextStyle(color: Colors.grey))),
       ],
