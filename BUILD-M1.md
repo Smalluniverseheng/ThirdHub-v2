@@ -93,3 +93,11 @@ node scripts/import-sources.js --demo                     # 演示源冒烟
 - [ ] 目录页右上角加入书架→书架页可见
 - [ ] 杀掉前端重进→书架还在→进书显示"继续阅读"
 - [ ] 目录页有书源延迟统计; /v1/status 有健康分
+
+| iter17 | 预置演示书源(首启导入链路可验证) |
+| iter18 | 目录分页 nextTocUrl(大书全目录) |
+| iter19 | 正文翻页 nextContentUrl(修半章) |
+| iter20 | POST搜索+JSON接口书源($.规则) |
+| iter21 | Flutter悬浮球MVP(拖动/吸附/扇形菜单/遮罩) |
+| iter22 | 搜索历史(10条+chips) |
+| iter23 | Linux运行器(systemd+一键脚本)+书源导出端点 |
