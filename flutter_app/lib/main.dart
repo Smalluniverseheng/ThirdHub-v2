@@ -36,6 +36,7 @@ class Api {
 // 全局设置中心: 所有前端设置唯一入口, 本地存储+云端同步(1MB配额)骨架
 class AppSettings {
   static SharedPreferences? _p;
+  static void Function()? onChanged; // 主题变更回调
   static Future<void> init() async { _p = await SharedPreferences.getInstance();
     if (p.getString('identity_code') == null) {
       final code = 'TH-' + DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()
@@ -58,8 +59,8 @@ class AppSettings {
   static String get themeModeStr => p.getString('theme_mode') ?? 'dark'; // system|dark|light
   static int get accentColor => p.getInt('accent_color') ?? 0xFF5B9BFF;   // 强调色
   static bool get splashAnim => p.getBool('splash_anim') ?? true;         // 开屏动画
-  static Future<void> setThemeMode(String v) async { await p.setString('theme_mode', v); await sync(); }
-  static Future<void> setAccent(int v) async { await p.setInt('accent_color', v); await sync(); }
+  static Future<void> setThemeMode(String v) async { await p.setString('theme_mode', v); await sync(); onChanged?.call(); }
+  static Future<void> setAccent(int v) async { await p.setInt('accent_color', v); await sync(); onChanged?.call(); }
   static Future<void> setSplashAnim(bool v) async { await p.setBool('splash_anim', v); await sync(); }
 
   // ── 导航(网页版-手表端导航栏位置) ──
@@ -128,22 +129,26 @@ class Book {
     l.add(b); await p.setString('shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList())); }
 }
 
-class ThApp extends StatelessWidget {
+class ThApp extends StatefulWidget {
   final bool ready, locked, fresh; final String base, token;
   const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false, this.fresh = false});
-  @override Widget build(BuildContext c) { Api.base = base; Api.token = token;
+  @override State<ThApp> createState() => _ThAppState();
+}
+class _ThAppState extends State<ThApp> {
+  @override void initState() { super.initState();
+    AppSettings.onChanged = () { if (mounted) setState(() {}); }; }
+  @override Widget build(BuildContext c) { Api.base = widget.base; Api.token = widget.token;
+    final accent = Color(AppSettings.accentColor);
+    final mode = AppSettings.themeModeStr;
+    ThemeData buildTheme(Brightness b) => ThemeData(useMaterial3: true, brightness: b,
+      scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF2A2F38) : const Color(0xFFE8EAEE),
+      colorScheme: ColorScheme.fromSeed(seedColor: accent, brightness: b),
+      cardColor: b == Brightness.dark ? const Color(0xFF2A2F38) : Colors.white,
+      appBarTheme: AppBarTheme(backgroundColor: b == Brightness.dark ? const Color(0xFF2A2F38) : const Color(0xFFE8EAEE), elevation: 0));
     return MaterialApp(title: 'ThirdHub',
-      theme: ThemeData(useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF2A2F38),   // 拟态全局底色(完全体dark)
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B9BFF), brightness: Brightness.dark),
-        cardColor: const Color(0xFF2A2F38),
-        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF2A2F38), elevation: 0)),
-      darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF2A2F38),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B9BFF), brightness: Brightness.dark)),
-      themeMode: ThemeMode.dark,
-      home: locked ? const LockScreen() : (fresh ? const OnboardingPage() : (ready ? const OrbShell() : const ConnectLibraryPage()))); }
+      theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
+      themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
+      home: widget.locked ? const LockScreen() : (widget.fresh ? const OnboardingPage() : (widget.ready ? const OrbShell() : const ConnectLibraryPage()))); }
 }
 
 // 首启引导: 三页滑屏(是什么→怎么用→连接)
