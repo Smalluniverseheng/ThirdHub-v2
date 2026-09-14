@@ -241,7 +241,7 @@ class _Conn extends State<ConnectLibraryPage> {
       if (!mounted) return; setState(() => busy = false);
       final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
         title: const Text('确认资源库指纹'), content: SelectableText('SHA256:\n$fp'),
-        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text(tr('取消'))),
+        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OrbShell())); }
@@ -251,7 +251,7 @@ class _Conn extends State<ConnectLibraryPage> {
       const Text('ThirdHub', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
       const Text('纯播放器前端 · 连接资源库开始', style: TextStyle(color: Colors.grey)),
       const SizedBox(height: 24),
-      TextField(controller: baseC, decoration: const InputDecoration(labelText: tr('资源库地址'), hintText: 'https://192.168.x.x:9527', border: OutlineInputBorder())),
+      TextField(controller: baseC, decoration: InputDecoration(labelText: tr('资源库地址'), hintText: 'https://192.168.x.x:9527', border: OutlineInputBorder())),
       const SizedBox(height: 12),
       TextField(controller: tokenC, decoration: const InputDecoration(labelText: '密钥', hintText: 'thsec_...', border: OutlineInputBorder())),
       if (err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(err!, style: const TextStyle(color: Colors.red))),
@@ -275,11 +275,11 @@ class _Als extends State<AppLockSettings> {
   @override Widget build(BuildContext context) => Column(children: [
     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       const Icon(Icons.lock_outline, size: 16, color: Colors.grey), const SizedBox(width: 6),
-      const Text(tr('应用锁'), style: TextStyle(color: Colors.grey, fontSize: 12)),
+      Text(tr('应用锁'), style: TextStyle(color: Colors.grey, fontSize: 12)),
       Switch(value: enabled, onChanged: toggle),
     ]),
     if (!enabled) SizedBox(width: 180, child: TextField(controller: c, obscureText: true, keyboardType: TextInputType.number,
-      maxLength: 6, decoration: const InputDecoration(hintText: tr('设置PIN(4-6位)'), isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
+      maxLength: 6, decoration: InputDecoration(hintText: tr('设置PIN(4-6位)'), isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
     if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
   ]);
 }
@@ -360,7 +360,7 @@ class _Pf extends State<ProfilePage> {
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, assets[i]),
           child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text(tr('取消')))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消')))]));
     if (picked == null) return;
     try {
       final file = await picked.file; if (file == null) return;
@@ -383,7 +383,7 @@ class _Pf extends State<ProfilePage> {
     final avatar = AppSettings.avatarB64;
     final nameC = TextEditingController(text: AppSettings.nickname);
     final bioC = TextEditingController(text: AppSettings.bio);
-    return Scaffold(appBar: AppBar(title: const Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(12), children: [
+    return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(12), children: [
       // ═══ ① 个人资料(网页版: 头像/昵称/简介/身份码) ═══
       Row(children: [
         GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 32,
@@ -391,13 +391,13 @@ class _Pf extends State<ProfilePage> {
           child: avatar.isEmpty ? Text(AppSettings.nickname.isEmpty ? 'T' : AppSettings.nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22)) : null)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: nameC, decoration: const InputDecoration(hintText: tr('昵称'), isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          TextField(controller: nameC, decoration: InputDecoration(hintText: tr('昵称'), isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             onSubmitted: (v) async { final p = await SharedPreferences.getInstance(); await p.setString('nickname', v.trim()); await AppSettings.sync(); }),
           GestureDetector(onTap: () async {
             final r = await showDialog<String>(context: c, builder: (c2) {
               final cc = TextEditingController(text: AppSettings.bio);
-              return AlertDialog(title: const Text(tr('简介')), content: TextField(controller: cc, maxLines: 2, decoration: const InputDecoration(hintText: tr('这个人很懒，什么都没写'))),
-                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text(tr('取消'))), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text(tr('保存')))]); });
+              return AlertDialog(title: Text(tr('简介')), content: TextField(controller: cc, maxLines: 2, decoration: InputDecoration(hintText: tr('这个人很懒，什么都没写'))),
+                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: Text(tr('保存')))]); });
             if (r != null) { await AppSettings.setBio(r); setState(() {}); } },
             child: Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio, style: const TextStyle(fontSize: 12, color: Colors.grey))),
         ])),
@@ -424,22 +424,22 @@ class _Pf extends State<ProfilePage> {
                 child: Row(children: [ if (lc == AppSettings.locale) const Icon(Icons.check, size: 16, color: Colors.blueAccent),
                   Text(I18n.names[lc] ?? lc) ])) ]));
             if (l != null) { await AppSettings.setLocale(l); setState(() {}); } }),
-        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: const Text(tr('主题外观'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: Text(tr('主题外观'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
             segments: const [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
-        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: const Text(tr('强调色'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: Text(tr('强调色'), style: TextStyle(fontSize: 13)),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF5B9BFF, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
             GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
               child: Container(width: 22, height: 22, margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(
                 color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: const Text(tr('开屏动画'), style: TextStyle(fontSize: 13)),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: Text(tr('开屏动画'), style: TextStyle(fontSize: 13)),
           value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
       ]),
 
       // ═══ ③ 导航(网页版: 手表端导航栏位置→悬浮球默认侧) ═══
       section('导航', [
-        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: const Text(tr('悬浮球默认位置'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
             segments: const [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
@@ -447,13 +447,13 @@ class _Pf extends State<ProfilePage> {
 
       // ═══ ④ 系统(网页版: 连接器管理/贤者模式/清理缓存/版本) ═══
       section('系统', [
-        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: const Text(tr('连接器管理'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: Text(tr('连接器管理'), style: TextStyle(fontSize: 13)),
           subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 10)), onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EnginesPage()))),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: const Text(tr('贤者模式（内容保护）'), style: TextStyle(fontSize: 13)),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: Text(tr('贤者模式（内容保护）'), style: TextStyle(fontSize: 13)),
           subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 10)),
           value: (SharedPreferences.getInstance().then((p) => p.getString('app_pin') ?? '')).toString().isNotEmpty && false,
           onChanged: (_) => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
-        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text(tr('清理缓存'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: Text(tr('清理缓存'), style: TextStyle(fontSize: 13)),
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
@@ -463,7 +463,7 @@ class _Pf extends State<ProfilePage> {
 
       // ═══ ⑤ 云端(网页版: 云存储用量/会员) — 会员冻结占位 ═══
       section('云端', [
-        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: const Text(tr('云存储'), style: TextStyle(fontSize: 13)),
+        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: Text(tr('云存储'), style: TextStyle(fontSize: 13)),
           subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB(头像限0.5MB) · 进度存自己后端不占配额', style: const TextStyle(fontSize: 10)),
           trailing: const Icon(Icons.refresh, size: 18)),
         const ListTile(dense: true, leading: Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: TextStyle(fontSize: 13)),
@@ -495,7 +495,7 @@ class _Nd extends State<NetDiskPage> {
         ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) => setState(() => loading = false)))
         ..loadRequest(Uri.parse('http://$host:5212'));
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text(tr('网盘'))),
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('网盘'))),
     body: err != null ? Center(child: Text(err!))
       : Stack(children: [ if (ctrl != null) WebViewWidget(controller: ctrl!), if (loading) const Center(child: CircularProgressIndicator()) ])); }
 
@@ -577,7 +577,7 @@ class _Tools extends State<ToolsSection> {
   ]);
   @override Widget build(BuildContext c) => ListView(padding: const EdgeInsets.all(12), children: [
     Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text(tr('存储服务'), style: TextStyle(fontWeight: FontWeight.bold)),
+      Text(tr('存储服务'), style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
       if (st != null) ...[
         statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212, () => Navigator.push(c, MaterialPageRoute(builder: (_) => NetDiskPage(baseUrl: Api.base)))),
@@ -603,7 +603,7 @@ class _Tools extends State<ToolsSection> {
         LinearProgressIndicator(value: ((t['progress'] ?? 0) as int) / 100, minHeight: 3),
         if ((t['speed'] ?? '') != '' && t['speed'] != '0') Text('${t['speed']} B/s', style: const TextStyle(fontSize: 10, color: Colors.grey)),
       ])),
-      if (active.isEmpty && waiting.isEmpty) const Text(tr('暂无任务'), style: TextStyle(fontSize: 12, color: Colors.grey)),
+      if (active.isEmpty && waiting.isEmpty) Text(tr('暂无任务'), style: TextStyle(fontSize: 12, color: Colors.grey)),
     ]))),
     const AlbumSyncCard(),
     const KeyVaultCard(),
@@ -666,7 +666,7 @@ class _Asc extends State<AlbumSyncCard> {
           onTap: () => Navigator.pop(c, [assets[i]]),
           child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
         ))),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text(tr('取消'))),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(c, assets), child: const Text('全选上传'))]));
     if (picked == null || picked.isEmpty) return;
     setState(() { uploading = picked.length; msg = null; });
@@ -745,7 +745,7 @@ class _Home extends State<SearchSection> {
       const SizedBox(width: 8),
       FilledButton(onPressed: loading ? null : go, child: loading
         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-        : const Text(tr('搜索')))])),
+        : Text(tr('搜索')))])),
     if (loading) const LinearProgressIndicator(),
     if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
       child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
@@ -880,7 +880,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       Text('  ${chapters.length}章  ', style: const TextStyle(color: Colors.grey))]),
     body: loading ? const Center(child: CircularProgressIndicator()) : Column(children: [
       if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
-        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text(tr('继续阅读'))),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: Text(tr('继续阅读'))),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
       Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
         title: Text(chapters[i]['name'] ?? ''), trailing: i == lastRead ? const Icon(Icons.history, size: 16, color: Colors.blueAccent) : null,
@@ -941,8 +941,8 @@ class _NR extends State<NovelReadPage> {
               child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
               child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一章'))),
-          TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
+          TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一章'))),
+          TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
 }
 
@@ -1009,7 +1009,7 @@ class _Cd extends State<ComicDetailPage> {
     : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
     : Column(children: [
       if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['title']}'),
-        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text(tr('继续阅读'))),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: Text(tr('继续阅读'))),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
       Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
         title: Text(chapters[i]['title'] ?? ''), subtitle: (chapters[i]['time'] ?? '') != '' ? Text(chapters[i]['time'], style: const TextStyle(fontSize: 11, color: Colors.grey)) : null,
@@ -1054,8 +1054,8 @@ class _Cr extends State<ComicReaderPage> {
               loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
               errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey))))))),
       SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一话'))),
-        TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text(tr('下一话')), icon: const Icon(Icons.chevron_right)),
+        TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一话'))),
+        TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一话')), icon: const Icon(Icons.chevron_right)),
       ]))])); }
 
 // ═══ 源管理(四类通用: 列表/启停/删除/粘贴导入) ═══
@@ -1107,7 +1107,7 @@ class _SM extends State<SourceManagerPage> {
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
       Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.$4, border: const OutlineInputBorder(), isDense: true))),
       const SizedBox(width: 8),
-      FilledButton(onPressed: doImport, child: const Text(tr('导入'))),
+      FilledButton(onPressed: doImport, child: Text(tr('导入'))),
     ])),
     if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.blueAccent))),
   ]); }
@@ -1357,6 +1357,6 @@ class _Vp extends State<VideoPlayPage> {
             child: ChoiceChip(label: Text(widget.episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 11)),
               selected: i == idx, onSelected: (_) => goEpisode(i))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text(tr('上一集'))),
-          TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: const Text(tr('下一集')), icon: const Icon(Icons.chevron_right)),
+          TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一集'))),
+          TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: Text(tr('下一集')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
