@@ -294,7 +294,6 @@ async function catalog(source, bookUrl) {
   for (let page = 0; page < 10; page++) {
     const { html, url } = await fetchPage(curUrl, source);
     const $ = cheerio.load(html);
-  const listRule = rget(rule, 'chapterList') || rget(rule, 'chapterlist');
     const listRule = rget(rule, 'chapterList') || rget(rule, 'chapterlist');
     if (listRule && listRule.startsWith('/')) {
       const xp = xpathToCheerio(listRule);
