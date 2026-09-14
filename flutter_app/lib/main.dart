@@ -761,6 +761,9 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       chapters = r['data'] ?? []; } catch (e) {}
     final p = await SharedPreferences.getInstance();
     lastRead = p.getInt('progress_${widget.book.bookUrl}') ?? -1;
+    try { final r = await Api.get('/v1/reading-progress');
+      final remote = r['data']?[widget.book.bookUrl];
+      if (remote != null) lastRead = remote['index'] ?? lastRead; } catch (_) {}
     setState(() => loading = false); }
   Future<void> save() async { await Book.add(widget.book, 'novel');
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入书架'))); }
@@ -782,9 +785,9 @@ class NovelReadPage extends StatefulWidget { final String sourceId, bookName, bo
   const NovelReadPage({super.key, required this.sourceId, required this.chapters, required this.index, required this.bookName, required this.bookUrl});
   @override State<NovelReadPage> createState() => _NR(); }
 class _NR extends State<NovelReadPage> {
-  String text = ''; List<String> images = []; bool loading = true; double fontSize = 18;
+  String text = ''; List<String> images = []; bool loading = true;
+  double fontSize = AppSettings.fontSize; int theme = AppSettings.readerTheme; // 设置中心默认值
   final Map<int, Map> chapCache = {}; // 预加载: 章index → content数据
-  int theme = 0; // 0夜间 1白天 2护眼
   static const themes = [(Color(0xFF121212), Color(0xFFE0E0E0)), (Colors.white, Colors.black87), (Color(0xFFF5F0E1), Color(0xFF4A3F30))];
   int get idx => widget.index; Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
@@ -804,6 +807,9 @@ class _NR extends State<NovelReadPage> {
       }
       if (text.isEmpty && images.isEmpty) text = '本章无内容';
       final p = await SharedPreferences.getInstance(); await p.setInt('progress_${widget.bookUrl}', idx);
+      try { await http.post(Uri.parse('${Api.base}/v1/reading-progress'),
+        headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+        body: jsonEncode({'bookUrl': widget.bookUrl, 'index': idx, 'chapter': chapter['name'] ?? ''})); } catch (_) {}
       preload(idx + 1); preload(idx - 1); // 预加载前后章
     } catch (e) { text = '错误: $e'; }
     setState(() => loading = false); }
