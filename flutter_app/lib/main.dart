@@ -609,11 +609,45 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('搜索')), ButtonSegment(value: 2, label: Text('源'))],
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text('源'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail),
-      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找片', style: TextStyle(color: Colors.grey)))),
+    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage(),
       const SourceManagerPage(kind: 'video')][sub]),
+  ]); }
+
+// 直播: drpy直播源搜索频道→直接播放(m3u8直播流)
+class LivePage extends StatefulWidget { const LivePage({super.key}); @override State<LivePage> createState() => _Live(); }
+class _Live extends State<LivePage> {
+  final ctrl = TextEditingController(); List<Map> channels = []; bool loading = false;
+  Future<void> go([String? preset]) async { final q = preset ?? ctrl.text.trim(); if (q.isEmpty) return;
+    setState(() { loading = true; channels = []; });
+    try { final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}');
+      for (final g in (r['data'] as List? ?? [])) {
+        if (g['ok'] == true) for (final it in (g['items'] as List? ?? [])) channels.add({...Map<String, dynamic>.from(it), 'sourceId': g['sourceId']});
+      }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Column(children: [
+    Padding(padding: const EdgeInsets.all(8), child: Row(children: [
+      Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '搜频道(如:央视/卫视/电影)', border: OutlineInputBorder(), isDense: true), onSubmitted: (_) => go())),
+      IconButton(icon: const Icon(Icons.search), onPressed: () => go())])),
+    Wrap(spacing: 8, children: [ for (final h in ['央视', '卫视', '电影', '动漫'])
+      ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), onPressed: () { ctrl.text = h; go(h); }) ]),
+    if (loading) const LinearProgressIndicator(),
+    Expanded(child: channels.isEmpty
+      ? const Center(child: Text('搜索频道名, 或点上方热词
+(需先导入含直播分类的drpy源)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.75),
+        itemCount: channels.length, itemBuilder: (_, i) {
+          final ch = channels[i];
+          return GestureDetector(onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
+              sourceId: ch['sourceId'] ?? '', epUrl: ch['id'] ?? '', flag: '', title: ch['name'] ?? '频道',
+              episodes: [{'name': ch['name'], 'url': ch['id'], 'flag': ''}], index: 0))),
+            child: Column(children: [
+              Expanded(child: (ch['coverUrl'] ?? '') != '' ? Image.network(Api.img(ch['coverUrl']), fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26, child: Icon(Icons.live_tv))) : const ColoredBox(color: Colors.black26, child: Icon(Icons.live_tv))),
+              Padding(padding: const EdgeInsets.all(4), child: Text(ch['name'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
+            ])); })),
   ]); }
 Widget _videoDetail(Book b) => VideoDetailPage(sourceId: b.sourceId, vodId: b.bookUrl, title: b.name);
 
