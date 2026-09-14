@@ -304,12 +304,12 @@ async function handle(req, res, body) {
     const q = u.searchParams.get('q');
     const [books, comics, videos, musics] = await Promise.all([
       (async () => {
-        const pool = sources.filter(s => s.enabled !== false);
-        const rs = await Promise.all(pool.slice(0, 3).map(async (s) => {
+        const pool_list = sources.filter(s => s.enabled !== false);
+        const rs = await pool(pool_list.slice(0, 3), 3, async (s) => {
           try { return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true,
             books: (await engine.search(s, q)).slice(0, 5) }; }
           catch (e) { return { source: s.bookSourceName, ok: false }; }
-        }));
+        });
         return rs.filter(r => r.ok);
       })(),
       (async () => {
@@ -340,9 +340,9 @@ async function handle(req, res, body) {
   }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
-    const pool = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
-    // 并行搜索(每源独立超时, 全源并发, 不分批)
-    const results = await Promise.all(pool.map(async (s) => {
+    const pool_list = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
+    // 限流并行(最多3个源同时请求, 防小站被封)
+    const results = await pool(pool_list, 3, async (s) => {
       const t0 = Date.now();
       try {
         const books = await engine.search(s, q);
@@ -352,7 +352,7 @@ async function handle(req, res, body) {
         return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: false,
                  latency: Date.now() - t0, error: String(e.message || e).slice(0, 120) };
       }
-    }));
+    });
     // 健康度优先(成功率差>30%时健康排前), 然后成功优先, 然后延迟
     const rate = (id) => { const h = health.get(id); return h && (h.ok + h.fail) >= 3 ? h.ok / (h.ok + h.fail) : 1; };
     results.sort((a, b) => {
@@ -416,6 +416,15 @@ const server = https.createServer({ key: fs.readFileSync(KEY), cert: fs.readFile
     res.end(JSON.stringify({ object:'error', data:{ type:'server_error', message: String(e.message||e) }}));
   }));
 });
+
+// ─── 并发池(限流防封IP: 同时最多3个请求) ───
+async function pool(items, n, fn) {
+  const ret = new Array(items.length); let i = 0;
+  const workers = Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; try { ret[idx] = await fn(items[idx], idx); } catch (e) { ret[idx] = { error: String(e.message || e) }; } }
+  });
+  await Promise.all(workers); return ret;
+}
 
 // ─── 启动自检 ───
 (function selfcheck() {
