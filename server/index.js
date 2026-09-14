@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const engine = require('./engine');
 const drpy = require('./engine-drpy');
 const comic = require('./engine-comic');
+const music = require('./engine-music');
 const { Bonjour } = require('bonjour-service');
 
 const DATA = path.join(__dirname, 'data');
@@ -68,6 +69,12 @@ try {
 // ─── 极简静态(前端flutter build web产物可选挂载) ───
 const PUB = path.join(__dirname, 'public');
 
+// ─── 音源存储(MusicFree格式) ───
+const MUSIC_FILE = path.join(DATA, 'music-sources.json');
+function loadMusic() { try { return JSON.parse(fs.readFileSync(MUSIC_FILE, 'utf8')); } catch (e) { return []; } }
+function saveMusic(d) { fs.writeFileSync(MUSIC_FILE, JSON.stringify(d, null, 2)); }
+let musicSources = loadMusic();
+
 // ─── 漫画图源存储(Venera格式) ───
 const COMIC_FILE = path.join(DATA, 'comic-sources.json');
 function loadComic() { try { return JSON.parse(fs.readFileSync(COMIC_FILE, 'utf8')); } catch (e) { return []; } }
@@ -122,6 +129,45 @@ async function handle(req, res, body) {
       console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+  // ── 音乐(MusicFree音源) ──
+  if (p === '/v1/music/sources' && req.method === 'GET')
+    return send(200, { object:'list', data: musicSources.map(s => ({ id: s.id, name: s.name, platform: s.platform })) });
+  if (p === '/v1/music/sources' && req.method === 'POST') {
+    const d = JSON.parse(body || '{}');
+    if (!d.code || !d.name) return send(400, { object:'error', data:{ type:'invalid_request', message:'需name+code' }});
+    const id = d.id || 'music_' + crypto.randomBytes(4).toString('hex');
+    const i = musicSources.findIndex(x => x.id === id);
+    i >= 0 ? musicSources[i] = { id, name: d.name, platform: d.platform || d.name, code: d.code } : musicSources.push({ id, name: d.name, platform: d.platform || d.name, code: d.code });
+    saveMusic(musicSources);
+    return send(200, { object:'meta', data: { id, total: musicSources.length }});
+  }
+  if (p.startsWith('/v1/music/search')) {
+    const q = u.searchParams.get('q');
+    const pool = musicSources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
+    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+      const t0 = Date.now();
+      const r = music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
+      return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0,
+        ...(r.error ? { error: r.error } : { items: r.items.slice(0, 10) }) };
+    }));
+    results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    return send(200, { object:'list', data: results });
+  }
+  if (p.startsWith('/v1/music/url')) {
+    const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }});
+    let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
+    const r = music.irUrl(await music.runPlugin(s.code, 'getMediaSource', [item, 'standard']));
+    if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
+    return send(200, { object:'music-url', data: r });
+  }
+  if (p.startsWith('/v1/music/lyric')) {
+    const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }});
+    let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
+    const r = music.irLyric(await music.runPlugin(s.code, 'getLyric', [item]));
+    return send(200, { object:'music-lyric', data: r });
   }
   // ── 漫画(Venera图源) ──
   if (p === '/v1/comic/sources' && req.method === 'GET')
