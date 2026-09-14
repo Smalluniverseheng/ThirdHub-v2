@@ -138,8 +138,18 @@ async function handle(req, res, body) {
     }));
     // 成功源排前, 失败的排后但保留可见性
     results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    // 跨源去重(书名+作者), 同书记录多源可用性
+    const seen = new Map();
+    for (const g of results) {
+      if (!g.ok) continue;
+      g.books = g.books.filter(b => {
+        const k = ((b.name || '') + '|' + (b.author || '')).toLowerCase().replace(/\s+/g, '');
+        if (seen.has(k)) { seen.get(k).push(g.source); return false; }
+        seen.set(k, [g.source]); return true;
+      });
+    }
     return send(200, { object:'list', data: results,
-      meta: { total: results.length, ok: results.filter(r => r.ok).length } });
+      meta: { total: results.length, ok: results.filter(r => r.ok).length, deduped: true } });
   }
   if (p.startsWith('/v1/book')) {
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
