@@ -129,8 +129,7 @@ class ThSearchDelegate extends SearchDelegate {
   Widget _body(BuildContext c) {
     if (tab == 0) return NovelSearchResults(query: query);
     if (tab == 2) return VideoSearchResults(query: query);
-    return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
-      '漫画搜索: 后端comic引擎(Venera图源)接入后可用', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey))));
+    return ComicSearchResults(query: query);
   }
 }
 
@@ -249,17 +248,105 @@ class _NR extends State<NovelReadPage> {
 }
 
 // ═══ 板块二: 漫画播放器(UI先行, 数据源待后端comic引擎) ═══
-class ComicSection extends StatelessWidget { const ComicSection({super.key});
-  @override Widget build(BuildContext c) => ShelfPage(kind: 'comic', builder: (b) => const GalleryPlayerPage(
-    title: '漫画阅读器', hint: '图片流走 /v1/comic/chapter 端点\n(后端内置Venera引擎二期接入)')); }
+class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
+class _Cs extends State<ComicSection> { int sub = 0;
+  @override Widget build(BuildContext c) => Column(children: [
+    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('书架')), ButtonSegment(value: 1, label: Text('搜索'))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Expanded(child: sub == 0
+      ? ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name))
+      : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画\n图源导入: POST /v1/comic/sources', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))))),
+  ]); }
 
-class GalleryPlayerPage extends StatelessWidget { final String title, hint; const GalleryPlayerPage({super.key, required this.title, required this.hint});
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(title)),
-    body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey),
-      const SizedBox(height: 16), Text(hint, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
-      const SizedBox(height: 16), const Text('播放器UI已就位: 竖滑画廊 + 双指缩放 + 预加载', style: TextStyle(color: Colors.tealAccent, fontSize: 12)),
-    ])))); }
+class ComicSearchResults extends StatefulWidget { final String query; const ComicSearchResults({super.key, required this.query}); @override State<ComicSearchResults> createState() => _CSR(); }
+class _CSR extends State<ComicSearchResults> {
+  List<Map> groups = []; bool loading = false; String lastQ = '';
+  Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
+    setState(() { loading = true; groups = []; });
+    try { final r = await Api.get('/v1/comic/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
+    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
+    setState(() => loading = false); }
+  @override void initState() { super.initState(); if (widget.query.isNotEmpty) go(widget.query); }
+  @override void didUpdateWidget(ComicSearchResults old) { super.didUpdateWidget(old); if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query); }
+  @override Widget build(BuildContext c) => Column(children: [
+    if (loading) const LinearProgressIndicator(),
+    Expanded(child: ListView(children: [
+      for (final g in groups) ...[
+        if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+        for (final b in (g['items'] as List? ?? [])) ListTile(
+          leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+            child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
+          title: Text(b['title'] ?? ''), subtitle: Text(b['subTitle'] ?? ''),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(
+            sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? '')))),
+      ],
+      if (groups.isNotEmpty) for (final g in groups) if (g['ok'] == false)
+        Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']}: ${g['error'] ?? '失败'}', style: const TextStyle(color: Colors.redAccent, fontSize: 12))),
+      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入Venera图源)', style: TextStyle(color: Colors.grey))),
+    ])), ]); }
+
+class ComicDetailPage extends StatefulWidget { final String sourceId, comicId, title; const ComicDetailPage({super.key, required this.sourceId, required this.comicId, required this.title}); @override State<ComicDetailPage> createState() => _Cd(); }
+class _Cd extends State<ComicDetailPage> {
+  Map<String, dynamic>? info; List chapters = []; bool loading = true; String? err; int lastRead = -1;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { try {
+      final r = await Api.get('/v1/comic/info?sourceId=${Uri.encodeComponent(widget.sourceId)}&id=${Uri.encodeComponent(widget.comicId)}');
+      if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
+      else { info = r['data']; chapters = info?['chapters'] ?? []; }
+      final p = await SharedPreferences.getInstance();
+      lastRead = p.getInt('cprog_${widget.comicId}') ?? -1;
+    } catch (e) { err = '$e'; }
+    setState(() => loading = false); }
+  Future<void> save() async { await Book.add(Book(widget.title, (info?['tags'] ?? []).join('/'), info?['coverUrl'] ?? '', info?['description'] ?? '', widget.comicId, widget.sourceId), 'comic');
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入书架'))); }
+  void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
+    sourceId: widget.sourceId, comicId: widget.comicId, chapters: chapters, index: i))).then((_) => load());
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title), actions: [
+      IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
+      Text('  ${chapters.length}话  ', style: const TextStyle(color: Colors.grey))]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+    : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
+    : Column(children: [
+      if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['title']}'),
+        actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text('继续阅读')),
+                  TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
+      Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
+        title: Text(chapters[i]['title'] ?? ''), subtitle: (chapters[i]['time'] ?? '') != '' ? Text(chapters[i]['time'], style: const TextStyle(fontSize: 11, color: Colors.grey)) : null,
+        onTap: () => openAt(i)))),
+    ])); }
+
+class ComicReaderPage extends StatefulWidget { final String sourceId, comicId; final List chapters; final int index;
+  const ComicReaderPage({super.key, required this.sourceId, required this.comicId, required this.chapters, required this.index});
+  @override State<ComicReaderPage> createState() => _Cr(); }
+class _Cr extends State<ComicReaderPage> {
+  List<String> images = []; bool loading = true; String? err; int get idx => widget.index;
+  bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { setState(() { loading = true; err = null; images = []; }); try {
+      final ch = widget.chapters[idx];
+      final r = await Api.get('/v1/comic/pages?sourceId=${Uri.encodeComponent(widget.sourceId)}&chapterId=${Uri.encodeComponent(ch['id'] ?? '')}');
+      if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
+      else { images = List<String>.from(r['data']?['images'] ?? []); }
+      final p = await SharedPreferences.getInstance(); await p.setInt('cprog_${widget.comicId}', idx);
+    } catch (e) { err = '$e'; }
+    setState(() => loading = false); }
+  void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
+    sourceId: widget.sourceId, comicId: widget.comicId, chapters: widget.chapters, index: i)));
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text('${widget.chapters[idx]['title'] ?? ''}  (${idx + 1}/${widget.chapters.length})')),
+    body: Column(children: [
+      Expanded(child: loading ? const Center(child: CircularProgressIndicator())
+        : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
+        : images.isEmpty ? const Center(child: Text('本章无图片')
+        : ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 1),
+            child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
+              loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+              errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey))))))),
+      SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: const Text('上一话')),
+        TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: const Text('下一话'), icon: const Icon(Icons.chevron_right)),
+      ]))])); }
 
 // ═══ 板块三: 视频播放器(UI先行, 数据源待后端drpy引擎) ═══
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
