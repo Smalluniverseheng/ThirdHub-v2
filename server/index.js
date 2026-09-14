@@ -357,6 +357,20 @@ async function handle(req, res, body) {
     fs.writeFileSync(f, JSON.stringify(list, null, 2));
     return send(200, { object:'meta', data: { deleted: name }});
   }
+  // ── 阅读进度(存用户自己的后端) ──
+  if (p === '/v1/reading-progress' && req.method === 'POST') {
+    const f = path.join(DATA, 'reading-progress.json');
+    let all = {}; try { all = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    const d = JSON.parse(body || '{}');
+    if (d.bookUrl) { all[d.bookUrl] = { index: d.index ?? 0, chapter: d.chapter ?? '', at: Date.now() }; }
+    fs.writeFileSync(f, JSON.stringify(all));
+    return send(200, { object:'meta', data: { saved: !!d.bookUrl, total: Object.keys(all).length }});
+  }
+  if (p === '/v1/reading-progress') {
+    const f = path.join(DATA, 'reading-progress.json');
+    let all = {}; try { all = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+    return send(200, { object:'meta', data: all });
+  }
   // ── 设置同步(跨设备: 昵称/偏好等JSON) ──
   if (p === '/v1/settings' && req.method === 'GET') {
     const f = path.join(DATA, 'settings.json');
@@ -364,6 +378,8 @@ async function handle(req, res, body) {
     return send(200, { object:'meta', data: s });
   }
   if (p === '/v1/settings' && req.method === 'POST') {
+    // 每用户1MB配额: 头像<0.5MB, 其余给设置
+    if (body.length > 900 * 1024) return send(413, { object:'error', data:{ type:'quota_exceeded', message:'超出云端配额(1MB/用户)' }});
     const f = path.join(DATA, 'settings.json');
     let s = {}; try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
     const incoming = JSON.parse(body || '{}');
