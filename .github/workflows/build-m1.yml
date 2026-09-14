@@ -25,11 +25,12 @@ jobs:
       - name: 构建 APK
         run: |
           cd android
+          base64 -d thirdhub.jks.b64 > thirdhub.jks
           gradle wrapper --gradle-version 8.7 --no-daemon || true
           chmod +x gradlew 2>/dev/null || true
-          ./gradlew assembleDebug --no-daemon || gradle assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
-        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/debug/*.apk }
+        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
       - name: 发 Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
