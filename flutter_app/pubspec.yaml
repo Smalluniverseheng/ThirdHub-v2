@@ -15,6 +15,7 @@ dependencies:
   chewie: ^1.8.5
   just_audio: ^0.9.40
   photo_manager: ^3.2.0
+  webview_flutter: ^4.8.0
 
 dev_dependencies:
   flutter_test:
