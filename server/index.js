@@ -516,6 +516,16 @@ async function handle(req, res, body) {
     aggCache.set(q, { at: Date.now(), data: aggData });
     return send(200, { object:'meta', data: aggData });
   }
+  // 统一搜索路由: 前端只说"搜什么类型", 后端按引擎能力分发
+  // (未来网络设备插件按caps广播: {novel:[search], comic:[search]...}, 路由表动态扩展)
+  if (p.startsWith('/v1/search') && !p.startsWith('/v1/search/all')) {
+    const type = u.searchParams.get('type') || 'novel';
+    const q = u.searchParams.get('q');
+    if (type === 'comic') { u.searchParams.set('type', ''); req.url = '/v1/comic/search?' + u.searchParams.toString(); return handle(req, res, body); }
+    if (type === 'video') { req.url = '/v1/video/search?' + u.searchParams.toString(); return handle(req, res, body); }
+    if (type === 'music') { req.url = '/v1/music/search?' + u.searchParams.toString(); return handle(req, res, body); }
+    // type=novel 或无type: 继续走下方书源搜索
+  }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
     const pool_list = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
