@@ -10,8 +10,8 @@
 | board-media(影视) | ✅ 已有(视频) | — |
 | board-album(相册) | ❌ | 新建: 本地相册+云同步(后端已有/v1/album设计) |
 | live(直播) | ✅ 已完成(iter1: 频道搜索+网格+热词+直接播放) | — |
-| download(下载管理) | ❌ | 新建: 走 Cloudreve/aria2(存储插件启用后) |
-| board-clouddrive(网盘) | ❌ | 新建: Cloudreve 文件浏览 |
+| download(下载管理) | ✅ 已完成(iter4/5: aria2任务3s轮询+进度条+添加链接) | — |
+| board-clouddrive(网盘) | ◐ 部分(iter4/5: cloudreve自动spawn+状态面板+直达; 完整文件浏览待建) | — |
 | register-page/onboarding/welcome | 半(引导页) | 完善首启流程 |
 | applock(应用锁) | ✅ 已完成(iter2/3: PIN启动锁+设置入口) | — |
 
