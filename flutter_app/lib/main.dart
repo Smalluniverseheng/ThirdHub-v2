@@ -165,10 +165,8 @@ class _ThAppState extends State<ThApp> {
 class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key}); @override State<OnboardingPage> createState() => _Ob(); }
 class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageController();
   static const pages = [
-    (Icons.auto_awesome, '一个入口, 所有娱乐', '小说 · 漫画 · 视频 · 音乐 · 直播
-全部聚合, 搜一次全出来'),
-    (Icons.hub, '资源库在哪, 内容就在哪', '在你的电脑/旧手机/电视上装 ThirdHub 后端
-本App自动连接, 数据全在你家'),
+    (Icons.auto_awesome, '一个入口, 所有娱乐', '小说 · 漫画 · 视频 · 音乐 · 直播\n全部聚合, 搜一次全出来'),
+    (Icons.hub, '资源库在哪, 内容就在哪', '在你的电脑/旧手机/电视上装 ThirdHub 后端\n本App自动连接, 数据全在你家'),
     (Icons.touch_app, '装上插件, 一切自动', '开源阅读等插件自动配对\n书源一键导入, 去广告全在后台'),
   ];
   Future<void> finish() async { final p = await SharedPreferences.getInstance();
@@ -545,8 +543,7 @@ class _Eng extends State<EnginesPage> {
       for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
       if (network.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in network) engineCard(Map<String, dynamic>.from(e)),
-      if (network.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('暂无网络引擎
-改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
+      if (network.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text('暂无网络引擎\n改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
     ]));
 }
 
@@ -1253,8 +1250,7 @@ class _Live extends State<LivePage> {
       ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), onPressed: () { ctrl.text = h; go(h); }) ]),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: channels.isEmpty
-      ? const Center(child: Text('搜索频道名, 或点上方热词
-(需先导入含直播分类的drpy源)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      ? const Center(child: Text('搜索频道名, 或点上方热词\n(需先导入含直播分类的drpy源)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.75),
         itemCount: channels.length, itemBuilder: (_, i) {
           final ch = channels[i];
