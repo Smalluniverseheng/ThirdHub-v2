@@ -252,6 +252,33 @@ async function handle(req, res, body) {
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'video-play', data: r });
   }
+  // ── 引擎总览(前后端的"后端管理台"数据源) ──
+  if (p === '/v1/engines') {
+    const hget = (id) => { const h = health.get(id); return h ? { ...h, rate: (h.ok + h.fail) ? Math.round(h.ok / (h.ok + h.fail) * 100) : 100 } : null; };
+    const builtin = [
+      { id: 'engine-book', name: '书源引擎', kind: 'builtin', icon: '📖', caps: ['novel.search', 'novel.detail', 'novel.toc', 'novel.content'],
+        status: 'online', sources: sources.filter(s => s.enabled !== false).length, health: hget('__book__') },
+      { id: 'engine-drpy', name: '影视引擎 (drpy)', kind: 'builtin', icon: '🎬', caps: ['video.search', 'video.detail', 'video.play'],
+        status: fs.existsSync(path.join(__dirname, 'vendor/drpy/drpy2.min.js')) ? 'online' : 'error', sources: drpySources.length },
+      { id: 'engine-comic', name: '漫画引擎 (Venera)', kind: 'builtin', icon: '🎨', caps: ['comic.search', 'comic.info', 'comic.pages'],
+        status: 'online', sources: comicSources.length },
+      { id: 'engine-music', name: '音源引擎 (MusicFree)', kind: 'builtin', icon: '🎵', caps: ['music.search', 'music.play', 'music.lyric'],
+        status: 'online', sources: musicSources.length },
+      { id: 'engine-storage', name: '存储服务', kind: 'builtin', icon: '☁️', caps: ['disk.file', 'download.task'],
+        status: storageState.cloudreve === 'running' || storageState.aria2 === 'running' ? 'online' : 'standby',
+        detail: `cloudreve:${storageState.cloudreve} aria2:${storageState.aria2}` },
+    ];
+    const now = Date.now();
+    const network = devices.map(d => ({
+      id: d.device_url, name: `${d.device_type || 'device'}@${(d.device_url || '').replace(/^https?:\/\//, '')}`,
+      kind: 'network', icon: '🔌', caps: (d.caps || []).map(c => c + '.search'),
+      status: (now - (d.last_seen || 0)) < 120000 ? 'online' : 'offline',
+      lastSeen: d.last_seen, pairedAt: d.paired_at,
+    }));
+    return send(200, { object:'list', data: { builtin, network },
+      meta: { builtinOnline: builtin.filter(e => e.status === 'online').length, builtinTotal: builtin.length,
+              networkOnline: network.filter(e => e.status === 'online').length, networkTotal: network.length }});
+  }
   // ── 存储服务状态+下载任务 ──
   if (p === '/v1/storage/status') return send(200, { object:'meta', data: {
     cloudreve: storageState.cloudreve, aria2: storageState.aria2,
