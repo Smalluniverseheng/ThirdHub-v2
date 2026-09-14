@@ -260,7 +260,16 @@ function resolveList($, listRule) {
   return cur && cur.each ? cur : $();
 }
 
+const detailCache = new Map();
 async function detail(source, bookUrl) {
+  const ck = source.bookSourceUrl + '|' + bookUrl;
+  const cached = detailCache.get(ck);
+  if (cached && Date.now() - cached.at < 300000) return cached.data;
+  const data = await detailImpl(source, bookUrl);
+  detailCache.set(ck, { at: Date.now(), data });
+  return data;
+}
+async function detailImpl(source, bookUrl) {
   const rule = source.ruleBookInfo || {};
   const { html, url } = await fetchPage(bookUrl, source);
   const $ = cheerio.load(html);
