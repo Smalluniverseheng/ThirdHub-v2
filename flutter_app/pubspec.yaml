@@ -1,0 +1,20 @@
+name: thirdhub_app
+description: ThirdHub v4 Flutter M1
+publish_to: "none"
+version: 4.0.0-m1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
