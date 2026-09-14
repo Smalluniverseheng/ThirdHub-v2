@@ -333,7 +333,7 @@ class _Pf extends State<ProfilePage> {
     int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
     setState(() => stats = { '书架': count('shelf_novel'), '漫画': count('shelf_comic'), '片库': count('shelf_video'), '歌单': count('playlist') }); }
 
-  // 头像: 选图→压缩到256px JPEG(~30KB, <0.5MB限制)→存本地
+  // ── 头像(网页版: 选择头像→压缩→更新) ──
   Future<void> pickAvatar() async {
     final permitted = await pm.PhotoManager.requestPermissionExtend();
     if (!permitted.isAuth) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('相册权限被拒'))); return; }
@@ -357,62 +357,106 @@ class _Pf extends State<ProfilePage> {
       final jpg = img.encodeJpg(resized, quality: 85);
       final b64 = base64Encode(jpg);
       await AppSettings.setAvatar(b64);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('头像已更新(压缩后 ${(jpg.length / 1024).toStringAsFixed(1)}KB)")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('头像已更新 (${(jpg.length / 1024).toStringAsFixed(1)}KB)')));
       setState(() {});
     } catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); } }
+
+  Widget section(String title, List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Text(title, style: TextStyle(fontSize: 12, color: Colors.blueAccent.shade100, fontWeight: FontWeight.bold))),
+    Card(margin: EdgeInsets.zero, child: Column(children: children)),
+  ]);
 
   @override Widget build(BuildContext c) {
     final avatar = AppSettings.avatarB64;
     final nameC = TextEditingController(text: AppSettings.nickname);
-    return Scaffold(appBar: AppBar(title: const Text('我的 · 设置中心')), body: ListView(padding: const EdgeInsets.all(16), children: [
-      // ── 账号区 ──
+    final bioC = TextEditingController(text: AppSettings.bio);
+    return Scaffold(appBar: AppBar(title: const Text('我的')), body: ListView(padding: const EdgeInsets.all(12), children: [
+      // ═══ ① 个人资料(网页版: 头像/昵称/简介/身份码) ═══
       Row(children: [
         GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 32,
           backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
           child: avatar.isEmpty ? Text(AppSettings.nickname.isEmpty ? 'T' : AppSettings.nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22)) : null)),
-        const SizedBox(width: 14),
+        const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           TextField(controller: nameC, decoration: const InputDecoration(hintText: '昵称', isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            onSubmitted: (v) async { await SharedPreferences.getInstance().then((p) => p.setString('nickname', v.trim())); await AppSettings.sync(); setState(() {}); }),
-          const Text('点头像更换(自动压缩<0.5MB)', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            onSubmitted: (v) async { final p = await SharedPreferences.getInstance(); await p.setString('nickname', v.trim()); await AppSettings.sync(); }),
+          GestureDetector(onTap: () async {
+            final r = await showDialog<String>(context: c, builder: (c2) {
+              final cc = TextEditingController(text: AppSettings.bio);
+              return AlertDialog(title: const Text('简介'), content: TextField(controller: cc, maxLines: 2, decoration: const InputDecoration(hintText: '这个人很懒，什么都没写')),
+                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text('保存'))]); });
+            if (r != null) { await AppSettings.setBio(r); setState(() {}); } },
+            child: Text(AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio, style: const TextStyle(fontSize: 12, color: Colors.grey))),
         ])),
       ]),
-      const SizedBox(height: 16),
-      // ── 收藏统计 ──
-      Card(child: Padding(padding: const EdgeInsets.all(12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-          Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey)) ]),
+      const SizedBox(height: 6),
+      // 身份码(网页版: 生成好友二维码/复制身份码)
+      Card(child: ListTile(dense: true, leading: const Icon(Icons.badge_outlined, size: 20),
+        title: Text(AppSettings.identityCode, style: const TextStyle(fontSize: 12, letterSpacing: 0.5)),
+        subtitle: const Text('身份码 · 加好友用(云端好友二期)', style: TextStyle(fontSize: 10)),
+        trailing: IconButton(icon: const Icon(Icons.copy, size: 18), onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('身份码已复制'))); }))),
+      Card(child: Padding(padding: const EdgeInsets.all(10), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+          Text(e.key, style: const TextStyle(fontSize: 10, color: Colors.grey)) ]),
       ]))),
-      // ── 阅读设置 ──
-      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('阅读设置', style: TextStyle(fontSize: 13, color: Colors.blueAccent, fontWeight: FontWeight.bold))),
-      Card(child: Column(children: [
-        ListTile(dense: true, title: const Text('字号', style: TextStyle(fontSize: 13)),
-          subtitle: Slider(value: AppSettings.fontSize, min: 12, max: 32, divisions: 20, label: AppSettings.fontSize.toStringAsFixed(0),
-            onChanged: (v) => setState(() {}), onChangeEnd: (v) => AppSettings.setFontSize(v))),
-        ListTile(dense: true, title: const Text('阅读主题', style: TextStyle(fontSize: 13)),
-          subtitle: Row(children: [ for (var i = 0; i < 3; i++)
-            Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(['夜间', '白天', '护眼'][i], style: const TextStyle(fontSize: 11)),
-              selected: AppSettings.readerTheme == i, onSelected: (_) => AppSettings.setReaderTheme(i).then((_) => setState(() {})))) ])),
-        ListTile(dense: true, title: const Text('翻页模式', style: TextStyle(fontSize: 13)),
-          subtitle: SegmentedButton<String>(segments: const [ButtonSegment(value: 'scroll', label: Text('滚动', style: TextStyle(fontSize: 11))),
-            ButtonSegment(value: 'paged', label: Text('分页(开发中)', style: TextStyle(fontSize: 11)))],
-            selected: {AppSettings.pageMode}, onSelectionChanged: (s) => AppSettings.setPageMode(s.first).then((_) => setState(() {})))),
-      ])),
-      // ── 同步设置 ──
-      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('多端同步', style: TextStyle(fontSize: 13, color: Colors.blueAccent, fontWeight: FontWeight.bold))),
-      Card(child: Column(children: [
-        ListTile(dense: true, leading: const Icon(Icons.cloud_sync, size: 20), title: const Text('云端同步', style: TextStyle(fontSize: 13)),
-          subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB\n头像限0.5MB · 设置共享剩余配额 · CF账号接入后跨设备生效', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          trailing: Switch(value: AppSettings.syncEnabled, onChanged: (v) => setState(() => AppSettings.syncEnabled = v))),
-        const ListTile(dense: true, leading: Icon(Icons.history, size: 20), title: Text('阅读进度', style: TextStyle(fontSize: 13)),
-          subtitle: Text('存于你自己的资源库(不占云配额)', style: TextStyle(fontSize: 11, color: Colors.grey))),
-        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text('清理搜索历史', style: TextStyle(fontSize: 13)),
+
+      // ═══ ② 外观(网页版: 主题外观/强调色/开屏动画) ═══
+      section('个性化', [
+        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: const Text('主题外观', style: TextStyle(fontSize: 13)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'system', label: Text('跟随系统', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text('深色', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text('浅色', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
+        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: const Text('强调色', style: TextStyle(fontSize: 13)),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF5B9BFF, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
+            GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
+              child: Container(width: 22, height: 22, margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(
+                color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: const Text('开屏动画', style: TextStyle(fontSize: 13)),
+          value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
+      ]),
+
+      // ═══ ③ 导航(网页版: 手表端导航栏位置→悬浮球默认侧) ═══
+      section('导航', [
+        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: const Text('悬浮球默认位置', style: TextStyle(fontSize: 13)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'left', label: Text('左侧', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text('右侧', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
+      ]),
+
+      // ═══ ④ 系统(网页版: 连接器管理/贤者模式/清理缓存/版本) ═══
+      section('系统', [
+        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: const Text('连接器管理', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 10)), onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EnginesPage()))),
+        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: const Text('贤者模式（内容保护）', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 10)),
+          value: (SharedPreferences.getInstance().then((p) => p.getString('app_pin') ?? '')).toString().isNotEmpty && false,
+          onChanged: (_) => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
+        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: const Text('清理缓存', style: TextStyle(fontSize: 13)),
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已清理'))); }),
-      ])),
-      const SizedBox(height: 12),
-      const Center(child: Text('ThirdHub v4.0.0-m2 · 纯播放器前端\n数据全在你的资源库', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey))),
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
+        const ListTile(dense: true, leading: Icon(Icons.system_update_alt, size: 20), title: Text('版本与更新', style: TextStyle(fontSize: 13)),
+          subtitle: Text('v4.0.0-m2 · 自动检查已开启', style: TextStyle(fontSize: 10))),
+      ]),
+
+      // ═══ ⑤ 云端(网页版: 云存储用量/会员) — 会员冻结占位 ═══
+      section('云端', [
+        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: const Text('云存储', style: TextStyle(fontSize: 13)),
+          subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB(头像限0.5MB) · 进度存自己后端不占配额', style: const TextStyle(fontSize: 10)),
+          trailing: const Icon(Icons.refresh, size: 18)),
+        const ListTile(dense: true, leading: Icon(Icons.workspace_premium_outlined, size: 20), title: Text('会员等级', style: TextStyle(fontSize: 13)),
+          subtitle: Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 10)), enabled: false),
+      ]),
+
+      // ═══ ⑥ 关于(网页版: 使用指南/开源致谢) ═══
+      section('关于', [
+        const ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 20), title: Text('使用指南', style: TextStyle(fontSize: 13)), enabled: false),
+        const ListTile(dense: true, leading: Icon(Icons.favorite_border, size: 20), title: Text('开源致谢', style: TextStyle(fontSize: 13)),
+          subtitle: Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 10))),
+      ]),
+      const SizedBox(height: 16),
+      const Center(child: Text('ThirdHub v4.0.0-m2 · 纯播放器前端', style: TextStyle(fontSize: 11, color: Colors.grey))),
     ]));
   }
 }
