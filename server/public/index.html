@@ -42,7 +42,7 @@ input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line)
 <script>
 // ── i18n: 前后端自由切换语言(存localStorage, data-i18n属性+tr()双轨) ──
 const I18N_DICT={
-en:{'控制台':'Console','输入访问密钥(thsec_...)解锁':'Enter access key (thsec_...) to unlock','连接':'Connect',
+en:{ '管理':' sources','加载中':'Loading...','控制台':'Console','输入访问密钥(thsec_...)解锁':'Enter access key (thsec_...) to unlock','连接':'Connect',
 '书源':'Book sources','影视源':'Video sources','图源':'Comic sources','音源':'Music sources','搜索测试':'Search test',
 '存储服务':'Storage services','网盘 Cloudreve':'Cloudreve','下载引擎 aria2':'aria2 engine','运行中':'running','未安装':'not installed',
 '下载任务':'Downloads','粘贴下载链接(HTTP/磁力/种子URL)':'Paste download URL (HTTP/magnet/torrent)','已添加下载':'Download added',
@@ -66,7 +66,7 @@ function saveTok(){T=$('#tok').value.trim();localStorage.th_token=T;boot()}
 async function boot(){
   try{const m=await api('/v1/meta');$('#ver').textContent=m.data.version+' · 指纹 '+String(m.data.fingerprint).slice(0,19)+'…';
     const s=await api('/v1/status');
-    $('#tabs').innerHTML=kinds.map(k=>`<button data-k="${k[0]}" class="${k[0]===cur?'on':''}">${k[1]}</button>`).join('');
+    $('#tabs').innerHTML=kinds.map(k=>`<button data-k="${k[0]}" class="${k[0]===cur?'on':''}">${tr(k[1])}</button>`).join('');
     $('#tabs').onclick=e=>{cur=e.target.dataset.k;boot()};
     $('#body').innerHTML=`<div class="card"><div>
       <span class="stat">书源 <b>${s.data.sources.total}</b><span class="mut">(${s.data.sources.enabled}启用)</span></span>
@@ -77,18 +77,22 @@ async function boot(){
       ${cur==='test'?`<div class="card"><h3 style="margin-bottom:6px">搜索测试</h3>
         <div style="display:flex;gap:8px"><input id="tq" placeholder="书名/剧名/歌名/漫画名" style="margin-top:0" onkeydown="if(event.key==='Enter')testSearch()">
         <button class="sm" onclick="testSearch()">搜全部</button></div><div id="tres" class="mut" style="margin-top:8px">输入关键词, 同时搜书+漫+影+音</div></div>`
-      :`<div class="card"><h3 style="margin-bottom:6px">${kinds.find(k=>k[0]===cur)[1]}管理</h3><div id="srclist">加载中…</div>
+      :`<div class="card"><h3 style="margin-bottom:6px">${tr(kinds.find(k=>k[0]===cur)[1])}${tr('管理')}</h3><div id="srclist">${tr('加载中')}</div>
       <h4 style="margin:12px 0 6px" class="mut">导入(${cur==='book'?'书源JSON(单条/数组)':'{name, code} JSON'})</h4>
       <textarea id="imp" placeholder='粘贴JSON…'></textarea><br><br>
       <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`}
+    `;
     loadList();lock(false);
   }catch(e){lock(true)}}
-async function loadList(){if(cur==='test')return;const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
+async function loadList(){
+  if(cur==='test')return;
+  const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
   const r=await api(urls[cur]);const list=r.data||[];
-  $('#srclist').innerHTML=list.length?list.map(s=>`<div class="row"><span>${s.name} ${s.enabled===false?'<span class="mut">(停用)</span>':''}</span>
-    <span><button class="sm" onclick="act('toggle','${encodeURIComponent(s.id)}')">${s.enabled===false?'启用':'停用'}</button>
-    <button class="sm dg" onclick="act('delete','${encodeURIComponent(s.id)}')">删</button></span></div>`).join('')
-    :'<p class="mut">空。粘贴源JSON导入, 或命令行跑 import-*.js 批量导入。</p>'}
+  const rows=list.map(s=>'<div class="row"><span>'+s.name+(s.enabled===false?' <span class="mut">('+tr('停用')+')</span>':'')+'</span>'
+    +'<span><button class="sm" onclick="act(\'toggle\',\''+encodeURIComponent(s.id)+'\')">'+(s.enabled===false?tr('启用'):tr('停用'))+'</button>'
+    +' <button class="sm dg" onclick="act(\'delete\',\''+encodeURIComponent(s.id)+'\')">'+tr('删')+'</button></span></div>').join('');
+  $('#srclist').innerHTML='<button class="sm" style="margin-bottom:8px" onclick="exportSrc()">'+tr('导出全部(JSON备份)')+'</button>'+(rows||'<p class="mut">'+tr('空。粘贴源JSON导入, 或命令行跑 import-*.js 批量导入。')+'</p>');
+}
 async function act(a,id){await api(`/v1/src/${cur}/${a}?id=${id}`);loadList()}
 async function doImport(){const t=$('#imp').value.trim();if(!t)return;$('#impmsg').textContent='导入中…';
   try{const j=JSON.parse(t);const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
