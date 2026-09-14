@@ -60,3 +60,36 @@ node scripts/import-sources.js --demo                     # 演示源冒烟
 
 ## 明早验收脚本
 同 docs/M1-SPRINT.md 第4节。
+
+---
+
+## M1 迭代记录（iter1-16）
+
+| 迭代 | 内容 |
+|---|---|
+| iter1 | 引擎修复(统一resolveList)+自动导源脚本 |
+| iter2 | Flutter首启引导页(指纹TOFU)+pubspec补全 |
+| iter3 | 引擎XPath规则支持+CORS+状态+书源启停 |
+| iter4 | 安卓壳构建链补全(根gradle文件) |
+| iter5 | Legado三自动补丁(AutoPairer+注入指南) |
+| iter6 | 后端/v1/pair设备自注册+/v1/devices |
+| iter7 | 搜索全源并行+书源自定义header |
+| iter8 | CI: tag v4* 自动构建双APK发Release |
+| iter9 | 图片章节(images数组)+/v1/img图片代理 |
+| iter10 | Flutter图片章节Gallery渲染 |
+| iter11 | 翻章导航条(上一章/下一章/进度)+加入书架+书架持久化 |
+| iter12 | 正文净化(script/广告过滤)+跨源搜索去重 |
+| iter13 | 抓取重试+TOC缓存10分钟+书源健康分 |
+| iter14 | 阅读进度记忆(续读横幅) |
+| iter15 | 安卓通知渠道修复(Android8+)+13+权限申请 |
+| iter16 | 首启自动导入预置书源包 |
+
+## 验货清单（装完对照）
+- [ ] 后端APK装后通知栏出现"就绪"+地址+指纹
+- [ ] 前端APK首启引导页连接成功+指纹确认对话框
+- [ ] 搜索"诡秘之主"出现多源结果(带延迟ms显示)
+- [ ] 点书名→目录页→点章→正文显示(无脚本残留)
+- [ ] 底部"下一章"连翻3章
+- [ ] 目录页右上角加入书架→书架页可见
+- [ ] 杀掉前端重进→书架还在→进书显示"继续阅读"
+- [ ] 目录页有书源延迟统计; /v1/status 有健康分
