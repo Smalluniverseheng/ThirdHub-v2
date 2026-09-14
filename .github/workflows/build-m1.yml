@@ -30,12 +30,13 @@ jobs:
           gradle wrapper --gradle-version 8.7 --no-daemon || true
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
-      - uses: actions/upload-artifact@v4
-        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
-      - name: 发 Release
+      - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with: { files: android/app/build/outputs/apk/release/*.apk, body: "ThirdHub 后端 APK" }
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
 
   flutter-android:
     runs-on: ubuntu-latest
@@ -48,12 +49,13 @@ jobs:
           flutter pub get
           cd android && gradle wrapper --gradle-version 8.14 --no-daemon || true
           cd .. && flutter build apk --release
-      - uses: actions/upload-artifact@v4
-        with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
-      - name: 发 Release
+      - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with: { files: flutter_app/build/app/outputs/flutter-apk/*.apk, body: "ThirdHub Flutter 前端 APK" }
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
 
   # ── 桌面端三件套: Flutter 跨平台(自用未签名构建) ──
   flutter-desktop:
