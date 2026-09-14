@@ -12,6 +12,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image/image.dart' as img;
+import 'core/neu.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -109,7 +110,17 @@ class ThApp extends StatelessWidget {
   final bool ready, locked, fresh; final String base, token;
   const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false, this.fresh = false});
   @override Widget build(BuildContext c) { Api.base = base; Api.token = token;
-    return MaterialApp(title: 'ThirdHub', theme: ThemeData.dark(useMaterial3: true),
+    return MaterialApp(title: 'ThirdHub',
+      theme: ThemeData(useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF2A2F38),   // 拟态全局底色(完全体dark)
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B9BFF), brightness: Brightness.dark),
+        cardColor: const Color(0xFF2A2F38),
+        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF2A2F38), elevation: 0)),
+      darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF2A2F38),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B9BFF), brightness: Brightness.dark)),
+      themeMode: ThemeMode.dark,
       home: locked ? const LockScreen() : (fresh ? const OnboardingPage() : (ready ? const OrbShell() : const ConnectLibraryPage()))); }
 }
 
@@ -130,7 +141,7 @@ class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageControl
     Expanded(child: PageView.builder(controller: ctrl, itemCount: pages.length,
       onPageChanged: (i) => setState(() => page = i),
       itemBuilder: (_, i) => Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(pages[i].$1, size: 88, color: Colors.teal),
+        Icon(pages[i].$1, size: 88, color: Colors.blue),
         const SizedBox(height: 32),
         Text(pages[i].$2, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
         const SizedBox(height: 12),
@@ -138,7 +149,7 @@ class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageControl
       ])))),
     Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (var i = 0; i < pages.length; i++)
       Container(width: 8, height: 8, margin: const EdgeInsets.all(4), decoration: BoxDecoration(
-        shape: BoxShape.circle, color: i == page ? Colors.teal : Colors.grey.shade800)) ]),
+        shape: BoxShape.circle, color: i == page ? Colors.blue : Colors.grey.shade800)) ]),
     Padding(padding: const EdgeInsets.all(20), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       TextButton(onPressed: finish, child: const Text('跳过')),
       FilledButton(onPressed: page < pages.length - 1 ? () => ctrl.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : finish,
@@ -163,12 +174,12 @@ class _Lock extends State<LockScreen> {
     else if (input.length < 6) input += d;
     setState(() {}); if (input.length >= 4) verify(); }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.lock_outline, size: 48, color: Colors.teal),
+    const Icon(Icons.lock_outline, size: 48, color: Colors.blue),
     const SizedBox(height: 12), const Text('ThirdHub 已锁定'),
     const SizedBox(height: 16),
     Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (var i = 0; i < 6; i++)
       Container(width: 14, height: 14, margin: const EdgeInsets.all(6), decoration: BoxDecoration(
-        shape: BoxShape.circle, color: i < input.length ? Colors.teal : Colors.grey.shade800)) ]),
+        shape: BoxShape.circle, color: i < input.length ? Colors.blue : Colors.grey.shade800)) ]),
     if (err != null) Text(err!, style: const TextStyle(color: Colors.red, fontSize: 12)),
     const SizedBox(height: 16),
     for (final row in [['1','2','3'],['4','5','6'],['7','8','9'],['','0','DEL']])
@@ -232,7 +243,7 @@ class _Als extends State<AppLockSettings> {
     ]),
     if (!enabled) SizedBox(width: 180, child: TextField(controller: c, obscureText: true, keyboardType: TextInputType.number,
       maxLength: 6, decoration: const InputDecoration(hintText: '设置PIN(4-6位)', isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
-    if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+    if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
   ]);
 }
 
@@ -261,14 +272,14 @@ class _Orb extends State<OrbShell> {
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
             child: GestureDetector(onTap: () => setState(() { tab = i; menu = false; }),
               child: Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle,
-                  color: tab == i ? Colors.teal : Colors.grey.shade800,
+                  color: tab == i ? Colors.blue : Colors.grey.shade800,
                   border: Border.all(color: tab == i ? Colors.white : Colors.white24, width: 2)),
                 child: Icon(tabs[i].$2, color: Colors.white, size: 22))))])),
         Positioned(left: orb.dx, top: orb.dy, child: GestureDetector(
           onPanUpdate: (d) => setState(() => orb += d.delta), onPanEnd: (_) => snap(),
           onTap: () => setState(() => menu = !menu),
           child: Container(width: orbSize, height: orbSize, decoration: BoxDecoration(shape: BoxShape.circle,
-            color: Colors.teal.withOpacity(0.92), boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black45)],
+            color: Colors.blue.withOpacity(0.92), boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black45)],
             border: Border.all(color: Colors.white24, width: 2)), child: Icon(menu ? Icons.close : Icons.hub, color: Colors.white)))),
       ]));
   }
@@ -347,11 +358,11 @@ class _Pf extends State<ProfilePage> {
       const SizedBox(height: 16),
       // ── 收藏统计 ──
       Card(child: Padding(padding: const EdgeInsets.all(12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
+        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
           Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey)) ]),
       ]))),
       // ── 阅读设置 ──
-      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('阅读设置', style: TextStyle(fontSize: 13, color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('阅读设置', style: TextStyle(fontSize: 13, color: Colors.blueAccent, fontWeight: FontWeight.bold))),
       Card(child: Column(children: [
         ListTile(dense: true, title: const Text('字号', style: TextStyle(fontSize: 13)),
           subtitle: Slider(value: AppSettings.fontSize, min: 12, max: 32, divisions: 20, label: AppSettings.fontSize.toStringAsFixed(0),
@@ -366,7 +377,7 @@ class _Pf extends State<ProfilePage> {
             selected: {AppSettings.pageMode}, onSelectionChanged: (s) => AppSettings.setPageMode(s.first).then((_) => setState(() {})))),
       ])),
       // ── 同步设置 ──
-      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('多端同步', style: TextStyle(fontSize: 13, color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+      const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4), child: Text('多端同步', style: TextStyle(fontSize: 13, color: Colors.blueAccent, fontWeight: FontWeight.bold))),
       Card(child: Column(children: [
         ListTile(dense: true, leading: const Icon(Icons.cloud_sync, size: 20), title: const Text('云端同步', style: TextStyle(fontSize: 13)),
           subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB\n头像限0.5MB · 设置共享剩余配额 · CF账号接入后跨设备生效', style: const TextStyle(fontSize: 11, color: Colors.grey)),
@@ -410,7 +421,7 @@ class _Eng extends State<EnginesPage> {
   Future<void> load() async { try { final r = await Api.get('/v1/engines');
     setState(() { builtin = (r['data']?['builtin'] as List? ?? []); network = (r['data']?['network'] as List? ?? []);
       meta = Map<String, int>.from(r['meta'] ?? {}); loading = false; }); } catch (_) { setState(() => loading = false); } }
-  Color statusColor(String s) => s == 'online' ? Colors.teal : s == 'standby' ? Colors.orange : Colors.red;
+  Color statusColor(String s) => s == 'online' ? Colors.blue : s == 'standby' ? Colors.orange : Colors.red;
   String statusText(String s) => s == 'online' ? '在线' : s == 'standby' ? '待机' : s == 'error' ? '故障' : '离线';
   Widget engineCard(Map e) => Card(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), child: Padding(
     padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -427,8 +438,8 @@ class _Eng extends State<EnginesPage> {
     const SizedBox(height: 8),
     Wrap(spacing: 6, runSpacing: 4, children: [
       for (final cap in (e['caps'] as List? ?? [])) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(color: Colors.teal.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-        child: Text(cap, style: const TextStyle(fontSize: 10, color: Colors.tealAccent))),
+        decoration: BoxDecoration(color: Colors.blue.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+        child: Text(cap, style: const TextStyle(fontSize: 10, color: Colors.blueAccent))),
       if ((e['sources'] ?? 0) > 0) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(color: Colors.grey.shade800, borderRadius: BorderRadius.circular(10)),
         child: Text('${e['sources']} 源', style: const TextStyle(fontSize: 10, color: Colors.grey))),
@@ -471,7 +482,7 @@ class _Tools extends State<ToolsSection> {
     } catch (e) { setState(() => msg = '错误: $e'); } }
   Widget statusRow(String name, String state, int port, [VoidCallback? onOpen]) => Row(children: [
     Icon(state == 'running' ? Icons.check_circle : Icons.error_outline, size: 18,
-      color: state == 'running' ? Colors.teal : Colors.orange),
+      color: state == 'running' ? Colors.blue : Colors.orange),
     const SizedBox(width: 8),
     Expanded(child: Text(name, style: const TextStyle(fontSize: 13))),
     Text(state == 'running' ? ':$port 运行中' : state == 'absent' ? '未安装' : state, style: const TextStyle(fontSize: 12, color: Colors.grey)),
@@ -496,11 +507,11 @@ class _Tools extends State<ToolsSection> {
         Expanded(child: TextField(controller: urlC, decoration: const InputDecoration(hintText: '粘贴下载链接(HTTP/磁力/种子URL)', isDense: true, border: OutlineInputBorder()), style: const TextStyle(fontSize: 12))),
         IconButton(icon: const Icon(Icons.add), onPressed: addTask),
       ]),
-      if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+      if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
       const SizedBox(height: 8),
       for (final t in [...active, ...waiting]) Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [ Expanded(child: Text(t['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))),
-          Text('${t['progress'] ?? 0}%', style: const TextStyle(fontSize: 11, color: Colors.tealAccent)) ]),
+          Text('${t['progress'] ?? 0}%', style: const TextStyle(fontSize: 11, color: Colors.blueAccent)) ]),
         const SizedBox(height: 2),
         LinearProgressIndicator(value: ((t['progress'] ?? 0) as int) / 100, minHeight: 3),
         if ((t['speed'] ?? '') != '' && t['speed'] != '0') Text('${t['speed']} B/s', style: const TextStyle(fontSize: 10, color: Colors.grey)),
@@ -534,7 +545,7 @@ class _Kvc extends State<KeyVaultCard> {
       Expanded(flex: 3, child: TextField(controller: valC, obscureText: true, decoration: const InputDecoration(hintText: '密钥值', isDense: true, border: OutlineInputBorder()), style: const TextStyle(fontSize: 12))),
       IconButton(icon: const Icon(Icons.save, size: 20), onPressed: save),
     ]),
-    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
     for (final k in items) Row(children: [
       Expanded(child: Text('${k['name']}: ${k['value']}', style: const TextStyle(fontSize: 12))),
       IconButton(icon: const Icon(Icons.copy, size: 16), onPressed: () async {
@@ -592,7 +603,7 @@ class _Asc extends State<AlbumSyncCard> {
   @override Widget build(BuildContext c) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [ const Text('相册同步', style: TextStyle(fontWeight: FontWeight.bold)), const Spacer(),
       TextButton.icon(onPressed: loading ? null : pickAndUpload, icon: const Icon(Icons.cloud_upload, size: 18), label: Text(uploading > 0 ? '上传中$uploading…' : '选照片同步')) ]),
-    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
     const SizedBox(height: 8),
     Text('已同步 ${synced.length} 张(点右上角管理删除)', style: const TextStyle(fontSize: 11, color: Colors.grey)),
     const SizedBox(height: 8),
@@ -628,7 +639,7 @@ class _Home extends State<SearchSection> {
     setState(() => loading = false); }
   Widget group(String title, List items, Widget Function(Map) tile) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Text('$title (${items.length})', style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold))),
+      child: Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))),
     for (final it in items) tile(it),
   ]);
   @override Widget build(BuildContext c) => Column(children: [
@@ -637,16 +648,24 @@ class _Home extends State<SearchSection> {
         label: Text(typeNames[i], style: const TextStyle(fontSize: 12)), selected: typeFilter == i,
         onSelected: (_) { setState(() => typeFilter = i); if (ctrl.text.trim().isNotEmpty) go(); }),
     ])),
-    Padding(padding: const EdgeInsets.all(8), child: Row(children: [
-      Expanded(child: TextField(controller: ctrl, decoration: InputDecoration(hintText: typeFilter == 0 ? '一次搜索: 书/漫画/视频/音乐' : '搜索${typeNames[typeFilter]}', border: const OutlineInputBorder(), prefixIcon: const Icon(Icons.search)), onSubmitted: (_) => go())),
-      IconButton(icon: const Icon(Icons.arrow_forward), onPressed: go)])),
+    Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: Row(children: [
+      Expanded(child: NeuInset(radius: 14, padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: TextField(controller: ctrl, textInputAction: TextInputAction.search,
+          onSubmitted: (_) => go(),
+          decoration: InputDecoration(hintText: typeFilter == 0 ? '一次搜索: 书/漫画/视频/音乐' : '搜索${typeNames[typeFilter]}',
+            prefixIcon: const Icon(Icons.search),
+            isDense: true, filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none)))),
+      const SizedBox(width: 8),
+      FilledButton(onPressed: loading ? null : go, child: loading
+        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+        : const Text('搜索'))])),
     if (loading) const LinearProgressIndicator(),
     if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
       child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
     Expanded(child: ListView(children: [
       if (agg != null && agg!['single'] != null) ...[
         for (final g in ((agg!['single'] as List?) ?? [])) ...[
-          if (g['ok'] == true) Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency'] ?? 0}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          if (g['ok'] == true) Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency'] ?? 0}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
           for (final it in ((g['items'] ?? g['books']) as List? ?? [])) _singleTile(typeFilter, g['sourceId'] ?? '', it),
         ],
       ] else if (agg != null) ...[
@@ -726,7 +745,7 @@ class _NSR extends State<NovelSearchResults> {
         ])),
       for (final g in groups) ...[
         if (g['ok'] == true && (g['books'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
         for (final b in (g['books'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
@@ -777,7 +796,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
         actions: [TextButton(onPressed: () => openAt(lastRead), child: const Text('继续阅读')),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
       Expanded(child: ListView.builder(itemCount: chapters.length, itemBuilder: (_, i) => ListTile(
-        title: Text(chapters[i]['name'] ?? ''), trailing: i == lastRead ? const Icon(Icons.history, size: 16, color: Colors.tealAccent) : null,
+        title: Text(chapters[i]['name'] ?? ''), trailing: i == lastRead ? const Icon(Icons.history, size: 16, color: Colors.blueAccent) : null,
         onTap: () => openAt(i)))),
     ])); }
 
@@ -866,7 +885,7 @@ class _CSR extends State<ComicSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
         for (final b in (g['items'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
@@ -1003,7 +1022,7 @@ class _SM extends State<SourceManagerPage> {
       const SizedBox(width: 8),
       FilledButton(onPressed: doImport, child: const Text('导入')),
     ])),
-    if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.tealAccent))),
+    if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.blueAccent))),
   ]); }
 
 // ═══ 板块四: 音乐播放器 ═══
@@ -1060,7 +1079,7 @@ class _MSR extends State<MusicSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
         for (final m in (g['items'] as List? ?? [])) ListTile(
           leading: (m['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(m['coverUrl']), width: 44, height: 44, fit: BoxFit.cover,
@@ -1178,7 +1197,7 @@ class _VSR extends State<VideoSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.tealAccent, fontSize: 12))),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
         for (final b in (g['items'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
@@ -1207,7 +1226,7 @@ class _Vd extends State<VideoDetailPage> {
     : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
     : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if ((info?['intro'] ?? '') != '') Padding(padding: const EdgeInsets.all(12), child: Text(info!['intro'], maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12))),
-        Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 4), child: Text('选集 (${episodes.length})', style: const TextStyle(color: Colors.tealAccent))),
+        Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 4), child: Text('选集 (${episodes.length})', style: const TextStyle(color: Colors.blueAccent))),
         Expanded(child: ListView.builder(itemCount: episodes.length, itemBuilder: (_, i) => ListTile(
           dense: true, title: Text(episodes[i]['name'] ?? '第${i + 1}集', style: const TextStyle(fontSize: 13)),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
