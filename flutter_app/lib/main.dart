@@ -297,17 +297,14 @@ class _Orb extends State<OrbShell> {
         if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
         if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 440).clamp(70.0, size.height - 540),
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
-            child: GestureDetector(onTap: () => setState(() { tab = i; menu = false; }),
-              child: Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle,
-                  color: tab == i ? Colors.blue : Colors.grey.shade800,
-                  border: Border.all(color: tab == i ? Colors.white : Colors.white24, width: 2)),
-                child: Icon(tabs[i].$2, color: Colors.white, size: 22))))])),
+            child: NeuSurface(radius: 26, width: 52, height: 52, selected: tab == i,
+              onTap: () => setState(() { tab = i; menu = false; }),
+              child: Icon(tabs[i].$2, color: tab == i ? Colors.blueAccent : Colors.grey.shade400, size: 22))))])),
         Positioned(left: orb.dx, top: orb.dy, child: GestureDetector(
           onPanUpdate: (d) => setState(() => orb += d.delta), onPanEnd: (_) => snap(),
-          onTap: () => setState(() => menu = !menu),
-          child: Container(width: orbSize, height: orbSize, decoration: BoxDecoration(shape: BoxShape.circle,
-            color: Colors.blue.withOpacity(0.92), boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black45)],
-            border: Border.all(color: Colors.white24, width: 2)), child: Icon(menu ? Icons.close : Icons.hub, color: Colors.white)))),
+          child: NeuSurface(radius: orbSize / 2, width: orbSize, height: orbSize, selected: menu,
+            onTap: () => setState(() => menu = !menu),
+            child: Icon(menu ? Icons.close : Icons.hub, color: Colors.blueAccent, size: 26)))),
       ]));
   }
 }
