@@ -8,7 +8,22 @@ android {
         applicationId = "com.thirdhub.backend"
         minSdk = 24; targetSdk = 34; versionCode = 40001; versionName = "4.0.0-m1"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        create("release") {
+            val p = java.util.Properties()
+            p.load(File(rootDir, "../keystore.properties").inputStream())
+            storeFile = File(rootDir, "../" + p.getProperty("storeFile"))
+            storePassword = p.getProperty("storePassword")
+            keyAlias = p.getProperty("keyAlias")
+            keyPassword = p.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
     // node二进制与server代码放 assets(体积大, 由CI注入):
     //   app/src/main/assets/node/bin/node  ← node-v20.x-linux-arm64 静态二进制
     //   app/src/main/assets/server/        ← 本仓库 server/ 目录(工程脚本拷贝)
