@@ -5,6 +5,7 @@ const http = require('http');
 const fs = require('fs'); const path = require('path');
 const crypto = require('crypto');
 const engine = require('./engine');
+const drpy = require('./engine-drpy');
 const { Bonjour } = require('bonjour-service');
 
 const DATA = path.join(__dirname, 'data');
@@ -66,6 +67,12 @@ try {
 // ─── 极简静态(前端flutter build web产物可选挂载) ───
 const PUB = path.join(__dirname, 'public');
 
+// ─── drpy影视源存储 ───
+const DRPY_FILE = path.join(DATA, 'drpy-sources.json');
+function loadDrpy() { try { return JSON.parse(fs.readFileSync(DRPY_FILE, 'utf8')); } catch (e) { return []; } }
+function saveDrpy(d) { fs.writeFileSync(DRPY_FILE, JSON.stringify(d, null, 2)); }
+let drpySources = loadDrpy();
+
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
 const health = new Map();   // sourceId → {ok, fail, totalLatency}
@@ -108,6 +115,43 @@ async function handle(req, res, body) {
       console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+  // ── drpy 影视 ──
+  if (p === '/v1/video/sources' && req.method === 'GET')
+    return send(200, { object:'list', data: drpySources.map(s => ({ id: s.id, name: s.name })) });
+  if (p === '/v1/video/sources' && req.method === 'POST') {
+    const d = JSON.parse(body || '{}');
+    if (!d.code || !d.name) return send(400, { object:'error', data:{ type:'invalid_request', message:'需name+code' }});
+    const id = d.id || 'drpy_' + crypto.randomBytes(4).toString('hex');
+    const i = drpySources.findIndex(x => x.id === id);
+    i >= 0 ? drpySources[i] = { id, name: d.name, code: d.code } : drpySources.push({ id, name: d.name, code: d.code });
+    saveDrpy(drpySources);
+    return send(200, { object:'meta', data: { id, total: drpySources.length }});
+  }
+  if (p.startsWith('/v1/video/search')) {
+    const q = u.searchParams.get('q');
+    const pool = drpySources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
+    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+      const t0 = Date.now();
+      const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
+      return { source: s.name, ok: !r.error, latency: Date.now() - t0, ...(r.error ? { error: r.error } : { items: r.items }) };
+    }));
+    results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    return send(200, { object:'list', data: results });
+  }
+  if (p.startsWith('/v1/video/detail')) {
+    const s = drpySources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'源不存在, 请先POST /v1/video/sources导入' }});
+    const r = drpy.irDetail(await drpy.runSource(s.code, 'detail', [u.searchParams.get('id')]));
+    if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
+    return send(200, { object:'video', data: { ...r, sourceId: s.id } });
+  }
+  if (p.startsWith('/v1/video/play')) {
+    const s = drpySources.find(x => x.id === u.searchParams.get('sourceId'));
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'源不存在' }});
+    const r = drpy.irPlay(await drpy.runSource(s.code, 'play', [u.searchParams.get('flag') || '', u.searchParams.get('id') || '']));
+    if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
+    return send(200, { object:'video-play', data: r });
   }
   if (p === '/v1/sources/export') return send(200, { object:'list', data: sources, meta: { exported_at: Date.now(), count: sources.length } });
   if (p === '/v1/devices') return send(200, { object:'list', data: devices });
