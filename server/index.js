@@ -285,6 +285,49 @@ async function handle(req, res, body) {
     }
     return send(200, { object:'meta', data: { added: added.length, gids: added }});
   }
+  // ── 相册同步(手机相册→后端) ──
+  if (p === '/v1/album/upload' && req.method === 'POST') {
+    const d = JSON.parse(body || '{}');
+    if (!d.filename || !d.data) return send(400, { object:'error', data:{ type:'invalid_request', message:'需filename+data(base64)' }});
+    const buf = Buffer.from(d.data, 'base64');
+    if (buf.length > 30 * 1048576) return send(413, { object:'error', data:{ type:'invalid_request', message:'单张不超过30MB' }});
+    const id = crypto.randomBytes(8).toString('hex');
+    const ext = path.extname(d.filename) || '.jpg';
+    const fname = id + ext;
+    const fdir = path.join(DATA, 'album'); fs.mkdirSync(fdir, { recursive: true });
+    fs.writeFileSync(path.join(fdir, fname), buf);
+    const manifest = path.join(fdir, 'manifest.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(manifest, 'utf8')); } catch (e) {}
+    list.unshift({ id, filename: d.filename, size: buf.length, at: Date.now(), mime: d.mime || 'image/jpeg' });
+    fs.writeFileSync(manifest, JSON.stringify(list.slice(0, 5000)));
+    return send(200, { object:'meta', data: { id, size: buf.length, total: list.length }});
+  }
+  if (p === '/v1/album/photos') {
+    const manifest = path.join(DATA, 'album', 'manifest.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(manifest, 'utf8')); } catch (e) {}
+    return send(200, { object:'list', data: list, meta: { total: list.length }});
+  }
+  if (p.startsWith('/v1/album/file')) {
+    const id = u.searchParams.get('id');
+    const manifest = path.join(DATA, 'album', 'manifest.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(manifest, 'utf8')); } catch (e) {}
+    const item = list.find(x => x.id === id);
+    if (!item) return send(404, { object:'error', data:{ type:'not_found', message:'照片不存在' }});
+    const fpath = path.join(DATA, 'album', item.id + path.extname(item.filename));
+    if (!fs.existsSync(fpath)) return send(404, { object:'error', data:{ type:'not_found', message:'文件已删' }});
+    res.writeHead(200, { 'Content-Type': item.mime, 'Cache-Control': 'public, max-age=86400' });
+    return res.end(fs.readFileSync(fpath));
+  }
+  if (p.startsWith('/v1/album/delete') && req.method === 'POST') {
+    const id = u.searchParams.get('id');
+    const manifest = path.join(DATA, 'album', 'manifest.json');
+    let list = []; try { list = JSON.parse(fs.readFileSync(manifest, 'utf8')); } catch (e) {}
+    const item = list.find(x => x.id === id);
+    if (item) { try { fs.unlinkSync(path.join(DATA, 'album', item.id + path.extname(item.filename))); } catch (e) {} }
+    list = list.filter(x => x.id !== id);
+    fs.writeFileSync(manifest, JSON.stringify(list));
+    return send(200, { object:'meta', data: { deleted: id }});
+  }
   // ── 四类源统一删除/启停 ──
   const srcCollections = {
     book:   { get: () => sources,       save: saveSources, idField: 'bookSourceUrl' },
