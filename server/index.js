@@ -83,6 +83,22 @@ async function handle(req, res, body) {
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
   }
   if (p === '/v1/devices') return send(200, { object:'list', data: devices });
+  if (p.startsWith('/v1/img')) {
+    // 图片代理: 前端走自签HTTPS证书问题+图床防盗链, 统一走后端转发
+    const imgUrl = u.searchParams.get('url'); const referer = u.searchParams.get('referer') || '';
+    if (!imgUrl || !/^https?:/.test(imgUrl)) return send(400, { object:'error', data:{ type:'invalid_request', message:'无效图片地址' }});
+    try {
+      const r2 = await fetch(imgUrl, { headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+        'Referer': referer || new URL(imgUrl).origin
+      }, signal: AbortSignal.timeout(10000) });
+      if (!r2.ok) return send(502, { object:'error', data:{ type:'source_error', message:'上游' + r2.status }});
+      const buf = Buffer.from(await r2.arrayBuffer());
+      res.writeHead(200, { 'Content-Type': r2.headers.get('content-type') || 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400' });
+      return res.end(buf);
+    } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message: String(e.message) }}); }
+  }
   if (p === '/v1/status') return send(200, { object:'meta', data: {
     uptime: Math.floor(process.uptime()), version: '4.0.0-m1',
     sources: { total: sources.length, enabled: sources.filter(s => s.enabled !== false).length },
