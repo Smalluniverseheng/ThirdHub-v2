@@ -187,7 +187,8 @@ class _Orb extends State<OrbShell> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     return Scaffold(
-      appBar: AppBar(title: Text(tabs[tab].$1), actions: [
+      appBar: AppBar(leading: IconButton(icon: const Icon(Icons.person_outline), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
+        title: Text(tabs[tab].$1), actions: [
         if (tab >= 1 && tab <= 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
         IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
       ]),
@@ -228,6 +229,42 @@ class ThSearchDelegate extends SearchDelegate {
     return const SizedBox.shrink();
   }
 }
+
+// 个人中心: 昵称头像(本地)+收藏统计+清理+关于
+class ProfilePage extends StatefulWidget { const ProfilePage({super.key}); @override State<ProfilePage> createState() => _Pf(); }
+class _Pf extends State<ProfilePage> {
+  String nickname = ''; final nameC = TextEditingController(); Map<String, int> stats = {};
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { final p = await SharedPreferences.getInstance();
+    nickname = p.getString('nickname') ?? '';
+    int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
+    setState(() => stats = { '书架': count('shelf_novel'), '漫画': count('shelf_comic'), '片库': count('shelf_video'), '歌单': count('playlist') }); }
+  Future<void> saveName() async { final p = await SharedPreferences.getInstance();
+    await p.setString('nickname', nameC.text.trim()); setState(() { nickname = nameC.text.trim(); }); }
+  Future<void> clearHistory() async { final p = await SharedPreferences.getInstance();
+    for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已清理搜索历史'))); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('我的')), body: ListView(padding: const EdgeInsets.all(16), children: [
+    Row(children: [
+      CircleAvatar(radius: 30, child: Text(nickname.isEmpty ? 'T' : nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22))),
+      const SizedBox(width: 14),
+      Expanded(child: nickname.isEmpty
+        ? TextField(controller: nameC, decoration: const InputDecoration(hintText: '设置昵称', isDense: true, border: OutlineInputBorder()),
+          onSubmitted: (_) => saveName())
+        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(nickname, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            GestureDetector(onTap: () => setState(() => nickname = ''), child: const Text('点击修改', style: TextStyle(fontSize: 11, color: Colors.grey))) ])),
+    ]),
+    const SizedBox(height: 20),
+    Card(child: Padding(padding: const EdgeInsets.all(12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+      for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
+        Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey)) ]),
+    ]))),
+    ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: const Text('清理搜索历史'), onTap: clearHistory),
+    const ListTile(leading: Icon(Icons.info_outline), title: Text('关于 ThirdHub'),
+      subtitle: Text('v4.0.0-m2 · 纯播放器前端
+数据全在你的资源库, 本App只负责播放')),
+  ]))); }
 
 // 网盘: 内嵌Cloudreve Web UI(文件管理/上传/分享全功能)
 class NetDiskPage extends StatefulWidget { final String baseUrl; const NetDiskPage({super.key, required this.baseUrl}); @override State<NetDiskPage> createState() => _Nd(); }
