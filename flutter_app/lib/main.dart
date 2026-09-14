@@ -42,11 +42,42 @@ class Book {
 }
 
 class ThApp extends StatelessWidget {
-  final bool ready; final String base, token;
-  const ThApp({super.key, required this.ready, required this.base, required this.token});
+  final bool ready, locked; final String base, token;
+  const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false});
   @override Widget build(BuildContext c) { Api.base = base; Api.token = token;
     return MaterialApp(title: 'ThirdHub', theme: ThemeData.dark(useMaterial3: true),
-      home: ready ? const OrbShell() : const ConnectLibraryPage()); }
+      home: locked ? const LockScreen() : (ready ? const OrbShell() : const ConnectLibraryPage())); }
+}
+
+// 应用锁: 本地PIN, 输对才进主界面
+class LockScreen extends StatefulWidget { const LockScreen({super.key}); @override State<LockScreen> createState() => _Lock(); }
+class _Lock extends State<LockScreen> {
+  String input = ''; String? err; bool checking = false;
+  Future<void> verify() async {
+    setState(() => checking = true);
+    final p = await SharedPreferences.getInstance();
+    if (input == (p.getString('app_pin') ?? '')) {
+      runApp(ThApp(ready: (p.getString('base') ?? '').isNotEmpty, base: p.getString('base') ?? '', token: p.getString('token') ?? ''));
+    } else { setState(() { checking = false; err = '密码错误'; input = ''; }); }
+  }
+  void press(String d) { if (checking) return;
+    if (d == 'DEL') { input = input.isEmpty ? '' : input.substring(0, input.length - 1); }
+    else if (input.length < 6) input += d;
+    setState(() {}); if (input.length >= 4) verify(); }
+  @override Widget build(BuildContext c) => Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.lock_outline, size: 48, color: Colors.teal),
+    const SizedBox(height: 12), const Text('ThirdHub 已锁定'),
+    const SizedBox(height: 16),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (var i = 0; i < 6; i++)
+      Container(width: 14, height: 14, margin: const EdgeInsets.all(6), decoration: BoxDecoration(
+        shape: BoxShape.circle, color: i < input.length ? Colors.teal : Colors.grey.shade800)) ]),
+    if (err != null) Text(err!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+    const SizedBox(height: 16),
+    for (final row in [['1','2','3'],['4','5','6'],['7','8','9'],['','0','DEL']])
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (final d in row)
+        SizedBox(width: 72, height: 54, child: d.isEmpty ? const SizedBox() : TextButton(
+          onPressed: () => press(d), child: Text(d == 'DEL' ? '⌫' : d, style: const TextStyle(fontSize: 20)))) ]),
+  ])));
 }
 
 // ═══ 连接资源库(唯一的"设置") ═══
