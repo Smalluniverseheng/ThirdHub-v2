@@ -2,11 +2,16 @@ package com.thirdhub.backend
 
 // 状态页: IP/指纹/密钥展示 + 启停 + 白名单引导
 import android.os.*; import android.widget.*; import androidx.appcompat.app.AppCompatActivity
+import android.Manifest
 import java.net.*; import java.io.File
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 13+ 通知权限(不申请则状态通知不可见)
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 60, 40, 40) }
         val tv = TextView(this).apply { textSize = 16f }
         val btn = Button(this).apply { text = "启动后端" }
