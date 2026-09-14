@@ -1,4 +1,5 @@
 // ThirdHub 后端 APK: 内嵌 node-arm64 + server代码, 首启解压, 前台Service常驻
+import java.util.Properties
 plugins { id("com.android.application") }
 
 android {
@@ -10,7 +11,7 @@ android {
     }
     signingConfigs {
         create("release") {
-            val p = java.util.Properties()
+            val p = Properties()
             p.load(File(rootDir, "../keystore.properties").inputStream())
             storeFile = File(rootDir, "../" + p.getProperty("storeFile"))
             storePassword = p.getProperty("storePassword")
