@@ -1,71 +1,35 @@
-# Legado 改造：ThirdHub 三自动补丁
+# Legado 对接（零改动路线 · 2026-09-14 定稿）
 
-> 底仓: legado-thirdhub (包名已改 com.thirdhub.legado)
-> 目标: 用户零操作, 装上即是"即插即用插件"
-> ⚠️ 注入点需对照底仓实际源码核对行号（MD3分支结构可能与下文假设略有出入）
+> ★ 路线变更：此前的"三自动补丁"（改 Legado 源码）方案**作废**——
+> 架构铁律：**不改任何开源引擎的代码**。引擎官方原样运行,
+> 后端通过它的官方 Web 服务调用, 结果转 IR 回前端。
 
-## 三个自动
+## 开启即用（用户唯一动作：开一次 Web 服务）
 
-### ① 启动自动开启 Web 服务(:1122)
-**注入点**: `com.thirdhub.legado.App`（Application 子类）的 `onCreate()` 尾部。
-**逻辑**:
-```kotlin
-// 延迟5秒(等首启向导完成), 启动 Web 服务
-CoroutineScope(Dispatchers.Default).launch {
-    delay(5000)
-    if (WebService.isRun == false) {
-        // 读取/写入默认端口1122, 随机token存私有目录
-        putPrefInt("web_port", 1122)
-        val token = getPrefString("web_token") ?: randomToken(16).also { putPrefString("web_token", it) }
-        startService<WebService>()   // Legado 原生服务, 带token鉴权(需确认其鉴权参数)
-    }
-}
 ```
-**核对项**: MD3 分支 WebService 的包路径与启动方式（startService vs ContextCompat.startForegroundService）。
-
-### ② mDNS 广播自己
-**注入点**: 同 onCreate，①之后。
-**新增文件**: `com.thirdhub.legado.thirdhub.NsdAnnouncer`
-```kotlin
-object NsdAnnouncer {
-    fun start(ctx: Context, port: Int) {
-        val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
-        val info = NsdServiceInfo().apply {
-            serviceName = "legado-${android.os.Build.MODEL.hashCode()}"
-            serviceType = "_thirdhub-dev._tcp."
-            setPort(port)
-            setAttribute("type", "legado"); setAttribute("version", "4.0"); setAttribute("caps", "novel")
-        }
-        nsd.registerService(info, NsdManager.PROTOCOL_DNS_SD, null)
-    }
-}
-```
-Android 14+ 需要 `android.permission.INTERNET` + `CHANGE_WIFI_MULTICAST_STATE`。
-
-### ③ 发现后端自动握手配对（零输入）
-**新增文件**: `com.thirdhub.legado.thirdhub.AutoPairer`
-- 监听 `_thirdhub-dev._tcp.` 中 type=backend 的实例
-- 发现后 POST `http://后端:9527/v1/pair` {device_type:"legado", device_url:"http://127.0.0.1:1122", token, caps:[...]}
-  （后端需实现 /v1/pair 接收设备注册——见 server 侧任务）
-- 后端回 200 → 配对完成；失败静默（不打扰阅读，每 10 分钟重试一次）
-
-## 后端配套（server/index.js 需加 /v1/pair）
-```javascript
-if (p === '/v1/pair' && req.method === 'POST') {
-  const d = JSON.parse(body || '{}');
-  if (!d.device_url) return send(400, {...});
-  devices.push({ ...d, paired_at: Date.now() }); saveDevices();
-  return send(200, { object:'meta', data:{ paired: true }});
-}
-// 另加 GET /v1/devices 列表, 路由层可按设备合并搜索(网络插件组任务)
+1. 应用商店装【官方开源阅读 Legado】
+2. Legado 设置 → Web服务 → 启动 (默认端口1122, 记下随机token)
+   ※ Legado 设置里可勾"自动启动", 之后永久后台, 永不重复操作
+3. 完成。ThirdHub 后端自动接管:
+   - 自动发现/配对 (/v1/pair, 后端主动探测局域网1122)
+   - 搜索/详情/目录/正文 全部转发给 Legado 官方引擎解析 (零适配)
+   - 前端"后端"板块显示 Legado 在线状态+能力
 ```
 
-## 零配对声明（本补丁的灵魂）
-用户**不需要打开 Legado**、不需要进设置、不需要记任何地址口令。
-装上 Legado → 它在后台自动开服务 → 后端自动发现 → 前端书源列表
-自动出现"Legado(局域网)"。用户对 Legado 的感知=零（它是纯后台插件）。
+## 用户不需要做的（后端全包）
+- 不需要导入书源到 ThirdHub（书源在 Legado 里照常管理, 用户唯一手动项）
+- 不需要改任何设置/规则（Legado 官方引擎=100%规则兼容, 跟官方更新）
+- 不需要保持 Legado 界面打开（Web 服务后台常驻）
 
-## 验收
-1. 干净手机装改造版 Legado → **不需要打开它**（挂在后台即可）
-2. 后端日志出现 `已配对设备 legado@...`
-3. 前端书源列表出现 "Legado(局域网)" 且搜索出结果
+## 后端对接现状（server/index.js）
+- search: /searchBook 转发 ✅ (Legado设备优先, 内置引擎兜底)
+- detail: /getBookInfo 转发 ✅
+- toc: /getChapterList 转发 ✅
+- content: /getBookContent 转发 ✅
+- sourceId 格式: legado:http://设备IP:1122, 前端无感
+
+## 首次联调校准清单
+- [ ] 实测 searchBook 响应字段名 (name/author/coverUrl/bookUrl 映射)
+- [ ] 实测 getBookContent 正文格式 (纯文本/数组/带HTML)
+- [ ] 鉴权头格式 (Authorization: token / 参数token)
+- 实测结果更新本文件+微调 index.js 字段映射
