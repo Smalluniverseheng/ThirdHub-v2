@@ -11,9 +11,11 @@ import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:image/image.dart' as img;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppSettings.init();
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
@@ -28,6 +30,65 @@ class Api {
     final r = await client().get(Uri.parse('$base$path'), headers: {'X-TH-Token': token});
     return jsonDecode(utf8.decode(r.bodyBytes)); }
   static String img(String u) => '$base/v1/img?url=${Uri.encodeComponent(u)}';
+}
+
+// 全局设置中心: 所有前端设置唯一入口, 本地存储+云端同步(1MB配额)骨架
+class AppSettings {
+  static SharedPreferences? _p;
+  static Future<void> init() async { _p = await SharedPreferences.getInstance(); }
+  static SharedPreferences get p => _p!;
+
+  // ── 计量: 1MB配额, 头像<0.5MB, 其余给设置 ──
+  static double get cloudQuotaKB => 1024.0;
+  static double get localUsageKB {
+    double u = 0;
+    for (final k in ['avatar_b64', 'nickname', 'fontSize', 'readerTheme', 'pageMode']) {
+      final v = p.get(k); if (v is String) u += v.length / 1024;
+    }
+    return u;
+  }
+
+  // ── 阅读偏好 ──
+  static double get fontSize => p.getDouble('fontSize') ?? 18.0;
+  static int get readerTheme => p.getInt('readerTheme') ?? 0;
+  static String get pageMode => p.getString('pageMode') ?? 'scroll'; // scroll|paged(分页占位, 开发中)
+
+  static Future<void> setFontSize(double v) async { await p.setDouble('fontSize', v); await sync(); }
+  static Future<void> setReaderTheme(int v) async { await p.setInt('readerTheme', v); await sync(); }
+  static Future<void> setPageMode(String v) async { await p.setString('pageMode', v); await sync(); }
+
+  // ── 账号 ──
+  static String get nickname => p.getString('nickname') ?? '';
+  static String get avatarB64 => p.getString('avatar_b64') ?? '';
+  static Future<void> setAvatar(String b64) async {
+    // 压缩保证 < 0.5MB (调用前已压缩到~30KB, 这里兜底检查)
+    if (b64.length > 700 * 1024) throw Exception('头像超过0.5MB限制');
+    await p.setString('avatar_b64', b64); await sync();
+  }
+
+  // ── 云端同步骨架: 目前本地优先, 同步写后端(二期加CF账号后自动生效) ──
+  static bool syncEnabled = true;
+  static Future<void> sync() async {
+    if (!syncEnabled || Api.base.isEmpty) return;
+    try {
+      await http.post(Uri.parse('${Api.base}/v1/settings'),
+        headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+        body: jsonEncode({ 'data': {
+          'nickname': nickname, 'fontSize': fontSize, 'readerTheme': readerTheme,
+          'pageMode': pageMode, 'avatar_b64': avatarB64, '_usageKB': localUsageKB, '_at': DateTime.now().toIso8601String() }}));
+    } catch (_) {}
+  }
+  // 加载: 优先后端(同步设置)
+  static Future<void> loadFromBackend() async {
+    if (Api.base.isEmpty) return;
+    try { final r = await Api.get('/v1/settings'); final d = r['data'] ?? {};
+      if (d['fontSize'] != null) await p.setDouble('fontSize', (d['fontSize'] as num).toDouble());
+      if (d['readerTheme'] != null) await p.setInt('readerTheme', d['readerTheme']);
+      if (d['pageMode'] != null) await p.setString('pageMode', d['pageMode']);
+      if (d['nickname'] != null) await p.setString('nickname', d['nickname']);
+      if (d['avatar_b64'] != null && d['avatar_b64'] != avatarB64) await p.setString('avatar_b64', d['avatar_b64']);
+    } catch (_) {}
+  }
 }
 
 class Book {
