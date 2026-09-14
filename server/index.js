@@ -90,6 +90,7 @@ let drpySources = loadDrpy();
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
 const contentCache = new Map(); // 正文缓存30分钟(重看同章不重复抓)
+const aggCache = new Map();     // 聚合搜索缓存60s
 const health = new Map();   // sourceId → {ok, fail, totalLatency}
 function tocGet(k) { const e = tocCache.get(k); if (e && Date.now() - e.at < 600000) return e.data; return null; }
 function healthHit(id, ok, latency) {
@@ -331,8 +332,11 @@ async function handle(req, res, body) {
     return send(200, { object:'meta', data:{ added, total: sources.length }});
   }
   if (p.startsWith('/v1/search/all')) {
-    // 聚合搜索: 书+漫画+视频 并行, 统一返回三分组
     const q = u.searchParams.get('q');
+    // 60s短缓存(重复搜索秒回)
+    const ac = aggCache.get(q);
+    if (ac && Date.now() - ac.at < 60000) return send(200, { object:'meta', data: ac.data, meta: { cached: true }});
+    // 聚合搜索: 书+漫画+视频+音乐 并行
     const [books, comics, videos, musics] = await Promise.all([
       (async () => {
         const pool_list = sources.filter(s => s.enabled !== false);
@@ -366,8 +370,10 @@ async function handle(req, res, body) {
         return rs.filter(r => r.ok);
       })(),
     ]);
-    return send(200, { object:'meta', data: { q, books, comics, videos, musics,
-      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length, musicSources: musicSources.length } }});
+    const aggData = { q, books, comics, videos, musics,
+      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length, musicSources: musicSources.length } };
+    aggCache.set(q, { at: Date.now(), data: aggData });
+    return send(200, { object:'meta', data: aggData });
   }
   if (p.startsWith('/v1/search')) {
     const q = u.searchParams.get('q'); const sid = u.searchParams.get('sourceId');
