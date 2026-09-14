@@ -37,7 +37,7 @@ input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line)
 </div>
 <script>
 const $=s=>document.querySelector(s);let T=localStorage.th_token||'';
-const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源']];let cur='book';
+const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源'],['test','搜索测试']];let cur='book';
 async function api(p,opt={}){opt.headers=Object.assign({'X-TH-Token':T},opt.headers||{});
   const r=await fetch(p,opt);if(r.status===401){lock(true);throw new Error('401')}return r.json()}
 function lock(on){$('#lock').style.display=on?'block':'none';$('#main').style.display=on?'none':'block'}
@@ -53,13 +53,16 @@ async function boot(){
       <span class="stat">内存 <b>${s.data.memory}</b></span>
       <span class="stat">运行 <b>${Math.floor(s.data.uptime/60)}分</b></span></div>
       <div class="bar"><i style="width:${s.data.sources.enabled&&s.data.sources.total?Math.round(s.data.sources.enabled/s.data.sources.total*100):0}%"></i></div></div>
-      <div class="card"><h3 style="margin-bottom:6px">${kinds.find(k=>k[0]===cur)[1]}管理</h3><div id="srclist">加载中…</div>
+      ${cur==='test'?`<div class="card"><h3 style="margin-bottom:6px">搜索测试</h3>
+        <div style="display:flex;gap:8px"><input id="tq" placeholder="书名/剧名/歌名/漫画名" style="margin-top:0" onkeydown="if(event.key==='Enter')testSearch()">
+        <button class="sm" onclick="testSearch()">搜全部</button></div><div id="tres" class="mut" style="margin-top:8px">输入关键词, 同时搜书+漫+影+音</div></div>`
+      :`<div class="card"><h3 style="margin-bottom:6px">${kinds.find(k=>k[0]===cur)[1]}管理</h3><div id="srclist">加载中…</div>
       <h4 style="margin:12px 0 6px" class="mut">导入(${cur==='book'?'书源JSON(单条/数组)':'{name, code} JSON'})</h4>
       <textarea id="imp" placeholder='粘贴JSON…'></textarea><br><br>
-      <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`;
+      <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`}
     loadList();lock(false);
   }catch(e){lock(true)}}
-async function loadList(){const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
+async function loadList(){if(cur==='test')return;const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
   const r=await api(urls[cur]);const list=r.data||[];
   $('#srclist').innerHTML=list.length?list.map(s=>`<div class="row"><span>${s.name} ${s.enabled===false?'<span class="mut">(停用)</span>':''}</span>
     <span><button class="sm" onclick="act('toggle','${encodeURIComponent(s.id)}')">${s.enabled===false?'启用':'停用'}</button>
@@ -72,6 +75,15 @@ async function doImport(){const t=$('#imp').value.trim();if(!t)return;$('#impmsg
       body:JSON.stringify(cur==='book'?j:(j.code?j:{name:'导入源',code:t}))});
     $('#impmsg').textContent=r.ok?'导入成功':'失败 '+r.status;$('#imp').value='';loadList();
   }catch(e){$('#impmsg').textContent='JSON解析失败'}}
+async function testSearch(){const q=$('#tq').value.trim();if(!q)return;$('#tres').innerHTML='搜索中…';
+  try{const r=await api('/v1/search/all?q='+encodeURIComponent(q));const d=r.data;
+    let h=`<b>${q}</b> 命中: 书${d.books.reduce((a,g)=>a+(g.books?.length||0),0)} · 漫${d.comics.reduce((a,g)=>a+(g.items?.length||0),0)} · 影${d.videos.reduce((a,g)=>a+(g.items?.length||0),0)} · 音${d.musics.reduce((a,g)=>a+(g.items?.length||0),0)}<br><br>`;
+    for(const g of d.books)for(const b of (g.books||[]).slice(0,3))h+=`📖 [${g.source}] ${b.name} - ${b.author||''}<br>`;
+    for(const g of d.comics)for(const b of (g.items||[]).slice(0,3))h+=`🎨 [${g.source}] ${b.title}<br>`;
+    for(const g of d.videos)for(const b of (g.items||[]).slice(0,3))h+=`🎬 [${g.source}] ${b.name}<br>`;
+    for(const g of d.musics)for(const b of (g.items||[]).slice(0,3))h+=`🎵 [${g.source}] ${b.name} - ${b.artist||''}<br>`;
+    $('#tres').innerHTML=h;
+  }catch(e){$('#tres').textContent='失败: '+e.message}}
 T?boot():lock(true);
 </script>
 </body>
