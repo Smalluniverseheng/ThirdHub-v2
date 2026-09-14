@@ -46,6 +46,11 @@ const PUB = path.join(__dirname, 'public');
 async function handle(req, res, body) {
   const u = new URL(req.url, 'https://localhost');
   const p = u.pathname;
+  // CORS: 局域网工具, 放行所有源(正式版收紧)
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
   // 健康+指纹(免鉴权, 供前端TOFU)
@@ -58,7 +63,18 @@ async function handle(req, res, body) {
   // 其余全需鉴权
   if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
 
+  if (p === '/v1/status') return send(200, { object:'meta', data: {
+    uptime: Math.floor(process.uptime()), version: '4.0.0-m1',
+    sources: { total: sources.length, enabled: sources.filter(s => s.enabled !== false).length },
+    memory: Math.round(process.memoryUsage().rss / 1048576) + 'MB' }});
   if (p === '/v1/sources' && req.method === 'GET') return send(200, { object:'list', data: sources.map(s => ({ id: s.bookSourceUrl, name: s.bookSourceName, enabled: s.enabled !== false })) });
+  if (p.startsWith('/v1/sources/toggle') && req.method === 'POST') {
+    const id = u.searchParams.get('id');
+    const s = sources.find(x => x.bookSourceUrl === id);
+    if (!s) return send(404, { object:'error', data:{ type:'not_found', message:'书源不存在' }});
+    s.enabled = s.enabled === false ? true : false; saveSources(sources);
+    return send(200, { object:'meta', data: { id, enabled: s.enabled }});
+  }
   if (p === '/v1/sources' && req.method === 'POST') {
     const arr = JSON.parse(body || '[]');
     const added = [];
