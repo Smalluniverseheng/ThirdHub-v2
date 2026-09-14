@@ -74,6 +74,22 @@ function miniJsonPath(obj, path) {
 
 // ─── 在一组 cheerio 元素上执行规则链 ───
 function applyRule($root, elements, rule, context) {
+  if (rule == null) return null;
+  const rs = String(rule).trim();
+  // XPath 规则: 直接换算选择器
+  if (rs.startsWith('/')) {
+    const xp = xpathToCheerio(rs);
+    const scope = elements && elements.find ? elements : $root.root();
+    if (!xp.selector) return null;
+    let found = scope.find(xp.selector);
+    if (!found.length && elements && elements.is && elements.is(xp.selector)) found = elements;
+    if (!found.length) return null;
+    const first = found.first();
+    if (xp.take === 'text()') return first.text().trim();
+    if (xp.take === 'html()') return first.html();
+    if (xp.take && xp.take.startsWith('@')) return first.attr(xp.take.slice(1)) || null;
+    return first.text().trim();
+  }
   const ops = Array.isArray(rule) ? rule : parseChain(rule);
   if (!ops) return null;
   let cur = elements;
