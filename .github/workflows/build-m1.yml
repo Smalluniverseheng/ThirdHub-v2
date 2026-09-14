@@ -1,0 +1,60 @@
+# ThirdHub v4 M1 自动构建: 打 tag v4* 即出包
+name: build-m1
+on:
+  push:
+    tags: ["v4*"]
+  workflow_dispatch:
+
+jobs:
+  backend-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - name: 注入 Node 二进制 + 后端代码到 assets
+        run: |
+          mkdir -p android/app/src/main/assets/node/bin android/app/src/main/assets/server
+          curl -sL https://nodejs.org/dist/v20.17.0/node-v20.17.0-linux-arm64.tar.xz | tar xJ --strip-components=2 -C android/app/src/main/assets/node bin/node
+          chmod +x android/app/src/main/assets/node/bin/node || true
+          cp -r server/* android/app/src/main/assets/server/
+      - uses: android-actions/setup-android@v3
+      - name: 构建 APK
+        run: |
+          cd android
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleRelease --no-daemon
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: thirdhub-backend-apk
+          path: android/app/build/outputs/apk/release/*.apk
+      - name: 发 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/*.apk
+          body: "ThirdHub 后端 APK (M1)"
+
+  flutter-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - name: 构建 Flutter
+        run: |
+          cd flutter_app
+          flutter pub get
+          flutter build apk --release
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: thirdhub-flutter-apk
+          path: flutter_app/build/app/outputs/flutter-apk/*.apk
+      - name: 发 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: flutter_app/build/app/outputs/flutter-apk/*.apk
+          body: "ThirdHub Flutter 前端 (M1)"
