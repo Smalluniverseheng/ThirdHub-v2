@@ -15,8 +15,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
+  final onboarded = prefs.getBool('first_run') ?? false;
   runApp(ThApp(ready: (prefs.getString('base') ?? '').isNotEmpty,
-    base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? '', locked: pin.isNotEmpty));
+    base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? '', locked: pin.isNotEmpty, fresh: !onboarded));
 }
 
 class Api {
@@ -43,11 +44,45 @@ class Book {
 }
 
 class ThApp extends StatelessWidget {
-  final bool ready, locked; final String base, token;
-  const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false});
+  final bool ready, locked, fresh; final String base, token;
+  const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false, this.fresh = false});
   @override Widget build(BuildContext c) { Api.base = base; Api.token = token;
     return MaterialApp(title: 'ThirdHub', theme: ThemeData.dark(useMaterial3: true),
-      home: locked ? const LockScreen() : (ready ? const OrbShell() : const ConnectLibraryPage())); }
+      home: locked ? const LockScreen() : (fresh ? const OnboardingPage() : (ready ? const OrbShell() : const ConnectLibraryPage()))); }
+}
+
+// 首启引导: 三页滑屏(是什么→怎么用→连接)
+class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key}); @override State<OnboardingPage> createState() => _Ob(); }
+class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageController();
+  static const pages = [
+    (Icons.auto_awesome, '一个入口, 所有娱乐', '小说 · 漫画 · 视频 · 音乐 · 直播
+全部聚合, 搜一次全出来'),
+    (Icons.hub, '资源库在哪, 内容就在哪', '在你的电脑/旧手机/电视上装 ThirdHub 后端
+本App自动连接, 数据全在你家'),
+    (Icons.touch_app, '装上插件, 一切自动', '开源阅读等插件自动配对\n书源一键导入, 去广告全在后台'),
+  ];
+  Future<void> finish() async { final p = await SharedPreferences.getInstance();
+    await p.setBool('first_run', true);
+    if (mounted) runApp(ThApp(ready: (p.getString('base') ?? '').isNotEmpty, base: p.getString('base') ?? '', token: p.getString('token') ?? '')); }
+  @override Widget build(BuildContext c) => Scaffold(body: SafeArea(child: Column(children: [
+    Expanded(child: PageView.builder(controller: ctrl, itemCount: pages.length,
+      onPageChanged: (i) => setState(() => page = i),
+      itemBuilder: (_, i) => Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(pages[i].$1, size: 88, color: Colors.teal),
+        const SizedBox(height: 32),
+        Text(pages[i].$2, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        Text(pages[i].$3, style: const TextStyle(color: Colors.grey, height: 1.7), textAlign: TextAlign.center),
+      ])))),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (var i = 0; i < pages.length; i++)
+      Container(width: 8, height: 8, margin: const EdgeInsets.all(4), decoration: BoxDecoration(
+        shape: BoxShape.circle, color: i == page ? Colors.teal : Colors.grey.shade800)) ]),
+    Padding(padding: const EdgeInsets.all(20), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      TextButton(onPressed: finish, child: const Text('跳过')),
+      FilledButton(onPressed: page < pages.length - 1 ? () => ctrl.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : finish,
+        child: Text(page < pages.length - 1 ? '下一页' : '开始连接')),
+    ])),
+  ])));
 }
 
 // 应用锁: 本地PIN, 输对才进主界面
