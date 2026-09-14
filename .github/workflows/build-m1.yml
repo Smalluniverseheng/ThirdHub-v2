@@ -27,9 +27,9 @@ jobs:
           cd android
           gradle wrapper --gradle-version 8.7 --no-daemon || true
           chmod +x gradlew 2>/dev/null || true
-          ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
+          ./gradlew assembleDebug --no-daemon || gradle assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
-        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
+        with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/debug/*.apk }
       - name: 发 Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
