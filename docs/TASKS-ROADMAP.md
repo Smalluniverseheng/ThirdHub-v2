@@ -3,6 +3,18 @@
 > 最后更新: 2026-09-14 深夜 | 今天已完成 45+ 次迭代推送
 > 接手流程: 读本文件 → 看 docs/FLUTTER-MIGRATION.md(模块迁移表) → BUILD-M1.md(验货清单)
 
+## 〇、架构定位（2026-09-14 定稿）
+
+```
+前端 = Flutter  →  一套代码, 五端出包 (iOS/Android/Windows/macOS/Linux)
+后端 = 同一份 Node.js 零原生依赖代码, 三种形态:
+  ① Linux 服务器原生(systemd)  ← 主力
+  ② Windows/macOS 原生(计划任务/launchd)
+  ③ 安卓 APK 内嵌(node-arm64)  ← 旧手机变服务器
+不是转译: Node 天然跨平台, server/ 一份代码三端跑
+桌面端三件套构建: CI flutter-desktop job (自用未签名)
+```
+
 ## 一、架构定稿（不可违背）
 1. 前端=纯播放器, 零源规则零解析(法律边界) — ARCHITECTURE.md
 2. 搜索路由=能力制: /v1/search?type=xx → 引擎按广播caps派发
