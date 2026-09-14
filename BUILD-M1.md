@@ -38,6 +38,21 @@ curl -k -X POST https://IP:9527/v1/sources -H "X-TH-Token: 密钥" \
 # 或从 aoaostar 合集拉几条测试
 ```
 
+
+## 4.5 导入书源(新方法, 告别curl)
+
+```bash
+cd server && npm install
+node scripts/import-sources.js /path/to/书源合集.json   # 本地文件
+node scripts/import-sources.js https://example.com/s.json # 或URL
+node scripts/import-sources.js --demo                     # 演示源冒烟
+```
+
+## 4.6 Legado 改造版(可选增强, 三自动)
+
+见 legado-patch/README.md: ①自动Web服务 ②mDNS广播 ③自动配对。
+后端 /v1/pair 已就绪, 配对此处实现后设备自动接入。
+
 ## 已知M1边界（如实告知）
 - Flutter证书校验暂全信任(TOFU引导二期)——仅局域网使用无风险
 - 书源引擎支持 Legado 链式规则+XPath子集; 复杂@js规则尽力而为
