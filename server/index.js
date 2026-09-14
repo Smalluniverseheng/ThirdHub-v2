@@ -299,8 +299,13 @@ async function handle(req, res, body) {
                  latency: Date.now() - t0, error: String(e.message || e).slice(0, 120) };
       }
     }));
-    // 成功源排前, 失败的排后但保留可见性
-    results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
+    // 健康度优先(成功率差>30%时健康排前), 然后成功优先, 然后延迟
+    const rate = (id) => { const h = health.get(id); return h && (h.ok + h.fail) >= 3 ? h.ok / (h.ok + h.fail) : 1; };
+    results.sort((a, b) => {
+      const d = rate(b.sourceId) - rate(a.sourceId);
+      if (Math.abs(d) > 0.3) return d;
+      return (b.ok - a.ok) || (a.latency - b.latency);
+    });
     // 跨源去重(书名+作者), 同书记录多源可用性
     const seen = new Map();
     for (const g of results) {
