@@ -28,7 +28,7 @@
 ## 批次 P2: 系统与管理（2-3 天）
 | 模块 | 说明 |
 |---|---|
-| profile(71KB) | 个人中心/头像/账号 |
+| profile(71KB) | ◐ 部分(p2-iter1: 昵称/统计/关于; 头像选图+账号体系二期) |
 | server/server-panel/backend-center | 服务器管理(部分已被 v4 控制台覆盖) |
 | storage/board-storage/keyvault | 存储用量/密钥库 |
 | proxy-settings | 分流代理配置 |
