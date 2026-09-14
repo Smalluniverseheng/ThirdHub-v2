@@ -21,7 +21,8 @@ jobs:
           mv /tmp/nodex/node-v*/bin/node android/app/src/main/assets/node/bin/node
           chmod +x android/app/src/main/assets/node/bin/node || true
           cp -r server/* android/app/src/main/assets/server/
-      - uses: android-actions/setup-android@v3
+      - name: 接受 Android SDK 许可（runner 预装 SDK，无需 setup-android）
+        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
       - name: 构建 APK
         run: |
           cd android
