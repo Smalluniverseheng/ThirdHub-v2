@@ -133,14 +133,38 @@ class _H extends State<HomePage> {
 class SearchPage extends StatefulWidget { final VoidCallback onBookOpen; const SearchPage({super.key, required this.onBookOpen}); @override State<SearchPage> createState() => _S(); }
 class _S extends State<SearchPage> {
   final ctrl = TextEditingController(); List<Map> groups = []; bool loading = false;
-  Future<void> go() async { setState(() { loading = true; groups = []; });
-    try { final r = await Api.get('/v1/search?q=${Uri.encodeComponent(ctrl.text)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
+  List<String> history = [];
+  @override void initState() { super.initState(); loadHistory(); }
+  Future<void> loadHistory() async {
+    final p = await SharedPreferences.getInstance();
+    history = p.getStringList('search_history') ?? [];
+    if (mounted) setState(() {});
+  }
+  Future<void> saveHistory(String q) async {
+    final p = await SharedPreferences.getInstance();
+    history.remove(q); history.insert(0, q);
+    history = history.take(10).toList();
+    await p.setStringList('search_history', history);
+  }
+  Future<void> go([String? preset]) async {
+    final q = preset ?? ctrl.text.trim(); if (q.isEmpty) return;
+    ctrl.text = q; await saveHistory(q);
+    setState(() { loading = true; groups = []; });
+    try { final r = await Api.get('/v1/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); }); }
     catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
-    setState(() => loading = false); }
+    setState(() => loading = false);
+  }
   @override Widget build(BuildContext c) => Column(children: [
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
       Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '书名/作者', border: OutlineInputBorder()), onSubmitted: (_) => go())),
-      IconButton(icon: const Icon(Icons.search), onPressed: go)])),
+      IconButton(icon: const Icon(Icons.search), onPressed: () => go())])),
+    if (history.isNotEmpty && groups.isEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Wrap(spacing: 8, runSpacing: 4, children: [
+        for (final h in history) ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), onPressed: () => go(h)),
+        GestureDetector(onTap: () async {
+          final p = await SharedPreferences.getInstance(); await p.remove('search_history');
+          setState(() => history = []); }, child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.clear_all, size: 18, color: Colors.grey))),
+      ])),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
