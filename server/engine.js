@@ -245,30 +245,42 @@ async function detail(source, bookUrl) {
 
 async function catalog(source, bookUrl) {
   const info = await detail(source, bookUrl);
-  const { html, url } = await fetchPage(info.tocUrl, source);
-  const $ = cheerio.load(html);
+  let chapters = [];
+  let curUrl = info.tocUrl;
   const rule = source.ruleToc || {};
   const ctx = { source, baseUrl: source.bookSourceUrl };
+  const nextRule = rget(rule, 'nextTocUrl');
+  // 目录分页: 有 nextTocUrl 规则时循环抓下一页(上限10页防死循环)
+  for (let page = 0; page < 10; page++) {
+    const { html, url } = await fetchPage(curUrl, source);
+    const $ = cheerio.load(html);
   const listRule = rget(rule, 'chapterList') || rget(rule, 'chapterlist');
-  let chapters = [];
-  if (listRule && listRule.startsWith('/')) {
-    const xp = xpathToCheerio(listRule);
-    $(xp.selector).each((i, el) => {
-      const $el = $(el);
-      const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
-      const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
-      chapters.push({ name, url: absUrl(chUrl, url) });
-    });
-  } else {
-    const ops = parseChain(listRule);
-    const sel0 = ops && ops[0];
-    if (!sel0) return [];
-    $(sel0.sel).each((i, el) => {
-      const $el = $(el);
-      const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
-      const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
-      chapters.push({ name, url: absUrl(chUrl, url) });
-    });
+    const listRule = rget(rule, 'chapterList') || rget(rule, 'chapterlist');
+    if (listRule && listRule.startsWith('/')) {
+      const xp = xpathToCheerio(listRule);
+      $(xp.selector).each((i, el) => {
+        const $el = $(el);
+        const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
+        const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
+        chapters.push({ name, url: absUrl(chUrl, url) });
+      });
+    } else {
+      const ops = parseChain(listRule);
+      const sel0 = ops && ops[0];
+      if (sel0) $(sel0.sel).each((i, el) => {
+        const $el = $(el);
+        const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
+        const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
+        chapters.push({ name, url: absUrl(chUrl, url) });
+      });
+    }
+    // 下一页?
+    if (!nextRule) break;
+    const nextUrl = applyRule($, $.root(), nextRule, ctx);
+    if (!nextUrl) break;
+    const abs = absUrl(nextUrl, url);
+    if (!abs || abs === curUrl) break;
+    curUrl = abs;
   }
   return chapters.filter(c => c.name && c.url);
 }
