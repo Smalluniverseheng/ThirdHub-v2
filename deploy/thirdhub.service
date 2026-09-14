@@ -1,0 +1,19 @@
+[Unit]
+Description=ThirdHub Backend v4
+After=network.target
+
+[Service]
+Type=simple
+User=thirdhub
+WorkingDirectory=/opt/thirdhub/server
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
