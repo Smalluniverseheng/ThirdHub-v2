@@ -345,7 +345,43 @@ class _Tools extends State<ToolsSection> {
       if (active.isEmpty && waiting.isEmpty) const Text('暂无任务', style: TextStyle(fontSize: 12, color: Colors.grey)),
     ]))),
     const AlbumSyncCard(),
+    const KeyVaultCard(),
   ]);
+}
+
+// 密钥库: AI Key等敏感信息加密存后端
+class KeyVaultCard extends StatefulWidget { const KeyVaultCard({super.key}); @override State<KeyVaultCard> createState() => _Kvc(); }
+class _Kvc extends State<KeyVaultCard> {
+  List items = []; final nameC = TextEditingController(); final valC = TextEditingController(); String? msg;
+  @override void initState() { super.initState(); load(); }
+  Future<void> load() async { try { final r = await Api.get('/v1/keyvault'); setState(() => items = (r['data'] as List? ?? [])); } catch (_) {} }
+  Future<void> save() async { if (nameC.text.isEmpty || valC.text.isEmpty) return;
+    try { final r = await http.post(Uri.parse('${Api.base}/v1/keyvault'),
+      headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+      body: jsonEncode({'name': nameC.text.trim(), 'value': valC.text.trim()}));
+      setState(() { msg = r.statusCode == 200 ? '已保存(加密)' : '失败'; nameC.clear(); valC.clear(); }); load();
+    } catch (e) { setState(() => msg = '错误: $e'); } }
+  Future<void> remove(String name) async { await Api.get('/v1/keyvault/delete?name=${Uri.encodeComponent(name)}'); load(); }
+  @override Widget build(BuildContext c) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    const Text('密钥库', style: TextStyle(fontWeight: FontWeight.bold)),
+    const Text('AI Key等敏感信息, AES加密存资源库', style: TextStyle(fontSize: 11, color: Colors.grey)),
+    Row(children: [
+      Expanded(flex: 2, child: TextField(controller: nameC, decoration: const InputDecoration(hintText: '名称(如 deepseek-key)', isDense: true, border: OutlineInputBorder()), style: const TextStyle(fontSize: 12))),
+      const SizedBox(width: 6),
+      Expanded(flex: 3, child: TextField(controller: valC, obscureText: true, decoration: const InputDecoration(hintText: '密钥值', isDense: true, border: OutlineInputBorder()), style: const TextStyle(fontSize: 12))),
+      IconButton(icon: const Icon(Icons.save, size: 20), onPressed: save),
+    ]),
+    if (msg != null) Text(msg!, style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+    for (final k in items) Row(children: [
+      Expanded(child: Text('${k['name']}: ${k['value']}', style: const TextStyle(fontSize: 12))),
+      IconButton(icon: const Icon(Icons.copy, size: 16), onPressed: () async {
+        final r = await Api.get('/v1/keyvault/get?name=${Uri.encodeComponent(k['name'])}');
+        final v = r['data']?['value'] ?? '';
+        if (v.isNotEmpty && mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已取出(请谨慎粘贴)'))); } }),
+      IconButton(icon: const Icon(Icons.delete_outline, size: 16), onPressed: () => remove(k['name'])),
+    ]),
+    if (items.isEmpty) const Text('空', style: TextStyle(fontSize: 12, color: Colors.grey)),
+  ])));
 }
 
 // 相册同步: 选本地照片→上传后端→已同步网格
