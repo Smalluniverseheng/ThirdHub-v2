@@ -205,6 +205,17 @@ async function handle(req, res, body) {
     // 图片代理: 前端走自签HTTPS证书问题+图床防盗链, 统一走后端转发
     const imgUrl = u.searchParams.get('url'); const referer = u.searchParams.get('referer') || '';
     if (!imgUrl || !/^https?:/.test(imgUrl)) return send(400, { object:'error', data:{ type:'invalid_request', message:'无效图片地址' }});
+    // 磁盘缓存(24h): key=md5(url), 命中直接返
+    const CACHE_DIR = path.join(DATA, 'imgcache'); fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const ckey = crypto.createHash('md5').update(imgUrl).digest('hex');
+    const cpath = path.join(CACHE_DIR, ckey);
+    try {
+      const st = fs.statSync(cpath);
+      if (Date.now() - st.mtimeMs < 86400000) {
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'X-TH-Cache': 'hit' });
+        return res.end(fs.readFileSync(cpath));
+      }
+    } catch (e) {}
     try {
       const r2 = await fetch(imgUrl, { headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
@@ -212,8 +223,9 @@ async function handle(req, res, body) {
       }, signal: AbortSignal.timeout(10000) });
       if (!r2.ok) return send(502, { object:'error', data:{ type:'source_error', message:'上游' + r2.status }});
       const buf = Buffer.from(await r2.arrayBuffer());
+      try { fs.writeFileSync(cpath, buf); } catch (e) {}
       res.writeHead(200, { 'Content-Type': r2.headers.get('content-type') || 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400' });
+        'Cache-Control': 'public, max-age=86400', 'X-TH-Cache': 'miss' });
       return res.end(buf);
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message: String(e.message) }}); }
   }
