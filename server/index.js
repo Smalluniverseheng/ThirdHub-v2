@@ -108,6 +108,11 @@ async function handle(req, res, body) {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
+  // Web控制台与静态文件(public/)
+  if ((p === '/' || p === '/index.html') && req.method === 'GET') {
+    const idx = path.join(PUB, 'index.html');
+    if (fs.existsSync(idx)) { res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'}); return res.end(fs.readFileSync(idx)); }
+  }
   // 健康+指纹(免鉴权, 供前端TOFU)
   if (p === '/v1/meta') return send(200, { v: 1, object: 'meta', data: {
     name: 'ThirdHub', version: '4.0.0-m1', fingerprint,
