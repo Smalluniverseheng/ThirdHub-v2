@@ -140,7 +140,7 @@ function rget(ruleObj, key) {
 }
 
 // ─── HTTP 抓取(伪装UA, 超时) ───
-async function fetchPage(url, source) {
+async function fetchPage(url, source, method, body) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
@@ -162,25 +162,29 @@ async function fetchPage(url, source) {
   }
   // 失败重试1次(仅网络错误/5xx, 4xx不重试)
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await tryFetch(url, headers);
+    const r = await tryFetch(url, headers, method, body);
     if (r.ok || (r.status && r.status < 500)) return r;
   }
-  return { ok: false, url, html: '' };
+  return { ok: false, url, html: '', json: null };
 }
 
-async function tryFetch(url, headers) {
+async function tryFetch(url, headers, method, body) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const resp = await fetch(url, { headers, signal: ctrl.signal, redirect: 'follow' });
+    const opts = { headers, signal: ctrl.signal, redirect: 'follow' };
+    if (method === 'POST') { opts.method = 'POST'; opts.body = body || ''; }
+    const resp = await fetch(url, opts);
     const buf = await resp.arrayBuffer();
-    // 简单编码探测: 看html头 charset, 默认utf8
     let text = new TextDecoder('utf-8').decode(buf);
     const m = text.match(/charset=["']?([\w-]+)/i);
     if (m && !/utf-?8/i.test(m[1])) {
       try { text = new TextDecoder(m[1]).decode(buf); } catch (e) {}
     }
-    return { ok: resp.ok, url: resp.url, html: text };
+    // JSON自动探测(书源JSON接口)
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) {}
+    return { ok: resp.ok, url: resp.url, html: text, json };
   } finally { clearTimeout(timer); }
 }
 
@@ -193,13 +197,40 @@ function absUrl(url, base) {
 
 async function search(source, key) {
   const rule = source.ruleSearch || {};
-  const urlTpl = source.searchUrl || '';
+  let urlTpl = source.searchUrl || '';
   if (!urlTpl) return [];
-  const searchUrl = absUrl(urlTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)), source.bookSourceUrl);
-  const { html, url: finalUrl } = await fetchPage(searchUrl, source);
-  const $ = cheerio.load(html);
+  // POST配置: "url,{"method":"POST","body":"key={{key}}"}" 格式
+  let method = 'GET', bodyTpl = null;
+  const ci = urlTpl.indexOf(',{');
+  if (ci > -1) {
+    try {
+      const conf = JSON.parse(urlTpl.slice(ci + 1));
+      method = conf.method || 'GET'; bodyTpl = conf.body || null; urlTpl = urlTpl.slice(0, ci);
+    } catch (e) {}
+  }
+  let searchUrl = absUrl(urlTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)), source.bookSourceUrl);
+  let body = bodyTpl ? bodyTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)) : undefined;
+  if (bodyTpl && method === 'GET') method = 'POST';
+  const resp = await fetchPage(searchUrl, source, method, body);
+  const { html, url: finalUrl, json } = resp;
   const ctx = { source, baseUrl: source.bookSourceUrl, key };
-  const list = resolveList($, rget(rule, 'bookList'));
+  // JSON模式: bookList规则以$.开头
+  const listRuleRaw = rget(rule, 'bookList');
+  if (listRuleRaw && String(listRuleRaw).startsWith('$.')) {
+    const list = miniJsonPath(json, listRuleRaw);
+    if (!Array.isArray(list)) return [];
+    const jpick = (item, k) => { const r = rget(rule, k); if (!r) return null;
+      return String(r).startsWith('$.') ? miniJsonPath(item, r) : r; };
+    return list.map(item => ({
+      name: jpick(item, 'name'), author: jpick(item, 'author') || '',
+      coverUrl: absUrl(jpick(item, 'coverUrl') || jpick(item, 'cover'), source.bookSourceUrl),
+      intro: jpick(item, 'intro') || '', kind: jpick(item, 'kind') || '',
+      bookUrl: absUrl(jpick(item, 'bookUrl'), source.bookSourceUrl),
+      sourceId: source.bookSourceUrl
+    })).filter(b => b.name && b.bookUrl);
+  }
+  const $ = cheerio.load(html);
+  const list = resolveList($, listRuleRaw);
   const books = [];
   list.each((i, el) => {
     const $el = $(el);
