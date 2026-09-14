@@ -27,7 +27,7 @@
 7. 图标 mipmap 缺失(二进制推不了) → drawable shape 占位
 8. flutter 构建顺序: wrapper 在 pub get 前, settings 读不到 local.properties → pub get 在前
 9. 后端 release 未签名不可装 → assembleDebug(debug 签名)
-10. Flutter 版本门槛: Gradle≥8.14 + AGP 8.9.1 + Kotlin 2.1.0(此前 8.7/8.5.2 过低)
+10. Flutter 版本门槛: Gradle≥8.14 + **AGP 8.13.0**(8.9.1仍不够, Flutter要求持续走高) + Kotlin 2.1.0
 
 ## 五、Dart 代码风险点(编译错高发区)
 main.dart 65KB 单文件, 60+ 轮迭代+批量字符串替换。已知处理:
