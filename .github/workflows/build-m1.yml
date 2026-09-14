@@ -49,7 +49,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { os: windows-latest, target: windows, out: "build\windows\x64\runner\Release" }
+          - { os: windows-latest, target: windows, out: "build/windows/x64/runner/Release" }
           - { os: macos-latest, target: macos, out: "build/macos/Build/Products/Release" }
           - { os: ubuntu-latest, target: linux, out: "build/linux/x64/release/bundle" }
     runs-on: ${{ matrix.os }}
