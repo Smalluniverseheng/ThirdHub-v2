@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
+import 'package:webview_flutter/webview_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -228,6 +229,23 @@ class ThSearchDelegate extends SearchDelegate {
   }
 }
 
+// 网盘: 内嵌Cloudreve Web UI(文件管理/上传/分享全功能)
+class NetDiskPage extends StatefulWidget { final String baseUrl; const NetDiskPage({super.key, required this.baseUrl}); @override State<NetDiskPage> createState() => _Nd(); }
+class _Nd extends State<NetDiskPage> {
+  WebViewController? ctrl; bool loading = true; String? err;
+  @override void initState() { super.initState(); init(); }
+  void init() {
+    try {
+      final host = Uri.parse(widget.baseUrl).host;
+      ctrl = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) => setState(() => loading = false)))
+        ..loadRequest(Uri.parse('http://$host:5212'));
+    } catch (e) { setState(() { loading = false; err = '$e'; }); } }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('网盘')),
+    body: err != null ? Center(child: Text(err!))
+      : Stack(children: [ if (ctrl != null) WebViewWidget(controller: ctrl!), if (loading) const Center(child: CircularProgressIndicator()) ])); }
+
 // ═══ 资源库: 存储服务状态 + 下载管理 ═══
 class ToolsSection extends StatefulWidget { const ToolsSection({super.key}); @override State<ToolsSection> createState() => _Tools(); }
 class _Tools extends State<ToolsSection> {
@@ -245,19 +263,20 @@ class _Tools extends State<ToolsSection> {
       setState(() { msg = r.statusCode == 200 ? '已添加下载' : '添加失败 ${r.statusCode}'; urlC.clear(); });
       loadTasks();
     } catch (e) { setState(() => msg = '错误: $e'); } }
-  Widget statusRow(String name, String state, int port) => Row(children: [
+  Widget statusRow(String name, String state, int port, [VoidCallback? onOpen]) => Row(children: [
     Icon(state == 'running' ? Icons.check_circle : Icons.error_outline, size: 18,
       color: state == 'running' ? Colors.teal : Colors.orange),
     const SizedBox(width: 8),
     Expanded(child: Text(name, style: const TextStyle(fontSize: 13))),
     Text(state == 'running' ? ':$port 运行中' : state == 'absent' ? '未安装' : state, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+    if (onOpen != null && state == 'running') TextButton(onPressed: onOpen, child: const Text('打开', style: TextStyle(fontSize: 12))),
   ]);
   @override Widget build(BuildContext c) => ListView(padding: const EdgeInsets.all(12), children: [
     Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('存储服务', style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
       if (st != null) ...[
-        statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212),
+        statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212, () => Navigator.push(c, MaterialPageRoute(builder: (_) => NetDiskPage(baseUrl: Api.base)))),
         const SizedBox(height: 4),
         statusRow('⬇️ 下载引擎 aria2', st!['aria2'] ?? '?', 6800),
         const SizedBox(height: 4),
