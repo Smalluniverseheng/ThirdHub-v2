@@ -101,3 +101,35 @@ node scripts/import-sources.js --demo                     # 演示源冒烟
 | iter21 | Flutter悬浮球MVP(拖动/吸附/扇形菜单/遮罩) |
 | iter22 | 搜索历史(10条+chips) |
 | iter23 | Linux运行器(systemd+一键脚本)+书源导出端点 |
+
+# M2 功能清单与验货（视频/漫画引擎已通）
+
+## 三板块数据源一键导入
+```bash
+cd server && npm install
+# 书源(小说): 从合集文件/URL
+node scripts/import-sources.js /path/to/书源.json
+# 影视源(drpy): 从dr_py仓库
+node scripts/import-drpy.js --list          # 看清单
+node scripts/import-drpy.js 剧              # 按关键词导(默认前50个)
+# 漫画图源(Venera): 从venera-configs仓库
+node scripts/import-comic.js --list
+node scripts/import-comic.js                # 默认前30个
+```
+
+## M2 验货清单(在M1八条基础上追加)
+- [ ] 视频板块: 搜索→选集→播放出画面(真实drpy源)
+- [ ] 漫画板块: 搜索→章节→图片画廊加载(真实Venera图源)
+- [ ] 首页聚合: 一次搜索出 书+漫+影 三组结果
+- [ ] 图片二次加载秒开(X-TH-Cache: hit 头)
+- [ ] 后端启动日志有自检横幅, 无 fail 项
+
+## M2 迭代表
+| iter | 内容 |
+|---|---|
+| iter3 | 视频前端真实链路(搜索/选集/播放) |
+| iter4 | 修bug: sourceId缺失+线路flag丢失 |
+| iter5 | 漫画前端真实链路(搜索/章节/画廊) |
+| iter6 | import-comic.js+Venera生态+图片磁盘缓存 |
+| iter7 | 聚合搜索/v1/search/all+首页板块 |
+| iter8 | 启动自检横幅 |
