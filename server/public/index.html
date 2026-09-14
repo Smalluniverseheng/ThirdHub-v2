@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ThirdHub 控制台</title>
+<style>
+:root{--bg:#12141a;--card:#1c1f27;--line:#2a2e38;--tx:#dde2ea;--mut:#7d8590;--ac:#2dd4bf;--rd:#f87171}
+*{box-sizing:border-box;margin:0}body{background:var(--bg);color:var(--tx);font:14px/1.6 system-ui,sans-serif;padding:16px;max-width:860px;margin:auto}
+h1{font-size:20px;margin-bottom:4px}h1 small{color:var(--mut);font-size:12px;font-weight:400}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px}
+.tabs{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.tabs button{background:var(--card);color:var(--mut);border:1px solid var(--line);border-radius:8px;padding:7px 14px;cursor:pointer}
+.tabs button.on{color:var(--ac);border-color:var(--ac)}
+.row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}.mut{color:var(--mut);font-size:12px}
+button.sm{background:#262b36;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
+button.sm:hover{border-color:var(--ac)}button.dg{color:var(--rd)}
+textarea{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:8px;font:12px monospace;min-height:70px;resize:vertical}
+.stat{display:inline-block;background:#0e1014;border:1px solid var(--line);border-radius:8px;padding:8px 14px;margin:4px 6px 0 0}
+.stat b{color:var(--ac);font-size:18px}
+.bar{height:6px;background:#0e1014;border-radius:3px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--ac)}
+#lock{max-width:380px;margin:14vh auto;text-align:center}
+input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:14px}
+</style>
+</head>
+<body>
+<div id="lock" class="card" style="display:none">
+  <h1>ThirdHub 控制台</h1><p class="mut">输入访问密钥(thsec_...)解锁</p>
+  <input id="tok" placeholder="thsec_..." type="password"><br><br>
+  <button class="sm" onclick="saveTok()">连接</button><p id="lockmsg" class="mut"></p>
+</div>
+<div id="main" style="display:none">
+  <h1>ThirdHub 控制台 <small id="ver"></small></h1>
+  <div class="tabs" id="tabs"></div>
+  <div id="body"></div>
+</div>
+<script>
+const $=s=>document.querySelector(s);let T=localStorage.th_token||'';
+const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源']];let cur='book';
+async function api(p,opt={}){opt.headers=Object.assign({'X-TH-Token':T},opt.headers||{});
+  const r=await fetch(p,opt);if(r.status===401){lock(true);throw new Error('401')}return r.json()}
+function lock(on){$('#lock').style.display=on?'block':'none';$('#main').style.display=on?'none':'block'}
+function saveTok(){T=$('#tok').value.trim();localStorage.th_token=T;boot()}
+async function boot(){
+  try{const m=await api('/v1/meta');$('#ver').textContent=m.data.version+' · 指纹 '+String(m.data.fingerprint).slice(0,19)+'…';
+    const s=await api('/v1/status');
+    $('#tabs').innerHTML=kinds.map(k=>`<button data-k="${k[0]}" class="${k[0]===cur?'on':''}">${k[1]}</button>`).join('');
+    $('#tabs').onclick=e=>{cur=e.target.dataset.k;boot()};
+    $('#body').innerHTML=`<div class="card"><div>
+      <span class="stat">书源 <b>${s.data.sources.total}</b><span class="mut">(${s.data.sources.enabled}启用)</span></span>
+      <span class="stat">影视源 <b>${s.data.stats?.videoSources??'?'}${''}</b></span>
+      <span class="stat">内存 <b>${s.data.memory}</b></span>
+      <span class="stat">运行 <b>${Math.floor(s.data.uptime/60)}分</b></span></div>
+      <div class="bar"><i style="width:${s.data.sources.enabled&&s.data.sources.total?Math.round(s.data.sources.enabled/s.data.sources.total*100):0}%"></i></div></div>
+      <div class="card"><h3 style="margin-bottom:6px">${kinds.find(k=>k[0]===cur)[1]}管理</h3><div id="srclist">加载中…</div>
+      <h4 style="margin:12px 0 6px" class="mut">导入(${cur==='book'?'书源JSON(单条/数组)':'{name, code} JSON'})</h4>
+      <textarea id="imp" placeholder='粘贴JSON…'></textarea><br><br>
+      <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`;
+    loadList();lock(false);
+  }catch(e){lock(true)}}
+async function loadList(){const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
+  const r=await api(urls[cur]);const list=r.data||[];
+  $('#srclist').innerHTML=list.length?list.map(s=>`<div class="row"><span>${s.name} ${s.enabled===false?'<span class="mut">(停用)</span>':''}</span>
+    <span><button class="sm" onclick="act('toggle','${encodeURIComponent(s.id)}')">${s.enabled===false?'启用':'停用'}</button>
+    <button class="sm dg" onclick="act('delete','${encodeURIComponent(s.id)}')">删</button></span></div>`).join('')
+    :'<p class="mut">空。粘贴源JSON导入, 或命令行跑 import-*.js 批量导入。</p>'}
+async function act(a,id){await api(`/v1/src/${cur}/${a}?id=${id}`);loadList()}
+async function doImport(){const t=$('#imp').value.trim();if(!t)return;$('#impmsg').textContent='导入中…';
+  try{const j=JSON.parse(t);const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
+    const r=await fetch(urls[cur],{method:'POST',headers:{'X-TH-Token':T,'Content-Type':'application/json'},
+      body:JSON.stringify(cur==='book'?j:(j.code?j:{name:'导入源',code:t}))});
+    $('#impmsg').textContent=r.ok?'导入成功':'失败 '+r.status;$('#imp').value='';loadList();
+  }catch(e){$('#impmsg').textContent='JSON解析失败'}}
+T?boot():lock(true);
+</script>
+</body>
+</html>
