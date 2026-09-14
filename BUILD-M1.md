@@ -133,3 +133,17 @@ node scripts/import-comic.js                # 默认前30个
 | iter6 | import-comic.js+Venera生态+图片磁盘缓存 |
 | iter7 | 聚合搜索/v1/search/all+首页板块 |
 | iter8 | 启动自检横幅 |
+
+## 音乐板块验货（追加）
+- [ ] 音乐板块: 搜索→点击→播放页出声(真实音源)
+- [ ] 播放过的歌自动入歌单(杀进程重进仍在)
+- [ ] 首页聚合: 一次搜索出 书+漫+影+音 四组
+- [ ] 后端启动自检横幅: 四元源数全显示, 无fail
+
+## M2 迭代表（续）
+| iter | 内容 |
+|---|---|
+| iter10 | MusicFree音源引擎+端点 |
+| iter11 | 音乐板块前端(搜索/歌单/播放页just_audio+歌词) |
+| iter12 | 聚合搜索四元(书漫影音) |
+| iter13 | import-music.js+正文缓存30分钟 |
