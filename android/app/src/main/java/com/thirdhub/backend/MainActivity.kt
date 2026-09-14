@@ -35,8 +35,10 @@ class MainActivity : AppCompatActivity() {
             appendLine("局域网地址: https://${getIp()}:9527")
             if (sec.exists()) appendLine("访问密钥: ${sec.readText().trim()}")
             if (cert.exists()) {
-                val fp = ProcessBuilder("sh","-c","openssl x509 -in ${cert.absolutePath} -noout -fingerprint -sha256").start().inputStream.bufferedReader().readText()
-                appendLine(fp.trim())
+                try {
+                    val fp = ProcessBuilder("sh","-c","openssl x509 -in ${'$'}{cert.absolutePath} -noout -fingerprint -sha256 2>/dev/null || echo ''").start().inputStream.bufferedReader().readText()
+                    if (fp.isNotBlank()) appendLine(fp.trim()) else appendLine("指纹: 启动后浏览器访问 /v1/meta 查看")
+                } catch (e: Exception) { appendLine("指纹: 启动后浏览器访问 /v1/meta 查看") }
             } else appendLine("首次启动后生成证书指纹")
             appendLine()
             appendLine("保活提示: 若通知栏服务被杀, 请对本应用关闭电池优化(设置→应用→ThirdHub后端→电池→不限制)")
