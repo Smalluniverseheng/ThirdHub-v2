@@ -23,7 +23,11 @@ jobs:
           cp -r server/* android/app/src/main/assets/server/
       - uses: android-actions/setup-android@v3
       - name: 构建 APK
-        run: cd android && ./gradlew assembleRelease --no-daemon
+        run: |
+          cd android
+          gradle wrapper --gradle-version 8.7 --no-daemon || true
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
       - name: 发 Release
@@ -37,7 +41,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
-      - run: cd flutter_app && flutter pub get && flutter build apk --release
+      - run: |
+          cd flutter_app/android && gradle wrapper --gradle-version 8.7 --no-daemon || true
+          cd .. && flutter pub get && flutter build apk --release
       - uses: actions/upload-artifact@v4
         with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
       - name: 发 Release
