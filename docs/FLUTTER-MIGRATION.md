@@ -30,9 +30,10 @@
 |---|---|
 | profile(71KB) | ◐ 部分(p2-iter1: 昵称/统计/关于; 头像选图+账号体系二期) |
 | server/server-panel/backend-center | 服务器管理(部分已被 v4 控制台覆盖) |
-| storage/board-storage/keyvault | 存储用量/密钥库 |
+| storage/board-storage | ◐ 存储状态已有; 用量图表二期 |
+| keyvault | ✅ 已完成(p2-iter3: AES-GCM加密+脱敏+资源库页卡片) |
 | proxy-settings | 分流代理配置 |
-| settings-sync | 多端设置同步 |
+| settings-sync | ✅ 已完成(p2-iter2: /v1/settings+昵称同步) |
 | feedback/devlog | 反馈/更新日志 |
 | recycle-bin | 回收站 |
 | community/nav-station/site-actions | 社区/导航站/站点操作 |
