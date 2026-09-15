@@ -198,18 +198,34 @@ class Book {
   static Future<List<Book>> history(String kind) async {
     final p = await SharedPreferences.getInstance();
     try { return (jsonDecode(p.getString('history_$kind') ?? '[]') as List).map((e) => Book.from(e)).toList(); } catch (_) { return []; } }
-  static Future<void> add(Book b, String kind) async {
-    final p = await SharedPreferences.getInstance(); final l = await shelf(kind);
-    if (l.any((x) => x.bookUrl == b.bookUrl)) return;
-    l.add(b); await p.setString('shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList()));
-    // 双写: 通知后端把这份资源下载进资源库(多前端共享, 换设备不丢)
-    if (Api.base.isNotEmpty) {
+  // target: local=只存本机 · backend=只下载到后端资源库 · both=都下
+  static Future<void> add(Book b, String kind, {String target = 'both'}) async {
+    if (target == 'local' || target == 'both') {
+      final p = await SharedPreferences.getInstance(); final l = await shelf(kind);
+      if (!l.any((x) => x.bookUrl == b.bookUrl)) {
+        l.add(b); await p.setString('shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList()));
+      }
+    }
+    // 后端下载: 通知资源库把这份资源收进去(多前端共享, 换设备不丢)
+    if ((target == 'backend' || target == 'both') && Api.base.isNotEmpty) {
       try { await http.post(Uri.parse('${Api.base}/v1/shelf/add'),
         headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
         body: jsonEncode({'kind': kind, 'book': b.toJson()})); } catch (_) {}
     }
   }
 }
+
+// 下载位置三选: 前端本机 / 后端资源库 / 都下
+Future<String?> chooseDownloadTarget(BuildContext c) => showDialog<String>(context: c, builder: (c2) => SimpleDialog(
+  title: const Text('下载到哪里？'),
+  children: [
+    SimpleDialogOption(onPressed: () => Navigator.pop(c2, 'local'),
+      child: const ListTile(dense: true, leading: Icon(Icons.phone_android), title: Text('下载到本机'), subtitle: Text('只存在这台设备, 不占资源库空间', style: TextStyle(fontSize: 11)))),
+    SimpleDialogOption(onPressed: () => Navigator.pop(c2, 'backend'),
+      child: const ListTile(dense: true, leading: Icon(Icons.dns_outlined), title: Text('下载到后端资源库'), subtitle: Text('存进资源库, 所有前端设备共享', style: TextStyle(fontSize: 11)))),
+    SimpleDialogOption(onPressed: () => Navigator.pop(c2, 'both'),
+      child: const ListTile(dense: true, leading: Icon(Icons.sync), title: Text('都下'), subtitle: Text('本机+资源库各存一份', style: TextStyle(fontSize: 11)))),
+  ]));
 
 class ThApp extends StatefulWidget {
   final bool ready, locked, fresh; final String base, token;
@@ -1034,8 +1050,10 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       final remote = r['data']?[widget.book.bookUrl];
       if (remote != null) lastRead = remote['index'] ?? lastRead; } catch (_) {}
     setState(() => loading = false); }
-  Future<void> save() async { await Book.add(widget.book, 'novel');
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('已加入书架')))); }
+  Future<void> save() async {
+    final t = await chooseDownloadTarget(context); if (t == null) return;
+    await Book.add(widget.book, 'novel', target: t);
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t == 'local' ? '已下载到本机书架' : t == 'backend' ? '已提交后端资源库下载' : tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => NovelReadPage(
     sourceId: widget.book.sourceId, chapters: chapters, index: i, bookName: widget.book.name, bookUrl: widget.book.bookUrl))).then((_) => load());
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.book.name), actions: [
@@ -1119,7 +1137,9 @@ class _Cd extends State<ComicDetailPage> {
       lastRead = p.getInt('cprog_${widget.comicId}') ?? -1;
     } catch (e) { err = '$e'; }
     setState(() => loading = false); }
-  Future<void> save() async { await Book.add(Book(widget.title, (info?['tags'] ?? []).join('/'), info?['coverUrl'] ?? '', info?['description'] ?? '', widget.comicId, widget.sourceId), 'comic');
+  Future<void> save() async {
+    final t = await chooseDownloadTarget(context); if (t == null) return;
+    await Book.add(Book(widget.title, (info?['tags'] ?? []).join('/'), info?['coverUrl'] ?? '', info?['description'] ?? '', widget.comicId, widget.sourceId), 'comic', target: t);
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('已加入书架')))); }
   void openAt(int i) => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
     sourceId: widget.sourceId, comicId: widget.comicId, chapters: chapters, index: i))).then((_) => load());
@@ -1553,6 +1573,10 @@ final Map<String, ModuleDef> kModules = {
   '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
   '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
   'AI': const ModuleDef('AI', Icons.smart_toy_outlined, AiSection()),
+  '聊天': const ModuleDef('聊天', Icons.forum_outlined, _ComingSoonPage(name: '聊天')),
+  '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, _ComingSoonPage(name: '游戏')),
+  '社区': const ModuleDef('社区', Icons.groups_outlined, _ComingSoonPage(name: '社区')),
+  '论坛': const ModuleDef('论坛', Icons.article_outlined, _ComingSoonPage(name: '论坛')),
   '直播': const ModuleDef('直播', Icons.live_tv, _ComingSoonPage(name: '直播')),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
@@ -1562,7 +1586,9 @@ class _ComingSoonPage extends StatelessWidget {
   @override Widget build(BuildContext c) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
     const Icon(Icons.rocket_launch_outlined, size: 64, color: Colors.grey),
     const SizedBox(height: 12),
-    Text('$name模块即将上线', style: const TextStyle(color: Colors.grey)),
+    Text('$name模块准备开放', style: const TextStyle(color: Colors.grey)),
+    const SizedBox(height: 4),
+    const Text('敬请期待', style: TextStyle(color: Colors.grey, fontSize: 11)),
   ]));
 }
 
@@ -1955,8 +1981,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.6.0';
-  static const int currentCode = 46000;
+  static const String currentVersion = '4.7.0';
+  static const int currentCode = 47000;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
