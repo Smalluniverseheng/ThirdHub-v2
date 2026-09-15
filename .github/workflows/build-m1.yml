@@ -48,7 +48,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
-      - run: |
+      - env:
+          TH_KEY_STORE: ${{ secrets.TH_KEY_STORE }}
+          TH_STORE_FILE: ../thirdhub.jks
+          TH_STORE_PASSWORD: ${{ secrets.TH_STORE_PASSWORD }}
+          TH_KEY_PASSWORD: ${{ secrets.TH_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$TH_KEY_STORE" | base64 --decode > "$GITHUB_WORKSPACE/flutter_app/android/thirdhub.jks"
           mkdir -p /tmp/wrapper && cd /tmp/wrapper && touch settings.gradle && gradle wrapper --gradle-version 8.14 --no-daemon
           cp -r /tmp/wrapper/gradlew /tmp/wrapper/gradlew.bat /tmp/wrapper/gradle "$GITHUB_WORKSPACE/flutter_app/android/"
           cd "$GITHUB_WORKSPACE/flutter_app"

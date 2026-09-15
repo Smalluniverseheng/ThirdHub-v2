@@ -14,9 +14,23 @@ android {
         versionCode = 40002
         versionName = "4.0.0-m2"
     }
+    // 固定签名(CI注入): 覆盖安装保留数据的前提
+    signingConfigs {
+        val storeFileProp = System.getenv("TH_STORE_FILE") ?: ""
+        if (storeFileProp.isNotEmpty()) {
+            create("release") {
+                storeFile = file(storeFileProp)
+                storePassword = System.getenv("TH_STORE_PASSWORD")
+                keyAlias = "thirdhub"
+                keyPassword = System.getenv("TH_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")  // M2: 调试签名,正式签名二期
+            val storeFileProp = System.getenv("TH_STORE_FILE") ?: ""
+            signingConfig = if (storeFileProp.isNotEmpty()) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("debug")
         }
     }
     compileOptions {
