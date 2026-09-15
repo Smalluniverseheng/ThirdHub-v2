@@ -115,6 +115,9 @@ class NeuSurface extends StatefulWidget {
     this.padding = const EdgeInsets.all(16),
     this.onTap,
     this.color,
+    this.width,
+    this.height,
+    this.selected = false,
   });
 
   final Widget child;
@@ -129,6 +132,13 @@ class NeuSurface extends StatefulWidget {
 
   /// 覆盖底色（默认用主题底色）
   final Color? color;
+
+  /// 固定尺寸（悬浮球/菜单图标用）
+  final double? width;
+  final double? height;
+
+  /// 选中高亮（当前所在模块：强调色描边）
+  final bool selected;
 
   @override
   State<NeuSurface> createState() => _NeuSurfaceState();
@@ -147,10 +157,16 @@ class _NeuSurfaceState extends State<NeuSurface> {
     Widget body = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
+      width: widget.width,
+      height: widget.height,
       padding: widget.padding,
-      decoration: widget.color == null
-          ? d
-          : d.copyWith(color: widget.color),
+      decoration: (widget.color == null
+              ? d
+              : d.copyWith(color: widget.color))
+          .copyWith(
+              border: widget.selected
+                  ? Border.all(color: Colors.blueAccent, width: 2)
+                  : null),
       child: widget.child,
     );
 

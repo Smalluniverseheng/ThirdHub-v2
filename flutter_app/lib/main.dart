@@ -357,7 +357,7 @@ class _Pf extends State<ProfilePage> {
       content: SizedBox(width: 300, height: 300, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, assets[i]),
-          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
+          child: Padding(padding: const EdgeInsets.all(2), child: pm.AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消')))]));
     if (picked == null) return;
     try {
@@ -424,7 +424,7 @@ class _Pf extends State<ProfilePage> {
             if (l != null) { await AppSettings.setLocale(l); setState(() {}); } }),
         ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: Text(tr('主题外观'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: const [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: TextStyle(fontSize: 10)))],
+            segments: [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
         ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: Text(tr('强调色'), style: TextStyle(fontSize: 13)),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF5B9BFF, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
@@ -439,7 +439,7 @@ class _Pf extends State<ProfilePage> {
       section('导航', [
         ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: TextStyle(fontSize: 13)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: const [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: TextStyle(fontSize: 10)))],
+            segments: [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: TextStyle(fontSize: 10)))],
             selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
       ]),
 
@@ -661,7 +661,7 @@ class _Asc extends State<AlbumSyncCard> {
       content: SizedBox(width: 300, height: 400, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, [assets[i]]),
-          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
+          child: Padding(padding: const EdgeInsets.all(2), child: pm.AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
         ))),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(c, assets), child: const Text('全选上传'))]));
@@ -708,7 +708,7 @@ class SearchSection extends StatefulWidget { const SearchSection({super.key}); @
 class _Home extends State<SearchSection> {
   final ctrl = TextEditingController(); Map<String, dynamic>? agg; bool loading = false;
   int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
-  static const typeNames = [tr('全部'), tr('小说'), tr('漫画'), tr('视频'), tr('音乐')];
+  static final typeNames = [tr('全部'), tr('小说'), tr('漫画'), tr('视频'), tr('音乐')];
   static const typeKeys = ['', 'novel', 'comic', 'video', 'music'];
   Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
     setState(() { loading = true; agg = null; });
@@ -795,7 +795,7 @@ class _Home extends State<SearchSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: ''),
       const SourceManagerPage(kind: 'book')][sub]),
@@ -947,7 +947,7 @@ class _NR extends State<NovelReadPage> {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
       const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画', style: TextStyle(color: Colors.grey)))),
@@ -1058,7 +1058,7 @@ class _Cr extends State<ComicReaderPage> {
 // ═══ 源管理(四类通用: 列表/启停/删除/粘贴导入) ═══
 class SourceManagerPage extends StatefulWidget { final String kind; const SourceManagerPage({super.key, required this.kind}); @override State<SourceManagerPage> createState() => _SM(); }
 class _SM extends State<SourceManagerPage> {
-  static const cfgs = {
+  static final cfgs = {
     'book':  (list: '/v1/sources', imp: '/v1/sources', label: tr('书源'), hint: '粘贴书源JSON(单条或数组)'),
     'video': (list: '/v1/video/sources', imp: '/v1/video/sources', label: tr('影视源'), hint: '粘贴{name, code}JSON'),
     'comic': (list: '/v1/comic/sources', imp: '/v1/comic/sources', label: tr('图源'), hint: '粘贴{name, code}JSON'),
@@ -1113,7 +1113,7 @@ class _SM extends State<SourceManagerPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [const _MusicPlaylist(),
       const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌', style: TextStyle(color: Colors.grey)))),
@@ -1224,7 +1224,7 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text(tr('源')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage(),
       const SourceManagerPage(kind: 'video')][sub]),
