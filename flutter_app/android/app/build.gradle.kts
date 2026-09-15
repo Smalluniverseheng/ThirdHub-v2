@@ -6,11 +6,11 @@ plugins {
 
 android {
     namespace = "com.thirdhub.app"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.thirdhub.app"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 40002
         versionName = "4.0.0-m2"
     }

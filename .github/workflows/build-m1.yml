@@ -30,7 +30,6 @@ jobs:
         run: |
           cd android
           base64 -d thirdhub.jks.b64 > thirdhub.jks
-          gradle wrapper --gradle-version 8.7 --no-daemon || true
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
@@ -50,7 +49,6 @@ jobs:
       - run: |
           cd flutter_app
           flutter pub get
-          cd android && gradle wrapper --gradle-version 8.14 --no-daemon || true
           cd .. && flutter build apk --release
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
