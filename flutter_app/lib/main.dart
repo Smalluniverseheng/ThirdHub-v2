@@ -45,12 +45,17 @@ class AppSettings {
   static SharedPreferences? _p;
   static void Function()? onChanged; // 主题变更回调
   static Future<void> init() async { _p = await SharedPreferences.getInstance();
-    I18n.instance.locale = p.getString('locale') ?? 'zh';
-    if (p.getString('identity_code') == null) {
-      final code = 'TH-' + DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()
-        + '-' + (p.getString('nickname')?.hashCode ?? 0).toRadixString(36).toUpperCase();
+    I18n.instance.locale = I18n.resolve(p.getString('locale') ?? 'system'); }
+  // 身份码: 登录 ThirdHub 账号后才生成(与云端账号绑定)
+  static Future<String> ensureIdentity() async {
+    var code = p.getString('identity_code');
+    if (code == null && Cloud.loggedIn) {
+      code = 'TH-' + Cloud.userId.replaceAll('-', '').substring(0, 8).toUpperCase()
+        + '-' + DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
       await p.setString('identity_code', code);
-    } }
+    }
+    return code ?? '';
+  }
   static SharedPreferences get p => _p!;
 
   // ── 计量: 1MB配额, 头像<0.5MB, 其余给设置 ──
@@ -64,13 +69,13 @@ class AppSettings {
   }
 
   // ── 语言(完全体: 调整语言全前端立即生效) ──
-  static String get locale => p.getString('locale') ?? 'zh';
+  static String get locale => p.getString('locale') ?? 'system'; // system=跟随系统
   static Future<void> setLocale(String v) async {
-    await p.setString('locale', v); await I18n.instance.setLocale(v); await sync();
+    await p.setString('locale', v); await I18n.instance.setLocale(I18n.resolve(v)); await sync();
   }
   // ── 外观(网页版"我的"-主题外观) ──
-  static String get themeModeStr => p.getString('theme_mode') ?? 'dark'; // system|dark|light
-  static int get accentColor => p.getInt('accent_color') ?? 0xFF5B9BFF;   // 强调色
+  static String get themeModeStr => p.getString('theme_mode') ?? 'system'; // system|dark|light 默认跟随系统
+  static int get accentColor => p.getInt('accent_color') ?? 0xFF3B5BFD;   // 强调色(网页端蓝)
   static bool get splashAnim => p.getBool('splash_anim') ?? true;         // 开屏动画
   static Future<void> setThemeMode(String v) async { await p.setString('theme_mode', v); await sync(); onChanged?.call(); }
   static Future<void> setAccent(int v) async { await p.setInt('accent_color', v); await sync(); onChanged?.call(); }
@@ -156,11 +161,24 @@ class _ThAppState extends State<ThApp> {
   @override Widget build(BuildContext c) { Api.base = widget.base; Api.token = widget.token;
     final accent = Color(AppSettings.accentColor);
     final mode = AppSettings.themeModeStr;
-    ThemeData buildTheme(Brightness b) => ThemeData(useMaterial3: true, brightness: b,
-      scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF2A2F38) : const Color(0xFFE8EAEE),
-      colorScheme: ColorScheme.fromSeed(seedColor: accent, brightness: b),
-      cardColor: b == Brightness.dark ? const Color(0xFF2A2F38) : Colors.white,
-      appBarTheme: AppBarTheme(backgroundColor: b == Brightness.dark ? const Color(0xFF2A2F38) : const Color(0xFFE8EAEE), elevation: 0));
+    ThemeData buildTheme(Brightness b) {
+      final dark = b == Brightness.dark;
+      final scheme = ColorScheme.fromSeed(seedColor: accent, brightness: b);
+      return ThemeData(useMaterial3: true, brightness: b,
+        scaffoldBackgroundColor: dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB),
+        colorScheme: scheme.copyWith(primary: accent,
+          surface: dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB)),
+        cardTheme: CardThemeData(elevation: 0, margin: const EdgeInsets.symmetric(vertical: 6),
+          color: dark ? const Color(0xFF181B22) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+        listTileTheme: const ListTileThemeData(minVerticalPadding: 4),
+        appBarTheme: AppBarTheme(centerTitle: false, elevation: 0, scrolledUnderElevation: 0,
+          backgroundColor: dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB)),
+        pageTransitionsTheme: const PageTransitionsTheme(builders: {
+          TargetPlatform.android: _SmoothTransitionsBuilder(),
+          TargetPlatform.iOS: _SmoothTransitionsBuilder(),
+        }));
+    }
     return MaterialApp(title: 'ThirdHub',
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
@@ -344,13 +362,8 @@ class ThSearchDelegate extends SearchDelegate {
 // 个人中心: 昵称头像(本地)+收藏统计+清理+关于
 class ProfilePage extends StatefulWidget { const ProfilePage({super.key}); @override State<ProfilePage> createState() => _Pf(); }
 class _Pf extends State<ProfilePage> {
-  Map<String, int> stats = {};
-  @override void initState() { super.initState(); load(); AppSettings.loadFromBackend().then((_) => setState(() {})); }
-  Future<void> load() async { final p = await SharedPreferences.getInstance();
-    int count(String k) { try { return (jsonDecode(p.getString(k) ?? '[]') as List).length; } catch (_) { return 0; } }
-    setState(() => stats = { tr('书架'): count('shelf_novel'), tr('漫画'): count('shelf_comic'), '片库': count('shelf_video'), tr('歌单'): count('playlist') }); }
+  @override void initState() { super.initState(); AppSettings.loadFromBackend().then((_) { if (mounted) setState(() {}); }); }
 
-  // ── 头像(网页版: 选择头像→压缩→更新) ──
   Future<void> pickAvatar() async {
     final permitted = await pm.PhotoManager.requestPermissionExtend();
     if (!permitted.isAuth) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('相册权限被拒'))); return; }
@@ -372,125 +385,64 @@ class _Pf extends State<ProfilePage> {
       final decoded = img.decodeImage(bytes); if (decoded == null) return;
       final resized = img.copyResize(decoded, width: 256);
       final jpg = img.encodeJpg(resized, quality: 85);
-      final b64 = base64Encode(jpg);
-      await AppSettings.setAvatar(b64);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('头像已更新 (${(jpg.length / 1024).toStringAsFixed(1)}KB)')));
-      setState(() {});
-    } catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); } }
+      await AppSettings.setAvatar(base64Encode(jpg));
+      // 登录状态下同步到云端账号体系
+      if (Cloud.loggedIn) { try { await Cloud.updateProfile({'avatar_b64': base64Encode(jpg)}); } catch (_) {} }
+      if (mounted) setState(() {});
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); } }
 
-  Widget section(String title, List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Text(title, style: TextStyle(fontSize: 12, color: Colors.blueAccent.shade100, fontWeight: FontWeight.bold))),
-    Card(margin: EdgeInsets.zero, child: Column(children: children)),
-  ]);
+  Widget entry(IconData icon, String title, String sub, Widget page) => ListTile(
+    leading: Container(width: 38, height: 38, decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+      child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary)),
+    title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+    subtitle: sub.isEmpty ? null : Text(sub, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+    trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+    onTap: () => Navigator.push(context, smoothRoute(page)));
 
   @override Widget build(BuildContext c) {
     final avatar = AppSettings.avatarB64;
-    final nameC = TextEditingController(text: AppSettings.nickname);
-    final bioC = TextEditingController(text: AppSettings.bio);
-    return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(12), children: [
-      // ═══ ① 个人资料(网页版: 头像/昵称/简介/身份码) ═══
-      Row(children: [
-        GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 32,
+    final nick = AppSettings.nickname;
+    final idCode = Cloud.loggedIn ? AppSettings.identityCode : '';
+    return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(14), children: [
+      // ── 资料卡(头像/昵称/简介/身份码) ──
+      Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
+        GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 30,
           backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
-          child: avatar.isEmpty ? Text(AppSettings.nickname.isEmpty ? 'T' : AppSettings.nickname[0].toUpperCase(), style: const TextStyle(fontSize: 22)) : null)),
-        const SizedBox(width: 12),
+          child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 20)) : null)),
+        const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: nameC, decoration: InputDecoration(hintText: tr('昵称'), isDense: true, border: InputBorder.none), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            onSubmitted: (v) async { final p = await SharedPreferences.getInstance(); await p.setString('nickname', v.trim()); await AppSettings.sync(); }),
-          GestureDetector(onTap: () async {
-            final r = await showDialog<String>(context: c, builder: (c2) {
-              final cc = TextEditingController(text: AppSettings.bio);
-              return AlertDialog(title: Text(tr('简介')), content: TextField(controller: cc, maxLines: 2, decoration: InputDecoration(hintText: tr('这个人很懒，什么都没写'))),
-                actions: [TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))), FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: Text(tr('保存')))]); });
-            if (r != null) { await AppSettings.setBio(r); setState(() {}); } },
-            child: Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio, style: const TextStyle(fontSize: 12, color: Colors.grey))),
+          Text(nick.isEmpty ? tr('未设置昵称') : nick, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio,
+            style: const TextStyle(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (idCode.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4),
+            child: Text('身份码 $idCode', style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.primary))),
+          if (!Cloud.loggedIn) const Padding(padding: EdgeInsets.only(top: 4),
+            child: Text('登录账号后生成身份码并同步资料', style: TextStyle(fontSize: 10, color: Colors.grey))),
         ])),
-      ]),
-      const SizedBox(height: 6),
-      // 身份码(网页版: 生成好友二维码/复制身份码)
-      Card(child: ListTile(dense: true, leading: const Icon(Icons.badge_outlined, size: 20),
-        title: Text(AppSettings.identityCode, style: const TextStyle(fontSize: 12, letterSpacing: 0.5)),
-        subtitle: const Text('身份码 · 加好友用(云端好友二期)', style: TextStyle(fontSize: 10)),
-        trailing: IconButton(icon: const Icon(Icons.copy, size: 18), onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('身份码已复制'))); }))),
-      Card(child: Padding(padding: const EdgeInsets.all(10), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        for (final e in stats.entries) Column(children: [ Text('${e.value}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-          Text(e.key, style: const TextStyle(fontSize: 10, color: Colors.grey)) ]),
       ]))),
-
-      // ═══ 账号(ThirdHub 云端账号: 前后端配对 + 资料同步) ═══
-      section('账号', [const AccountTile()]),
-      // ═══ 下载 App(产品列表: 前端/后端/下载器/网页版) ═══
-      section('下载 App', [const DownloadCenterTile()]),
-
-      // ═══ ② 外观(网页版: 主题外观/强调色/开屏动画) ═══
-      section('个性化', [
-        ListTile(dense: true, leading: const Icon(Icons.language, size: 20), title: const Text('语言', style: TextStyle(fontSize: 13)),
-          subtitle: Text(I18n.names[AppSettings.locale] ?? '中文', style: const TextStyle(fontSize: 10)),
-          onTap: () async {
-            final l = await showDialog<String>(context: c, builder: (c2) => SimpleDialog(title: const Text('语言 / Language'),
-              children: [ for (final lc in I18n.supported) SimpleDialogOption(onPressed: () => Navigator.pop(c2, lc),
-                child: Row(children: [ if (lc == AppSettings.locale) const Icon(Icons.check, size: 16, color: Colors.blueAccent),
-                  Text(I18n.names[lc] ?? lc) ])) ]));
-            if (l != null) { await AppSettings.setLocale(l); setState(() {}); } }),
-        ListTile(dense: true, leading: const Icon(Icons.brightness_6_outlined, size: 20), title: Text(tr('主题外观'), style: TextStyle(fontSize: 13)),
-          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: TextStyle(fontSize: 10)))],
-            selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
-        ListTile(dense: true, leading: const Icon(Icons.color_lens_outlined, size: 20), title: Text(tr('强调色'), style: TextStyle(fontSize: 13)),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF5B9BFF, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
-            GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
-              child: Container(width: 22, height: 22, margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(
-                color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: Text(tr('开屏动画'), style: TextStyle(fontSize: 13)),
-          value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
-      ]),
-
-      // ═══ ③ 导航(网页版: 手表端导航栏位置→悬浮球默认侧) ═══
-      section('导航', [
-        ListTile(dense: true, leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: TextStyle(fontSize: 13)),
-          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            segments: [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: TextStyle(fontSize: 10)))],
-            selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
-      ]),
-
-      // ═══ ④ 系统(网页版: 连接器管理/贤者模式/清理缓存/版本) ═══
-      section('系统', [
-        ListTile(dense: true, leading: const Icon(Icons.extension_outlined, size: 20), title: Text(tr('连接器管理'), style: TextStyle(fontSize: 13)),
-          subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 10)), onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EnginesPage()))),
-        SwitchListTile(dense: true, secondary: const Icon(Icons.shield_outlined, size: 20), title: Text(tr('贤者模式（内容保护）'), style: TextStyle(fontSize: 13)),
-          subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 10)),
-          value: (SharedPreferences.getInstance().then((p) => p.getString('app_pin') ?? '')).toString().isNotEmpty && false,
-          onChanged: (_) => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
-        ListTile(dense: true, leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: Text(tr('清理缓存'), style: TextStyle(fontSize: 13)),
-          onTap: () async { final p = await SharedPreferences.getInstance();
-            for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
-        ListTile(dense: true, leading: const Icon(Icons.navigation_outlined, size: 20), title: const Text('底部导航栏', style: TextStyle(fontSize: 13)),
-          subtitle: const Text('像网站一样自定义显示哪些模块', style: TextStyle(fontSize: 10)),
-          onTap: () => showNavSettings(c)),
-        ListTile(dense: true, leading: const Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: TextStyle(fontSize: 13)),
-          subtitle: Text('v${Updater.currentVersion} · 点按检查更新', style: const TextStyle(fontSize: 10)),
-          onTap: () => Updater.check(c, manual: true)),
-      ]),
-
-      // ═══ ⑤ 云端(网页版: 云存储用量/会员) — 会员冻结占位 ═══
-      section('云端', [
-        ListTile(dense: true, leading: const Icon(Icons.cloud_outlined, size: 20), title: Text(tr('云存储'), style: TextStyle(fontSize: 13)),
-          subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB(头像限0.5MB) · 进度存自己后端不占配额', style: const TextStyle(fontSize: 10)),
-          trailing: const Icon(Icons.refresh, size: 18)),
-        ListTile(dense: true, leading: const Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: TextStyle(fontSize: 13)),
-          subtitle: Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 10)), enabled: false),
-      ]),
-
-      // ═══ ⑥ 关于(网页版: 使用指南/开源致谢) ═══
-      section('关于', [
-        ListTile(dense: true, leading: const Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: TextStyle(fontSize: 13)), enabled: false),
-        ListTile(dense: true, leading: const Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: TextStyle(fontSize: 13)),
-          subtitle: Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 10))),
-      ]),
-      const SizedBox(height: 16),
-      const Center(child: Text('ThirdHub v4.0.0-m2 · 纯播放器前端', style: TextStyle(fontSize: 11, color: Colors.grey))),
+      const SizedBox(height: 6),
+      // ── 功能入口(全部子页面, 与网页版一致) ──
+      Card(child: Column(children: [
+        entry(Icons.person_outline, '账号', Cloud.loggedIn ? Cloud.email : '登录 / 注册 ThirdHub 账号', const AccountPage()),
+        const Divider(height: 1, indent: 66),
+        entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 下载器 · 网页版', const DownloadAppsPage()),
+      ])),
+      Card(child: Column(children: [
+        entry(Icons.palette_outlined, tr('个性化'), '语言 · 主题外观 · 强调色 · 开屏动画', const AppearancePage()),
+        const Divider(height: 1, indent: 66),
+        entry(Icons.navigation_outlined, tr('导航'), '底部导航栏 · 悬浮球位置', const NavSettingsPage()),
+        const Divider(height: 1, indent: 66),
+        entry(Icons.settings_outlined, tr('系统'), '连接器 · 应用锁 · 缓存 · 版本更新', const SystemPage()),
+      ])),
+      Card(child: Column(children: [
+        entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员', const CloudPage()),
+        const Divider(height: 1, indent: 66),
+        entry(Icons.info_outline, tr('关于'), '使用指南 · 开源致谢', const AboutPage()),
+      ])),
+      const SizedBox(height: 18),
+      Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端', style: const TextStyle(fontSize: 11, color: Colors.grey))),
     ]));
   }
 }
@@ -1422,23 +1374,38 @@ class _RootNavState extends State<RootNav> {
     });
   }
   @override Widget build(BuildContext c) {
+    ScreenFit.update(c);
     final key = enabled[idx];
     final mod = kModules[key]!;
-    return Scaffold(
-      appBar: AppBar(title: Text(mod.name), actions: [
-        if (mod.localKind != null) ...[
-          IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
-            onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => localLibPage(mod.localKind!)))),
-          IconButton(icon: const Icon(Icons.file_download_outlined), tooltip: '导入本地文件',
-            onPressed: () async {
-              final n = await importLocal(mod.localKind!);
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
-            }),
-        ],
-        IconButton(icon: const Icon(Icons.settings_outlined),
-          onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
-      ]),
-      body: mod.page,
+    final body = AnimatedSwitcher(duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+      child: KeyedSubtree(key: ValueKey(key), child: mod.page));
+    final appBar = AppBar(title: Text(mod.name), actions: [
+      if (mod.localKind != null) ...[
+        IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
+          onPressed: () => Navigator.push(c, smoothRoute(localLibPage(mod.localKind!)))),
+        IconButton(icon: const Icon(Icons.file_download_outlined), tooltip: '导入本地文件',
+          onPressed: () async {
+            final n = await importLocal(mod.localKind!);
+            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
+          }),
+      ],
+      IconButton(icon: const Icon(Icons.settings_outlined),
+        onPressed: () => Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
+    ]);
+    // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
+    if (ScreenFit.isWide) {
+      return Scaffold(
+        body: Row(children: [
+          NavigationRail(selectedIndex: idx, onDestinationSelected: (i) => setState(() => idx = i),
+            labelType: NavigationRailLabelType.all,
+            destinations: [ for (final k in enabled) NavigationRailDestination(icon: Icon(kModules[k]!.icon), label: Text(kModules[k]!.name)) ]),
+          const VerticalDivider(width: 1),
+          Expanded(child: Scaffold(appBar: appBar,
+            body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: body)))),
+        ]));
+    }
+    return Scaffold(appBar: appBar, body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: idx, onDestinationSelected: (i) => setState(() => idx = i),
         destinations: [ for (final k in enabled) NavigationDestination(icon: Icon(kModules[k]!.icon), label: kModules[k]!.name) ],
@@ -1516,6 +1483,7 @@ class _At extends State<AccountTile> {
       if (isLogin) { await Cloud.signIn(mailC.text.trim(), passC.text); }
       else { await Cloud.signUp(mailC.text.trim(), passC.text); }
       await _syncProfile();
+      await AppSettings.ensureIdentity();
       await _autoConnect();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已登录')));
     } catch (e) {
@@ -1630,8 +1598,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.1.0';
-  static const int currentCode = 41000;
+  static const String currentVersion = '4.2.0';
+  static const int currentCode = 42000;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
@@ -1835,4 +1803,182 @@ class _Lcr extends State<LocalComicReader> {
       itemBuilder: (_, i) => InteractiveViewer(maxScale: 5,
         child: Center(child: Image.file(File(pages[i]), fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 64))))));
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// v4.2: 丝滑转场 + 子页面体系 + 多屏适配
+// ═══════════════════════════════════════════════════════════════
+
+// 全局转场: 淡入+轻滑(类似完全体的顺滑感)
+class _SmoothTransitionsBuilder extends PageTransitionsBuilder {
+  const _SmoothTransitionsBuilder();
+  @override Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
+      Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
+    final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+    return FadeTransition(opacity: curved, child: SlideTransition(
+      position: Tween(begin: const Offset(0.05, 0), end: Offset.zero).animate(curved),
+      child: child));
+  }
+}
+
+Route smoothRoute(Widget page) => MaterialPageRoute(builder: (_) => page);
+
+// 屏幕适配: 手表(<360)紧凑 / 手机正常 / 折叠屏展开·平板(>=720)双栏
+class ScreenFit {
+  static double width(BuildContext c) => MediaQuery.of(c).size.width;
+  static bool get isWatch => _w < 360;
+  static bool get isWide => _w >= 720;
+  static double _w = 400;
+  static void update(BuildContext c) { _w = width(c); }
+  static double get pad => isWatch ? 8 : 14;
+  static double contentWidth(double w) => w >= 720 ? 900 : w;
+}
+
+// ── 子页面: 账号 ──
+class AccountPage extends StatefulWidget { const AccountPage({super.key}); @override State<AccountPage> createState() => _Ap(); }
+class _Ap extends State<AccountPage> {
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('账号')),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: const AccountTile()),
+      if (Cloud.loggedIn) Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.badge_outlined, size: 20), title: const Text('身份码', style: TextStyle(fontSize: 14)),
+          subtitle: Text(AppSettings.identityCode.isEmpty ? '生成中…' : AppSettings.identityCode, style: const TextStyle(fontSize: 12)),
+          trailing: IconButton(icon: const Icon(Icons.copy, size: 18), onPressed: () {
+            ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('身份码已复制'))); })),
+        ListTile(leading: const Icon(Icons.notes, size: 20), title: const Text('简介', style: TextStyle(fontSize: 14)),
+          subtitle: Text(AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio, style: const TextStyle(fontSize: 12)),
+          onTap: () async {
+            final cc = TextEditingController(text: AppSettings.bio);
+            final r = await showDialog<String>(context: c, builder: (c2) => AlertDialog(title: const Text('简介'),
+              content: TextField(controller: cc, maxLines: 2),
+              actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text('保存'))]));
+            if (r != null) { await AppSettings.setBio(r);
+              if (Cloud.loggedIn) { try { await Cloud.updateProfile({'bio': r}); } catch (_) {} }
+              setState(() {}); } }),
+      ])),
+    ]));
+}
+
+// ── 子页面: 下载 App ──
+class DownloadAppsPage extends StatelessWidget { const DownloadAppsPage({super.key});
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('下载 App')),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+        child: Text('ThirdHub 全系列产品 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      const Card(child: DownloadCenterTile()),
+    ]));
+}
+
+// ── 子页面: 个性化(语言/主题/强调色/开屏动画) ──
+class AppearancePage extends StatefulWidget { const AppearancePage({super.key}); @override State<AppearancePage> createState() => _Ape(); }
+class _Ape extends State<AppearancePage> {
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('个性化'))),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.language, size: 20), title: const Text('语言', style: TextStyle(fontSize: 14)),
+          subtitle: Text(AppSettings.locale == 'system' ? '跟随系统(默认中文)' : I18n.names[AppSettings.locale] ?? '中文',
+            style: const TextStyle(fontSize: 11)),
+          onTap: () async {
+            final l = await showDialog<String>(context: c, builder: (c2) => SimpleDialog(title: const Text('语言 / Language'),
+              children: [
+                SimpleDialogOption(onPressed: () => Navigator.pop(c2, 'system'),
+                  child: Row(children: [ if (AppSettings.locale == 'system') const Icon(Icons.check, size: 16, color: Colors.blueAccent),
+                    const Text('跟随系统 / System') ])),
+                for (final lc in I18n.supported) SimpleDialogOption(onPressed: () => Navigator.pop(c2, lc),
+                  child: Row(children: [ if (lc == AppSettings.locale) const Icon(Icons.check, size: 16, color: Colors.blueAccent),
+                    Text(I18n.names[lc] ?? lc) ])),
+              ]));
+            if (l != null) { await AppSettings.setLocale(l); setState(() {}); } }),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.brightness_6_outlined, size: 20), title: Text(tr('主题外观'), style: const TextStyle(fontSize: 14)),
+          subtitle: const Text('默认跟随系统', style: TextStyle(fontSize: 11)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: [ButtonSegment(value: 'system', label: Text(tr('跟随系统'), style: const TextStyle(fontSize: 10))), ButtonSegment(value: 'light', label: Text(tr('浅色'), style: const TextStyle(fontSize: 10))), ButtonSegment(value: 'dark', label: Text(tr('深色'), style: const TextStyle(fontSize: 10)))],
+            selected: {AppSettings.themeModeStr}, onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {})))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.color_lens_outlined, size: 20), title: Text(tr('强调色'), style: const TextStyle(fontSize: 14)),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [ for (final col in [0xFF3B5BFD, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24])
+            GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
+              child: Container(width: 22, height: 22, margin: const EdgeInsets.symmetric(horizontal: 3), decoration: BoxDecoration(
+                color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
+        const Divider(height: 1, indent: 56),
+        SwitchListTile(secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: Text(tr('开屏动画'), style: const TextStyle(fontSize: 14)),
+          value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
+      ])),
+    ]));
+}
+
+// ── 子页面: 导航 ──
+class NavSettingsPage extends StatefulWidget { const NavSettingsPage({super.key}); @override State<NavSettingsPage> createState() => _Ns(); }
+class _Ns extends State<NavSettingsPage> {
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('导航'))),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.navigation_outlined, size: 20), title: const Text('底部导航栏', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('像网站一样自定义显示哪些模块', style: TextStyle(fontSize: 11)),
+          onTap: () => showNavSettings(c)),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: const TextStyle(fontSize: 14)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: [ButtonSegment(value: 'left', label: Text(tr('左侧'), style: const TextStyle(fontSize: 10))), ButtonSegment(value: 'right', label: Text(tr('右侧'), style: const TextStyle(fontSize: 10)))],
+            selected: {AppSettings.navSide}, onSelectionChanged: (s) => AppSettings.setNavSide(s.first).then((_) => setState(() {})))),
+      ])),
+    ]));
+}
+
+// ── 子页面: 系统 ──
+class SystemPage extends StatefulWidget { const SystemPage({super.key}); @override State<SystemPage> createState() => _Sy(); }
+class _Sy extends State<SystemPage> {
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('系统'))),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.extension_outlined, size: 20), title: Text(tr('连接器管理'), style: const TextStyle(fontSize: 14)),
+          subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, smoothRoute(const EnginesPage()))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.shield_outlined, size: 20), title: Text(tr('贤者模式（内容保护）'), style: const TextStyle(fontSize: 14)),
+          subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.delete_sweep_outlined, size: 20), title: Text(tr('清理缓存'), style: const TextStyle(fontSize: 14)),
+          onTap: () async { final p = await SharedPreferences.getInstance();
+            for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
+            if (mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text('v${Updater.currentVersion} · 点按检查更新', style: const TextStyle(fontSize: 11)),
+          onTap: () => Updater.check(c, manual: true)),
+      ])),
+    ]));
+}
+
+// ── 子页面: 云端 ──
+class CloudPage extends StatelessWidget { const CloudPage({super.key});
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('云端'))),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.cloud_outlined, size: 20), title: Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text('用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB · 进度存自己后端不占配额', style: const TextStyle(fontSize: 11))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.workspace_premium_outlined, size: 20), title: Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
+          subtitle: const Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 11)), enabled: false),
+      ])),
+    ]));
+}
+
+// ── 子页面: 关于 ──
+class AboutPage extends StatelessWidget { const AboutPage({super.key});
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('关于'))),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: const TextStyle(fontSize: 14)), enabled: false),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: const TextStyle(fontSize: 14)),
+          subtitle: const Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 11))),
+      ])),
+      const SizedBox(height: 12),
+      Center(child: Text('ThirdHub v${Updater.currentVersion}', style: const TextStyle(fontSize: 11, color: Colors.grey))),
+    ]));
 }

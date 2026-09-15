@@ -2,6 +2,7 @@
 // 用法: tr('搜索') —— 字典缺失时回落原文(中文)
 // 语言: zh/en/ja 完整; fr/ru/es/ar 核心词(逐步补全)
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 class I18n extends ChangeNotifier {
   static final I18n instance = I18n._();
@@ -11,6 +12,16 @@ class I18n extends ChangeNotifier {
   static const names = {'zh': '中文', 'en': 'English', 'ja': '日本語', 'fr': 'Français', 'ru': 'Русский', 'es': 'Español', 'ar': 'العربية'};
 
   Future<void> setLocale(String l) async { locale = l; notifyListeners(); }
+
+  // system → 系统语言映射(默认中文;  unsupported→en)
+  static String resolve(String l) {
+    if (l != 'system') return l;
+    try {
+      final code = WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+      if (code == 'zh') return 'zh';
+      return supported.contains(code) ? code : 'en';
+    } catch (_) { return 'zh'; }
+  }
 
   static final Map<String, Map<String, String>> dict = {
     'en': {
