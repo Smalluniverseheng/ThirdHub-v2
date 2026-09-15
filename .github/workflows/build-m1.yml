@@ -47,7 +47,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
       - run: |
-          mkdir -p /tmp/wrapper && cd /tmp/wrapper && gradle wrapper --gradle-version 8.14 --no-daemon
+          mkdir -p /tmp/wrapper && cd /tmp/wrapper && touch settings.gradle && gradle wrapper --gradle-version 8.14 --no-daemon
           cp -r /tmp/wrapper/gradlew /tmp/wrapper/gradlew.bat /tmp/wrapper/gradle "$GITHUB_WORKSPACE/flutter_app/android/"
           cd "$GITHUB_WORKSPACE/flutter_app"
           flutter pub get
