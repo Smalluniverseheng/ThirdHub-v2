@@ -47,7 +47,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
       - run: |
-          cd flutter_app
+          mkdir -p /tmp/wrapper && cd /tmp/wrapper && gradle wrapper --gradle-version 8.14 --no-daemon
+          cp -r /tmp/wrapper/gradlew /tmp/wrapper/gradlew.bat /tmp/wrapper/gradle "$GITHUB_WORKSPACE/flutter_app/android/"
+          cd "$GITHUB_WORKSPACE/flutter_app"
           flutter pub get
           flutter build apk --release
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
