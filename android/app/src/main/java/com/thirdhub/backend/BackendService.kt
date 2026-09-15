@@ -110,7 +110,7 @@ class BackendService : Service() {
                 val dest = File(out, path); dest.parentFile?.mkdirs()
                 am.open(path).use { inp -> FileOutputStream(dest).use { it.write(inp.readBytes()) } }
                 if (path.contains("/bin/") || path.endsWith("/xz")) dest.setExecutable(true)
-            } else list.forEach { copy(if (path.isEmpty()) it else "$path/$it") }
+            } else list.forEach { child -> copy(if (path.isEmpty()) child else path + "/" + child) }
         }
         copy("")
     }
