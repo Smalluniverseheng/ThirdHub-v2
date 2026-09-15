@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'core/neu.dart';
@@ -357,7 +358,7 @@ class _Pf extends State<ProfilePage> {
       content: SizedBox(width: 300, height: 300, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, assets[i]),
-          child: Padding(padding: const EdgeInsets.all(2), child: pm.AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
+          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消')))]));
     if (picked == null) return;
     try {
@@ -661,7 +662,7 @@ class _Asc extends State<AlbumSyncCard> {
       content: SizedBox(width: 300, height: 400, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
         itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
           onTap: () => Navigator.pop(c, [assets[i]]),
-          child: Padding(padding: const EdgeInsets.all(2), child: pm.AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
+          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false)),
         ))),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(c, assets), child: const Text('全选上传'))]));
@@ -750,13 +751,13 @@ class _Home extends State<SearchSection> {
       if (agg != null && agg!['single'] != null) ...[
         for (final g in ((agg!['single'] as List?) ?? [])) ...[
           if (g['ok'] == true) Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency'] ?? 0}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
-          for (final it in ((g['items'] ?? g['books']) as List? ?? [])) _singleTile(typeFilter, g['sourceId'] ?? '', it),
+          for (final it in ((g['items'] ?? g['books']) as List? ?? [])) _singleTile(typeFilter, g['sourceId'] ?? '', it, context),
         ],
       ] else if (agg != null) ...[
         for (final g in (agg!['books'] as List? ?? []))
           group('📖 ${g['source']}', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
-            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(b)))))),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b))))))),
         for (final g in (agg!['comics'] as List? ?? []))
           group('🎨 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['title'] ?? ''),
@@ -776,10 +777,10 @@ class _Home extends State<SearchSection> {
       if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词, 全类型或按类型搜索\n后端按引擎能力自动路由', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
-  Widget _singleTile(int type, String sourceId, Map it) {
+  Widget _singleTile(int type, String sourceId, Map it, BuildContext context) {
     switch (type) {
       case 1: return ListTile(dense: true, title: Text(it['name'] ?? ''), subtitle: Text(it['author'] ?? ''),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(it)))));
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(it))))));
       case 2: return ListTile(dense: true, title: Text(it['title'] ?? ''),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: sourceId, comicId: it['id'] ?? '', title: it['title'] ?? ''))));
       case 3: return ListTile(dense: true, title: Text(it['name'] ?? ''), subtitle: Text(it['type'] ?? ''),
@@ -835,7 +836,7 @@ class _NSR extends State<NovelSearchResults> {
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
           title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
-          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(b))))),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b)))))),
       ], if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('点右上角搜索找书', style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
@@ -1066,7 +1067,7 @@ class _SM extends State<SourceManagerPage> {
   };
   List<Map> items = []; bool loading = true; final importC = TextEditingController(); String? msg;
   String get kind => widget.kind;
-  (String, String, String, String) get cfg => cfgs[kind]!;
+  ({String list, String imp, String label, String hint}) get cfg => cfgs[kind]!;
   Future<void> load() async { try {
       final r = await Api.get(cfg.$1);
       items = (r['data'] as List? ?? []).cast<Map>();
