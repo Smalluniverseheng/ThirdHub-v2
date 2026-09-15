@@ -25,6 +25,11 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
     // node二进制与server代码放 assets(体积大, 由CI注入):
     //   app/src/main/assets/node/bin/node  ← node-v20.x-linux-arm64 静态二进制
     //   app/src/main/assets/server/        ← 本仓库 server/ 目录(工程脚本拷贝)

@@ -41,6 +41,17 @@ class Api {
     final r = await client().get(Uri.parse('$base$path'), headers: {'X-TH-Token': token});
     return jsonDecode(utf8.decode(r.bodyBytes)); }
   static String img(String u) => '$base/v1/img?url=${Uri.encodeComponent(u)}';
+  // AES-256-GCM 加密POST(密钥=sha256(token), 头 X-TH-Enc: aes-gcm, body=base64(nonce‖cipher‖tag))
+  static Future<Map<String, dynamic>> postEncrypted(String path, Map<String, dynamic> body) async {
+    final alg = AesGcm.with256bits();
+    final key = await Sha256().hash(utf8.encode(token));
+    final nonce = alg.newNonce();
+    final box = await alg.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(key.bytes), nonce: nonce);
+    final payload = base64Encode([...nonce, ...box.cipherText, ...box.mac.bytes]);
+    final r = await client().post(Uri.parse('$base$path'),
+      headers: {'X-TH-Token': token, 'X-TH-Enc': 'aes-gcm', 'Content-Type': 'text/plain'}, body: payload);
+    return jsonDecode(utf8.decode(r.bodyBytes));
+  }
 }
 
 // 全局设置中心: 所有前端设置唯一入口, 本地存储+云端同步(1MB配额)骨架
