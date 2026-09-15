@@ -37,6 +37,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with: { files: android/app/build/outputs/apk/release/thirdhub-backend.apk, body: "ThirdHub 后端 APK" }
+      - name: 上传 Supabase 下载桶（网站直链）
+        run: |
+          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-backend.apk" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @android/app/build/outputs/apk/release/thirdhub-backend.apk
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
@@ -52,12 +58,13 @@ jobs:
           cp -r /tmp/wrapper/gradlew /tmp/wrapper/gradlew.bat /tmp/wrapper/gradle "$GITHUB_WORKSPACE/flutter_app/android/"
           cd "$GITHUB_WORKSPACE/flutter_app"
           flutter pub get
-          flutter build apk --release || true
-          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
+          flutter build apk --release --split-per-abi || true
+          if [ ! -f build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ]; then
             (cd android && ./gradlew :app:assembleRelease --no-daemon)
           fi
           find "$GITHUB_WORKSPACE/flutter_app" -name "*.apk" || true
-          APK=$(find "$GITHUB_WORKSPACE/flutter_app" -name "app-release.apk" | head -1)
+          APK=$(find "$GITHUB_WORKSPACE/flutter_app" -name "app-arm64-v8a-release.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find "$GITHUB_WORKSPACE/flutter_app" -name "app-release.apk" | head -1)
           test -n "$APK"
           mkdir -p build/app/outputs/flutter-apk
           cp "$APK" build/app/outputs/flutter-apk/thirdhub-app.apk
@@ -65,6 +72,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with: { files: flutter_app/build/app/outputs/flutter-apk/thirdhub-app.apk, body: "ThirdHub Flutter 前端 APK" }
+      - name: 上传 Supabase 下载桶（网站直链）
+        run: |
+          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-app.apk" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @flutter_app/build/app/outputs/flutter-apk/thirdhub-app.apk
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
