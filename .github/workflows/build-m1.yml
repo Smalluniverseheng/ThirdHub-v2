@@ -51,7 +51,9 @@ jobs:
           cp -r /tmp/wrapper/gradlew /tmp/wrapper/gradlew.bat /tmp/wrapper/gradle "$GITHUB_WORKSPACE/flutter_app/android/"
           cd "$GITHUB_WORKSPACE/flutter_app"
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release || true
+          find build -name "*.apk" || true
+          test -f build/app/outputs/flutter-apk/app-release.apk || (cd android && ./gradlew :app:assembleRelease --no-daemon && cd .. && find build -name "*.apk")
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
