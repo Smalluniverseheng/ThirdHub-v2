@@ -28,7 +28,12 @@ class MainActivity : AppCompatActivity() {
         btn = Button(this).apply { text = "启动后端"; setOnClickListener { startBackend() } }
         val btnStop = Button(this).apply { text = "停止"; setOnClickListener {
             stopService(Intent(this@MainActivity, BackendService::class.java)); btn.text = "启动后端"; refresh() } }
-        root.addView(btnAccount); root.addView(tv); root.addView(btn); root.addView(btnStop)
+        val btnDiag = Button(this).apply { text = "复制诊断信息"; setOnClickListener {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("diag", diagText()))
+            toast("已复制, 发给开发者即可")
+        } }
+        root.addView(btnAccount); root.addView(tv); root.addView(btn); root.addView(btnStop); root.addView(btnDiag)
         setContentView(root)
         val crash = CrashGuard.lastCrash(applicationContext)
         if (crash != null) tv.text = "上次崩溃日志:\n$crash\n"
@@ -100,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         val sec = File(home, "server/data/secret")
         val cert = File(home, "server/data/cert.pem")
         return buildString {
-            appendLine("第三方后端 v4.1.0")
+            appendLine("第三方后端 v4.1.1")
             appendLine("局域网地址: https://${getIp()}:9527")
             if (sec.exists()) appendLine("访问密钥: ${sec.readText().trim()}")
             if (cert.exists()) appendLine("证书指纹: ${CloudAuth.certFingerprint(cert).take(23)}…")
@@ -111,6 +116,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
+
+    private fun diagText(): String {
+        val slog = File(filesDir, "runtime/service.log")
+        return buildString {
+            appendLine("=== 第三方后端诊断 ===")
+            appendLine("版本: v4.1.1 (Kotlin已编译)")
+            appendLine("设备: ${Build.MANUFACTURER} ${Build.MODEL} Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("账号: ${if (CloudAuth.loggedIn) CloudAuth.email else "未登录"}")
+            appendLine("--- service.log ---")
+            appendLine(if (slog.exists()) slog.readText() else "(无)")
+            appendLine("--- 状态 ---")
+            appendLine(statusText())
+        }
+    }
 
     private fun getIp(): String = NetworkInterface.getNetworkInterfaces().toList()
         .flatMap { it.inetAddresses.toList() }

@@ -61,7 +61,7 @@ object CloudAuth {
         return null
     }
 
-    // 注册/更新设备到配对表(前端与引擎按账号发现)
+    // 注册/更新设备到配对表(前端与引擎按账号发现; 三路: 局域网+IPv6+穿透)
     fun registerDevice(ctx: Context, lanUrl: String, secret: String, fingerprint: String): String? {
         if (!loggedIn) return "未登录"
         val body = JSONObject()
@@ -70,7 +70,8 @@ object CloudAuth {
             .put("lan_url", lanUrl)
             .put("secret", secret)
             .put("fingerprint", fingerprint)
-            .put("ipv6_url", "").put("tunnel_url", "")
+            .put("ipv6_url", globalIpv6()?.let { "https://[" + it + "]:9527" } ?: "")
+            .put("tunnel_url", "") // 内网穿透(CF Tunnel)接入后填写
             .put("updated_at", System.currentTimeMillis() / 1000)
         val c = URL("$BASE/rest/v1/th_devices").openConnection() as HttpURLConnection
         c.requestMethod = "POST"
@@ -83,6 +84,17 @@ object CloudAuth {
         val code = c.responseCode
         c.disconnect()
         return if (code in 200..299) null else "注册失败($code)"
+    }
+
+    // 全局IPv6地址(2xxx/3xxx开头)
+    fun globalIpv6(): String? {
+        return try {
+            java.net.NetworkInterface.getNetworkInterfaces().toList()
+                .flatMap { it.inetAddresses.toList() }
+                .firstOrNull { it is java.net.Inet6Address && !it.isLoopbackAddress && !it.isLinkLocalAddress
+                    && it.hostAddress?.substringBefore('%')?.matches(Regex("[23][0-9a-fA-F:]*")) == true }
+                ?.hostAddress?.substringBefore('%')
+        } catch (e: Exception) { null }
     }
 
     // 证书指纹(SHA-256, 纯Java计算, 不依赖系统openssl)

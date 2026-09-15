@@ -8,6 +8,16 @@ import java.io.*
 class BackendService : Service() {
     private var proc: Process? = null
     private val CH = "th-backend"
+
+    // 诊断日志: 启动每步落盘, 界面可查
+    private fun log(msg: String) {
+        try {
+            val f = File(filesDir, "runtime/service.log")
+            f.parentFile?.mkdirs()
+            val old = if (f.exists()) f.readLines().takeLast(49) else emptyList()
+            f.writeText((old + "[${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}] $msg").joinToString("\n"))
+        } catch (_: Exception) {}
+    }
     override fun onBind(i: Intent?) = null
     override fun onCreate() {
         super.onCreate()
@@ -30,8 +40,10 @@ class BackendService : Service() {
         Thread {
             try {
                 val home = File(filesDir, "runtime").apply { mkdirs() }
+                log("服务启动")
                 if (!File(home, ".unpacked").exists()) {
                     updateNotif("首次解压运行时…")
+                    log("首次解压运行时")
                     unpackAssets(assets, home)
                     extractRuntime(home)
                     File(home, ".unpacked").createNewFile()
@@ -39,6 +51,7 @@ class BackendService : Service() {
                 val nodeDir = File(home, "node")
                 val node = File(nodeDir, "bin/node")
                 node.setExecutable(true)
+                log("node就绪: ${node.absolutePath} 存在=${node.exists()}")
                 val serverDir = File(home, "server")
                 val env = HashMap(System.getenv())
                 env["HOME"] = home.absolutePath
@@ -49,15 +62,17 @@ class BackendService : Service() {
                     .redirectErrorStream(true)
                     .environment().apply { putAll(env) }
                     .start()
+                log("node进程已启动")
                 BufferedReader(InputStreamReader(proc!!.inputStream)).useLines { lines ->
                     lines.forEach { line ->
+                        log("node: " + line.take(120))
                         if (line.contains("后端就绪") || line.contains("本机:") || line.contains("指纹")) {
                             updateNotif(line)
                         }
                     }
                 }
                 proc?.waitFor()
-            } catch (e: Exception) { updateNotif("异常: ${e.message}") }
+            } catch (e: Exception) { log("异常: ${e.javaClass.simpleName}: ${e.message}"); updateNotif("异常: ${e.message}") }
             try { startForeground(1, notif("已停止, 点按重启")) } catch (_: Exception) {}
         }.start()
         return START_STICKY

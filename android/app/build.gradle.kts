@@ -1,13 +1,13 @@
 // ThirdHub 后端 APK: 内嵌 node-arm64 + server代码, 首启解压, 前台Service常驻
 import java.util.Properties
-plugins { id("com.android.application") }
+plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
 android {
     namespace = "com.thirdhub.backend"
     compileSdk = 34
     defaultConfig {
         applicationId = "com.thirdhub.backend"
-        minSdk = 24; targetSdk = 34; versionCode = 41000; versionName = "4.1.0"
+        minSdk = 24; targetSdk = 34; versionCode = 41001; versionName = "4.1.1"
     }
     signingConfigs {
         create("release") {

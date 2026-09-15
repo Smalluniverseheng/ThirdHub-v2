@@ -15,7 +15,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'core/neu.dart';
+import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
 import 'core/local_import.dart';
 import 'core/i18n.dart';
@@ -99,6 +101,10 @@ class AppSettings {
   static Future<void> setReaderTheme(int v) async { await p.setInt('readerTheme', v); await sync(); }
   static Future<void> setPageMode(String v) async { await p.setString('pageMode', v); await sync(); }
 
+  // ── 传输加密(默认不加密, aes-gcm可选) ──
+  static String get encMode => p.getString('enc_mode') ?? 'none';
+  static Future<void> setEncMode(String v) async { await p.setString('enc_mode', v); await sync(); }
+
   // ── 账号 ──
   static String get nickname => p.getString('nickname') ?? '';
   static String get avatarB64 => p.getString('avatar_b64') ?? '';
@@ -113,6 +119,12 @@ class AppSettings {
   static Future<void> sync() async {
     if (!syncEnabled || Api.base.isEmpty) return;
     try {
+      if (encMode == 'aes-gcm') {
+        await Api.postEncrypted('/v1/settings', { 'data': {
+          'nickname': nickname, 'fontSize': fontSize, 'readerTheme': readerTheme,
+          'pageMode': pageMode, 'avatar_b64': avatarB64, '_usageKB': localUsageKB, '_at': DateTime.now().toIso8601String() }});
+        return;
+      }
       await http.post(Uri.parse('${Api.base}/v1/settings'),
         headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
         body: jsonEncode({ 'data': {
@@ -1509,22 +1521,31 @@ class _At extends State<AccountTile> {
     await AppSettings.sync();
   }
 
-  // 账号配对: 拉取后端设备(地址+密钥) → 自动连接
+  // 账号配对: 拉取后端设备 → 三路(局域网/IPv6/穿透)并发竞速, 谁先通用谁
   Future<void> _autoConnect() async {
     try {
       final devs = await Cloud.devices();
       if (devs.isEmpty) return;
       final d = devs.first;
-      final lan = d['lan_url'] as String? ?? '';
       final secret = d['secret'] as String? ?? '';
-      if (lan.isEmpty) return;
-      final r = await Api.client().get(Uri.parse('$lan/v1/meta'),
-        headers: {'X-TH-Token': secret}).timeout(const Duration(seconds: 3));
-      if (r.statusCode == 200) {
+      final urls = <String, String>{
+        if ((d['lan_url'] as String? ?? '').isNotEmpty) '局域网': d['lan_url'],
+        if ((d['ipv6_url'] as String? ?? '').isNotEmpty) 'IPv6': d['ipv6_url'],
+        if ((d['tunnel_url'] as String? ?? '').isNotEmpty) '穿透': d['tunnel_url'],
+      };
+      if (urls.isEmpty || secret.isEmpty) return;
+      // 并发心跳: 任一通路 /v1/meta 成功即采用
+      final winner = await Future.any(urls.entries.map((e) async {
+        final r = await Api.client().get(Uri.parse('${e.value}/v1/meta'),
+          headers: {'X-TH-Token': secret}).timeout(const Duration(seconds: 4));
+        if (r.statusCode != 200) throw Exception('${e.key}不通');
+        return MapEntry(e.key, e.value);
+      })).catchError((_) => const MapEntry('', ''));
+      if (winner.value.isNotEmpty) {
         final p = await SharedPreferences.getInstance();
-        await p.setString('base', lan); await p.setString('token', secret);
-        Api.base = lan; Api.token = secret;
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已通过账号自动连接后端')));
+        await p.setString('base', winner.value); await p.setString('token', secret);
+        Api.base = winner.value; Api.token = secret;
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已通过${winner.key}自动连接后端')));
       }
     } catch (_) {}
   }
@@ -1622,7 +1643,21 @@ class Updater {
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('稍后')),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('立即更新'))]));
-    if (go == true && url.isNotEmpty && c.mounted) _downloadAndInstall(c, url);
+    if (go == true && url.isNotEmpty && c.mounted) { newVer = ver; _downloadAndInstall(c, url); }
+  }
+  static String newVer = '';
+
+  static Future<String> _updateDir() async {
+    // 应用外部目录: 文件管理器 Android/data/包名/files/updates 可见, 卸载才清除
+    try {
+      final ext = await getExternalStorageDirectory();
+      final d = Directory('${ext!.path}/updates');
+      if (!await d.exists()) await d.create(recursive: true);
+      return d.path;
+    } catch (_) {
+      final d = await Directory.systemTemp.createTemp('th_update');
+      return d.path;
+    }
   }
 
   static Future<void> _downloadAndInstall(BuildContext c, String url) async {
@@ -1638,8 +1673,8 @@ class Updater {
       final req = await HttpClient().getUrl(Uri.parse(url));
       final resp = await req.close();
       final total = resp.contentLength;
-      final dir = await Directory.systemTemp.createTemp('th_update');
-      final f = File('${dir.path}/update.apk');
+      final dir = await _updateDir();
+      final f = File('$dir/thirdhub-update-${DateTime.now().millisecondsSinceEpoch}.apk');
       final sink = f.openWrite();
       var got = 0;
       await for (final chunk in resp) {
@@ -1647,7 +1682,14 @@ class Updater {
         if (total > 0) progress.value = got / total;
       }
       await sink.close();
+      // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
+      final p = await SharedPreferences.getInstance();
+      final list = p.getStringList('update_apks') ?? [];
+      list.add('${f.path}|v$newVer|${DateTime.now().toString().substring(0, 16)}');
+      await p.setStringList('update_apks', list);
       if (c.mounted) Navigator.pop(c);
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(duration: const Duration(seconds: 6),
+        content: Text('安装包已保存: ${f.path}')));
       await OpenFilex.open(f.path);
     } catch (e) {
       if (c.mounted) { Navigator.pop(c); ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e'))); }
@@ -1862,12 +1904,35 @@ class _Ap extends State<AccountPage> {
 }
 
 // ── 子页面: 下载 App ──
-class DownloadAppsPage extends StatelessWidget { const DownloadAppsPage({super.key});
+class DownloadAppsPage extends StatefulWidget { const DownloadAppsPage({super.key}); @override State<DownloadAppsPage> createState() => _Da(); }
+class _Da extends State<DownloadAppsPage> {
+  List<String> apks = [];
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    final list = p.getStringList('update_apks') ?? [];
+    // 过滤掉文件已不存在的
+    final alive = <String>[];
+    for (final e in list) { if (await File(e.split('|').first).exists()) alive.add(e); }
+    setState(() => apks = alive.reversed.toList());
+  }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('下载 App')),
     body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
       const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
         child: Text('ThirdHub 全系列产品 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
       const Card(child: DownloadCenterTile()),
+      if (apks.isNotEmpty) ...[
+        const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
+          child: Text('已下载的安装包(点按直接安装)', style: TextStyle(fontSize: 12, color: Colors.grey))),
+        Card(child: Column(children: [
+          for (final e in apks)
+            ListTile(dense: true, leading: const Icon(Icons.android, size: 20),
+              title: Text(e.split('|').length > 1 ? e.split('|')[1] : '安装包', style: const TextStyle(fontSize: 13)),
+              subtitle: Text(e.split('|').first, style: const TextStyle(fontSize: 9, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.install_mobile, size: 18),
+              onTap: () => OpenFilex.open(e.split('|').first)),
+        ])),
+      ],
     ]));
 }
 
@@ -1946,6 +2011,12 @@ class _Sy extends State<SystemPage> {
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
             if (mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.lock_outline, size: 20), title: const Text('传输加密', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('前端⇄后端 · 默认不加密(局域网信任)', style: TextStyle(fontSize: 11)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'none', label: Text('不加密', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'aes-gcm', label: Text('AES-GCM', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.encMode}, onSelectionChanged: (s) => AppSettings.setEncMode(s.first).then((_) => setState(() {})))),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: const TextStyle(fontSize: 14)),
           subtitle: Text('v${Updater.currentVersion} · 点按检查更新', style: const TextStyle(fontSize: 11)),
