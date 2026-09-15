@@ -257,7 +257,7 @@ class _Conn extends State<ConnectLibraryPage> {
       FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.link), label: Text(busy ? '连接中…' : tr('连接资源库'))),
       const SizedBox(height: 20),
       const AppLockSettings(),
-    ]))))));
+    ])))));
 }
 
 class AppLockSettings extends StatefulWidget { const AppLockSettings({super.key}); @override State<AppLockSettings> createState() => _Als(); }
@@ -308,7 +308,7 @@ class _Orb extends State<OrbShell> {
           child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
             child: NeuSurface(radius: 26, width: 52, height: 52, selected: tab == i,
               onTap: () => setState(() { tab = i; menu = false; }),
-              child: Icon(tabs[i].$2, color: tab == i ? Colors.blueAccent : Colors.grey.shade400, size: 22))))])),
+              child: Icon(tabs[i].$2, color: tab == i ? Colors.blueAccent : Colors.grey.shade400, size: 22)))])),
         Positioned(left: orb.dx, top: orb.dy, child: GestureDetector(
           onPanUpdate: (d) => setState(() => orb += d.delta), onPanEnd: (_) => snap(),
           child: NeuSurface(radius: orbSize / 2, width: orbSize, height: orbSize, selected: menu,
@@ -936,7 +936,7 @@ class _NR extends State<NovelReadPage> {
                 else if (v > 300 && hasPrev) goChapter(idx - 1);    // 右滑上一章
               },
               child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-              child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2))))),
+              child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2)))))),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一章'))),
           TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
@@ -1045,11 +1045,11 @@ class _Cr extends State<ComicReaderPage> {
     body: Column(children: [
       Expanded(child: loading ? const Center(child: CircularProgressIndicator())
         : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
-        : images.isEmpty ? const Center(child: Text('本章无图片')
+        : images.isEmpty ? const Center(child: Text('本章无图片'))
         : ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 1),
             child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
               loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-              errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey))))))),
+              errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))),
       SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
         TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一话'))),
         TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一话')), icon: const Icon(Icons.chevron_right)),
@@ -1315,7 +1315,7 @@ class _Vd extends State<VideoDetailPage> {
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
             sourceId: widget.sourceId, epUrl: episodes[i]['url'] ?? '', flag: episodes[i]['flag'] ?? '',
             title: episodes[i]['name'] ?? '', episodes: episodes, index: i))),
-        ))])); }
+        )))])); }
 
 class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, flag, title; final List episodes; final int index;
   const VideoPlayPage({super.key, required this.sourceId, required this.epUrl, required this.flag, required this.title, this.episodes = const [], this.index = 0});
