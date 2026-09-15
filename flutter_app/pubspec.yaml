@@ -25,3 +25,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，
+  # 与当前 Flutter stable 内置版本不兼容，锁回 9.5.0
+  objective_c: 9.5.0
