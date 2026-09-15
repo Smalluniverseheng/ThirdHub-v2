@@ -44,6 +44,17 @@ try {
     else devices.push({ device_url: url, device_type: 'thp', caps, paired_at: Date.now(), last_seen: Date.now() });
   });
   udp.bind(THP_PORT, () => console.log('[thp] UDP :' + THP_PORT + ' 监听中'));
+  // 资源库自身广播: 前端在局域网内可自动发现(与引擎发现同一套THP规则)
+  try {
+    const bc = dgram.createSocket('udp4');
+    bc.bind(() => {
+      bc.setBroadcast(true);
+      const hello = Buffer.from('THP/1 HELLO 9527 library,novel,comic,video,music');
+      setInterval(() => {
+        bc.send(hello, THP_PORT, '255.255.255.255', () => {});
+      }, 5000);
+    });
+  } catch (e) { console.log('[thp] 广播失败', e.message); }
 } catch (e) { console.log('[thp] UDP 绑定失败', e.message); }
 
 // THP 引擎调用(匿名HTTP)

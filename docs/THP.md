@@ -82,3 +82,58 @@ THP/1 HELLO <http_port> <caps>
 | 落雪音乐 | 后端内置 LX 沙箱（engine-lx.js） |
 | TVBox | 后端内置适配器（engine-tvbox.js，CMS/drpy 类） |
 | 你的引擎 | 按本协议实现 4 个接口 + UDP 心跳即可 |
+
+---
+
+# THP v2（2026-09 补充）：统一通信信封
+
+v2 把「前端⇄后端」「后端⇄引擎」「前端⇄引擎」三条链路统一成**同一套格式**（类似 OpenAI API 成为行业标准）：任何一端只实现一次，即可与所有角色互通。
+
+## 1. 统一响应信封
+
+所有端点（无论资源库还是引擎）返回同一信封：
+
+```json
+{
+  "object": "list | item | error",
+  "data":  ...,
+  "meta": { "source": "engine-id 或 library", "latency": 123, "caps": ["novel"] }
+}
+```
+
+错误统一：`{"object":"error","data":{"message":"...","code":"UPSTREAM_FAIL"}}`
+
+## 2. 统一发现
+
+- 引擎广播：`THP/1 HELLO <port> <caps>`（caps 如 `novel,comic`）
+- 资源库广播：`THP/1 HELLO <port> library,novel,comic,video,music`（caps 必含 `library`）
+- 前端与后端都监听 UDP 19527：识别到 `library` = 可连接的资源库；否则 = 引擎
+- 前端在局域网内可**直接把引擎当资源库用**（同一套 REST 端点，见 v1 第二节）
+
+## 3. 统一端点（三类角色全支持）
+
+| 端点 | 资源库 | 引擎 | 说明 |
+|---|---|---|---|
+| GET /thp/meta | ✅ | ✅ | 身份与能力（匿名） |
+| GET /thp/search?type=&q= | ✅ | ✅ | type: novel/comic/video/music |
+| GET /thp/chapters?type=&id= | ✅ | ✅ | 目录/选集 |
+| GET /thp/content?type=&id= | ✅ | ✅ | 正文/图片列表/播放地址/音频地址 |
+
+资源库额外提供（引擎不需要）：`/v1/library`（本地库）、`/v1/shelf/add`（书架双写自动下载）。
+
+## 4. 数据类型归一
+
+`content` 的 `data` 按 type 归一，前端零分支：
+
+| type | data 结构 |
+|---|---|
+| novel | `{ "text": "..." }` |
+| comic | `{ "images": ["url", ...] }` |
+| video | `{ "url": "m3u8/mp4", "header": {} }` |
+| music | `{ "url": "...", "lyric": "..." }` |
+
+## 5. 认证
+
+- 引擎：**无认证**（局域网匿名，外观上与任何后端无关）
+- 资源库：配对 secret（`X-TH-Token`），指纹随配对展示给用户确认
+- 加密：见 v1 第四节（none 默认 / aes-gcm / TLS）

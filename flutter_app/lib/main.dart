@@ -20,6 +20,7 @@ import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
 import 'core/local_import.dart';
+import 'core/discover.dart';
 import 'core/i18n.dart';
 
 Future<void> main() async {
@@ -156,7 +157,14 @@ class Book {
   static Future<void> add(Book b, String kind) async {
     final p = await SharedPreferences.getInstance(); final l = await shelf(kind);
     if (l.any((x) => x.bookUrl == b.bookUrl)) return;
-    l.add(b); await p.setString('shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList())); }
+    l.add(b); await p.setString('shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList()));
+    // 双写: 通知后端把这份资源下载进资源库(多前端共享, 换设备不丢)
+    if (Api.base.isNotEmpty) {
+      try { await http.post(Uri.parse('${Api.base}/v1/shelf/add'),
+        headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+        body: jsonEncode({'kind': kind, 'book': b.toJson()})); } catch (_) {}
+    }
+  }
 }
 
 class ThApp extends StatefulWidget {
@@ -203,7 +211,7 @@ class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageControl
   static const pages = [
     (Icons.auto_awesome, '一个入口, 所有娱乐', '小说 · 漫画 · 视频 · 音乐 · 直播\n全部聚合, 搜一次全出来'),
     (Icons.hub, '资源库在哪, 内容就在哪', '在你的电脑/旧手机/电视上装 ThirdHub 后端\n本App自动连接, 数据全在你家'),
-    (Icons.touch_app, '装上插件, 一切自动', '开源阅读等插件自动配对\n书源一键导入, 去广告全在后台'),
+    (Icons.touch_app, '装上引擎, 一切自动', '阅读引擎等设备自动配对\n一切规则都在引擎侧, 前端只管播放'),
   ];
   Future<void> finish() async { final p = await SharedPreferences.getInstance();
     await p.setBool('first_run', true);
@@ -264,7 +272,11 @@ class _Lock extends State<LockScreen> {
 class ConnectLibraryPage extends StatefulWidget { const ConnectLibraryPage({super.key}); @override State<ConnectLibraryPage> createState() => _Conn(); }
 class _Conn extends State<ConnectLibraryPage> {
   final baseC = TextEditingController(); final tokenC = TextEditingController();
-  String? fp; bool busy = false; String? err;
+  String? fp; bool busy = false; String? err; StreamSubscription? _discSub;
+  @override void initState() { super.initState();
+    ThpDiscovery.start();
+    _discSub = ThpDiscovery.onChange.listen((_) { if (mounted) setState(() {}); }); }
+  @override void dispose() { _discSub?.cancel(); baseC.dispose(); tokenC.dispose(); super.dispose(); }
   Future<void> connect() async {
     setState(() { busy = true; err = null; });
     try {
@@ -292,6 +304,21 @@ class _Conn extends State<ConnectLibraryPage> {
       const SizedBox(height: 16),
       FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.link), label: Text(busy ? '连接中…' : tr('连接资源库'))),
       const SizedBox(height: 20),
+      // 局域网自动发现(THP): 资源库一键连接, 引擎仅展示(前端也可直接当资源用)
+      Align(alignment: Alignment.centerLeft, child: Text('局域网发现的设备', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      const SizedBox(height: 6),
+      if (ThpDiscovery.list().isEmpty)
+        const Text('暂未发现 · 资源库/引擎开机后会自动广播', style: TextStyle(fontSize: 11, color: Colors.grey))
+      else
+        for (final d in ThpDiscovery.list())
+          ListTile(dense: true, contentPadding: EdgeInsets.zero,
+            leading: Icon(d.isLibrary ? Icons.dns : Icons.extension, size: 20,
+              color: d.isLibrary ? Colors.blueAccent : Colors.grey),
+            title: Text('${d.label} · ${d.host}:${d.port}', style: const TextStyle(fontSize: 13)),
+            subtitle: d.isLibrary ? null : Text(d.caps.join(' / '), style: const TextStyle(fontSize: 10)),
+            trailing: d.isLibrary ? FilledButton.tonal(child: const Text('连接', style: TextStyle(fontSize: 12)),
+              onPressed: () { baseC.text = d.url; connect(); }) : null),
+      const SizedBox(height: 12),
       const AppLockSettings(),
     ])))));
 }
@@ -504,9 +531,6 @@ class _Eng extends State<EnginesPage> {
       for (final cap in (e['caps'] as List? ?? [])) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(color: Colors.blue.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
         child: Text(cap, style: const TextStyle(fontSize: 10, color: Colors.blueAccent))),
-      if ((e['sources'] ?? 0) > 0) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(color: Colors.grey.shade800, borderRadius: BorderRadius.circular(10)),
-        child: Text('${e['sources']} 源', style: const TextStyle(fontSize: 10, color: Colors.grey))),
       if (e['health'] != null && e['health']['rate'] != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(color: Colors.grey.shade800, borderRadius: BorderRadius.circular(10)),
         child: Text('成功率${e['health']['rate']}%', style: const TextStyle(fontSize: 10, color: Colors.grey))),
@@ -522,7 +546,7 @@ class _Eng extends State<EnginesPage> {
       for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
       if (network.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in network) engineCard(Map<String, dynamic>.from(e)),
-      if (network.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text('暂无网络引擎\n改造版开源阅读装后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
+      if (network.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text('暂无在线引擎\n阅读引擎等设备装好后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
     ]));
 }
 
@@ -706,14 +730,10 @@ class _Home extends State<SearchSection> {
     for (final it in items) tile(it),
   ]);
   @override Widget build(BuildContext c) => Column(children: [
-    Padding(padding: const EdgeInsets.fromLTRB(8, 8, 8, 0), child: Wrap(spacing: 6, children: [
-      for (var i = 0; i < typeNames.length; i++) ChoiceChip(
-        label: Text(typeNames[i], style: const TextStyle(fontSize: 12)), selected: typeFilter == i,
-        onSelected: (_) { setState(() => typeFilter = i); if (ctrl.text.trim().isNotEmpty) go(); }),
-    ])),
+    // 先进搜索页: 输入框在最上, 搜索分类显示在输入框下方
     Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: Row(children: [
       Expanded(child: NeuInset(radius: 14, padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: TextField(controller: ctrl, textInputAction: TextInputAction.search,
+        child: TextField(controller: ctrl, textInputAction: TextInputAction.search, autofocus: true,
           onSubmitted: (_) => go(),
           decoration: InputDecoration(hintText: typeFilter == 0 ? '一次搜索: 书/漫画/视频/音乐' : '搜索${typeNames[typeFilter]}',
             prefixIcon: const Icon(Icons.search),
@@ -722,37 +742,41 @@ class _Home extends State<SearchSection> {
       FilledButton(onPressed: loading ? null : go, child: loading
         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
         : Text(tr('搜索')))])),
+    Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 4), child: Align(alignment: Alignment.centerLeft,
+      child: Wrap(spacing: 6, children: [
+        for (var i = 0; i < typeNames.length; i++) ChoiceChip(
+          label: Text(typeNames[i], style: const TextStyle(fontSize: 12)), selected: typeFilter == i,
+          onSelected: (_) { setState(() => typeFilter = i); if (ctrl.text.trim().isNotEmpty) go(); }),
+      ]))),
     if (loading) const LinearProgressIndicator(),
-    if (agg != null) Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 0), child: Align(alignment: Alignment.centerLeft,
-      child: Text('书源${agg!['stats']?['bookSources'] ?? 0} · 图源${agg!['stats']?['comicSources'] ?? 0} · 影视源${agg!['stats']?['videoSources'] ?? 0} · 音源${agg!['stats']?['musicSources'] ?? 0}', style: const TextStyle(fontSize: 11, color: Colors.grey)))),
     Expanded(child: ListView(children: [
       if (agg != null && agg!['single'] != null) ...[
         for (final g in ((agg!['single'] as List?) ?? [])) ...[
-          if (g['ok'] == true) Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency'] ?? 0}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
+          if (g['ok'] == true) 
           for (final it in ((g['items'] ?? g['books']) as List? ?? [])) _singleTile(typeFilter, g['sourceId'] ?? '', it, context),
         ],
       ] else if (agg != null) ...[
         for (final g in (agg!['books'] as List? ?? []))
-          group('📖 ${g['source']}', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('📖 小说', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b))))))),
         for (final g in (agg!['comics'] as List? ?? []))
-          group('🎨 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('🎨 漫画', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['title'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? ''))))),
         for (final g in (agg!['videos'] as List? ?? []))
-          group('🎬 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('🎬 视频', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['type'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? ''))))),
         for (final g in (agg!['musics'] as List? ?? []))
-          group('🎵 ${g['source']}', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('🎵 音乐', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, leading: const Icon(Icons.music_note, size: 20),
             title: Text(b['name'] ?? ''), subtitle: Text(b['artist'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(b), sourceId: g['sourceId'] ?? ''))))),
         if (((agg!['books'] as List?) ?? []).isEmpty && ((agg!['comics'] as List?) ?? []).isEmpty && ((agg!['videos'] as List?) ?? []).isEmpty)
-          const Padding(padding: EdgeInsets.all(32), child: Text('无结果(先导入各类源)', style: TextStyle(color: Colors.grey))),
+          const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关内容', style: TextStyle(color: Colors.grey))),
       ],
-      if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词, 全类型或按类型搜索\n后端按引擎能力自动路由', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
+      if (agg == null && !loading) const Padding(padding: EdgeInsets.all(40), child: Text('输入关键词开始搜索\n可全类型或按下方分类搜索', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
   Widget _singleTile(int type, String sourceId, Map it, BuildContext context) {
@@ -774,10 +798,9 @@ class _Home extends State<SearchSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: ''),
-      const SourceManagerPage(kind: 'book')][sub]),
+    Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: '')][sub]),
   ]); }
 
 class NovelSearchResults extends StatefulWidget { final String query; const NovelSearchResults({super.key, required this.query}); @override State<NovelSearchResults> createState() => _NSR(); }
@@ -808,14 +831,14 @@ class _NSR extends State<NovelSearchResults> {
         ])),
       for (final g in groups) ...[
         if (g['ok'] == true && (g['books'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
+          
         for (final b in (g['books'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
           title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b)))))),
-      ], if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('点右上角搜索找书', style: TextStyle(color: Colors.grey))),
+      ], if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('输入关键词搜索', style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
 class ShelfPage extends StatefulWidget { final String kind; final Widget Function(Book) builder; const ShelfPage({super.key, required this.kind, required this.builder}); @override State<ShelfPage> createState() => _Sh(); }
@@ -897,40 +920,97 @@ class _NR extends State<NovelReadPage> {
     setState(() => loading = false); }
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NovelReadPage(
     sourceId: widget.sourceId, chapters: widget.chapters, index: i, bookName: widget.bookName, bookUrl: widget.bookUrl)));
+
+  // 专业阅读器设置面板: 字号/行距/主题/亮度/翻页 (参考主流阅读App)
+  void _settingsSheet() {
+    double lineH = AppSettings.p.getDouble('line_height') ?? 1.8;
+    double bright = AppSettings.p.getDouble('reader_brightness') ?? 1.0;
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+      return SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('阅读设置', style: TextStyle(fontWeight: FontWeight.bold)),
+        Row(children: [ const SizedBox(width: 64, child: Text('字号', style: TextStyle(fontSize: 13))),
+          Expanded(child: Slider(value: fontSize, min: 12, max: 32, onChanged: (v) { setState(() => fontSize = v); AppSettings.setFontSize(v); setD(() {}); })),
+          Text(fontSize.toStringAsFixed(0), style: const TextStyle(fontSize: 12)) ]),
+        Row(children: [ const SizedBox(width: 64, child: Text('行距', style: TextStyle(fontSize: 13))),
+          Expanded(child: Slider(value: lineH, min: 1.2, max: 2.6, onChanged: (v) { AppSettings.p.setDouble('line_height', v); setState(() {}); setD(() {}); })),
+          Text(lineH.toStringAsFixed(1), style: const TextStyle(fontSize: 12)) ]),
+        Row(children: [ const SizedBox(width: 64, child: Text('亮度', style: TextStyle(fontSize: 13))),
+          Expanded(child: Slider(value: bright, min: 0.3, max: 1.0, onChanged: (v) { AppSettings.p.setDouble('reader_brightness', v); setState(() {}); setD(() {}); })) ]),
+        const SizedBox(height: 6),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          for (var i = 0; i < themes.length; i++)
+            GestureDetector(onTap: () { setState(() => theme = i); AppSettings.setReaderTheme(i); setD(() {}); },
+              child: Container(width: 56, height: 40, decoration: BoxDecoration(color: themes[i].$1, borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: theme == i ? Colors.blueAccent : Colors.grey.shade400, width: theme == i ? 2 : 0.5)),
+                child: Center(child: Text(['夜间', '日间', '纸书'][i], style: TextStyle(fontSize: 11, color: themes[i].$2))))),
+        ]),
+        const SizedBox(height: 10),
+        SegmentedButton<String>(showSelectedIcon: false,
+          segments: const [ButtonSegment(value: 'scroll', label: Text('上下滚动')), ButtonSegment(value: 'paged', label: Text('左右翻页'))],
+          selected: {AppSettings.pageMode},
+          onSelectionChanged: (s) { AppSettings.setPageMode(s.first); setState(() {}); setD(() {}); }),
+      ])));
+    }));
+  }
+
+  void _tocSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => DraggableScrollableSheet(
+      initialChildSize: 0.6, expand: false, builder: (_, sc) => ListView.builder(controller: sc,
+        itemCount: widget.chapters.length, itemBuilder: (_, i) => ListTile(dense: true, selected: i == idx,
+          title: Text(widget.chapters[i]['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+          onTap: () { Navigator.pop(c2); goChapter(i); }))));
+  }
+
   @override Widget build(BuildContext c) { final isImgs = images.isNotEmpty;
     final t = themes[theme];
-    return Scaffold(appBar: AppBar(title: Text('${chapter['name'] ?? ''}  (${idx + 1}/${widget.chapters.length})'), actions: [
-        IconButton(icon: const Icon(Icons.brightness_6_outlined), onPressed: () => setState(() => theme = (theme + 1) % 3)),
-        if (!isImgs) IconButton(icon: const Icon(Icons.text_increase), onPressed: () => setState(() => fontSize += 1)),
-        if (!isImgs) IconButton(icon: const Icon(Icons.text_decrease), onPressed: () => setState(() => fontSize = (fontSize - 1).clamp(12, 32)))]),
+    final lineH = AppSettings.p.getDouble('line_height') ?? 1.8;
+    final bright = AppSettings.p.getDouble('reader_brightness') ?? 1.0;
+    final paged = AppSettings.pageMode == 'paged' && !isImgs;
+    final textWidget = paged
+      ? PageView.builder(itemCount: _pages(text, c).length, itemBuilder: (_, pi) => Container(color: t.$1,
+          padding: const EdgeInsets.all(16), child: Text(_pages(text, c)[pi], style: TextStyle(fontSize: fontSize, height: lineH, color: t.$2))))
+      : GestureDetector(
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < -300 && hasNext) goChapter(idx + 1);        // 左滑下一章
+            else if (v > 300 && hasPrev) goChapter(idx - 1);    // 右滑上一章
+          },
+          child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+            child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: lineH, color: t.$2)))));
+    return Scaffold(appBar: AppBar(title: Text('${chapter['name'] ?? ''}  (${idx + 1}/${widget.chapters.length})', style: const TextStyle(fontSize: 14)), actions: [
+        IconButton(icon: const Icon(Icons.list), tooltip: '目录', onPressed: _tocSheet),
+        IconButton(icon: const Icon(Icons.text_fields), tooltip: '阅读设置', onPressed: _settingsSheet)]),
       body: Column(children: [
         Expanded(child: loading ? const Center(child: CircularProgressIndicator()) : isImgs
           ? ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 2),
               child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
                 errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))
-          : GestureDetector(
-              onHorizontalDragEnd: (d) {
-                final v = d.primaryVelocity ?? 0;
-                if (v < -300 && hasNext) goChapter(idx + 1);        // 左滑下一章
-                else if (v > 300 && hasPrev) goChapter(idx - 1);    // 右滑上一章
-              },
-              child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-              child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: 1.8, color: t.$2)))))),
+          : Opacity(opacity: bright, child: textWidget)),
         SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一章'))),
           TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
+
+  // 简单分页: 按字数切块(左右翻页模式)
+  List<String> _pages(String t, BuildContext c) {
+    if (t.isEmpty) return [''];
+    final per = ((MediaQuery.of(c).size.height - 140) / (AppSettings.fontSize * 1.8)).floor() *
+                ((MediaQuery.of(c).size.width - 32) / AppSettings.fontSize).floor();
+    final n = per.clamp(200, 2000);
+    final out = <String>[];
+    for (var i = 0; i < t.length; i += n) { out.add(t.substring(i, i + n > t.length ? t.length : i + n)); }
+    return out;
+  }
 }
 
 // ═══ 板块二: 漫画播放器(UI先行, 数据源待后端comic引擎) ═══
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
-      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找漫画', style: TextStyle(color: Colors.grey)))),
-      const SourceManagerPage(kind: 'comic')][sub]),
+      const ComicSearchResults(query: '')][sub]),
   ]); }
 
 class ComicSearchResults extends StatefulWidget { final String query; const ComicSearchResults({super.key, required this.query}); @override State<ComicSearchResults> createState() => _CSR(); }
@@ -948,7 +1028,7 @@ class _CSR extends State<ComicSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
+          
         for (final b in (g['items'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
@@ -957,9 +1037,7 @@ class _CSR extends State<ComicSearchResults> {
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(
             sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? '')))),
       ],
-      if (groups.isNotEmpty) for (final g in groups) if (g['ok'] == false)
-        Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']}: ${g['error'] ?? '失败'}', style: const TextStyle(color: Colors.redAccent, fontSize: 12))),
-      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入Venera图源)', style: TextStyle(color: Colors.grey))),
+            if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关漫画', style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
 class ComicDetailPage extends StatefulWidget { final String sourceId, comicId, title; const ComicDetailPage({super.key, required this.sourceId, required this.comicId, required this.title}); @override State<ComicDetailPage> createState() => _Cd(); }
@@ -1020,104 +1098,73 @@ class _Cr extends State<ComicReaderPage> {
     setState(() => loading = false); }
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ComicReaderPage(
     sourceId: widget.sourceId, comicId: widget.comicId, chapters: widget.chapters, index: i)));
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text('${widget.chapters[idx]['title'] ?? ''}  (${idx + 1}/${widget.chapters.length})')),
+  int _page = 0;
+  @override Widget build(BuildContext c) {
+    final paged = (AppSettings.p.getString('comic_mode') ?? 'webtoon') == 'paged';
+    return Scaffold(appBar: AppBar(title: Text('${widget.chapters[idx]['title'] ?? ''}  (${idx + 1}/${widget.chapters.length})', style: const TextStyle(fontSize: 14)), actions: [
+        IconButton(icon: Icon(paged ? Icons.view_agenda_outlined : Icons.chrome_reader_mode_outlined), tooltip: paged ? '切条漫' : '切翻页',
+          onPressed: () { AppSettings.p.setString('comic_mode', paged ? 'webtoon' : 'paged'); setState(() {}); }),
+      ]),
     body: Column(children: [
       Expanded(child: loading ? const Center(child: CircularProgressIndicator())
         : err != null ? Center(child: Text(err!, style: const TextStyle(color: Colors.red)))
         : images.isEmpty ? const Center(child: Text('本章无图片'))
-        : ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 1),
-            child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
-              loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-              errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))),
+        : paged
+          ? PageView.builder(itemCount: images.length, onPageChanged: (i) => setState(() => _page = i),
+              itemBuilder: (_, i) => InteractiveViewer(maxScale: 5, child: Center(child: Image.network(Api.img(images[i]), fit: BoxFit.contain,
+                loadingBuilder: (_, w, p) => p == null ? w : const Center(child: CircularProgressIndicator()),
+                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.grey)))))
+          : ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 1),
+              child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
+                loadingBuilder: (_, w, p) => p == null ? w : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+                errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))),
       SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
         TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一话'))),
+        if (paged) Text('${_page + 1}/${images.length}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
         TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一话')), icon: const Icon(Icons.chevron_right)),
       ]))])); }
-
-// ═══ 源管理(四类通用: 列表/启停/删除/粘贴导入) ═══
-class SourceManagerPage extends StatefulWidget { final String kind; const SourceManagerPage({super.key, required this.kind}); @override State<SourceManagerPage> createState() => _SM(); }
-class _SM extends State<SourceManagerPage> {
-  static final cfgs = {
-    'book':  (list: '/v1/sources', imp: '/v1/sources', label: tr('书源'), hint: '粘贴书源JSON(单条或数组)'),
-    'video': (list: '/v1/video/sources', imp: '/v1/video/sources', label: tr('影视源'), hint: '粘贴{name, code}JSON'),
-    'comic': (list: '/v1/comic/sources', imp: '/v1/comic/sources', label: tr('图源'), hint: '粘贴{name, code}JSON'),
-    'music': (list: '/v1/music/sources', imp: '/v1/music/sources', label: tr('音源'), hint: '粘贴{name, code}JSON'),
-  };
-  List<Map> items = []; bool loading = true; final importC = TextEditingController(); String? msg;
-  String get kind => widget.kind;
-  ({String list, String imp, String label, String hint}) get cfg => cfgs[kind]!;
-  Future<void> load() async { try {
-      final r = await Api.get(cfg.list);
-      items = (r['data'] as List? ?? []).cast<Map>();
-    } catch (e) {}
-    setState(() => loading = false); }
-  @override void initState() { super.initState(); load(); }
-  Future<void> toggle(Map s) async { await Api.get('/v1/src/$kind/toggle?id=${Uri.encodeComponent(s['id'] ?? '')}'); load(); }
-  Future<void> remove(Map s) async { await Api.get('/v1/src/$kind/delete?id=${Uri.encodeComponent(s['id'] ?? '')}'); load(); }
-  Future<void> doImport() async { final t = importC.text.trim(); if (t.isEmpty) return;
-    setState(() => msg = '导入中…');
-    try {
-      http.Response r;
-      if (t.startsWith('http')) {
-        r = await http.post(Uri.parse('${Api.base}${cfg.imp}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
-          body: jsonEncode(t.endsWith('.json') && kind == 'book' ? jsonDecode(await (await Api.client().get(Uri.parse(t))).body) : {'name': t.split('/').last, 'code': t}));
-      } else {
-        final j = jsonDecode(t);
-        r = await http.post(Uri.parse('${Api.base}${cfg.imp}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
-          body: jsonEncode(kind == 'book' ? j : (j is Map ? j : {'name': '导入源', 'code': t})));
-      }
-      setState(() { msg = r.statusCode == 200 ? '导入成功' : '失败: ${r.statusCode}'; importC.clear(); });
-      load();
-    } catch (e) { setState(() => msg = '导入失败: $e'); } }
-  @override Widget build(BuildContext c) => Column(children: [
-    if (loading) const LinearProgressIndicator() else Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Align(alignment: Alignment.centerLeft,
-      child: Text('${cfg.label} ${items.length} 个 (批量导入用命令行脚本)', style: const TextStyle(fontSize: 12, color: Colors.grey)))),
-    Expanded(child: ListView(children: [
-      for (final s in items) SwitchListTile(
-        title: Text(s['name'] ?? '', style: TextStyle(color: s['enabled'] == false ? Colors.grey : null)),
-        value: s['enabled'] != false, onChanged: (_) => toggle(s),
-        secondary: IconButton(icon: const Icon(Icons.delete_outline, size: 20), onPressed: () => remove(s)),
-      ),
-    ])),
-    const Divider(height: 1),
-    Padding(padding: const EdgeInsets.all(8), child: Row(children: [
-      Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.hint, border: const OutlineInputBorder(), isDense: true))),
-      const SizedBox(width: 8),
-      FilledButton(onPressed: doImport, child: Text(tr('导入'))),
-    ])),
-    if (msg != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(msg!, style: const TextStyle(fontSize: 12, color: Colors.blueAccent))),
-  ]); }
+}
 
 // ═══ 板块四: 音乐播放器 ═══
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索'))), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [const _MusicPlaylist(),
-      const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('点右上角搜索框找歌', style: TextStyle(color: Colors.grey)))),
-      const SourceManagerPage(kind: 'music')][sub]),
+    Expanded(child: [const _MusicPlaylist(), const MusicSearchResults(query: '')][sub]),
   ]); }
 
 class _MusicPlaylist extends StatefulWidget { const _MusicPlaylist(); @override State<_MusicPlaylist> createState() => _MpList(); }
 class _MpList extends State<_MusicPlaylist> {
-  List<Map> items = []; bool loading = true;
+  List<Map> items = []; List<Map<String, dynamic>> local = []; bool loading = true;
   @override void initState() { super.initState(); load(); }
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     try { items = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>(); } catch (_) {}
+    local = await LocalLib.list('music'); // 本地导入的音乐也进歌单体系
     setState(() => loading = false); }
   Future<void> remove(Map m) async { final p = await SharedPreferences.getInstance();
     items.removeWhere((x) => x['id'] == m['id']);
     await p.setString('playlist', jsonEncode(items)); setState(() {}); }
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
-    : items.isEmpty ? const Center(child: Text('歌单为空\n播放过的歌自动入单', style: TextStyle(color: Colors.grey)))
-    : ListView(children: [ for (final m in items) ListTile(
+    : (items.isEmpty && local.isEmpty) ? const Center(child: Text('歌单为空\n播放过的歌自动入单 · 本地导入的歌也在这里', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+    : ListView(children: [
+      if (local.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 10, 12, 2),
+        child: Text('本地音乐', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      for (final m in local) ListTile(
+        leading: const Icon(Icons.music_note),
+        title: Text(m['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: const Text('本地', style: TextStyle(fontSize: 11)),
+        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: {'name': m['name'], 'url': m['path'], 'artist': '本地', 'coverUrl': ''}))),
+        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { await LocalLib.remove('music', m['path']); load(); })),
+      if (items.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(12, 10, 12, 2),
+        child: Text('歌单', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      for (final m in items) ListTile(
         leading: (m['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
           child: Image.network(Api.img(m['coverUrl']), width: 44, height: 44, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => const SizedBox(width: 44, height: 44))) : const Icon(Icons.music_note),
         title: Text(m['name'] ?? ''), subtitle: Text(m['artist'] ?? ''),
-        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: m))),
+        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: m, sourceId: m['sourceId'] as String? ?? ''))),
         trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => remove(m))) ]); }
 
 class MusicSearchResults extends StatefulWidget { final String query; const MusicSearchResults({super.key, required this.query}); @override State<MusicSearchResults> createState() => _MSR(); }
@@ -1134,7 +1181,7 @@ class _MSR extends State<MusicSearchResults> {
     // 入歌单
     final p = await SharedPreferences.getInstance();
     final list = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>();
-    if (!list.any((x) => x['id'] == item['id'])) { list.add(item); await p.setString('playlist', jsonEncode(list)); }
+    if (!list.any((x) => x['id'] == item['id'])) { list.add({...item, 'sourceId': sourceId}); await p.setString('playlist', jsonEncode(list)); }
     if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => MusicPlayPage(item: item, sourceId: sourceId)));
   }
   @override Widget build(BuildContext c) => Column(children: [
@@ -1142,7 +1189,7 @@ class _MSR extends State<MusicSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
+          
         for (final m in (g['items'] as List? ?? [])) ListTile(
           leading: (m['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(m['coverUrl']), width: 44, height: 44, fit: BoxFit.cover,
@@ -1151,63 +1198,131 @@ class _MSR extends State<MusicSearchResults> {
           trailing: const Icon(Icons.play_arrow),
           onTap: () => play(Map<String, dynamic>.from(m), g['sourceId'] ?? '')),
       ],
-      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入音源)', style: TextStyle(color: Colors.grey))),
+      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关音乐', style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
 class MusicPlayPage extends StatefulWidget { final Map item; final String sourceId; const MusicPlayPage({super.key, required this.item, this.sourceId = ''}); @override State<MusicPlayPage> createState() => _MPlay(); }
 class _MPlay extends State<MusicPlayPage> {
   final AudioPlayer player = AudioPlayer(); bool loading = true; String? err; String lyric = '';
-  @override void initState() { super.initState(); start(); }
+  bool showLyric = false;
+  List<Map> queue = []; int qIdx = -1; late Map cur; late String curSource;
+  @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start(); }
+  Future<void> _loadQueue() async {
+    final p = await SharedPreferences.getInstance();
+    try { queue = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>(); } catch (_) {}
+    qIdx = queue.indexWhere((x) => x['id'] == cur['id'] && cur['id'] != null);
+    if (mounted) setState(() {});
+    // 播完自动下一首(按播放模式)
+    player.playerStateStream.listen((s) {
+      if (s.processingState == ProcessingState.completed) _next(auto: true);
+    });
+  }
+  String get playMode => AppSettings.p.getString('play_mode') ?? 'seq';
+  void _next({bool auto = false}) {
+    if (queue.isEmpty) return;
+    if (auto && playMode == 'one') { player.seek(Duration.zero); player.play(); return; }
+    var n = qIdx;
+    if (playMode == 'rand' && queue.length > 1) { do { n = (n + 1 + (DateTime.now().millisecond % (queue.length - 1))) % queue.length; } while (n == qIdx); }
+    else { n = (qIdx + 1) % queue.length; }
+    _switchTo(n);
+  }
+  void _prev() { if (queue.isEmpty) return; _switchTo((qIdx - 1 + queue.length) % queue.length); }
+  Future<void> _switchTo(int i) async {
+    qIdx = i; cur = queue[i]; curSource = cur['sourceId'] as String? ?? '';
+    lyric = ''; setState(() { loading = true; err = null; });
+    await start();
+  }
   Future<void> start() async {
     try {
-      String playUrl = widget.item['url'] as String? ?? '';
-      if (playUrl.isEmpty && widget.sourceId.isNotEmpty) {
-        final r = await Api.get('/v1/music/url?sourceId=${Uri.encodeComponent(widget.sourceId)}&item=${Uri.encodeComponent(jsonEncode(widget.item))}');
+      String playUrl = cur['url'] as String? ?? '';
+      if (playUrl.isEmpty && curSource.isNotEmpty) {
+        final q = AppSettings.p.getString('music_quality') ?? '320k';
+        final r = await Api.get('/v1/music/url?sourceId=${Uri.encodeComponent(curSource)}&quality=$q&item=${Uri.encodeComponent(jsonEncode(cur))}');
         playUrl = r['data']?['url'] as String? ?? '';
       }
-      if (playUrl.isEmpty) { setState(() { loading = false; err = '无播放地址(音源未实现getMediaSource?)'; }); return; }
+      if (playUrl.isEmpty) { setState(() { loading = false; err = '暂时无法播放这首歌'; }); return; }
       if (playUrl.startsWith('/') || playUrl.startsWith('file://')) { await player.setFilePath(playUrl.replaceFirst('file://', '')); }
       else { await player.setUrl(playUrl); }
       await player.play();
       setState(() => loading = false);
       // 歌词(尽力而为)
-      if (widget.sourceId.isNotEmpty) {
-        try { final l = await Api.get('/v1/music/lyric?sourceId=${Uri.encodeComponent(widget.sourceId)}&item=${Uri.encodeComponent(jsonEncode(widget.item))}');
+      if (curSource.isNotEmpty) {
+        try { final l = await Api.get('/v1/music/lyric?sourceId=${Uri.encodeComponent(curSource)}&item=${Uri.encodeComponent(jsonEncode(cur))}');
           lyric = l['data']?['lyric'] as String? ?? ''; if (mounted) setState(() {}); } catch (_) {}
       }
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
   @override void dispose() { player.dispose(); super.dispose(); }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '')),
-    body: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const SizedBox(height: 20),
-      if ((widget.item['coverUrl'] ?? '') != '') ClipRRect(borderRadius: BorderRadius.circular(12),
-        child: Image.network(Api.img(widget.item['coverUrl']), width: 200, height: 200, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 120))) else const Icon(Icons.music_note, size: 120),
-      const SizedBox(height: 16),
-      Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-      Text(widget.item['artist'] ?? '', style: const TextStyle(color: Colors.grey)),
-      const SizedBox(height: 24),
-      if (loading) const CircularProgressIndicator()
-      else if (err != null) Text(err!, style: const TextStyle(color: Colors.red))
-      else StreamBuilder<PlayerState>(stream: player.playerStateStream, builder: (_, s) => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        IconButton(icon: const Icon(Icons.replay), iconSize: 36, onPressed: () => player.seek(Duration.zero)),
-        IconButton(icon: Icon(s.data?.playing == true ? Icons.pause_circle : Icons.play_circle), iconSize: 64,
-          onPressed: () => s.data?.playing == true ? player.pause() : player.play()),
-        IconButton(icon: const Icon(Icons.stop_circle), iconSize: 36, onPressed: () { player.stop(); Navigator.pop(c); }),
-      ])),
+  String _fmt(Duration d) { final m = d.inMinutes.toString().padLeft(2, '0'); final s = (d.inSeconds % 60).toString().padLeft(2, '0'); return '$m:$s'; }
+  IconData get _modeIcon => playMode == 'one' ? Icons.repeat_one : playMode == 'rand' ? Icons.shuffle : Icons.repeat;
+  void _cycleMode() { final modes = ['seq', 'one', 'rand']; final n = (modes.indexOf(playMode) + 1) % 3;
+    AppSettings.p.setString('play_mode', modes[n]); setState(() {}); }
+  void _queueSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => DraggableScrollableSheet(
+      initialChildSize: 0.55, expand: false, builder: (_, sc) => Column(children: [
+        const Padding(padding: EdgeInsets.all(12), child: Text('播放队列', style: TextStyle(fontWeight: FontWeight.bold))),
+        Expanded(child: queue.isEmpty ? const Center(child: Text('队列为空', style: TextStyle(color: Colors.grey)))
+          : ListView.builder(controller: sc, itemCount: queue.length, itemBuilder: (_, i) => ListTile(dense: true, selected: i == qIdx,
+              leading: i == qIdx ? const Icon(Icons.graphic_eq, color: Colors.blueAccent, size: 18) : const Icon(Icons.music_note, size: 18),
+              title: Text(queue[i]['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+              subtitle: Text(queue[i]['artist'] ?? '', style: const TextStyle(fontSize: 11)),
+              onTap: () { Navigator.pop(c2); _switchTo(i); }))),
+      ])));
+  }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(cur['name'] ?? '', style: const TextStyle(fontSize: 15)), actions: [
+      IconButton(icon: Icon(showLyric ? Icons.album : Icons.lyrics_outlined), tooltip: showLyric ? '封面' : '歌词',
+        onPressed: () => setState(() => showLyric = !showLyric)),
+      IconButton(icon: const Icon(Icons.queue_music), tooltip: '播放队列', onPressed: _queueSheet)]),
+    body: SafeArea(child: Column(children: [
       const SizedBox(height: 12),
-      if (lyric.isNotEmpty) Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-        child: Text(lyric, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.6)))),
-    ])); }
+      // 封面 / 歌词 切换
+      Expanded(child: showLyric
+        ? (lyric.isEmpty ? const Center(child: Text('暂无歌词', style: TextStyle(color: Colors.grey)))
+            : SingleChildScrollView(padding: const EdgeInsets.all(20),
+                child: Text(lyric, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.8))))
+        : Center(child: ClipRRect(borderRadius: BorderRadius.circular(16),
+            child: (cur['coverUrl'] ?? '') != ''
+              ? Image.network(Api.img(cur['coverUrl']), width: 230, height: 230, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 140))
+              : const Icon(Icons.music_note, size: 140)))),
+      const SizedBox(height: 8),
+      Text(cur['name'] ?? '', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+      Text(cur['artist'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      const SizedBox(height: 8),
+      // 进度条(可拖动)
+      if (loading) const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
+      else if (err != null) Padding(padding: const EdgeInsets.all(16), child: Text(err!, style: const TextStyle(color: Colors.red)))
+      else StreamBuilder<Duration>(stream: player.positionStream, builder: (_, ps) {
+        final pos = ps.data ?? Duration.zero;
+        final dur = player.duration ?? Duration.zero;
+        return Column(children: [
+          Slider(value: dur.inMilliseconds > 0 ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0) : 0,
+            onChanged: dur.inMilliseconds > 0 ? (v) => player.seek(Duration(milliseconds: (v * dur.inMilliseconds).round())) : null),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text(_fmt(pos), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(_fmt(dur), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          ])),
+        ]);
+      }),
+      // 控制区: 模式/上一首/播放/下一首/队列
+      StreamBuilder<PlayerState>(stream: player.playerStateStream, builder: (_, s) => Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        IconButton(icon: Icon(_modeIcon), iconSize: 24, onPressed: _cycleMode),
+        IconButton(icon: const Icon(Icons.skip_previous), iconSize: 34, onPressed: queue.isEmpty ? null : _prev),
+        IconButton(icon: Icon(s.data?.playing == true ? Icons.pause_circle_filled : Icons.play_circle_filled), iconSize: 62,
+          color: Theme.of(c).colorScheme.primary,
+          onPressed: () => s.data?.playing == true ? player.pause() : player.play()),
+        IconButton(icon: const Icon(Icons.skip_next), iconSize: 34, onPressed: queue.isEmpty ? null : () => _next()),
+        IconButton(icon: const Icon(Icons.stop_circle_outlined), iconSize: 24, onPressed: () { player.stop(); Navigator.pop(c); }),
+      ])),
+      const SizedBox(height: 14),
+    ]))); }
 
 // ═══ 板块三: 视频播放器(UI先行, 数据源待后端drpy引擎) ═══
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播')), ButtonSegment(value: 2, label: Text(tr('源')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage(),
-      const SourceManagerPage(kind: 'video')][sub]),
+    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage()][sub]),
   ]); }
 
 // 直播: drpy直播源搜索频道→直接播放(m3u8直播流)
@@ -1230,7 +1345,7 @@ class _Live extends State<LivePage> {
       ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), onPressed: () { ctrl.text = h; go(h); }) ]),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: channels.isEmpty
-      ? const Center(child: Text('搜索频道名, 或点上方热词\n(需先导入含直播分类的drpy源)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      ? const Center(child: Text('搜索频道名, 或点上方热词', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.75),
         itemCount: channels.length, itemBuilder: (_, i) {
           final ch = channels[i];
@@ -1260,7 +1375,7 @@ class _VSR extends State<VideoSearchResults> {
     Expanded(child: ListView(children: [
       for (final g in groups) ...[
         if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
-          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']} (${g['latency']}ms)', style: const TextStyle(color: Colors.blueAccent, fontSize: 12))),
+          
         for (final b in (g['items'] as List? ?? [])) ListTile(
           leading: (b['coverUrl'] ?? '') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
             child: Image.network(Api.img(b['coverUrl']), width: 40, height: 56, fit: BoxFit.cover,
@@ -1269,9 +1384,7 @@ class _VSR extends State<VideoSearchResults> {
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(
             sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? '')))),
       ],
-      if (groups.isNotEmpty) for (final g in groups) if (g['ok'] == false)
-        Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Text('${g['source']}: ${g['error'] ?? '失败'}', style: const TextStyle(color: Colors.redAccent, fontSize: 12))),
-      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('无结果(或尚未导入drpy源)', style: TextStyle(color: Colors.grey))),
+            if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关视频', style: TextStyle(color: Colors.grey))),
     ])), ]); }
 
 class VideoDetailPage extends StatefulWidget { final String sourceId, vodId, title; const VideoDetailPage({super.key, required this.sourceId, required this.vodId, required this.title}); @override State<VideoDetailPage> createState() => _Vd(); }
@@ -1313,8 +1426,11 @@ class _Vp extends State<VideoPlayPage> {
       if (url.isEmpty) { setState(() { loading = false; err = '播放地址为空'; }); return; }
       _vc = VideoPlayerController.networkUrl(Uri.parse(url));
       await _vc!.initialize();
+      final speed = double.tryParse(AppSettings.p.getString('video_speed') ?? '1.0') ?? 1.0;
       _cc = ChewieController(videoPlayerController: _vc!, autoPlay: true, aspectRatio: _vc!.value.aspectRatio,
-        allowedScreenSleep: false);
+        allowedScreenSleep: false, allowPlaybackSpeedChanging: true,
+        playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]);
+      await _vc!.setPlaybackSpeed(speed);
       setState(() => loading = false);
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
   @override void dispose() { _cc?.dispose(); _vc?.dispose(); super.dispose(); }
@@ -1322,7 +1438,19 @@ class _Vp extends State<VideoPlayPage> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoPlayPage(
       sourceId: widget.sourceId, epUrl: ep['url'] ?? '', flag: ep['flag'] ?? '', title: ep['name'] ?? '',
       episodes: widget.episodes, index: i))); }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title)),
+  void _epSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => DraggableScrollableSheet(
+      initialChildSize: 0.6, expand: false, builder: (_, sc) => GridView.builder(controller: sc, padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 2.2, mainAxisSpacing: 8, crossAxisSpacing: 8),
+        itemCount: widget.episodes.length,
+        itemBuilder: (_, i) => FilledButton.tonal(style: FilledButton.styleFrom(
+          backgroundColor: i == idx ? Theme.of(context).colorScheme.primary : null,
+          foregroundColor: i == idx ? Colors.white : null, padding: EdgeInsets.zero),
+          onPressed: () { Navigator.pop(c2); goEpisode(i); },
+          child: Text(widget.episodes[i]['name'] ?? '第${i + 1}集', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))));
+  }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 15)), actions: [
+      if (widget.episodes.isNotEmpty) IconButton(icon: const Icon(Icons.grid_view), tooltip: '选集', onPressed: _epSheet)]),
     body: err != null ? Center(child: Text('播放错误: $err', style: const TextStyle(color: Colors.red)))
       : loading ? const Center(child: CircularProgressIndicator())
       : Column(children: [
@@ -1348,6 +1476,7 @@ class ModuleDef {
   const ModuleDef(this.name, this.icon, this.page, {this.localKind});
 }
 
+// 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
   '搜索': ModuleDef('搜索', Icons.search, const SearchSection()),
   '小说': ModuleDef('小说', Icons.menu_book, const NovelSection(), localKind: 'novel'),
@@ -1355,8 +1484,6 @@ final Map<String, ModuleDef> kModules = {
   '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
   '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
   '直播': const ModuleDef('直播', Icons.live_tv, _ComingSoonPage(name: '直播')),
-  '后端': ModuleDef('后端', Icons.dns, const EnginesPage()),
-  '资源库': ModuleDef('资源库', Icons.link, const ToolsSection()),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
 
@@ -1369,13 +1496,16 @@ class _ComingSoonPage extends StatelessWidget {
   ]));
 }
 
-// 底部导航壳: 默认只显示"我的", 在 我的→系统→底部导航栏 里开启其它模块
+// 底部导航壳(完全体同款): PageView 左右滑动切模块 + 底部"我的"固定最右, 其它模块横向自由滑动
 class RootNav extends StatefulWidget { const RootNav({super.key}); @override State<RootNav> createState() => _RootNavState(); }
 class _RootNavState extends State<RootNav> {
   List<String> enabled = ['我的'];
   int idx = 0;
+  final PageController _page = PageController();
+  final ScrollController _navScroll = ScrollController();
   @override void initState() { super.initState(); _load();
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
+  @override void dispose() { _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
@@ -1385,13 +1515,19 @@ class _RootNavState extends State<RootNav> {
       if (idx >= enabled.length) idx = 0;
     });
   }
+  void _go(int i, {bool animate = true}) {
+    if (i < 0 || i >= enabled.length) return;
+    setState(() => idx = i);
+    if (!_page.hasClients) return;
+    if (animate) { _page.animateToPage(i, duration: const Duration(milliseconds: 240), curve: Curves.easeOut); }
+    else { _page.jumpToPage(i); }
+  }
   @override Widget build(BuildContext c) {
     ScreenFit.update(c);
     final key = enabled[idx];
     final mod = kModules[key]!;
-    final body = AnimatedSwitcher(duration: const Duration(milliseconds: 220),
-      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-      child: KeyedSubtree(key: ValueKey(key), child: mod.page));
+    final body = PageView(controller: _page, onPageChanged: (i) => setState(() => idx = i),
+      children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]);
     final appBar = AppBar(title: Text(mod.name), actions: [
       if (mod.localKind != null) ...[
         IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
@@ -1402,14 +1538,15 @@ class _RootNavState extends State<RootNav> {
             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
           }),
       ],
-      IconButton(icon: const Icon(Icons.settings_outlined),
-        onPressed: () => Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
+      // 右上角=该模块自己的播放器设置(全局设置在"我的"里)
+      IconButton(icon: const Icon(Icons.tune), tooltip: '${mod.name}设置',
+        onPressed: () => showModuleSettings(c, key)),
     ]);
     // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
     if (ScreenFit.isWide) {
       return Scaffold(
         body: Row(children: [
-          NavigationRail(selectedIndex: idx, onDestinationSelected: (i) => setState(() => idx = i),
+          NavigationRail(selectedIndex: idx, onDestinationSelected: (i) => _go(i),
             labelType: NavigationRailLabelType.all,
             destinations: [ for (final k in enabled) NavigationRailDestination(icon: Icon(kModules[k]!.icon), label: Text(kModules[k]!.name)) ]),
           const VerticalDivider(width: 1),
@@ -1418,11 +1555,132 @@ class _RootNavState extends State<RootNav> {
         ]));
     }
     return Scaffold(appBar: appBar, body: body,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: idx, onDestinationSelected: (i) => setState(() => idx = i),
-        destinations: [ for (final k in enabled) NavigationDestination(icon: Icon(kModules[k]!.icon), label: kModules[k]!.name) ],
-      ));
+      bottomNavigationBar: _scrollNavBar());
   }
+
+  // 完全体同款底栏: 模块多→横向自由滑动, "我的"永远固定在最右端
+  Widget _scrollNavBar() {
+    final mineIdx = enabled.indexOf('我的');
+    final scrollKeys = [ for (var i = 0; i < enabled.length; i++) if (i != mineIdx) i ];
+    final scheme = Theme.of(context).colorScheme;
+    Widget item(int i, {double? width}) {
+      final k = enabled[i]; final m = kModules[k]!; final on = i == idx;
+      final fg = on ? scheme.primary : scheme.onSurface.withValues(alpha: 0.55);
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _go(i),
+        child: SizedBox(width: width, height: 60,
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            AnimatedContainer(duration: const Duration(milliseconds: 150), curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+              decoration: on ? BoxDecoration(color: scheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)) : null,
+              child: Icon(m.icon, size: 21, color: fg)),
+            const SizedBox(height: 2),
+            Text(m.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
+          ])));
+    }
+    return Material(elevation: 8, color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(top: false, child: SizedBox(height: 60, child: LayoutBuilder(builder: (ctx, box) {
+        const itemW = 76.0;
+        final mineW = itemW;
+        final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
+        // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
+        if (scrollKeys.length * itemW <= avail) {
+          return Row(children: [
+            for (final i in scrollKeys) Expanded(child: item(i)),
+            if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
+          ]);
+        }
+        return Row(children: [
+          Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
+            itemCount: scrollKeys.length,
+            itemBuilder: (_, n) => SizedBox(width: itemW, child: item(scrollKeys[n])))),
+          if (mineIdx >= 0) Container(decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 0.5))),
+            child: SizedBox(width: mineW, child: item(mineIdx))),
+        ]);
+      }))));
+  }
+}
+
+// PageView 模块页保活: 滑走再滑回, 搜索词/滚动位置不丢
+class _KeepAlivePage extends StatefulWidget { const _KeepAlivePage({super.key, required this.child}); final Widget child;
+  @override State<_KeepAlivePage> createState() => _KeepAlivePageState(); }
+class _KeepAlivePageState extends State<_KeepAlivePage> with AutomaticKeepAliveClientMixin {
+  @override bool get wantKeepAlive => true;
+  @override Widget build(BuildContext context) { super.build(context); return widget.child; }
+}
+
+// ═══ 模块右上角设置: 只含该模块的播放器设置(全局设置都在"我的") ═══
+void showModuleSettings(BuildContext c, String modKey) {
+  showModalBottomSheet(context: c, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+    Widget tile(IconData ic, String t, Widget trailing) => ListTile(leading: Icon(ic, size: 20),
+      title: Text(t, style: const TextStyle(fontSize: 14)), trailing: trailing, dense: true);
+    final List<Widget> children = [];
+    switch (modKey) {
+      case '小说':
+        children.addAll([
+          tile(Icons.format_size, '字号 ${AppSettings.fontSize.toStringAsFixed(0)}', SizedBox(width: 160,
+            child: Slider(value: AppSettings.fontSize, min: 12, max: 32, onChanged: (v) { AppSettings.setFontSize(v); setD(() {}); }))),
+          tile(Icons.brightness_6_outlined, '阅读主题', SegmentedButton<int>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 0, label: Text('夜', style: TextStyle(fontSize: 10))), ButtonSegment(value: 1, label: Text('日', style: TextStyle(fontSize: 10))), ButtonSegment(value: 2, label: Text('纸', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.readerTheme}, onSelectionChanged: (s) { AppSettings.setReaderTheme(s.first); setD(() {}); })),
+          tile(Icons.swipe, '翻页方式', SegmentedButton<String>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'scroll', label: Text('滚动', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'paged', label: Text('翻页', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.pageMode}, onSelectionChanged: (s) { AppSettings.setPageMode(s.first); setD(() {}); })),
+        ]);
+        break;
+      case '漫画':
+        children.addAll([
+          tile(Icons.view_agenda_outlined, '阅读模式', SegmentedButton<String>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'webtoon', label: Text('条漫', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'paged', label: Text('翻页', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.p.getString('comic_mode') ?? 'webtoon'},
+            onSelectionChanged: (s) { AppSettings.p.setString('comic_mode', s.first); setD(() {}); })),
+        ]);
+        break;
+      case '音乐':
+        children.addAll([
+          tile(Icons.repeat, '播放模式', SegmentedButton<String>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'seq', label: Text('顺序', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'one', label: Text('单曲', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'rand', label: Text('随机', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.p.getString('play_mode') ?? 'seq'},
+            onSelectionChanged: (s) { AppSettings.p.setString('play_mode', s.first); setD(() {}); })),
+          tile(Icons.high_quality, '优先音质', SegmentedButton<String>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: '128k', label: Text('128k', style: TextStyle(fontSize: 10))), ButtonSegment(value: '320k', label: Text('320k', style: TextStyle(fontSize: 10))), ButtonSegment(value: 'flac', label: Text('无损', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.p.getString('music_quality') ?? '320k'},
+            onSelectionChanged: (s) { AppSettings.p.setString('music_quality', s.first); setD(() {}); })),
+        ]);
+        break;
+      case '视频':
+        children.addAll([
+          tile(Icons.speed, '默认倍速', SegmentedButton<String>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: '1.0', label: Text('1x', style: TextStyle(fontSize: 10))), ButtonSegment(value: '1.5', label: Text('1.5x', style: TextStyle(fontSize: 10))), ButtonSegment(value: '2.0', label: Text('2x', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.p.getString('video_speed') ?? '1.0'},
+            onSelectionChanged: (s) { AppSettings.p.setString('video_speed', s.first); setD(() {}); })),
+        ]);
+        break;
+      case '搜索':
+        children.add(ListTile(leading: const Icon(Icons.history, size: 20), dense: true,
+          title: const Text('清空搜索历史', style: TextStyle(fontSize: 14)),
+          onTap: () async { final p = await SharedPreferences.getInstance();
+            for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
+            if (c2.mounted) Navigator.pop(c2); }));
+        break;
+      default:
+        children.add(const Padding(padding: EdgeInsets.all(24),
+          child: Text('该模块暂无播放器设置\n全局设置在「我的」里', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))));
+    }
+    return SafeArea(child: Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Padding(padding: const EdgeInsets.all(12), child: Text('${kModules[modKey]?.name ?? ''} · 播放器设置',
+        style: const TextStyle(fontWeight: FontWeight.bold))),
+      ...children,
+    ])));
+  }));
 }
 
 Widget localLibPage(String kind) {
@@ -1619,8 +1877,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.2.0';
-  static const int currentCode = 42000;
+  static const String currentVersion = '4.4.0';
+  static const int currentCode = 44000;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
@@ -1999,9 +2257,17 @@ class _Sy extends State<SystemPage> {
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('系统'))),
     body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
       Card(child: Column(children: [
-        ListTile(leading: const Icon(Icons.extension_outlined, size: 20), title: Text(tr('连接器管理'), style: const TextStyle(fontSize: 14)),
-          subtitle: const Text('引擎与源 · 等同于"后端"板块', style: TextStyle(fontSize: 11)),
+        ListTile(leading: const Icon(Icons.dns_outlined, size: 20), title: const Text('资源库状态', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('查看后端与在线引擎', style: TextStyle(fontSize: 11)),
           onTap: () => Navigator.push(c, smoothRoute(const EnginesPage()))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.download_outlined, size: 20), title: const Text('下载与存储', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('后端下载任务 · 网盘', style: TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, smoothRoute(Scaffold(appBar: AppBar(title: const Text('下载与存储')), body: const ToolsSection())))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.link, size: 20), title: const Text('连接资源库', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('手动输入地址 / 局域网自动发现', style: TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.shield_outlined, size: 20), title: Text(tr('贤者模式（内容保护）'), style: const TextStyle(fontSize: 14)),
           subtitle: const Text('PIN锁 · 在"连接资源库"页设置', style: TextStyle(fontSize: 11)),
