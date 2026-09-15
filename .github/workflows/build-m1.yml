@@ -32,10 +32,11 @@ jobs:
           base64 -d thirdhub.jks.b64 > thirdhub.jks
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/thirdhub-backend.apk
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
-        with: { files: android/app/build/outputs/apk/release/*.apk, body: "ThirdHub 后端 APK" }
+        with: { files: android/app/build/outputs/apk/release/thirdhub-backend.apk, body: "ThirdHub 后端 APK" }
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
@@ -59,11 +60,11 @@ jobs:
           APK=$(find "$GITHUB_WORKSPACE/flutter_app" -name "app-release.apk" | head -1)
           test -n "$APK"
           mkdir -p build/app/outputs/flutter-apk
-          cp "$APK" build/app/outputs/flutter-apk/app-release.apk
+          cp "$APK" build/app/outputs/flutter-apk/thirdhub-app.apk
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
-        with: { files: flutter_app/build/app/outputs/flutter-apk/*.apk, body: "ThirdHub Flutter 前端 APK" }
+        with: { files: flutter_app/build/app/outputs/flutter-apk/thirdhub-app.apk, body: "ThirdHub Flutter 前端 APK" }
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-flutter-apk, path: flutter_app/build/app/outputs/flutter-apk/*.apk }
