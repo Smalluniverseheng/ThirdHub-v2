@@ -13,12 +13,17 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image/image.dart' as img;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:open_filex/open_filex.dart';
 import 'core/neu.dart';
+import 'core/cloud.dart';
+import 'core/local_import.dart';
 import 'core/i18n.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings.init();
+  await Cloud.init();
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
@@ -159,7 +164,7 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(title: 'ThirdHub',
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
-      home: widget.locked ? const LockScreen() : (widget.fresh ? const OnboardingPage() : (widget.ready ? const OrbShell() : const ConnectLibraryPage()))); }
+      home: widget.locked ? const LockScreen() : const RootNav())); }
 }
 
 // 首启引导: 三页滑屏(是什么→怎么用→连接)
@@ -413,6 +418,11 @@ class _Pf extends State<ProfilePage> {
           Text(e.key, style: const TextStyle(fontSize: 10, color: Colors.grey)) ]),
       ]))),
 
+      // ═══ 账号(ThirdHub 云端账号: 前后端配对 + 资料同步) ═══
+      section('账号', [const AccountTile()]),
+      // ═══ 下载 App(产品列表: 前端/后端/下载器/网页版) ═══
+      section('下载 App', [const DownloadCenterTile()]),
+
       // ═══ ② 外观(网页版: 主题外观/强调色/开屏动画) ═══
       section('个性化', [
         ListTile(dense: true, leading: const Icon(Icons.language, size: 20), title: const Text('语言', style: TextStyle(fontSize: 13)),
@@ -456,8 +466,12 @@ class _Pf extends State<ProfilePage> {
           onTap: () async { final p = await SharedPreferences.getInstance();
             for (final k in ['sh_novel', 'search_history']) { await p.remove(k); }
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缓存已清理'))); }),
+        ListTile(dense: true, leading: const Icon(Icons.navigation_outlined, size: 20), title: const Text('底部导航栏', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('像网站一样自定义显示哪些模块', style: TextStyle(fontSize: 10)),
+          onTap: () => showNavSettings(c)),
         ListTile(dense: true, leading: const Icon(Icons.system_update_alt, size: 20), title: Text(tr('版本与更新'), style: TextStyle(fontSize: 13)),
-          subtitle: Text('v4.0.0-m2 · 自动检查已开启', style: TextStyle(fontSize: 10))),
+          subtitle: Text('v${Updater.currentVersion} · 点按检查更新', style: const TextStyle(fontSize: 10)),
+          onTap: () => Updater.check(c, manual: true)),
       ]),
 
       // ═══ ⑤ 云端(网页版: 云存储用量/会员) — 会员冻结占位 ═══
@@ -1188,7 +1202,8 @@ class _MPlay extends State<MusicPlayPage> {
         playUrl = r['data']?['url'] as String? ?? '';
       }
       if (playUrl.isEmpty) { setState(() { loading = false; err = '无播放地址(音源未实现getMediaSource?)'; }); return; }
-      await player.setUrl(playUrl);
+      if (playUrl.startsWith('/') || playUrl.startsWith('file://')) { await player.setFilePath(playUrl.replaceFirst('file://', '')); }
+      else { await player.setUrl(playUrl); }
       await player.play();
       setState(() => loading = false);
       // 歌词(尽力而为)
@@ -1357,3 +1372,467 @@ class _Vp extends State<VideoPlayPage> {
           TextButton.icon(onPressed: hasPrev ? () => goEpisode(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一集'))),
           TextButton.icon(onPressed: hasNext ? () => goEpisode(idx + 1) : null, label: Text(tr('下一集')), icon: const Icon(Icons.chevron_right)),
         ]))])); }
+
+
+// ═══════════════════════════════════════════════════════════════
+// v4.1: 网站式底部导航 + 账号体系 + 下载中心 + 自动更新 + 本地播放器
+// ═══════════════════════════════════════════════════════════════
+
+// 模块注册表(与网站一致): key → (名称, 图标, 页面, 本地导入类型)
+class ModuleDef {
+  final String name; final IconData icon; final Widget page; final String? localKind;
+  const ModuleDef(this.name, this.icon, this.page, {this.localKind});
+}
+
+final Map<String, ModuleDef> kModules = {
+  '搜索': ModuleDef('搜索', Icons.search, const SearchSection()),
+  '小说': ModuleDef('小说', Icons.menu_book, const NovelSection(), localKind: 'novel'),
+  '漫画': ModuleDef('漫画', Icons.photo_library, const ComicSection(), localKind: 'comic'),
+  '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
+  '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
+  '直播': const ModuleDef('直播', Icons.live_tv, _ComingSoonPage(name: '直播')),
+  '后端': ModuleDef('后端', Icons.dns, const EnginesPage()),
+  '资源库': ModuleDef('资源库', Icons.link, const ToolsSection()),
+  '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
+};
+
+class _ComingSoonPage extends StatelessWidget {
+  final String name; const _ComingSoonPage({required this.name});
+  @override Widget build(BuildContext c) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.rocket_launch_outlined, size: 64, color: Colors.grey),
+    const SizedBox(height: 12),
+    Text('$name模块即将上线', style: const TextStyle(color: Colors.grey)),
+  ]));
+}
+
+// 底部导航壳: 默认只显示"我的", 在 我的→系统→底部导航栏 里开启其它模块
+class RootNav extends StatefulWidget { const RootNav({super.key}); @override State<RootNav> createState() => _RootNavState(); }
+class _RootNavState extends State<RootNav> {
+  List<String> enabled = ['我的'];
+  int idx = 0;
+  @override void initState() { super.initState(); _load();
+    Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    final saved = p.getStringList('nav_modules');
+    setState(() {
+      enabled = (saved == null || saved.isEmpty) ? ['我的'] : saved.where((k) => kModules.containsKey(k)).toList();
+      if (!enabled.contains('我的')) enabled.add('我的');
+      if (idx >= enabled.length) idx = 0;
+    });
+  }
+  @override Widget build(BuildContext c) {
+    final key = enabled[idx];
+    final mod = kModules[key]!;
+    return Scaffold(
+      appBar: AppBar(title: Text(mod.name), actions: [
+        if (mod.localKind != null) ...[
+          IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
+            onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => localLibPage(mod.localKind!)))),
+          IconButton(icon: const Icon(Icons.file_download_outlined), tooltip: '导入本地文件',
+            onPressed: () async {
+              final n = await importLocal(mod.localKind!);
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
+            }),
+        ],
+        IconButton(icon: const Icon(Icons.settings_outlined),
+          onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
+      ]),
+      body: mod.page,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: idx, onDestinationSelected: (i) => setState(() => idx = i),
+        destinations: [ for (final k in enabled) NavigationDestination(icon: Icon(kModules[k]!.icon), label: kModules[k]!.name) ],
+      ));
+  }
+}
+
+Widget localLibPage(String kind) {
+  switch (kind) {
+    case 'novel': return const LocalNovelsPage();
+    case 'video': return const LocalVideosPage();
+    case 'music': return const LocalMusicsPage();
+    case 'comic': return const LocalComicsPage();
+    default: return const SizedBox();
+  }
+}
+
+Future<int> importLocal(String kind) {
+  switch (kind) {
+    case 'novel': return LocalLib.importNovels();
+    case 'video': return LocalLib.importVideos();
+    case 'music': return LocalLib.importAudios();
+    case 'comic': return LocalLib.importComic();
+    default: return Future.value(0);
+  }
+}
+
+// 底部导航自定义(像网站: 勾选哪些模块显示在底部)
+Future<void> showNavSettings(BuildContext c) async {
+  final p = await SharedPreferences.getInstance();
+  final saved = p.getStringList('nav_modules') ?? ['我的'];
+  final sel = saved.toSet();
+  await showDialog(context: c, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
+    title: const Text('底部导航栏'),
+    content: SizedBox(width: 300, child: ListView(shrinkWrap: true, children: [
+      const Text('勾选要显示在底部导航的模块', style: TextStyle(fontSize: 12, color: Colors.grey)),
+      for (final e in kModules.entries)
+        CheckboxListTile(dense: true, value: sel.contains(e.key),
+          title: Row(children: [Icon(e.value.icon, size: 18), const SizedBox(width: 8), Text(e.key)]),
+          onChanged: e.key == '我的' ? null : (v) => setD(() { v == true ? sel.add(e.key) : sel.remove(e.key); })),
+    ])),
+    actions: [FilledButton(onPressed: () async {
+      final list = kModules.keys.where((k) => sel.contains(k)).toList();
+      if (!list.contains('我的')) list.add('我的');
+      await p.setStringList('nav_modules', list);
+      if (c2.mounted) Navigator.pop(c2);
+      // 重启生效提示
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存 · 重启应用后生效')));
+    }, child: const Text('保存'))],
+  )));
+}
+
+
+// ═══ 账号: ThirdHub 云端登录/注册 + 资料同步 + 自动连接后端 ═══
+class AccountTile extends StatefulWidget { const AccountTile({super.key}); @override State<AccountTile> createState() => _At(); }
+class _At extends State<AccountTile> {
+  bool busy = false;
+  Future<void> _auth(bool isLogin) async {
+    final mailC = TextEditingController(); final passC = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
+      title: Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: mailC, keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: '邮箱', isDense: true)),
+        TextField(controller: passC, obscureText: true,
+          decoration: const InputDecoration(labelText: '密码(至少6位)', isDense: true)),
+        const SizedBox(height: 8),
+        const Text('前后端登录同一账号即可自动配对连接, 无需填地址', style: TextStyle(fontSize: 11, color: Colors.grey)),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(isLogin ? '登录' : '注册'))]));
+    if (ok != true) return;
+    setState(() => busy = true);
+    try {
+      if (isLogin) { await Cloud.signIn(mailC.text.trim(), passC.text); }
+      else { await Cloud.signUp(mailC.text.trim(), passC.text); }
+      await _syncProfile();
+      await _autoConnect();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已登录')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+    if (mounted) setState(() => busy = false);
+  }
+
+  // 云端资料 → 本地(头像/昵称/简介)
+  Future<void> _syncProfile() async {
+    final prof = Cloud.profileData;
+    if (prof.isEmpty) return;
+    final p = await SharedPreferences.getInstance();
+    final nick = prof['nickname'] ?? prof['display_name'];
+    if (nick != null && '$nick'.isNotEmpty) await p.setString('nickname', '$nick');
+    if (prof['bio'] != null && '${prof['bio']}'.isNotEmpty) await AppSettings.setBio('${prof['bio']}');
+    if (prof['avatar_url'] != null && '${prof['avatar_url']}'.isNotEmpty) {
+      try {
+        final r = await http.get(Uri.parse('${prof['avatar_url']}'));
+        if (r.statusCode == 200) await AppSettings.setAvatar(base64Encode(r.bodyBytes));
+      } catch (_) {}
+    }
+    await AppSettings.sync();
+  }
+
+  // 账号配对: 拉取后端设备(地址+密钥) → 自动连接
+  Future<void> _autoConnect() async {
+    try {
+      final devs = await Cloud.devices();
+      if (devs.isEmpty) return;
+      final d = devs.first;
+      final lan = d['lan_url'] as String? ?? '';
+      final secret = d['secret'] as String? ?? '';
+      if (lan.isEmpty) return;
+      final r = await Api.client().get(Uri.parse('$lan/v1/meta'),
+        headers: {'X-TH-Token': secret}).timeout(const Duration(seconds: 3));
+      if (r.statusCode == 200) {
+        final p = await SharedPreferences.getInstance();
+        await p.setString('base', lan); await p.setString('token', secret);
+        Api.base = lan; Api.token = secret;
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已通过账号自动连接后端')));
+      }
+    } catch (_) {}
+  }
+
+  @override Widget build(BuildContext c) {
+    if (!Cloud.loggedIn) {
+      return Column(children: [
+        ListTile(dense: true, leading: const Icon(Icons.login, size: 20),
+          title: const Text('登录 / 注册', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('ThirdHub 账号 · 与网页版同一体系', style: TextStyle(fontSize: 10)),
+          trailing: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
+          onTap: busy ? null : () => _auth(true)),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Align(alignment: Alignment.centerLeft,
+            child: GestureDetector(onTap: busy ? null : () => _auth(false),
+              child: const Text('没有账号？点这里注册', style: TextStyle(fontSize: 11, color: Colors.blueAccent))))),
+      ]);
+    }
+    final prof = Cloud.profileData;
+    final nick = prof['nickname'] ?? prof['display_name'] ?? AppSettings.nickname;
+    return Column(children: [
+      ListTile(dense: true,
+        leading: CircleAvatar(radius: 16,
+          backgroundImage: prof['avatar_url'] != null && '${prof['avatar_url']}'.isNotEmpty ? NetworkImage('${prof['avatar_url']}') : null,
+          child: prof['avatar_url'] == null || '${prof['avatar_url']}'.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 12)) : null),
+        title: Text(nick.isEmpty ? Cloud.email : nick, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(Cloud.email, style: const TextStyle(fontSize: 10)),
+        trailing: IconButton(icon: const Icon(Icons.refresh, size: 18), tooltip: '同步资料并重连后端',
+          onPressed: () async { await Cloud.profile(); await _syncProfile(); await _autoConnect(); setState(() {}); })),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Row(children: [
+          GestureDetector(onTap: () async {
+            final nickC = TextEditingController(text: nick);
+            final r = await showDialog<String>(context: context, builder: (c2) => AlertDialog(title: const Text('修改昵称(同步到云端)'),
+              content: TextField(controller: nickC, decoration: const InputDecoration(isDense: true)),
+              actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(c2, nickC.text.trim()), child: const Text('保存'))]));
+            if (r != null && r.isNotEmpty) {
+              await Cloud.updateProfile({'nickname': r, 'display_name': r});
+              final p = await SharedPreferences.getInstance(); await p.setString('nickname', r);
+              setState(() {});
+            }
+          }, child: const Text('改昵称', style: TextStyle(fontSize: 11, color: Colors.blueAccent))),
+          const SizedBox(width: 16),
+          GestureDetector(onTap: () async { await Cloud.signOut(); setState(() {}); },
+            child: const Text('退出登录', style: TextStyle(fontSize: 11, color: Colors.redAccent))),
+        ])),
+    ]);
+  }
+}
+
+// ═══ 下载中心: 产品列表(前端/后端/下载器/网页版) ═══
+class DownloadCenterTile extends StatelessWidget {
+  const DownloadCenterTile({super.key});
+  static const _base = 'https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub';
+  static const products = [
+    ('第三方聚合', 'Flutter 纯播放器前端(本应用)', '$_base/thirdhub-app.apk', Icons.phone_android),
+    ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns),
+    ('ThirdHub 下载器', '资源下载器', '$_base/thirdhub-downloader.apk', Icons.download),
+    ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language),
+  ];
+  @override Widget build(BuildContext c) => Column(children: [
+    for (final p in products)
+      ListTile(dense: true, leading: Icon(p.$4, size: 20),
+        title: Text(p.$1, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
+        trailing: const Icon(Icons.open_in_new, size: 16),
+        onTap: () => launchUrl(Uri.parse(p.$3), mode: LaunchMode.externalApplication)),
+  ]);
+}
+
+// ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
+class Updater {
+  static const String currentVersion = '4.1.0';
+  static const int currentCode = 41000;
+  static bool _checked = false;
+
+  static Future<void> check(BuildContext c, {bool manual = false}) async {
+    if (_checked && !manual) return;
+    _checked = true;
+    final m = await Cloud.latestManifest('app');
+    if (m == null) { if (manual && c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('暂无更新信息'))); return; }
+    final code = m['versionCode'] as int? ?? 0;
+    if (code <= currentCode) { if (manual && c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已是最新版本'))); return; }
+    if (!c.mounted) return;
+    final url = m['url'] as String? ?? '';
+    final notes = m['notes'] as String? ?? '';
+    final ver = m['version'] as String? ?? '';
+    final go = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
+      title: Text('发现新版本 v$ver'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (notes.isNotEmpty) Text(notes, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 8),
+        const Text('覆盖安装, 数据自动保留', style: TextStyle(fontSize: 11, color: Colors.grey)),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('稍后')),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('立即更新'))]));
+    if (go == true && url.isNotEmpty && c.mounted) _downloadAndInstall(c, url);
+  }
+
+  static Future<void> _downloadAndInstall(BuildContext c, String url) async {
+    final progress = ValueNotifier<double>(0);
+    showDialog(context: c, barrierDismissible: false, builder: (c2) => AlertDialog(
+      title: const Text('正在下载更新'),
+      content: ValueListenableBuilder<double>(valueListenable: progress, builder: (_, v, __) => Column(mainAxisSize: MainAxisSize.min, children: [
+        LinearProgressIndicator(value: v > 0 ? v : null),
+        const SizedBox(height: 8),
+        Text(v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : '连接中…', style: const TextStyle(fontSize: 12)),
+      ]))));
+    try {
+      final req = await HttpClient().getUrl(Uri.parse(url));
+      final resp = await req.close();
+      final total = resp.contentLength;
+      final dir = await Directory.systemTemp.createTemp('th_update');
+      final f = File('${dir.path}/update.apk');
+      final sink = f.openWrite();
+      var got = 0;
+      await for (final chunk in resp) {
+        sink.add(chunk); got += chunk.length;
+        if (total > 0) progress.value = got / total;
+      }
+      await sink.close();
+      if (c.mounted) Navigator.pop(c);
+      await OpenFilex.open(f.path);
+    } catch (e) {
+      if (c.mounted) { Navigator.pop(c); ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e'))); }
+    }
+  }
+}
+
+
+// ═══ 本地小说库 + 阅读器(txt/epub 章节切分) ═══
+class LocalNovelsPage extends StatefulWidget { const LocalNovelsPage({super.key}); @override State<LocalNovelsPage> createState() => _Ln(); }
+class _Ln extends State<LocalNovelsPage> {
+  List<Map<String, dynamic>> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await LocalLib.list('novel'); setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地小说'), actions: [
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importNovels();
+      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 本' : '未导入'))); _load(); })]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : items.isEmpty ? const Center(child: Text('还没有本地小说\n点右上角 + 导入 txt / epub', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final b = items[i];
+        return ListTile(leading: const Icon(Icons.menu_book),
+          title: Text(b['name'] ?? ''), subtitle: Text('${b['format'] ?? 'txt'} · 本地', style: const TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalNovelReader(book: b))),
+          trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () async { await LocalLib.remove('novel', b['path']); _load(); })); }));
+}
+
+class LocalNovelReader extends StatefulWidget { final Map<String, dynamic> book; const LocalNovelReader({super.key, required this.book}); @override State<LocalNovelReader> createState() => _Lnr(); }
+class _Lnr extends State<LocalNovelReader> {
+  List<String> chapters = []; int idx = 0; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async {
+    try {
+      final bytes = await File(widget.book['path']).readAsBytes();
+      String text;
+      try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
+      chapters = LocalLib.splitChapters(text);
+    } catch (_) { chapters = ['读取失败']; }
+    setState(() => loading = false);
+  }
+  @override Widget build(BuildContext c) {
+    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final title = chapters[idx].split('\n').first.trim();
+    return Scaffold(appBar: AppBar(title: Text(title.length > 20 ? '${title.substring(0, 20)}…' : title, style: const TextStyle(fontSize: 14)),
+      actions: [IconButton(icon: const Icon(Icons.list), onPressed: () async {
+        final sel = await showModalBottomSheet<int>(context: c, builder: (c2) => ListView.builder(itemCount: chapters.length,
+          itemBuilder: (_, i) => ListTile(dense: true, selected: i == idx,
+            title: Text(chapters[i].split('\n').first.trim(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+            onTap: () => Navigator.pop(c2, i))));
+        if (sel != null) setState(() => idx = sel);
+      })]),
+      body: GestureDetector(
+        onHorizontalDragEnd: (d) { final v = d.primaryVelocity ?? 0;
+          if (v < -300 && idx < chapters.length - 1) setState(() => idx++);
+          else if (v > 300 && idx > 0) setState(() => idx--); },
+        child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+          child: Text(chapters[idx], style: const TextStyle(fontSize: 16, height: 1.8)))),
+      bottomNavigationBar: Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          TextButton(onPressed: idx > 0 ? () => setState(() => idx--) : null, child: const Text('上一章')),
+          Text('${idx + 1}/${chapters.length}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          TextButton(onPressed: idx < chapters.length - 1 ? () => setState(() => idx++) : null, child: const Text('下一章')),
+        ])));
+  }
+}
+
+// ═══ 本地视频库 + 播放器 ═══
+class LocalVideosPage extends StatefulWidget { const LocalVideosPage({super.key}); @override State<LocalVideosPage> createState() => _Lv(); }
+class _Lv extends State<LocalVideosPage> {
+  List<Map<String, dynamic>> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await LocalLib.list('video'); setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地视频'), actions: [
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importVideos();
+      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个' : '未导入'))); _load(); })]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : items.isEmpty ? const Center(child: Text('还没有本地视频\n点右上角 + 导入 mp4 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final v = items[i];
+        return ListTile(leading: const Icon(Icons.play_circle_outline),
+          title: Text(v['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalVideoPlayerPage(item: v))),
+          trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () async { await LocalLib.remove('video', v['path']); _load(); })); }));
+}
+
+class LocalVideoPlayerPage extends StatefulWidget { final Map<String, dynamic> item; const LocalVideoPlayerPage({super.key, required this.item}); @override State<LocalVideoPlayerPage> createState() => _Lvp(); }
+class _Lvp extends State<LocalVideoPlayerPage> {
+  VideoPlayerController? ctrl; ChewieController? chewie; String? err;
+  @override void initState() { super.initState(); _init(); }
+  Future<void> _init() async {
+    try {
+      ctrl = VideoPlayerController.file(File(widget.item['path']));
+      await ctrl!.initialize();
+      chewie = ChewieController(videoPlayerController: ctrl!, autoPlay: true, looping: false);
+      setState(() {});
+    } catch (e) { setState(() => err = '$e'); }
+  }
+  @override void dispose() { chewie?.dispose(); ctrl?.dispose(); super.dispose(); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14))),
+    body: Center(child: err != null ? Text('播放失败: $err', style: const TextStyle(color: Colors.red))
+      : chewie != null ? AspectRatio(aspectRatio: ctrl!.value.aspectRatio, child: Chewie(controller: chewie!))
+      : const CircularProgressIndicator()));
+}
+
+// ═══ 本地音乐库 ═══
+class LocalMusicsPage extends StatefulWidget { const LocalMusicsPage({super.key}); @override State<LocalMusicsPage> createState() => _Lm(); }
+class _Lm extends State<LocalMusicsPage> {
+  List<Map<String, dynamic>> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await LocalLib.list('music'); setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地音乐'), actions: [
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importAudios();
+      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 首' : '未导入'))); _load(); })]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : items.isEmpty ? const Center(child: Text('还没有本地音乐\n点右上角 + 导入 mp3 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final m = items[i];
+        return ListTile(leading: const Icon(Icons.music_note),
+          title: Text(m['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: {'name': m['name'], 'url': m['path'], 'artist': '本地', 'coverUrl': ''}))),
+          trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () async { await LocalLib.remove('music', m['path']); _load(); })); }));
+}
+
+// ═══ 本地漫画库 + 阅读器(图片序列/zip/cbz) ═══
+class LocalComicsPage extends StatefulWidget { const LocalComicsPage({super.key}); @override State<LocalComicsPage> createState() => _Lc(); }
+class _Lc extends State<LocalComicsPage> {
+  List<Map<String, dynamic>> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await LocalLib.list('comic'); setState(() => loading = false); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地漫画'), actions: [
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importComic();
+      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 部' : '未导入'))); _load(); })]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : items.isEmpty ? const Center(child: Text('还没有本地漫画\n点右上角 + 导入图片或 zip/cbz', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final m = items[i];
+        final pages = (m['pages'] as List?)?.length ?? 0;
+        return ListTile(leading: const Icon(Icons.photo_library),
+          title: Text(m['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('$pages 页', style: const TextStyle(fontSize: 11)),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalComicReader(comic: m))),
+          trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () async { await LocalLib.remove('comic', m['path']); _load(); })); }));
+}
+
+class LocalComicReader extends StatefulWidget { final Map<String, dynamic> comic; const LocalComicReader({super.key, required this.comic}); @override State<LocalComicReader> createState() => _Lcr(); }
+class _Lcr extends State<LocalComicReader> {
+  late final List<String> pages = ((widget.comic['pages'] as List?) ?? []).cast<String>();
+  final ctrl = PageController(); int idx = 0;
+  @override Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: Text('${widget.comic['name']} (${idx + 1}/${pages.length})', style: const TextStyle(fontSize: 13))),
+    body: PageView.builder(controller: ctrl, itemCount: pages.length,
+      onPageChanged: (i) => setState(() => idx = i),
+      itemBuilder: (_, i) => InteractiveViewer(maxScale: 5,
+        child: Center(child: Image.file(File(pages[i]), fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 64))))));
+}
