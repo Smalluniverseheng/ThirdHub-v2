@@ -24,11 +24,14 @@ import 'core/discover.dart';
 import 'core/novel_reader.dart';
 import 'core/reader_fonts.dart';
 import 'core/i18n.dart';
+import 'core/ai.dart';
+import 'core/ai_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings.init();
   await Cloud.init();
+  unawaited(AiRegistry.init());
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
@@ -1549,6 +1552,7 @@ final Map<String, ModuleDef> kModules = {
   '漫画': ModuleDef('漫画', Icons.photo_library, const ComicSection(), localKind: 'comic'),
   '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
   '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
+  'AI': const ModuleDef('AI', Icons.smart_toy_outlined, AiSection()),
   '直播': const ModuleDef('直播', Icons.live_tv, _ComingSoonPage(name: '直播')),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
@@ -1951,8 +1955,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.5.0';
-  static const int currentCode = 45000;
+  static const String currentVersion = '4.6.0';
+  static const int currentCode = 46000;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {

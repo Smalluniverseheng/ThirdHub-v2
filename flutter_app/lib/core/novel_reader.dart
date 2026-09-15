@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
+import 'tts.dart';
+import 'ai.dart';
 
 // ── 背景预设(背景色, 默认字色) ──
 const kReaderBgs = <(Color, Color, String)>[
@@ -59,15 +61,65 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool get hasPrev => idx > 0;
   bool get hasNext => idx < widget.chapters.length - 1;
 
-  @override void initState() { super.initState(); _boot(); }
+  @override void initState() { super.initState(); _initTts(); _boot(); }
   Future<void> _boot() async {
     await ReaderCfg.init();
     fontFamily = await FontManager.currentFamily();
     await load();
   }
 
-  Future<void> preload(int i) async {
-    if (i < 0 || i >= widget.chapters.length || chapCache.containsKey(i)) return;
+  // ── 听书 ──
+  StreamSubscription? _ttsSub;
+  void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
+  @override void dispose() { _ttsSub?.cancel(); TtsManager.stop(); super.dispose(); }
+
+  void _ttsSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+      final playing = TtsManager.state == TtsState.playing;
+      final paused = TtsManager.state == TtsState.paused;
+      final active = playing || paused;
+      return SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [ const Icon(Icons.headphones, size: 20), const SizedBox(width: 8),
+          Text(active ? '听书 · ${TtsManager.chunkIdx + 1}/${TtsManager.chunkTotal} 段' : '听书', style: const TextStyle(fontWeight: FontWeight.bold)) ]),
+        const SizedBox(height: 16),
+        if (active) Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          IconButton(icon: const Icon(Icons.skip_previous), tooltip: '上一段', onPressed: () async { await TtsManager.prevChunk(); setD(() {}); }),
+          IconButton(iconSize: 44, icon: Icon(playing ? Icons.pause_circle : Icons.play_circle),
+            onPressed: () async { playing ? await TtsManager.pause() : await TtsManager.resume(); setD(() {}); }),
+          IconButton(icon: const Icon(Icons.skip_next), tooltip: '下一段', onPressed: () async { await TtsManager.nextChunk(); setD(() {}); }),
+          IconButton(icon: const Icon(Icons.stop, color: Colors.redAccent), tooltip: '停止',
+            onPressed: () async { await TtsManager.stop(); setD(() {}); if (c2.mounted) Navigator.pop(c2); }),
+        ]),
+        if (active) const SizedBox(height: 8),
+        if (!active) FilledButton.icon(icon: const Icon(Icons.play_arrow), label: const Text('朗读本章'),
+          onPressed: () async { await TtsManager.speak(text); if (c2.mounted) setD(() {}); }),
+        const Divider(height: 24),
+        Row(children: [ const Text('语速', style: TextStyle(fontSize: 13)),
+          Expanded(child: FutureBuilder<double>(future: TtsManager.rate(), builder: (_, snap) => Slider(
+            value: snap.data ?? 0.5, min: 0.1, max: 1.0, divisions: 9,
+            label: '${((snap.data ?? 0.5) * 2).toStringAsFixed(1)}x',
+            onChanged: (v) { TtsManager.setRate(v); setD(() {}); }))) ]),
+        const SizedBox(height: 8),
+        const Align(alignment: Alignment.centerLeft, child: Text('朗读引擎', style: TextStyle(fontSize: 13))),
+        const SizedBox(height: 8),
+        FutureBuilder<String>(future: TtsManager.engine(), builder: (_, snap) {
+          final cur = snap.data ?? 'system';
+          final ttsProviders = AiRegistry.providers.where((p) => p.models.any((m) => m.contains('tts') || m.contains('speech'))).toList();
+          return Wrap(spacing: 8, runSpacing: 8, children: [
+            ChoiceChip(label: const Text('系统离线朗读'), selected: cur == 'system',
+              onSelected: (_) { TtsManager.setEngine('system'); setD(() {}); }),
+            for (final p in ttsProviders)
+              ChoiceChip(label: Text(p.name), selected: cur == p.id,
+                onSelected: (_) { TtsManager.setEngine(p.id); setD(() {}); }),
+          ]);
+        }),
+        const SizedBox(height: 6),
+        const Text('系统朗读离线免费; 在线引擎需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
+      ])));
+    }));
+  }
+
+  Future<void> preload(int i) async {    if (i < 0 || i >= widget.chapters.length || chapCache.containsKey(i)) return;
     try {
       final d = await widget.fetchContent(widget.sourceId, widget.chapters[i]['url'] ?? '');
       chapCache[i] = d;
@@ -335,6 +387,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
               _barItem(Icons.list, '目录', _tocSheet),
+              _barItem(Icons.headphones, TtsManager.state == TtsState.idle ? '听书' : '听书中', _ttsSheet),
               _barItem(Icons.nightlight_round, '夜间', _toggleNight),
               _barItem(Icons.settings_outlined, '设置', _settingsSheet),
               _barItem(Icons.skip_previous, '上一章', hasPrev ? () => goChapter(idx - 1) : null),
