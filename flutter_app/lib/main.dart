@@ -164,7 +164,7 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(title: 'ThirdHub',
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
-      home: widget.locked ? const LockScreen() : const RootNav())); }
+      home: widget.locked ? const LockScreen() : const RootNav()); }
 }
 
 // 首启引导: 三页滑屏(是什么→怎么用→连接)
