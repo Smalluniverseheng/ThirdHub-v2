@@ -53,7 +53,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   String text = ''; List<String> images = []; bool loading = true;
   bool chrome = false; // 菜单显隐
   String? fontFamily;
-  final Map<int, Map> chapCache = {};
+  final Map<int, Map<String, dynamic>> chapCache = {};
   int get idx => widget.index;
   Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0;
