@@ -2,11 +2,11 @@ package com.thirdhub.backend
 
 // 后端核心服务: 首启解压 assets(node.tar.xz + xz解压器 + server代码) → exec node 常驻
 // node 为 Termux aarch64(bionic) 构建, 依赖库经 LD_LIBRARY_PATH 加载
-import android.app.*; import android.content.*; import android.content.pm.ServiceInfo; import android.os.*; import androidx.core.app.NotificationCompat; import androidx.core.app.ServiceCompat
+import android.app.*; import android.content.*; import android.content.pm.ServiceInfo; import android.content.res.AssetManager; import android.os.*; import androidx.core.app.NotificationCompat; import androidx.core.app.ServiceCompat
 import java.io.*
 
 class BackendService : Service() {
-    private var proc: Process? = null
+    private var proc: java.lang.Process? = null
     private val CH = "th-backend"
 
     // 诊断日志: 启动每步落盘, 界面可查
@@ -57,11 +57,11 @@ class BackendService : Service() {
                 env["HOME"] = home.absolutePath
                 env["LD_LIBRARY_PATH"] = File(nodeDir, "lib").absolutePath
                 env["PATH"] = File(nodeDir, "bin").absolutePath + ":" + (System.getenv("PATH") ?: "")
-                proc = ProcessBuilder(node.absolutePath, "index.js")
+                val pb = ProcessBuilder(node.absolutePath, "index.js")
                     .directory(serverDir)
                     .redirectErrorStream(true)
-                    .environment().apply { putAll(env) }
-                    .start()
+                pb.environment().putAll(env)
+                proc = pb.start()
                 log("node进程已启动")
                 BufferedReader(InputStreamReader(proc!!.inputStream)).useLines { lines ->
                     lines.forEach { line ->
