@@ -21,6 +21,8 @@ import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
 import 'core/local_import.dart';
 import 'core/discover.dart';
+import 'core/novel_reader.dart';
+import 'core/reader_fonts.dart';
 import 'core/i18n.dart';
 
 Future<void> main() async {
@@ -104,14 +106,30 @@ class AppSettings {
   static String get identityCode => p.getString('identity_code') ?? ''; // 身份码(好友系统)
   static Future<void> setBio(String v) async { await p.setString('bio', v); await sync(); }
 
-  // ── 阅读偏好 ──
+  // ── 阅读偏好(仿番茄小说: 字号/字体/颜色/背景/翻页/间距/护眼) ──
   static double get fontSize => p.getDouble('fontSize') ?? 18.0;
   static int get readerTheme => p.getInt('readerTheme') ?? 0;
-  static String get pageMode => p.getString('pageMode') ?? 'scroll'; // scroll|paged(分页占位, 开发中)
+  static String get pageMode => p.getString('pageMode') ?? 'scroll'; // scroll|paged
+  static String get readerFont => p.getString('reader_font') ?? 'default';
+  static int get readerBg => p.getInt('reader_bg') ?? 1;            // 背景预设index
+  static int get readerTextColor => p.getInt('reader_text') ?? 0xFF4A3F30;
+  static double get lineHeight => p.getDouble('line_height') ?? 1.8;
+  static double get paraSpace => p.getDouble('para_space') ?? 8.0;  // 段间距
+  static double get readerMargin => p.getDouble('reader_margin') ?? 16.0; // 页边距
+  static String get flipMode => p.getString('flip_mode') ?? 'slide'; // sim仿真|cover覆盖|slide平移|vertical上下|none无动画
+  static bool get eyeCare => p.getBool('eye_care') ?? false;
 
   static Future<void> setFontSize(double v) async { await p.setDouble('fontSize', v); await sync(); }
   static Future<void> setReaderTheme(int v) async { await p.setInt('readerTheme', v); await sync(); }
   static Future<void> setPageMode(String v) async { await p.setString('pageMode', v); await sync(); }
+  static Future<void> setReaderFont(String v) async { await p.setString('reader_font', v); await sync(); }
+  static Future<void> setReaderBg(int v) async { await p.setInt('reader_bg', v); await sync(); }
+  static Future<void> setReaderTextColor(int v) async { await p.setInt('reader_text', v); await sync(); }
+  static Future<void> setLineHeight(double v) async { await p.setDouble('line_height', v); await sync(); }
+  static Future<void> setParaSpace(double v) async { await p.setDouble('para_space', v); await sync(); }
+  static Future<void> setReaderMargin(double v) async { await p.setDouble('reader_margin', v); await sync(); }
+  static Future<void> setFlipMode(String v) async { await p.setString('flip_mode', v); await sync(); }
+  static Future<void> setEyeCare(bool v) async { await p.setBool('eye_care', v); await sync(); }
 
   // ── 传输加密(默认不加密, aes-gcm可选) ──
   static String get encMode => p.getString('enc_mode') ?? 'none';
@@ -165,6 +183,18 @@ class Book {
   static Future<List<Book>> shelf(String kind) async {
     final p = await SharedPreferences.getInstance();
     try { return (jsonDecode(p.getString('shelf_$kind') ?? '[]') as List).map((e) => Book.from(e)).toList(); } catch (_) { return []; } }
+  // 阅读历史(最近打开的书, 新→旧)
+  static Future<void> recordHistory(Book b, String kind) async {
+    final p = await SharedPreferences.getInstance();
+    List l = [];
+    try { l = jsonDecode(p.getString('history_$kind') ?? '[]') as List; } catch (_) {}
+    l.removeWhere((x) => x['bookUrl'] == b.bookUrl);
+    l.insert(0, {...b.toJson(), '_at': DateTime.now().toString().substring(0, 16)});
+    await p.setString('history_$kind', jsonEncode(l.take(50).toList()));
+  }
+  static Future<List<Book>> history(String kind) async {
+    final p = await SharedPreferences.getInstance();
+    try { return (jsonDecode(p.getString('history_$kind') ?? '[]') as List).map((e) => Book.from(e)).toList(); } catch (_) { return []; } }
   static Future<void> add(Book b, String kind) async {
     final p = await SharedPreferences.getInstance(); final l = await shelf(kind);
     if (l.any((x) => x.bookUrl == b.bookUrl)) return;
@@ -213,39 +243,122 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(title: 'ThirdHub',
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
-      home: widget.locked ? const LockScreen() : const RootNav()); }
+      home: widget.locked ? const LockScreen() : widget.fresh ? const OnboardingPage() : const RootNav()); }
 }
 
-// 首启引导: 三页滑屏(是什么→怎么用→连接)
+// 首启引导: 语言 → 外观 → 模块选择 → 账号(登录/注册/游客), 全程可跳过
 class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key}); @override State<OnboardingPage> createState() => _Ob(); }
-class _Ob extends State<OnboardingPage> { int page = 0; final ctrl = PageController();
-  static const pages = [
-    (Icons.auto_awesome, '一个入口, 所有娱乐', '小说 · 漫画 · 视频 · 音乐 · 直播\n全部聚合, 搜一次全出来'),
-    (Icons.hub, '资源库在哪, 内容就在哪', '在你的电脑/旧手机/电视上装 ThirdHub 后端\n本App自动连接, 数据全在你家'),
-    (Icons.touch_app, '装上引擎, 一切自动', '阅读引擎等设备自动配对\n一切规则都在引擎侧, 前端只管播放'),
-  ];
+class _Ob extends State<OnboardingPage> {
+  int step = 0; final ctrl = PageController();
+  final Set<String> _mods = kModules.keys.toSet();
+  static const _titles = ['选择语言', '外观偏好', '选择模块', '账号'];
+  static const _subs = ['Choose your language', '主题与强调色, 之后随时可改', '勾选底部导航要显示的模块(我的固定保留)', '登录可云端同步并远程连接; 游客模式仅用本地与局域网'];
   Future<void> finish() async { final p = await SharedPreferences.getInstance();
+    final list = kModules.keys.where((k) => _mods.contains(k)).toList();
+    if (!list.contains('我的')) list.add('我的');
+    await p.setStringList('nav_modules', list);
     await p.setBool('first_run', true);
     if (mounted) runApp(ThApp(ready: (p.getString('base') ?? '').isNotEmpty, base: p.getString('base') ?? '', token: p.getString('token') ?? '')); }
-  @override Widget build(BuildContext c) => Scaffold(body: SafeArea(child: Column(children: [
-    Expanded(child: PageView.builder(controller: ctrl, itemCount: pages.length,
-      onPageChanged: (i) => setState(() => page = i),
-      itemBuilder: (_, i) => Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(pages[i].$1, size: 88, color: Colors.blue),
-        const SizedBox(height: 32),
-        Text(pages[i].$2, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        Text(pages[i].$3, style: const TextStyle(color: Colors.grey, height: 1.7), textAlign: TextAlign.center),
-      ])))),
-    Row(mainAxisAlignment: MainAxisAlignment.center, children: [ for (var i = 0; i < pages.length; i++)
-      Container(width: 8, height: 8, margin: const EdgeInsets.all(4), decoration: BoxDecoration(
-        shape: BoxShape.circle, color: i == page ? Colors.blue : Colors.grey.shade800)) ]),
-    Padding(padding: const EdgeInsets.all(20), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      TextButton(onPressed: finish, child: const Text('跳过')),
-      FilledButton(onPressed: page < pages.length - 1 ? () => ctrl.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOut) : finish,
-        child: Text(page < pages.length - 1 ? '下一页' : tr('开始连接'))),
-    ])),
-  ])));
+  void next() { if (step < 3) { ctrl.nextPage(duration: const Duration(milliseconds: 280), curve: Curves.easeOut); } else { finish(); } }
+
+  Widget _langStep() => ListView(padding: const EdgeInsets.symmetric(horizontal: 24), children: [
+    RadioListTile<String>(value: 'system', groupValue: AppSettings.locale, title: const Text('跟随系统 / System'),
+      onChanged: (v) => AppSettings.setLocale(v!).then((_) => setState(() {}))),
+    for (final lc in I18n.supported)
+      RadioListTile<String>(value: lc, groupValue: AppSettings.locale, title: Text(I18n.names[lc] ?? lc),
+        onChanged: (v) => AppSettings.setLocale(v!).then((_) => setState(() {}))),
+  ]);
+
+  Widget _lookStep() {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return ListView(padding: const EdgeInsets.all(24), children: [
+      const Text('主题', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 10),
+      SegmentedButton<String>(segments: [
+        ButtonSegment(value: 'system', icon: const Icon(Icons.settings_suggest_outlined, size: 16), label: Text(tr('跟随系统'))),
+        ButtonSegment(value: 'light', icon: const Icon(Icons.light_mode_outlined, size: 16), label: Text(tr('浅色'))),
+        ButtonSegment(value: 'dark', icon: const Icon(Icons.dark_mode_outlined, size: 16), label: Text(tr('深色'))),
+      ], selected: {AppSettings.themeModeStr},
+        onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {}))),
+      const SizedBox(height: 28),
+      const Text('强调色', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 12),
+      Wrap(spacing: 12, runSpacing: 12, children: [ for (final col in [0xFF3B5BFD, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24, 0xFFFF6B4A, 0xFF22D3EE])
+        GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
+          child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Color(col), shape: BoxShape.circle,
+            border: AppSettings.accentColor == col ? Border.all(color: dark ? Colors.white : Colors.black87, width: 2.5) : null,
+            boxShadow: [BoxShadow(color: Color(col).withValues(alpha: 0.4), blurRadius: 8)]))) ]),
+      const SizedBox(height: 28),
+      Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
+        child: Row(children: [Icon(Icons.auto_awesome, color: Color(AppSettings.accentColor)),
+          const SizedBox(width: 12), const Expanded(child: Text('预览: 卡片、按钮、进度条都会使用强调色', style: TextStyle(fontSize: 12)))])),
+    ]);
+  }
+
+  Widget _modStep() => ListView(padding: const EdgeInsets.symmetric(horizontal: 24), children: [
+    for (final e in kModules.entries)
+      CheckboxListTile(value: _mods.contains(e.key),
+        secondary: Icon(e.value.icon),
+        title: Text(e.key),
+        subtitle: e.key == '我的' ? const Text('固定保留', style: TextStyle(fontSize: 11)) : null,
+        onChanged: e.key == '我的' ? null : (v) => setState(() { v == true ? _mods.add(e.key) : _mods.remove(e.key); })),
+  ]);
+
+  Widget _accountStep() => ListView(padding: const EdgeInsets.all(24), children: [
+    Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
+      color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
+      child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(Icons.cloud_outlined, size: 20), SizedBox(width: 8),
+          Text('登录账号', style: TextStyle(fontWeight: FontWeight.bold))]),
+        SizedBox(height: 6),
+        Text('· 前后端自动配对(局域网 / IPv6 / 内网穿透三路竞速)\n· 书架、阅读进度云端同步\n· 远程(外出)也能连家里的资源库', style: TextStyle(fontSize: 12, height: 1.7)),
+      ])),
+    const SizedBox(height: 8),
+    const AccountTile(),
+    const SizedBox(height: 16),
+    Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
+      color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
+      child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(Icons.person_outline, size: 20), SizedBox(width: 8),
+          Text('游客模式', style: TextStyle(fontWeight: FontWeight.bold))]),
+        SizedBox(height: 6),
+        Text('不登录也能用: 本地播放 + 局域网内手动连接/自动发现资源库。\n云端同步与远程连接需登录后解锁。', style: TextStyle(fontSize: 12, height: 1.7)),
+      ])),
+    const SizedBox(height: 12),
+    OutlinedButton.icon(onPressed: finish, icon: const Icon(Icons.arrow_forward, size: 16),
+      label: const Text('以游客身份进入')),
+  ]);
+
+  @override Widget build(BuildContext c) {
+    final accent = Color(AppSettings.accentColor);
+    return Scaffold(body: SafeArea(child: Column(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(24, 20, 12, 0), child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_titles[step], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(_subs[step], style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ])),
+        TextButton(onPressed: finish, child: const Text('跳过')),
+      ])),
+      const SizedBox(height: 8),
+      Expanded(child: PageView(controller: ctrl, physics: const NeverScrollableScrollPhysics(),
+        onPageChanged: (i) => setState(() => step = i),
+        children: [_langStep(), _lookStep(), _modStep(), _accountStep()])),
+      Padding(padding: const EdgeInsets.fromLTRB(24, 8, 24, 20), child: Row(children: [
+        Row(children: [ for (var i = 0; i < 4; i++)
+          AnimatedContainer(duration: const Duration(milliseconds: 250), width: i == step ? 22 : 8, height: 8,
+            margin: const EdgeInsets.only(right: 5),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(4),
+              color: i == step ? accent : Colors.grey.withValues(alpha: 0.35))) ]),
+        const Spacer(),
+        if (step > 0) TextButton(onPressed: () => ctrl.previousPage(duration: const Duration(milliseconds: 280), curve: Curves.easeOut),
+          child: const Text('上一步')),
+        const SizedBox(width: 8),
+        FilledButton(onPressed: next, child: Text(step < 3 ? '下一步' : '完成')),
+      ])),
+    ])));
+  }
 }
 
 // 应用锁: 本地PIN, 输对才进主界面
@@ -809,10 +922,27 @@ class _Home extends State<SearchSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)), const NovelSearchResults(query: '')][sub]),
+    Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)),
+      HistoryPage(kind: 'novel', builder: (b) => TocPage(book: b)),
+      const NovelSearchResults(query: '')][sub]),
   ]); }
+
+// 阅读历史(番茄式"历史"标签)
+class HistoryPage extends StatefulWidget { final String kind; final Widget Function(Book) builder;
+  const HistoryPage({super.key, required this.kind, required this.builder}); @override State<HistoryPage> createState() => _Hp(); }
+class _Hp extends State<HistoryPage> { List<Book> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await Book.history(widget.kind); setState(() => loading = false); }
+  @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
+    : items.isEmpty ? const Center(child: Text('暂无阅读历史', style: TextStyle(color: Colors.grey)))
+    : ListView(children: [ for (final b in items) ListTile(
+        leading: b.coverUrl != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
+          child: Image.network(Api.img(b.coverUrl), width: 40, height: 56, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : const Icon(Icons.history),
+        title: Text(b.name), subtitle: Text(b.author, maxLines: 1, overflow: TextOverflow.ellipsis),
+        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => _load())) ]); }
 
 class NovelSearchResults extends StatefulWidget { final String query; const NovelSearchResults({super.key, required this.query}); @override State<NovelSearchResults> createState() => _NSR(); }
 class _NSR extends State<NovelSearchResults> {
@@ -859,19 +989,39 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
   Future<void> remove(Book b) async { final p = await SharedPreferences.getInstance();
     items.removeWhere((x) => x.bookUrl == b.bookUrl);
     await p.setString('shelf_${widget.kind}', jsonEncode(items.map((e) => e.toJson()).toList())); setState(() {}); }
+  // 番茄式网格书架: 封面大图 + 书名 + 阅读进度
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
-    : items.isEmpty ? const Center(child: Text('书架为空\n进入书籍详情页加入', style: TextStyle(color: Colors.grey)))
-    : ListView(children: [ for (final b in items) ListTile(
-        leading: b.coverUrl != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
-          child: Image.network(Api.img(b.coverUrl), width: 40, height: 56, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
-        title: Text(b.name), subtitle: Text(b.author),
-        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => load()),
-        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => remove(b))) ]); }
+    : items.isEmpty ? const Center(child: Text('书架为空\n搜索后进入详情页加入', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+    : GridView.builder(padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.52, mainAxisSpacing: 12, crossAxisSpacing: 12),
+        itemCount: items.length, itemBuilder: (_, i) {
+        final b = items[i];
+        final prog = AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
+        return GestureDetector(
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => load()),
+          onLongPress: () async {
+            final del = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
+              title: Text('移出书架'), content: Text('《${b.name}》'),
+              actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('移出'))]));
+            if (del == true) remove(b);
+          },
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8),
+              child: b.coverUrl != '' ? Image.network(Api.img(b.coverUrl), width: double.infinity, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _coverFallback(b)) : _coverFallback(b))),
+            const SizedBox(height: 4),
+            Text(b.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.2)),
+            Text(prog >= 0 ? '读到第${prog + 1}章' : (b.author.isNotEmpty ? b.author : '未开始'),
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ])); });
+  Widget _coverFallback(Book b) => Container(width: double.infinity, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+    alignment: Alignment.center, child: Text(b.name.isEmpty ? '?' : b.name.characters.first,
+      style: TextStyle(fontSize: 28, color: Theme.of(context).colorScheme.primary))); }
 
 class TocPage extends StatefulWidget { final Book book; const TocPage({super.key, required this.book}); @override State<TocPage> createState() => _T(); }
 class _T extends State<TocPage> { List chapters = []; bool loading = true; int lastRead = -1;
-  @override void initState() { super.initState(); load(); }
+  @override void initState() { super.initState(); Book.recordHistory(widget.book, 'novel'); load(); }
   Future<void> load() async { try {
       final r = await Api.get('/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
       chapters = r['data'] ?? []; } catch (e) {}
@@ -897,122 +1047,23 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
         onTap: () => openAt(i)))),
     ])); }
 
-class NovelReadPage extends StatefulWidget { final String sourceId, bookName, bookUrl; final List chapters; final int index;
+// 网络书籍阅读页: 适配到番茄式阅读器(目录/夜间/设置全内建)
+class NovelReadPage extends StatelessWidget {
+  final String sourceId, bookName, bookUrl; final List chapters; final int index;
   const NovelReadPage({super.key, required this.sourceId, required this.chapters, required this.index, required this.bookName, required this.bookUrl});
-  @override State<NovelReadPage> createState() => _NR(); }
-class _NR extends State<NovelReadPage> {
-  String text = ''; List<String> images = []; bool loading = true;
-  double fontSize = AppSettings.fontSize; int theme = AppSettings.readerTheme; // 设置中心默认值
-  final Map<int, Map> chapCache = {}; // 预加载: 章index → content数据
-  static const themes = [(Color(0xFF121212), Color(0xFFE0E0E0)), (Colors.white, Colors.black87), (Color(0xFFF5F0E1), Color(0xFF4A3F30))];
-  int get idx => widget.index; Map<String, dynamic> get chapter => widget.chapters[idx];
-  bool get hasPrev => idx > 0; bool get hasNext => idx < widget.chapters.length - 1;
-  @override void initState() { super.initState(); load(); }
-  Future<void> preload(int i) async { if (i < 0 || i >= widget.chapters.length || chapCache.containsKey(i)) return;
-    try { final ch = widget.chapters[i];
-      final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(ch['url'])}');
-      if (r['object'] != 'error') chapCache[i] = Map<String, dynamic>.from(r['data']);
-    } catch (_) {} }
-  Future<void> load() async { setState(() => loading = true); try {
-      if (chapCache.containsKey(idx)) { final d = chapCache[idx]!;
-        text = d['text'] as String? ?? ''; images = List<String>.from(d['images'] ?? []); }
-      else {
-        final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(widget.sourceId)}&url=${Uri.encodeComponent(chapter['url'])}');
-        text = r['data']?['text'] as String? ?? ''; images = List<String>.from(r['data']?['images'] ?? []);
-        chapCache[idx] = Map<String, dynamic>.from(r['data'] ?? {});
-      }
-      if (text.isEmpty && images.isEmpty) text = '本章无内容';
-      final p = await SharedPreferences.getInstance(); await p.setInt('progress_${widget.bookUrl}', idx);
+  @override Widget build(BuildContext c) => NovelReaderPage(
+    sourceId: sourceId, chapters: chapters, index: index, bookName: bookName, bookUrl: bookUrl,
+    fetchContent: (sid, url) async {
+      final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(sid)}&url=${Uri.encodeComponent(url)}');
+      return Map<String, dynamic>.from(r['data'] ?? {});
+    },
+    onProgress: (i, name) async {
       try { await http.post(Uri.parse('${Api.base}/v1/reading-progress'),
         headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
-        body: jsonEncode({'bookUrl': widget.bookUrl, 'index': idx, 'chapter': chapter['name'] ?? ''})); } catch (_) {}
-      preload(idx + 1); preload(idx - 1); // 预加载前后章
-    } catch (e) { text = '错误: $e'; }
-    setState(() => loading = false); }
-  void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NovelReadPage(
-    sourceId: widget.sourceId, chapters: widget.chapters, index: i, bookName: widget.bookName, bookUrl: widget.bookUrl)));
-
-  // 专业阅读器设置面板: 字号/行距/主题/亮度/翻页 (参考主流阅读App)
-  void _settingsSheet() {
-    double lineH = AppSettings.p.getDouble('line_height') ?? 1.8;
-    double bright = AppSettings.p.getDouble('reader_brightness') ?? 1.0;
-    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
-      return SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('阅读设置', style: TextStyle(fontWeight: FontWeight.bold)),
-        Row(children: [ const SizedBox(width: 64, child: Text('字号', style: TextStyle(fontSize: 13))),
-          Expanded(child: Slider(value: fontSize, min: 12, max: 32, onChanged: (v) { setState(() => fontSize = v); AppSettings.setFontSize(v); setD(() {}); })),
-          Text(fontSize.toStringAsFixed(0), style: const TextStyle(fontSize: 12)) ]),
-        Row(children: [ const SizedBox(width: 64, child: Text('行距', style: TextStyle(fontSize: 13))),
-          Expanded(child: Slider(value: lineH, min: 1.2, max: 2.6, onChanged: (v) { AppSettings.p.setDouble('line_height', v); setState(() {}); setD(() {}); })),
-          Text(lineH.toStringAsFixed(1), style: const TextStyle(fontSize: 12)) ]),
-        Row(children: [ const SizedBox(width: 64, child: Text('亮度', style: TextStyle(fontSize: 13))),
-          Expanded(child: Slider(value: bright, min: 0.3, max: 1.0, onChanged: (v) { AppSettings.p.setDouble('reader_brightness', v); setState(() {}); setD(() {}); })) ]),
-        const SizedBox(height: 6),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          for (var i = 0; i < themes.length; i++)
-            GestureDetector(onTap: () { setState(() => theme = i); AppSettings.setReaderTheme(i); setD(() {}); },
-              child: Container(width: 56, height: 40, decoration: BoxDecoration(color: themes[i].$1, borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: theme == i ? Colors.blueAccent : Colors.grey.shade400, width: theme == i ? 2 : 0.5)),
-                child: Center(child: Text(['夜间', '日间', '纸书'][i], style: TextStyle(fontSize: 11, color: themes[i].$2))))),
-        ]),
-        const SizedBox(height: 10),
-        SegmentedButton<String>(showSelectedIcon: false,
-          segments: const [ButtonSegment(value: 'scroll', label: Text('上下滚动')), ButtonSegment(value: 'paged', label: Text('左右翻页'))],
-          selected: {AppSettings.pageMode},
-          onSelectionChanged: (s) { AppSettings.setPageMode(s.first); setState(() {}); setD(() {}); }),
-      ])));
-    }));
-  }
-
-  void _tocSheet() {
-    showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => DraggableScrollableSheet(
-      initialChildSize: 0.6, expand: false, builder: (_, sc) => ListView.builder(controller: sc,
-        itemCount: widget.chapters.length, itemBuilder: (_, i) => ListTile(dense: true, selected: i == idx,
-          title: Text(widget.chapters[i]['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-          onTap: () { Navigator.pop(c2); goChapter(i); }))));
-  }
-
-  @override Widget build(BuildContext c) { final isImgs = images.isNotEmpty;
-    final t = themes[theme];
-    final lineH = AppSettings.p.getDouble('line_height') ?? 1.8;
-    final bright = AppSettings.p.getDouble('reader_brightness') ?? 1.0;
-    final paged = AppSettings.pageMode == 'paged' && !isImgs;
-    final textWidget = paged
-      ? PageView.builder(itemCount: _pages(text, c).length, itemBuilder: (_, pi) => Container(color: t.$1,
-          padding: const EdgeInsets.all(16), child: Text(_pages(text, c)[pi], style: TextStyle(fontSize: fontSize, height: lineH, color: t.$2))))
-      : GestureDetector(
-          onHorizontalDragEnd: (d) {
-            final v = d.primaryVelocity ?? 0;
-            if (v < -300 && hasNext) goChapter(idx + 1);        // 左滑下一章
-            else if (v > 300 && hasPrev) goChapter(idx - 1);    // 右滑上一章
-          },
-          child: Container(color: t.$1, child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-            child: SelectableText(text, style: TextStyle(fontSize: fontSize, height: lineH, color: t.$2)))));
-    return Scaffold(appBar: AppBar(title: Text('${chapter['name'] ?? ''}  (${idx + 1}/${widget.chapters.length})', style: const TextStyle(fontSize: 14)), actions: [
-        IconButton(icon: const Icon(Icons.list), tooltip: '目录', onPressed: _tocSheet),
-        IconButton(icon: const Icon(Icons.text_fields), tooltip: '阅读设置', onPressed: _settingsSheet)]),
-      body: Column(children: [
-        Expanded(child: loading ? const Center(child: CircularProgressIndicator()) : isImgs
-          ? ListView.builder(itemCount: images.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.symmetric(vertical: 2),
-              child: InteractiveViewer(child: Image.network(Api.img(images[i]), fit: BoxFit.fitWidth,
-                errorBuilder: (_, __, ___) => const SizedBox(height: 120, child: Center(child: Icon(Icons.broken_image, color: Colors.grey)))))))
-          : Opacity(opacity: bright, child: textWidget)),
-        SafeArea(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          TextButton.icon(onPressed: hasPrev ? () => goChapter(idx - 1) : null, icon: const Icon(Icons.chevron_left), label: Text(tr('上一章'))),
-          TextButton.icon(onPressed: hasNext ? () => goChapter(idx + 1) : null, label: Text(tr('下一章')), icon: const Icon(Icons.chevron_right)),
-        ]))])); }
-
-  // 简单分页: 按字数切块(左右翻页模式)
-  List<String> _pages(String t, BuildContext c) {
-    if (t.isEmpty) return [''];
-    final per = ((MediaQuery.of(c).size.height - 140) / (AppSettings.fontSize * 1.8)).floor() *
-                ((MediaQuery.of(c).size.width - 32) / AppSettings.fontSize).floor();
-    final n = per.clamp(200, 2000);
-    final out = <String>[];
-    for (var i = 0; i < t.length; i += n) { out.add(t.substring(i, i + n > t.length ? t.length : i + n)); }
-    return out;
-  }
+        body: jsonEncode({'bookUrl': bookUrl, 'index': i, 'chapter': name})); } catch (_) {}
+    });
 }
+
 
 // ═══ 板块二: 漫画播放器(UI先行, 数据源待后端comic引擎) ═══
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
@@ -1054,7 +1105,9 @@ class _CSR extends State<ComicSearchResults> {
 class ComicDetailPage extends StatefulWidget { final String sourceId, comicId, title; const ComicDetailPage({super.key, required this.sourceId, required this.comicId, required this.title}); @override State<ComicDetailPage> createState() => _Cd(); }
 class _Cd extends State<ComicDetailPage> {
   Map<String, dynamic>? info; List chapters = []; bool loading = true; String? err; int lastRead = -1;
-  @override void initState() { super.initState(); load(); }
+  @override void initState() { super.initState();
+    Book.recordHistory(Book(widget.title, '', '', '', widget.comicId, widget.sourceId), 'comic');
+    load(); }
   Future<void> load() async { try {
       final r = await Api.get('/v1/comic/info?sourceId=${Uri.encodeComponent(widget.sourceId)}&id=${Uri.encodeComponent(widget.comicId)}');
       if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
@@ -1401,7 +1454,9 @@ class _VSR extends State<VideoSearchResults> {
 class VideoDetailPage extends StatefulWidget { final String sourceId, vodId, title; const VideoDetailPage({super.key, required this.sourceId, required this.vodId, required this.title}); @override State<VideoDetailPage> createState() => _Vd(); }
 class _Vd extends State<VideoDetailPage> {
   Map<String, dynamic>? info; List episodes = []; bool loading = true; String? err;
-  @override void initState() { super.initState(); load(); }
+  @override void initState() { super.initState();
+    Book.recordHistory(Book(widget.title, '', '', '', widget.vodId, widget.sourceId), 'video');
+    load(); }
   Future<void> load() async { try {
       final r = await Api.get('/v1/video/detail?sourceId=${Uri.encodeComponent(widget.sourceId)}&id=${Uri.encodeComponent(widget.vodId)}');
       if (r['object'] == 'error') { err = r['data']?['message'] ?? '失败'; }
@@ -1827,10 +1882,18 @@ class _At extends State<AccountTile> {
           subtitle: const Text('ThirdHub 账号 · 与网页版同一体系', style: TextStyle(fontSize: 10)),
           trailing: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
           onTap: busy ? null : () => _auth(true)),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Align(alignment: Alignment.centerLeft,
             child: GestureDetector(onTap: busy ? null : () => _auth(false),
               child: const Text('没有账号？点这里注册', style: TextStyle(fontSize: 11, color: Colors.blueAccent))))),
+        Container(margin: const EdgeInsets.fromLTRB(16, 0, 16, 10), padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+          child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.person_outline, size: 16, color: Colors.blueAccent),
+            SizedBox(width: 8),
+            Expanded(child: Text('当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)',
+              style: TextStyle(fontSize: 10, height: 1.6, color: Colors.blueAccent))),
+          ])),
       ]);
     }
     final prof = Cloud.profileData;
@@ -1888,8 +1951,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.4.0';
-  static const int currentCode = 44000;
+  static const String currentVersion = '4.5.0';
+  static const int currentCode = 45000;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
