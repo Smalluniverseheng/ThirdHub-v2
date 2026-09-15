@@ -1,7 +1,7 @@
 package com.thirdhub.backend
 
 // 状态页: IP/指纹/密钥展示 + 启停 + 白名单引导
-import android.os.*; import android.widget.*; import androidx.appcompat.app.AppCompatActivity
+import android.os.*; import android.widget.*; import android.content.Intent; import androidx.appcompat.app.AppCompatActivity
 import android.Manifest
 import java.net.*; import java.io.File
 
@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         val sec = File(home, "server/data/secret")
         val cert = File(home, "server/data/cert.pem")
         return buildString {
-            appendLine("ThirdHub 后端 v4.0.0-m1")
+            appendLine("第三方后端 v4.0.0-m2")
             appendLine("局域网地址: https://${getIp()}:9527")
             if (sec.exists()) appendLine("访问密钥: ${sec.readText().trim()}")
             if (cert.exists()) {
@@ -41,7 +41,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { appendLine("指纹: 启动后浏览器访问 /v1/meta 查看") }
             } else appendLine("首次启动后生成证书指纹")
             appendLine()
-            appendLine("保活提示: 若通知栏服务被杀, 请对本应用关闭电池优化(设置→应用→ThirdHub后端→电池→不限制)")
+            appendLine("保活提示: 若通知栏服务被杀, 请对本应用关闭电池优化(设置→应用→第三方后端→电池→不限制)")
         }
     }
     private fun getIp(): String = NetworkInterface.getNetworkInterfaces().toList()

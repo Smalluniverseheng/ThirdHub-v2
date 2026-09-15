@@ -1,6 +1,7 @@
 package com.thirdhub.backend
 
-// 后端核心服务: 首启解压 assets(node二进制+server代码) → exec node 常驻
+// 后端核心服务: 首启解压 assets(node.tar.xz + xz解压器 + server代码) → exec node 常驻
+// node 为 Termux aarch64(bionic) 构建, 依赖库经 LD_LIBRARY_PATH 加载
 import android.app.*; import android.content.*; import android.os.*; import androidx.core.app.NotificationCompat
 import java.io.*
 
@@ -10,10 +11,9 @@ class BackendService : Service() {
     override fun onBind(i: Intent?) = null
     override fun onCreate() {
         super.onCreate()
-        // Android 8+ 必须创建渠道, 否则通知不显示
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CH, "后端服务", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "ThirdHub 后端运行状态"
+            description = "第三方后端运行状态"
         })
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -21,17 +21,25 @@ class BackendService : Service() {
         Thread {
             try {
                 val home = File(filesDir, "runtime").apply { mkdirs() }
-                if (!File(home, ".unpacked").exists()) { unpackAssets(assets, home); File(home, ".unpacked").createNewFile() }
-                val node = File(home, "node/bin/node").absolutePath
-                File(node).setExecutable(true)
-                chmod777(File(home, "node/bin"))
+                if (!File(home, ".unpacked").exists()) {
+                    updateNotif("首次解压运行时…")
+                    unpackAssets(assets, home)
+                    extractRuntime(home)
+                    File(home, ".unpacked").createNewFile()
+                }
+                val nodeDir = File(home, "node")
+                val node = File(nodeDir, "bin/node")
+                node.setExecutable(true)
                 val serverDir = File(home, "server")
-                proc = ProcessBuilder(node, "index.js")
+                val env = HashMap(System.getenv())
+                env["HOME"] = home.absolutePath
+                env["LD_LIBRARY_PATH"] = File(nodeDir, "lib").absolutePath
+                env["PATH"] = File(nodeDir, "bin").absolutePath + ":" + (System.getenv("PATH") ?: "")
+                proc = ProcessBuilder(node.absolutePath, "index.js")
                     .directory(serverDir)
                     .redirectErrorStream(true)
-                    .environment().apply { put("HOME", home.absolutePath); put("PATH", File(home,"node/bin").absolutePath + ":" + System.getenv("PATH")) }
+                    .environment().apply { putAll(env) }
                     .start()
-                // 读输出更新通知
                 BufferedReader(InputStreamReader(proc!!.inputStream)).useLines { lines ->
                     lines.forEach { line ->
                         if (line.contains("后端就绪") || line.contains("本机:") || line.contains("指纹")) {
@@ -46,7 +54,7 @@ class BackendService : Service() {
         return START_STICKY
     }
     private fun notif(t: String) = NotificationCompat.Builder(this, CH)
-        .setContentTitle("ThirdHub 后端 :9527").setContentText(t)
+        .setContentTitle("第三方后端 :9527").setContentText(t)
         .setSmallIcon(android.R.drawable.stat_sys_download_done)
         .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         .build()
@@ -55,14 +63,29 @@ class BackendService : Service() {
         nm.notify(1, notif(t))
     }
     override fun onDestroy() { proc?.destroy(); super.onDestroy() }
-    private fun chmod777(f: File) { f.setExecutable(true, false); f.setReadable(true, false); f.setWritable(true, false) }
+
+    // 用打包内的 xz(自带 liblzma) 解压 node.tar.xz, 再走系统 tar
+    private fun extractRuntime(home: File) {
+        val xzDir = File(home, "node/xz")
+        val xz = File(xzDir, "xz")
+        xz.setExecutable(true)
+        File(xzDir, "liblzma.so.5").setReadable(true)
+        val pkg = File(home, "node/node.tar.xz")
+        val cmd = "LD_LIBRARY_PATH=${xzDir.absolutePath} ${xz.absolutePath} -dc ${pkg.absolutePath} | tar x -C ${File(home, "node").absolutePath}"
+        val p = ProcessBuilder("sh", "-c", cmd).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        if (p.waitFor() != 0) throw IOException("运行时解压失败: $out")
+        pkg.delete()
+        File(home, "node/bin/node").setExecutable(true)
+    }
+
     private fun unpackAssets(am: AssetManager, out: File) {
         fun copy(path: String) {
             val list = am.list(path) ?: return
             if (list.isEmpty()) {
                 val dest = File(out, path); dest.parentFile?.mkdirs()
                 am.open(path).use { inp -> FileOutputStream(dest).use { it.write(inp.readBytes()) } }
-                if (path.contains("/bin/")) dest.setExecutable(true)
+                if (path.contains("/bin/") || path.endsWith("/xz")) dest.setExecutable(true)
             } else list.forEach { copy(if (path.isEmpty()) it else "$path/$it") }
         }
         copy("")

@@ -17,13 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
-      - name: 注入 Node 二进制 + 后端代码到 assets
-        run: |
-          mkdir -p android/app/src/main/assets/node/bin android/app/src/main/assets/server /tmp/nodex
-          curl -sL https://nodejs.org/dist/v20.17.0/node-v20.17.0-linux-arm64.tar.xz | tar xJ -C /tmp/nodex
-          mv /tmp/nodex/node-v*/bin/node android/app/src/main/assets/node/bin/node
-          chmod +x android/app/src/main/assets/node/bin/node || true
-          cp -r server/* android/app/src/main/assets/server/
+      - name: 注入 Android(bionic) Node 运行时 + 后端代码到 assets
+        run: bash server/scripts/fetch-node-android.sh
       - name: 接受 Android SDK 许可（runner 预装 SDK，无需 setup-android）
         run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
       - name: 构建 APK
