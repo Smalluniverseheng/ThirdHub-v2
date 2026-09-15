@@ -52,8 +52,14 @@ jobs:
           cd "$GITHUB_WORKSPACE/flutter_app"
           flutter pub get
           flutter build apk --release || true
-          find build -name "*.apk" || true
-          test -f build/app/outputs/flutter-apk/app-release.apk || (cd android && ./gradlew :app:assembleRelease --no-daemon && cd .. && find build -name "*.apk")
+          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            (cd android && ./gradlew :app:assembleRelease --no-daemon)
+          fi
+          find "$GITHUB_WORKSPACE/flutter_app" -name "*.apk" || true
+          APK=$(find "$GITHUB_WORKSPACE/flutter_app" -name "app-release.apk" | head -1)
+          test -n "$APK"
+          mkdir -p build/app/outputs/flutter-apk
+          cp "$APK" build/app/outputs/flutter-apk/app-release.apk
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
