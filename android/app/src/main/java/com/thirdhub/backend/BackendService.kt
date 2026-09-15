@@ -2,7 +2,7 @@ package com.thirdhub.backend
 
 // 后端核心服务: 首启解压 assets(node.tar.xz + xz解压器 + server代码) → exec node 常驻
 // node 为 Termux aarch64(bionic) 构建, 依赖库经 LD_LIBRARY_PATH 加载
-import android.app.*; import android.content.*; import android.os.*; import androidx.core.app.NotificationCompat
+import android.app.*; import android.content.*; import android.content.pm.ServiceInfo; import android.os.*; import androidx.core.app.NotificationCompat; import androidx.core.app.ServiceCompat
 import java.io.*
 
 class BackendService : Service() {
@@ -17,7 +17,16 @@ class BackendService : Service() {
         })
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, notif("启动中…"))
+        CrashGuard.install(applicationContext)
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                ServiceCompat.startForeground(this, 1, notif("启动中…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else startForeground(1, notif("启动中…"))
+        } catch (e: Exception) {
+            // 权限/类型异常时降级为普通通知, 不再闪退
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(2, notif("前台服务启动失败: ${e.message}"))
+        }
         Thread {
             try {
                 val home = File(filesDir, "runtime").apply { mkdirs() }
@@ -49,7 +58,7 @@ class BackendService : Service() {
                 }
                 proc?.waitFor()
             } catch (e: Exception) { updateNotif("异常: ${e.message}") }
-            startForeground(1, notif("已停止, 点按重启"))
+            try { startForeground(1, notif("已停止, 点按重启")) } catch (_: Exception) {}
         }.start()
         return START_STICKY
     }

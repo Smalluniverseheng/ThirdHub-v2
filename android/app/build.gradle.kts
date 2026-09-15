@@ -7,7 +7,7 @@ android {
     compileSdk = 34
     defaultConfig {
         applicationId = "com.thirdhub.backend"
-        minSdk = 24; targetSdk = 34; versionCode = 40001; versionName = "4.0.0-m1"
+        minSdk = 24; targetSdk = 34; versionCode = 40003; versionName = "4.0.1"
     }
     signingConfigs {
         create("release") {
