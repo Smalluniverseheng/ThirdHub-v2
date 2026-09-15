@@ -6,6 +6,8 @@ const fs = require('fs'); const path = require('path');
 const crypto = require('crypto');
 const engine = require('./engine');
 const drpy = require('./engine-drpy');
+const tvbox = require('./engine-tvbox');
+const lx = require('./engine-lx');
 const comic = require('./engine-comic');
 const music = require('./engine-music');
 const { Bonjour } = require('bonjour-service');
@@ -145,7 +147,8 @@ async function handle(req, res, body) {
     if (!d.code || !d.name) return send(400, { object:'error', data:{ type:'invalid_request', message:'需name+code' }});
     const id = d.id || 'music_' + crypto.randomBytes(4).toString('hex');
     const i = musicSources.findIndex(x => x.id === id);
-    i >= 0 ? musicSources[i] = { id, name: d.name, platform: d.platform || d.name, code: d.code } : musicSources.push({ id, name: d.name, platform: d.platform || d.name, code: d.code });
+    const fmt = d.format === 'lx' ? 'lx' : 'musicfree';
+    i >= 0 ? musicSources[i] = { id, name: d.name, platform: d.platform || d.name, code: d.code, format: fmt } : musicSources.push({ id, name: d.name, platform: d.platform || d.name, code: d.code, format: fmt });
     saveMusic(musicSources);
     return send(200, { object:'meta', data: { id, total: musicSources.length }});
   }
@@ -154,7 +157,9 @@ async function handle(req, res, body) {
     const pool = musicSources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
     const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
       const t0 = Date.now();
-      const r = music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
+      const r = s.format === 'lx'
+        ? lx.irSearch(await lx.runLX(s.code, 'search', { searchKey: q, page: 1, limit: 20, type: 'music' }))
+        : music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
       return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0,
         ...(r.error ? { error: r.error } : { items: r.items.slice(0, 10) }) };
     }));
@@ -165,7 +170,9 @@ async function handle(req, res, body) {
     const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }});
     let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
-    const r = music.irUrl(await music.runPlugin(s.code, 'getMediaSource', [item, 'standard']));
+    const r = s.format === 'lx'
+      ? lx.irUrl(await lx.runLX(s.code, 'musicUrl', { musicInfo: item.raw || item, type: '320k' }))
+      : music.irUrl(await music.runPlugin(s.code, 'getMediaSource', [item, 'standard']));
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'music-url', data: r });
   }
@@ -173,7 +180,9 @@ async function handle(req, res, body) {
     const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }});
     let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
-    const r = music.irLyric(await music.runPlugin(s.code, 'getLyric', [item]));
+    const r = s.format === 'lx'
+      ? lx.irLyric(await lx.runLX(s.code, 'lyric', { musicInfo: item.raw || item }))
+      : music.irLyric(await music.runPlugin(s.code, 'getLyric', [item]));
     return send(200, { object:'music-lyric', data: r });
   }
   // ── 漫画(Venera图源) ──
@@ -216,6 +225,22 @@ async function handle(req, res, body) {
     return send(200, { object:'comic-pages', data: r });
   }
   // ── drpy 影视 ──
+  // ── TVBox 配置导入(免jar: CMS采集接口 + drpy类站点) ──
+  if (p === '/v1/video/tvbox' && req.method === 'POST') {
+    try {
+      const d = JSON.parse(body || '{}');
+      const input = d.url || d.json || '';
+      if (!input) return send(400, { object:'error', data:{ type:'invalid_request', message:'需url或json' }});
+      const r = await tvbox.importConfig(input);
+      for (const src of r.added) {
+        const i = drpySources.findIndex(x => x.id === src.id);
+        i >= 0 ? drpySources[i] = src : drpySources.push(src);
+      }
+      saveDrpy(drpySources);
+      return send(200, { object:'meta', data: { imported: r.added.length, skippedJar: r.skipped, total: r.total,
+        note: r.skipped > 0 ? `${r.skipped}个jar爬虫站点已跳过(Node无法运行Java)` : '' }});
+    } catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
+  }
   if (p === '/v1/video/sources' && req.method === 'GET')
     return send(200, { object:'list', data: drpySources.map(s => ({ id: s.id, name: s.name })) });
   if (p === '/v1/video/sources' && req.method === 'POST') {
@@ -230,9 +255,11 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/video/search')) {
     const q = u.searchParams.get('q');
     const pool = drpySources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
-    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+    const results = await Promise.all(pool.slice(0, 5).map(async (s) => {
       const t0 = Date.now();
-      const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
+      const r = s.kind === 'tvbox-cms'
+        ? drpy.irSearch(await tvbox.cmsSearch(s.api, q).catch(e => ({ error: String(e.message||e) })))
+        : drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
       return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0, ...(r.error ? { error: r.error } : { items: r.items }) };
     }));
     results.sort((a, b) => (b.ok - a.ok) || (a.latency - b.latency));
@@ -241,14 +268,18 @@ async function handle(req, res, body) {
   if (p.startsWith('/v1/video/detail')) {
     const s = drpySources.find(x => x.id === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'源不存在, 请先POST /v1/video/sources导入' }});
-    const r = drpy.irDetail(await drpy.runSource(s.code, 'detail', [u.searchParams.get('id')]));
+    const r = s.kind === 'tvbox-cms'
+      ? drpy.irDetail(await tvbox.cmsDetail(s.api, u.searchParams.get('id')).catch(e => ({ error: String(e.message||e) })))
+      : drpy.irDetail(await drpy.runSource(s.code, 'detail', [u.searchParams.get('id')]));
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'video', data: { ...r, sourceId: s.id } });
   }
   if (p.startsWith('/v1/video/play')) {
     const s = drpySources.find(x => x.id === u.searchParams.get('sourceId'));
     if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'源不存在' }});
-    const r = drpy.irPlay(await drpy.runSource(s.code, 'play', [u.searchParams.get('flag') || '', u.searchParams.get('id') || '']));
+    const r = s.kind === 'tvbox-cms'
+      ? drpy.irPlay(tvbox.cmsPlay(u.searchParams.get('id') || ''))
+      : drpy.irPlay(await drpy.runSource(s.code, 'play', [u.searchParams.get('flag') || '', u.searchParams.get('id') || '']));
     if (r.error) return send(500, { object:'error', data:{ type:'source_error', message: r.error }});
     return send(200, { object:'video-play', data: r });
   }
@@ -548,7 +579,9 @@ async function handle(req, res, body) {
       })(),
       (async () => {
         const rs = await Promise.all(musicSources.slice(0, 2).map(async (s) => {
-          const r = music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
+          const r = s.format === 'lx'
+        ? lx.irSearch(await lx.runLX(s.code, 'search', { searchKey: q, page: 1, limit: 20, type: 'music' }))
+        : music.irSearch(await music.runPlugin(s.code, 'search', [q, 1, 'music']));
           return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
         }));
         return rs.filter(r => r.ok);
