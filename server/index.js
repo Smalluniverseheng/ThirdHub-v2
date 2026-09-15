@@ -577,10 +577,11 @@ async function handle(req, res, body) {
       try {
         const t0 = Date.now();
         // 官方api.md: 搜索走WebSocket ws://设备:1235/searchBook, Message={key}, 流式返回每本结果
-        const wsBase = legadoDev.device_url.replace(/^http/, 'ws');
+        // 引擎device_url带HTTP端口(1122), ws固定1235端口; 用URL解析避免 "host:1122:1235" 拼错
+        const wsHost = new URL(legadoDev.device_url).hostname;
         const books = await new Promise((resolve, reject) => {
           const out = [];
-          const ws = new WebSocket(wsBase + ':1235/searchBook');
+          const ws = new WebSocket('ws://' + wsHost + ':1235/searchBook');
           const timer = setTimeout(() => { try { ws.close(); } catch (e) {} resolve(out); }, 12000);
           ws.onopen = () => ws.send(JSON.stringify({ key: q }));
           ws.onmessage = (ev) => { try { const b = JSON.parse(ev.data); if (b && b.name) out.push(b); } catch (e) {} };
