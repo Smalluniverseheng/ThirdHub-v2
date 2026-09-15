@@ -1069,7 +1069,7 @@ class _SM extends State<SourceManagerPage> {
   String get kind => widget.kind;
   ({String list, String imp, String label, String hint}) get cfg => cfgs[kind]!;
   Future<void> load() async { try {
-      final r = await Api.get(cfg.$1);
+      final r = await Api.get(cfg.list);
       items = (r['data'] as List? ?? []).cast<Map>();
     } catch (e) {}
     setState(() => loading = false); }
@@ -1081,11 +1081,11 @@ class _SM extends State<SourceManagerPage> {
     try {
       http.Response r;
       if (t.startsWith('http')) {
-        r = await http.post(Uri.parse('${Api.base}${cfg.$2}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+        r = await http.post(Uri.parse('${Api.base}${cfg.imp}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
           body: jsonEncode(t.endsWith('.json') && kind == 'book' ? jsonDecode(await (await Api.client().get(Uri.parse(t))).body) : {'name': t.split('/').last, 'code': t}));
       } else {
         final j = jsonDecode(t);
-        r = await http.post(Uri.parse('${Api.base}${cfg.$2}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
+        r = await http.post(Uri.parse('${Api.base}${cfg.imp}'), headers: {'X-TH-Token': Api.token, 'Content-Type': 'application/json'},
           body: jsonEncode(kind == 'book' ? j : (j is Map ? j : {'name': '导入源', 'code': t})));
       }
       setState(() { msg = r.statusCode == 200 ? '导入成功' : '失败: ${r.statusCode}'; importC.clear(); });
@@ -1093,7 +1093,7 @@ class _SM extends State<SourceManagerPage> {
     } catch (e) { setState(() => msg = '导入失败: $e'); } }
   @override Widget build(BuildContext c) => Column(children: [
     if (loading) const LinearProgressIndicator() else Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), child: Align(alignment: Alignment.centerLeft,
-      child: Text('${cfg.$3} ${items.length} 个 (批量导入用命令行脚本)', style: const TextStyle(fontSize: 12, color: Colors.grey)))),
+      child: Text('${cfg.label} ${items.length} 个 (批量导入用命令行脚本)', style: const TextStyle(fontSize: 12, color: Colors.grey)))),
     Expanded(child: ListView(children: [
       for (final s in items) SwitchListTile(
         title: Text(s['name'] ?? '', style: TextStyle(color: s['enabled'] == false ? Colors.grey : null)),
@@ -1103,7 +1103,7 @@ class _SM extends State<SourceManagerPage> {
     ])),
     const Divider(height: 1),
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
-      Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.$4, border: const OutlineInputBorder(), isDense: true))),
+      Expanded(child: TextField(controller: importC, maxLines: 2, minLines: 1, decoration: InputDecoration(hintText: cfg.hint, border: const OutlineInputBorder(), isDense: true))),
       const SizedBox(width: 8),
       FilledButton(onPressed: doImport, child: Text(tr('导入'))),
     ])),
