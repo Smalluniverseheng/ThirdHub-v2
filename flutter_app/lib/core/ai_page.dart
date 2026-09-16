@@ -72,7 +72,7 @@ class _AiSec extends State<AiSection> {
   final input = TextEditingController(); final scroll = ScrollController();
   bool pinned = false; // 上拉钉住(回到底部按钮)
   // 抽屉状态
-  double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; _historyQuery = '';
+  double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; String _historyQuery = '';
   StreamSubscription? _regSub;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
