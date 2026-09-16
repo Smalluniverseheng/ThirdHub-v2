@@ -44,17 +44,17 @@ class _Bp extends State<BrowserPage> {
 
   WebViewController _ensureCtrl(_Tab tab) {
     if (tab.ctrl != null) return tab.ctrl!;
-    final c = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onProgress: (p) { if (mounted) setState(() => tab.progress = p); },
-        onPageStarted: (u) { if (mounted) setState(() { tab.url = u; }); },
-        onPageFinished: (u) async {
-          final title = await c.getTitle() ?? '';
-          if (mounted) setState(() { tab.url = u; if (title.isNotEmpty) tab.title = title; });
-          _recordHistory(title.isNotEmpty ? title : u, u);
-        },
-      ));
+    final c = WebViewController();
+    c.setJavaScriptMode(JavaScriptMode.unrestricted);
+    c.setNavigationDelegate(NavigationDelegate(
+      onProgress: (p) { if (mounted) setState(() => tab.progress = p); },
+      onPageStarted: (u) { if (mounted) setState(() { tab.url = u; }); },
+      onPageFinished: (u) async {
+        final title = await c.getTitle() ?? '';
+        if (mounted) setState(() { tab.url = u; if (title.isNotEmpty) tab.title = title; });
+        _recordHistory(title.isNotEmpty ? title : u, u);
+      },
+    ));
     tab.ctrl = c;
     if (tab.url.isNotEmpty) c.loadRequest(Uri.parse(tab.url));
     return c;
@@ -188,7 +188,7 @@ class _Bp extends State<BrowserPage> {
                 if (tabs.length > 1) Positioned(top: 0, right: 0, child: GestureDetector(
                   onTap: () { setState(() { tabs.removeAt(i); if (cur >= tabs.length) cur = tabs.length - 1; if (cur > i) cur--; }); setD(() {}); },
                   child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 14)))),
-              ]))));
+              ])));
         })),
     ]))));
   }

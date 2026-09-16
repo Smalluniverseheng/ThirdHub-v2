@@ -4,7 +4,7 @@
 name: build-m1
 on:
   push:
-    tags: ["v4*","v5*"]
+    tags: ["v4*"]
   workflow_dispatch:
 
 permissions:
