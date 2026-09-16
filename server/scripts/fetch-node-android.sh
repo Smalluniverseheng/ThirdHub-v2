@@ -49,17 +49,9 @@ cp -r "$ROOT/server"/* "$OUT/server/"
 rm -rf "$OUT/server/scripts" "$OUT/server/public" "$OUT/server/data" 2>/dev/null || true
 
 echo "== 安装 server 依赖(node_modules 随包) =="
-# CI runner 的 Node24 自带 npm 有 "Exit handler never called" bug: 固定 npm@10 解决
-sudo npm install -g npm@10.9.2 --no-audit --no-fund --loglevel=error || npm install -g npm@10.9.2 --no-audit --no-fund --loglevel=error || true
-hash -r 2>/dev/null || true
-ok=""
-for i in 1 2 3; do
-  if ( cd "$OUT/server" && npm install --omit=dev --no-audit --no-fund --loglevel=error ); then ok=1; break; fi
-  echo "npm install 第 $i 次失败, 清缓存重试..."
-  rm -rf "$OUT/server/node_modules" "$HOME/.npm/_cacache" 2>/dev/null || true
-  sleep 5
-done
-[ -n "$ok" ] || { echo "npm install 彻底失败"; exit 1; }
-[ -d "$OUT/server/node_modules/cheerio" ] || { echo "cheerio 未装上"; exit 1; }
+# 依赖已 vendored: server/vendor/node_modules.tar.gz(本地 npm install 后打包, 纯JS无原生模块)
+# CI 网络对 npm registry 不稳定, 不再在 CI 里跑 npm install
+tar xzf "$OUT/server/vendor/node_modules.tar.gz" -C "$OUT/server"
+[ -d "$OUT/server/node_modules/cheerio" ] || { echo "cheerio 缺失"; exit 1; }
 du -sh "$OUT/node/"* | sed 's/^/  /'
 echo "== 完成 =="
