@@ -62,6 +62,8 @@ const ok  = (res, data, meta = {}) => { res.writeHead(200, {'content-type':'appl
 const err = (res, code, message, status = 200) => { res.writeHead(status, {'content-type':'application/json'}); res.end(JSON.stringify({ ok: false, error: { code, message } })); };
 
 http.createServer(async (req, res) => {
+  const rid = req.headers['x-th-request-id'];           // 回显请求追踪头
+  if (rid) res.setHeader('x-th-request-id', rid);
   const u = new URL(req.url, 'http://x');
   const body = req.method === 'POST' ? JSON.parse(await new Promise(r => { let s=''; req.on('data', c => s+=c); req.on('end', () => r(s || '{}')); })) : Object.fromEntries(u.searchParams);
 
