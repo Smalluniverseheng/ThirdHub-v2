@@ -57,7 +57,10 @@ class BackendService : Service() {
                 env["HOME"] = home.absolutePath
                 env["LD_LIBRARY_PATH"] = File(nodeDir, "lib").absolutePath
                 env["PATH"] = File(nodeDir, "bin").absolutePath + ":" + (System.getenv("PATH") ?: "")
-                val pb = ProcessBuilder(node.absolutePath, "index.js")
+                val entryFile = File(serverDir, "entry.txt")
+                val entry = if (entryFile.exists()) entryFile.readText().trim().ifEmpty { "index.js" } else "index.js"
+                log("入口: $entry")
+                val pb = ProcessBuilder(node.absolutePath, entry)
                     .directory(serverDir)
                     .redirectErrorStream(true)
                 pb.environment().putAll(env)

@@ -626,7 +626,7 @@ class _Pf extends State<ProfilePage> {
         ])))),
       // ── 数据管理 ──
       _section('数据管理', [
-        entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 下载器 · 网页版', const DownloadAppsPage()),
+        entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 阅读/venera 引擎 · 网页版', const DownloadAppsPage()),
         const Divider(height: 1, indent: 66),
         entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员 · 资料同步', const CloudPage()),
       ]),
@@ -2162,6 +2162,8 @@ class DownloadCenterTile extends StatelessWidget {
   static const products = [
     ('第三方聚合', 'Flutter 纯播放器前端(本应用)', '$_base/thirdhub-app.apk', Icons.phone_android),
     ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns),
+    ('开源阅读引擎', 'Legado 书源引擎(THP 直连)', '$_base/thirdhub-engine.apk', Icons.menu_book),
+    ('venera 漫画引擎', 'venera JS 漫画源引擎(THP 直连)', '$_base/thirdhub-venera.apk', Icons.photo_library),
     ('ThirdHub 下载器', '资源下载器', '$_base/thirdhub-downloader.apk', Icons.download),
     ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language),
   ];
@@ -2177,8 +2179,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '5.0.0';
-  static const int currentCode = 47002;
+  static const String currentVersion = '5.1.0';
+  static const int currentCode = 50100;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
@@ -2646,7 +2648,13 @@ class _Ei extends State<EngineItemPage> {
   }
   Future<void> _open(int? index) async {
     final t = widget.type;
-    if (t == 'novel' || t == 'comic') {
+    if (t == 'comic') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => EngineComicReader(
+        chapters: chapters, index: index ?? 0, comicName: name,
+        fetch: (chapUrl) => _content(chapUrl))));
+      return;
+    }
+    if (t == 'novel') {
       final i = index ?? 0;
       Navigator.push(context, MaterialPageRoute(builder: (_) => NovelReaderPage(
         sourceId: 'engine', chapters: chapters, index: i, bookName: name, bookUrl: id,
@@ -2716,4 +2724,67 @@ class _Uvp extends State<UrlVideoPlayer> {
     body: Center(child: err.isNotEmpty ? Text('播放失败: $err', style: const TextStyle(color: Colors.redAccent))
       : cc == null ? const CircularProgressIndicator()
       : AspectRatio(aspectRatio: vc!.value.aspectRatio > 0 ? vc!.value.aspectRatio : 16 / 9, child: Chewie(controller: cc!))));
+}
+
+// 引擎直连漫画阅读器(条漫滚动/翻页, 图片来源 THP /thp/content images)
+class EngineComicReader extends StatefulWidget {
+  final List chapters; final int index; final String comicName;
+  final Future<Map<String, dynamic>> Function(String chapUrl) fetch;
+  const EngineComicReader({super.key, required this.chapters, required this.index, required this.comicName, required this.fetch});
+  @override State<EngineComicReader> createState() => _Ecr();
+}
+class _Ecr extends State<EngineComicReader> {
+  late int idx = widget.index;
+  List<String> images = []; Map<String, String> headers = {};
+  bool loading = true; String err = ''; bool paged = false;
+  final PageController pc = PageController();
+  @override void initState() { super.initState(); _load(); }
+  String get chapUrl { final ch = widget.chapters[idx]; return '${ch['url'] ?? ch['id'] ?? idx}'; }
+  String get chapName { final ch = widget.chapters[idx]; final n = '${ch['name'] ?? ''}'; return n.isNotEmpty ? n : '第${idx + 1}话'; }
+  Future<void> _load() async {
+    setState(() { loading = true; err = ''; images = []; });
+    try {
+      final d = await widget.fetch(chapUrl);
+      final raw = (d['images'] as List? ?? d['pages'] as List? ?? []);
+      images = [for (final e in raw) '$e'];
+      headers = Map<String, String>.from(d['headers'] ?? d['header'] ?? {});
+      if (images.isEmpty) err = '本话没有图片';
+    } catch (e) { err = '$e'; }
+    if (mounted) setState(() => loading = false);
+  }
+  void _go(int i) {
+    if (i < 0 || i >= widget.chapters.length) return;
+    idx = i; if (paged) pc.jumpToPage(0);
+    _load();
+  }
+  @override Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: Text('${widget.comicName} · $chapName', maxLines: 1, overflow: TextOverflow.ellipsis),
+      actions: [
+        IconButton(icon: Icon(paged ? Icons.view_day : Icons.chrome_reader_mode, size: 20),
+          tooltip: paged ? '条漫滚动' : '翻页模式',
+          onPressed: () { setState(() => paged = !paged); }),
+      ]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : err.isNotEmpty ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('加载失败: $err', style: const TextStyle(color: Colors.redAccent))))
+      : paged
+        ? PageView.builder(controller: pc, itemCount: images.length,
+            itemBuilder: (_, i) => InteractiveViewer(child: Center(child: Image.network(images[i], headers: headers, fit: BoxFit.contain,
+              loadingBuilder: (_, w, p) => p == null ? w : const Center(child: CircularProgressIndicator()),
+              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.grey)))))
+        : ListView.builder(itemCount: images.length + 1, itemBuilder: (_, i) {
+            if (i == images.length) {
+              return Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                if (idx > 0) FilledButton.tonal(onPressed: () => _go(idx - 1), child: const Text('上一话')),
+                if (idx < widget.chapters.length - 1) FilledButton(onPressed: () => _go(idx + 1), child: const Text('下一话')),
+              ]));
+            }
+            return Image.network(images[i], headers: headers, fit: BoxFit.fitWidth,
+              loadingBuilder: (_, w, p) => p == null ? w : Container(height: 160, alignment: Alignment.center, child: const CircularProgressIndicator()),
+              errorBuilder: (_, __, ___) => Container(height: 120, alignment: Alignment.center, child: const Icon(Icons.broken_image, color: Colors.grey)));
+          }),
+    bottomNavigationBar: paged && !loading && err.isEmpty ? BottomAppBar(height: 48, child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      TextButton(onPressed: idx > 0 ? () => _go(idx - 1) : null, child: const Text('上一话')),
+      Text('${idx + 1}/${widget.chapters.length} 话', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      TextButton(onPressed: idx < widget.chapters.length - 1 ? () => _go(idx + 1) : null, child: const Text('下一话')),
+    ])) : null);
 }

@@ -4,7 +4,7 @@
 name: build-m1
 on:
   push:
-    tags: ["v4*"]
+    tags: ["v4*","v5*"]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +41,40 @@ jobs:
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
+
+  venera-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - name: 注入 Node 运行时 + server 代码
+        run: bash server/scripts/fetch-node-android.sh
+      - name: 切换入口为 venera 引擎
+        run: echo "venera.js" > android/app/src/main/assets/server/entry.txt
+      - name: 接受 Android SDK 许可
+        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      - name: 构建 venera 引擎 APK(独立包名, 可与后端共存)
+        run: |
+          cd android
+          base64 -d thirdhub.jks.b64 > thirdhub.jks
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleRelease --no-daemon -PappId=com.thirdhub.venera -PappLabel=venera引擎 -PverName=1.0.0 -PverCode=10000 \
+            || gradle assembleRelease --no-daemon -PappId=com.thirdhub.venera -PappLabel=venera引擎 -PverName=1.0.0 -PverCode=10000
+          mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/thirdhub-venera.apk
+      - name: 发 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: android/app/build/outputs/apk/release/thirdhub-venera.apk, body: "ThirdHub venera 漫画引擎 APK(THP 直连)" }
+      - name: 上传 Supabase 下载桶
+        run: |
+          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-venera.apk" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @android/app/build/outputs/apk/release/thirdhub-venera.apk
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with: { name: thirdhub-venera-apk, path: android/app/build/outputs/apk/release/*.apk }
 
   flutter-android:
     runs-on: ubuntu-latest

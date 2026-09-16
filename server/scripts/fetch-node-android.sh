@@ -47,5 +47,8 @@ rm -f "$U"/bin/xz "$U"/lib/liblzma.so*
 ( cd "$U" && tar cf - bin lib | xz -9 -T0 > "$OUT/node/node.tar.xz" )
 cp -r "$ROOT/server"/* "$OUT/server/"
 rm -rf "$OUT/server/scripts" "$OUT/server/public" 2>/dev/null || true
+
+echo "== 安装 server 依赖(node_modules 随包) =="
+( cd "$OUT/server" && npm install --omit=dev --no-audit --no-fund --loglevel=error )
 du -sh "$OUT/node/"* | sed 's/^/  /'
 echo "== 完成 =="

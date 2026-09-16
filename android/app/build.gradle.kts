@@ -6,8 +6,12 @@ android {
     namespace = "com.thirdhub.backend"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.thirdhub.backend"
-        minSdk = 24; targetSdk = 34; versionCode = 41001; versionName = "4.1.1"
+        // 变体打包: gradle -PappId=... -PappLabel=... -PverName=... -PverCode=...
+        applicationId = (findProperty("appId") as String?) ?: "com.thirdhub.backend"
+        minSdk = 24; targetSdk = 34
+        versionCode = ((findProperty("verCode") as String?) ?: "41001").toInt()
+        versionName = (findProperty("verName") as String?) ?: "4.1.1"
+        manifestPlaceholders["appLabel"] = (findProperty("appLabel") as String?) ?: "第三方后端"
     }
     signingConfigs {
         create("release") {
