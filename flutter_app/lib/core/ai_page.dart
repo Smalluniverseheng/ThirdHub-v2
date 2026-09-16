@@ -6,10 +6,33 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'ai.dart';
 import 'ai_agents_snapshot.dart';
 import 'ai_providers_page.dart';
+import 'vendor_icons.dart';
 
+// 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
+class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
+  double sx = 0; double sy = 0; bool active = false;
+  void Function(double dx)? onUpdate; void Function(double dx, double vx)? onEnd;
+  @override String get debugDescription => 'edgeSwipe';
+  @override void addAllowedPointer(PointerDownEvent e) {
+    sx = e.position.dx; sy = e.position.dy; active = true;
+    resolve(GestureDisposition.accepted); // 立即抢占, PageView 纵向/横向都抢不走
+    startTrackingPointer(e.pointer);
+  }
+  @override void handleEvent(PointerEvent e) {
+    if (!active) return;
+    if (e is PointerMoveEvent) onUpdate?.call(e.position.dx - sx);
+    if (e is PointerUpEvent || e is PointerCancelEvent) {
+      active = false; stopTrackingPointer(e.pointer);
+      onEnd?.call(e is PointerUpEvent ? e.position.dx - sx : 0, 0);
+    }
+  }
+  @override void didStopTrackingLastPointer(int pointer) {}
+}
 // 非对话模型过滤(与网站 NON_CHAT_RE 一致)
 final _nonChatRe = RegExp(r'embed|whisper|tts|transcri|speech|audio|dall-e|image|imagen|moderation|rerank|babbage|davinci|clip|sora|veo|wanx|cogview|cogvideo|kolors|stable-diffusion|seedream|seedance|hailuo|sensemirage', caseSensitive: false);
 
@@ -49,8 +72,7 @@ class _AiSec extends State<AiSection> {
   final input = TextEditingController(); final scroll = ScrollController();
   bool pinned = false; // 上拉钉住(回到底部按钮)
   // 抽屉状态
-  double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; bool _workMode = false;
-  String _historyQuery = '';
+  double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; _historyQuery = '';
   StreamSubscription? _regSub;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
@@ -72,17 +94,15 @@ class _AiSec extends State<AiSection> {
     if (mounted) setState(() {});
   }
 
-  // ── 抽屉手势(1:1: 边缘30px右滑开, 跟手, ≥0.4吸附, 抽屉上左滑关) ──
-  double _dragStart = 0; bool _dragging = false;
-  void _onDragStart(DragStartDetails d) { _dragStart = d.localPosition.dx; _dragging = true; }
-  void _onDragUpdate(DragUpdateDetails d) {
-    if (!_dragging) return;
+  // ── 抽屉手势(1:1: 边缘30px右滑开·跟手·≥0.4吸附; 抽屉上左滑关) ──
+  double _cum = 0;
+  void _applyDrag(double dx) {
     final w = _drawerW(context);
     final base = _drawerOpen ? w : 0.0;
-    setState(() => _drawerP = ((base + (d.localPosition.dx - _dragStart)) / w).clamp(0.0, 1.0));
+    setState(() => _drawerP = ((base + dx) / w).clamp(0.0, 1.0));
   }
-  void _onDragEnd(DragEndDetails d) {
-    if (!_dragging) return; _dragging = false;
+  void _settleDrag(double dx) {
+    _applyDrag(dx);
     final open = _drawerP >= 0.4;
     setState(() { _drawerOpen = open; _drawerP = open ? 1.0 : 0.0; });
   }
@@ -127,21 +147,27 @@ class _AiSec extends State<AiSection> {
   @override Widget build(BuildContext c) {
     final w = _drawerW(c);
     final dark = Theme.of(c).brightness == Brightness.dark;
-    return Scaffold(body: GestureDetector(
-      // 整页手势: 关闭态只响应从左边30px发起的右滑(网站一致), 打开态任意左滑关
-      onHorizontalDragStart: (d) { if (_drawerOpen || d.localPosition.dx <= 30) _onDragStart(d); },
-      onHorizontalDragUpdate: _onDragUpdate,
-      onHorizontalDragEnd: _onDragEnd,
-      child: Stack(children: [
-        // 主内容(抽屉打开时整体右移, 与网站一致)
-        Transform.translate(offset: Offset(_drawerP * w, 0), child: _mainBody(c, dark)),
-        // 遮罩(右侧露出1/5, 点击关闭)
-        if (_drawerP > 0) Positioned.fill(child: GestureDetector(onTap: _closeDrawer,
-          child: Container(color: Colors.black.withValues(alpha: 0.35 * _drawerP)))),
-        // 抽屉
-        Transform.translate(offset: Offset(-w * (1 - _drawerP), 0),
-          child: SizedBox(width: w, child: _drawer(c, dark))),
-      ])));
+    return Scaffold(body: Stack(children: [
+      // 主内容(抽屉打开时整体右移, 与网站一致)
+      Transform.translate(offset: Offset(_drawerP * w, 0), child: _mainBody(c, dark)),
+      // 遮罩(右侧露出1/5, 点击关闭)
+      if (_drawerP > 0) Positioned.fill(child: GestureDetector(onTap: _closeDrawer,
+        child: Container(color: Colors.black.withValues(alpha: 0.35 * _drawerP)))),
+      // 抽屉(打开时其上左滑可关: 普通手势即可, 抽屉在最上层)
+      Transform.translate(offset: Offset(-w * (1 - _drawerP), 0),
+        child: SizedBox(width: w, child: GestureDetector(
+          onHorizontalDragStart: _drawerOpen ? (_) => _cum = 0 : null,
+          onHorizontalDragUpdate: _drawerOpen ? (d) { _cum += d.delta.dx; _applyDrag(_cum); } : null,
+          onHorizontalDragEnd: _drawerOpen ? (_) { _settleDrag(_cum); } : null,
+          child: _drawer(c, dark)))),
+      // 边缘热区: 按下即抢占(网站30px), 关闭态右滑开抽屉
+      if (!_drawerOpen) Positioned(left: 0, top: 0, bottom: 0, width: 30,
+        child: RawGestureDetector(gestures: { _EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<_EdgeSwipeRecognizer>(
+          () => _EdgeSwipeRecognizer(),
+          (r) { r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
+                r.onEnd = (dx, vx) { if (dx > 0) _settleDrag(dx); }; }) },
+          child: Container(color: Colors.transparent))),
+    ]));
   }
 
   // ── 主区: 顶栏 + 消息 + 输入栏 ──
@@ -257,28 +283,11 @@ class _AiSec extends State<AiSection> {
       ListTile(dense: true, leading: const Icon(Icons.memory, size: 20), title: const Text('AI模型', style: TextStyle(fontSize: 14)),
         trailing: const Icon(Icons.chevron_right, size: 18),
         onTap: () => setState(() => _drawerTab = 'models')),
-      // Work / Chat 切换(仿Kimi)
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Container(
-        decoration: BoxDecoration(color: dark ? const Color(0xFF0F1115) : const Color(0xFFF2F3F7), borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          for (final m in [('work', 'Work', Icons.work_outline), ('chat', 'Chat', Icons.chat_bubble_outline)])
-            Expanded(child: GestureDetector(onTap: () => setState(() => _workMode = m.$1 == 'work'),
-              child: Container(padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),
-                  color: (m.$1 == 'work') == _workMode ? bg : Colors.transparent),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(m.$3, size: 15), const SizedBox(width: 4), Text(m.$2, style: const TextStyle(fontSize: 12))])))),
-        ]))),
       const SizedBox(height: 4),
-      Expanded(child: _workMode ? _workBox(c) : _chatBox(c)),
+      Expanded(child: _chatBox(c)),
     ])));
   }
 
-  Widget _workBox(BuildContext c) => GridView.count(crossAxisCount: 3, padding: const EdgeInsets.all(12), childAspectRatio: 1.1, children: [
-    for (final e in [('新建任务', Icons.add), ('任务看板', Icons.grid_view), ('工作区', Icons.work_outline), ('插件', Icons.extension_outlined), ('定时', Icons.timer_outlined), ('远程', Icons.memory), ('应用', Icons.apps)])
-      Card(child: InkWell(onTap: () => ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('Work 模式准备开放'))),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(e.$2, size: 22), const SizedBox(height: 6), Text(e.$1, style: const TextStyle(fontSize: 11))]))),
-  ]);
 
   Widget _chatBox(BuildContext c) => Column(children: [
     ListTile(dense: true, leading: const Icon(Icons.add, size: 20), title: const Text('新对话', style: TextStyle(fontSize: 14)),
@@ -334,6 +343,7 @@ class _AiSec extends State<AiSection> {
       'image' => p.image, 'video' => p.video, _ => p.models };
     if (models.isEmpty) return const SizedBox();
     return ExpansionTile(dense: true, initiallyExpanded: AiRegistry.providers.length <= 3,
+      leading: VendorIcon(p.id, size: 24),
       title: Text(p.name, style: const TextStyle(fontSize: 13)),
       subtitle: Text('${models.length} 个模型', style: const TextStyle(fontSize: 10)),
       children: [ for (final m in models)
@@ -341,7 +351,17 @@ class _AiSec extends State<AiSection> {
           trailing: session?.providerId == p.id && session?.model == m ? const Icon(Icons.check, size: 16, color: Colors.blueAccent) : null,
           onTap: () async { await AiRegistry.setLastModel(p.id, m);
             if (session != null) { session!.providerId = p.id; session!.model = m; }
-            setState(() {}); AiStore.save(); _closeDrawer(); }) ]);
+            setState(() {}); AiStore.save(); _closeDrawer(); }),
+        // 历史模型(默认折叠, 与网站一致)
+        if (p.deprecated.isNotEmpty && _drawerFilter != 'image' && _drawerFilter != 'video')
+          ExpansionTile(dense: true, tilePadding: const EdgeInsets.only(left: 30, right: 16),
+            title: Text('历史模型 (${p.deprecated.length})', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            children: [ for (final m in p.deprecated)
+              ListTile(dense: true, title: Text(m, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                trailing: session?.providerId == p.id && session?.model == m ? const Icon(Icons.check, size: 16, color: Colors.blueAccent) : null,
+                onTap: () async { await AiRegistry.setLastModel(p.id, m);
+                  if (session != null) { session!.providerId = p.id; session!.model = m; }
+                  setState(() {}); AiStore.save(); _closeDrawer(); }) ]) ]);
   }() ]);
 
   Widget _agentsList(BuildContext c) => GridView.count(crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [

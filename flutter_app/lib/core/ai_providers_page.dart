@@ -1,6 +1,7 @@
 // AI 厂商与 Key 管理页(抽屉头部设置入口)
 import 'package:flutter/material.dart';
 import 'ai.dart';
+import 'vendor_icons.dart';
 
 class AiProvidersPage extends StatefulWidget { const AiProvidersPage({super.key}); @override State<AiProvidersPage> createState() => _AiProv(); }
 class _AiProv extends State<AiProvidersPage> {
@@ -37,8 +38,7 @@ class _AiProv extends State<AiProvidersPage> {
         ])),
         Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (_, i) {
           final p = list[i];
-          return ExpansionTile(dense: true, leading: CircleAvatar(radius: 14,
-              child: Text(p.name.isEmpty ? '?' : p.name[0], style: const TextStyle(fontSize: 11))),
+          return ExpansionTile(dense: true, leading: VendorIcon(p.id, size: 28),
             title: Text(p.name, style: const TextStyle(fontSize: 14)),
             subtitle: Text('${p.models.length} 个模型${keyed.contains(p.id) ? ' · 已配Key' : ''}',
               style: TextStyle(fontSize: 10, color: keyed.contains(p.id) ? Colors.green : Colors.grey)),

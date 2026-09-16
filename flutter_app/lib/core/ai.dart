@@ -8,12 +8,13 @@ import 'ai_snapshot.dart';
 
 class AiProvider {
   final String id, name, base, type;
-  final List<String> models, image, video;
-  AiProvider(this.id, this.name, this.base, this.type, this.models, this.image, this.video);
+  final List<String> models, image, video, deprecated;
+  AiProvider(this.id, this.name, this.base, this.type, this.models, this.image, this.video, [this.deprecated = const []]);
   factory AiProvider.from(Map<String, dynamic> j) => AiProvider(
     j['id'] ?? '', j['name'] ?? j['id'] ?? '', j['base'] ?? '', j['type'] ?? 'openai',
-    List<String>.from(j['models'] ?? []), List<String>.from(j['image'] ?? []), List<String>.from(j['video'] ?? []));
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'base': base, 'type': type, 'models': models, 'image': image, 'video': video};
+    List<String>.from(j['models'] ?? []), List<String>.from(j['image'] ?? []), List<String>.from(j['video'] ?? []),
+    List<String>.from(j['deprecated'] ?? []));
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'base': base, 'type': type, 'models': models, 'image': image, 'video': video, 'deprecated': deprecated};
 }
 
 class AiRegistry {
@@ -78,7 +79,7 @@ class AiRegistry {
       final seen = <String>{}; return raw.where((e) => seen.add(e)).toList();
     }
     return objs.map((o) => AiProvider(f(o, 'id') ?? '', f(o, 'name') ?? f(o, 'id') ?? '',
-      f(o, 'base') ?? '', f(o, 'type') ?? 'openai', lst(o, 'models'), lst(o, 'image'), lst(o, 'video')))
+      f(o, 'base') ?? '', f(o, 'type') ?? 'openai', lst(o, 'models'), lst(o, 'image'), lst(o, 'video'), lst(o, 'deprecated')))
       .where((p) => p.id.isNotEmpty).toList();
   }
 
@@ -123,12 +124,14 @@ class AiChat {
     final req = http.Request('POST', Uri.parse('${provider.base}/chat/completions'));
     req.headers.addAll({'Authorization': 'Bearer $key', 'Content-Type': 'application/json'});
     req.body = jsonEncode({'model': model, 'messages': messages, 'stream': true});
-    final resp = await http.Client().send(req).timeout(const Duration(seconds: 30));
+    http.StreamedResponse resp;
+    try { resp = await http.Client().send(req).timeout(const Duration(seconds: 30)); }
+    catch (_) { return _nonStream(provider, key, model, messages, onDelta); }
     if (resp.statusCode != 200) {
       final body = await resp.stream.bytesToString();
       throw Exception('HTTP ${resp.statusCode}: ${body.substring(0, body.length.clamp(0, 200))}');
     }
-    final buf = StringBuffer(); var leftover = '';
+    final buf = StringBuffer(); var leftover = ''; bool streamBroken = false;
     await for (final chunk in resp.stream.transform(utf8.decoder)) {
       final data = leftover + chunk;
       final lines = data.split('\n');
@@ -144,6 +147,19 @@ class AiChat {
         } catch (_) {}
       }
     }
+    // 流式没吐出任何内容(部分厂商不支持 stream) → 自动回退非流式
+    if (buf.isEmpty) return _nonStream(provider, key, model, messages, onDelta);
     return buf.toString();
+  }
+
+  static Future<String> _nonStream(AiProvider provider, String key, String model,
+      List<Map<String, String>> messages, void Function(String) onDelta) async {
+    final r = await http.post(Uri.parse('${provider.base}/chat/completions'),
+      headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
+      body: jsonEncode({'model': model, 'messages': messages, 'stream': false})).timeout(const Duration(seconds: 60));
+    if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
+    final text = jsonDecode(utf8.decode(r.bodyBytes))['choices']?[0]?['message']?['content'] ?? '';
+    if (text.isEmpty) throw Exception('模型没有返回内容');
+    onDelta(text); return text;
   }
 }

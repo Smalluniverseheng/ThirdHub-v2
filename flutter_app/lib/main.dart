@@ -582,57 +582,160 @@ class _Pf extends State<ProfilePage> {
     trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
     onTap: () => Navigator.push(context, smoothRoute(page)));
 
+  // 网页版同款分区: 数据管理 / 服务与安全 / 设置
+  Widget _section(String title, List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+      child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey))),
+    Card(margin: EdgeInsets.zero, child: Column(children: children)),
+  ]);
+
   @override Widget build(BuildContext c) {
     final avatar = AppSettings.avatarB64;
     final nick = AppSettings.nickname;
-    final idCode = Cloud.loggedIn ? AppSettings.identityCode : '';
+    final logged = Cloud.loggedIn;
+    final accent = Theme.of(c).colorScheme.primary;
     return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(14), children: [
-      // ── 资料卡(头像/昵称/简介/身份码) ──
-      Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [
-          Theme.of(c).colorScheme.primary, Theme.of(c).colorScheme.primary.withValues(alpha: 0.72)]),
-        boxShadow: [BoxShadow(color: Theme.of(c).colorScheme.primary.withValues(alpha: 0.3), blurRadius: 14, offset: const Offset(0, 5))]),
-        child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
-        GestureDetector(onTap: pickAvatar, child: Container(padding: const EdgeInsets.all(2.5),
-          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.7), width: 2)),
-          child: CircleAvatar(radius: 30,
+      // ── 用户卡(网页版同款: 头像+昵称+等级牌+邮箱, 点击进个人资料子页) ──
+      Card(margin: EdgeInsets.zero, child: InkWell(borderRadius: BorderRadius.circular(18),
+        onTap: () => Navigator.push(c, smoothRoute(const ProfileSubPage())).then((_) => setState(() {})),
+        child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
+          CircleAvatar(radius: 26,
             backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
-            child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 20)) : null))),
-        const SizedBox(width: 14),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(nick.isEmpty ? tr('未设置昵称') : nick, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-          const SizedBox(height: 2),
-          Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio,
-            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.85)), maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (idCode.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 5),
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
-              child: Text('身份码 $idCode', style: const TextStyle(fontSize: 10, color: Colors.white)))),
-          if (!Cloud.loggedIn) Padding(padding: const EdgeInsets.only(top: 5),
-            child: Text('游客模式 · 登录解锁云端同步', style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.8)))),
-        ])),
-      ]))),
-      const SizedBox(height: 6),
-      // ── 功能入口(全部子页面, 与网页版一致) ──
-      Card(child: Column(children: [
-        entry(Icons.person_outline, '账号', Cloud.loggedIn ? Cloud.email : '登录 / 注册 ThirdHub 账号', const AccountPage()),
-        const Divider(height: 1, indent: 66),
+            child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 17)) : null),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(logged || nick.isNotEmpty ? (nick.isEmpty ? Cloud.email : nick) : '未登录',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+              const SizedBox(width: 6),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(color: (logged ? accent : Colors.grey).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                child: Text(logged ? '会员' : '游客', style: TextStyle(fontSize: 9, color: logged ? accent : Colors.grey))),
+            ]),
+            const SizedBox(height: 2),
+            Text(logged ? Cloud.email : '点按设置头像、昵称、登录账号',
+              style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+        ])))),
+      // ── 数据管理 ──
+      _section('数据管理', [
         entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 下载器 · 网页版', const DownloadAppsPage()),
-      ])),
-      Card(child: Column(children: [
+        const Divider(height: 1, indent: 66),
+        entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员 · 资料同步', const CloudPage()),
+      ]),
+      // ── 服务与安全 ──
+      _section('服务与安全', [
+        entry(Icons.person_outline, '账号', logged ? Cloud.email : '登录 / 注册 ThirdHub 账号', const AccountPage()),
+        const Divider(height: 1, indent: 66),
+        entry(Icons.settings_outlined, tr('系统'), '连接器 · 应用锁 · 缓存 · 版本更新', const SystemPage()),
+      ]),
+      // ── 设置 ──
+      _section('设置', [
         entry(Icons.palette_outlined, tr('个性化'), '语言 · 主题外观 · 强调色 · 开屏动画', const AppearancePage()),
         const Divider(height: 1, indent: 66),
         entry(Icons.navigation_outlined, tr('导航'), '底部导航栏 · 悬浮球位置', const NavSettingsPage()),
         const Divider(height: 1, indent: 66),
-        entry(Icons.settings_outlined, tr('系统'), '连接器 · 应用锁 · 缓存 · 版本更新', const SystemPage()),
-      ])),
-      Card(child: Column(children: [
-        entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员', const CloudPage()),
-        const Divider(height: 1, indent: 66),
         entry(Icons.info_outline, tr('关于'), '使用指南 · 开源致谢', const AboutPage()),
-      ])),
+      ]),
       const SizedBox(height: 18),
       Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端', style: const TextStyle(fontSize: 11, color: Colors.grey))),
+    ]));
+  }
+}
+
+// ── 个人资料子页(网页版同款): 大头像带相机角标 + 可编辑资料行 + 退出登录 ──
+class ProfileSubPage extends StatefulWidget { const ProfileSubPage({super.key}); @override State<ProfileSubPage> createState() => _Psub(); }
+class _Psub extends State<ProfileSubPage> {
+  Future<void> _editField(String key, String name, String cur) async {
+    final ctrl = TextEditingController(text: cur);
+    final v = await showDialog<String>(context: context, builder: (c2) => AlertDialog(title: Text(name),
+      content: TextField(controller: ctrl, autofocus: true, decoration: InputDecoration(hintText: name, isDense: true)),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c2, ctrl.text.trim()), child: const Text('保存'))]));
+    if (v == null) return;
+    final p = await SharedPreferences.getInstance();
+    if (key == 'nickname') { await p.setString('nickname', v);
+      if (Cloud.loggedIn) { try { await Cloud.updateProfile({'nickname': v, 'display_name': v}); } catch (_) {} } }
+    if (key == 'bio') { await AppSettings.setBio(v);
+      if (Cloud.loggedIn) { try { await Cloud.updateProfile({'bio': v}); } catch (_) {} } }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _pickAvatar() async {
+    final permitted = await pm.PhotoManager.requestPermissionExtend();
+    if (!permitted.isAuth) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('相册权限被拒'))); return; }
+    final albums = await pm.PhotoManager.getAssetPathList(type: pm.RequestType.image);
+    if (albums.isEmpty) return;
+    final assets = await albums.first.getAssetListPaged(page: 0, size: 60);
+    if (!mounted) return;
+    final picked = await showDialog<pm.AssetEntity>(context: context, builder: (c) => AlertDialog(
+      title: const Text('选择头像'),
+      content: SizedBox(width: 300, height: 320, child: GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
+        itemCount: assets.length, itemBuilder: (_, i) => GestureDetector(
+          onTap: () => Navigator.pop(c, assets[i]),
+          child: Padding(padding: const EdgeInsets.all(2), child: AssetEntityImage(assets[i], width: 100, height: 100, fit: BoxFit.cover, isOriginal: false))))),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消')))]));
+    if (picked == null) return;
+    try {
+      final file = await picked.file; if (file == null) return;
+      final decoded = img.decodeImage(await file.readAsBytes()); if (decoded == null) return;
+      final jpg = img.encodeJpg(img.copyResize(decoded, width: 256), quality: 85);
+      await AppSettings.setAvatar(base64Encode(jpg));
+      if (Cloud.loggedIn) { try { await Cloud.updateProfile({'avatar_b64': base64Encode(jpg)}); } catch (_) {} }
+      if (mounted) setState(() {});
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); }
+  }
+
+  @override Widget build(BuildContext c) {
+    final avatar = AppSettings.avatarB64;
+    final nick = AppSettings.nickname;
+    final logged = Cloud.loggedIn;
+    final accent = Theme.of(c).colorScheme.primary;
+    Widget row(String name, String val, VoidCallback onTap) => InkWell(onTap: onTap,
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), child: Row(children: [
+        Text(name, style: const TextStyle(fontSize: 14)),
+        const Spacer(),
+        Flexible(child: Text(val, style: const TextStyle(fontSize: 13, color: Colors.grey), overflow: TextOverflow.ellipsis)),
+        const SizedBox(width: 6),
+        const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+      ])));
+    return Scaffold(appBar: AppBar(title: const Text('个人资料')), body: ListView(padding: const EdgeInsets.all(14), children: [
+      // hero: 大头像+相机角标+昵称+邮箱+等级牌
+      Center(child: Column(children: [
+        const SizedBox(height: 14),
+        GestureDetector(onTap: _pickAvatar, child: Stack(children: [
+          CircleAvatar(radius: 44,
+            backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
+            child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 28)) : null),
+          Positioned(right: 0, bottom: 0, child: Container(padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(color: accent, shape: BoxShape.circle, border: Border.all(color: Theme.of(c).scaffoldBackgroundColor, width: 2)),
+            child: const Icon(Icons.photo_camera, size: 13, color: Colors.white))),
+        ])),
+        const SizedBox(height: 10),
+        Text(nick.isEmpty ? '未设置昵称' : nick, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(logged ? Cloud.email : '游客模式', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 6),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(color: (logged ? accent : Colors.grey).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+          child: Text(logged ? '会员' : '游客', style: TextStyle(fontSize: 10, color: logged ? accent : Colors.grey))),
+        const SizedBox(height: 16),
+      ])),
+      Card(margin: EdgeInsets.zero, child: Column(children: [
+        row('昵称', nick.isEmpty ? '未设置' : nick, () => _editField('nickname', '昵称', nick)),
+        const Divider(height: 1, indent: 16),
+        if (logged) ...[ row('邮箱', Cloud.email, () {}), const Divider(height: 1, indent: 16) ],
+        row('身份码', logged ? AppSettings.identityCode : '登录后生成', () {}),
+        const Divider(height: 1, indent: 16),
+        row('简介', AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio, () => _editField('bio', '简介', AppSettings.bio)),
+      ])),
+      if (logged) Padding(padding: const EdgeInsets.only(top: 14), child: Card(margin: EdgeInsets.zero, child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () async { await Cloud.signOut(); if (c.mounted) { Navigator.pop(c); } },
+        child: const Padding(padding: EdgeInsets.symmetric(vertical: 14),
+          child: Center(child: Text('退出登录', style: TextStyle(color: Colors.redAccent, fontSize: 15)))),
+      ))),
     ]));
   }
 }
@@ -2030,8 +2133,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.7.1';
-  static const int currentCode = 47001;
+  static const String currentVersion = '4.7.2';
+  static const int currentCode = 47002;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
