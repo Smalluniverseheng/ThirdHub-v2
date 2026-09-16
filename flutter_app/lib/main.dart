@@ -588,20 +588,28 @@ class _Pf extends State<ProfilePage> {
     final idCode = Cloud.loggedIn ? AppSettings.identityCode : '';
     return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(14), children: [
       // ── 资料卡(头像/昵称/简介/身份码) ──
-      Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
-        GestureDetector(onTap: pickAvatar, child: CircleAvatar(radius: 30,
-          backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
-          child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 20)) : null)),
+      Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [
+          Theme.of(c).colorScheme.primary, Theme.of(c).colorScheme.primary.withValues(alpha: 0.72)]),
+        boxShadow: [BoxShadow(color: Theme.of(c).colorScheme.primary.withValues(alpha: 0.3), blurRadius: 14, offset: const Offset(0, 5))]),
+        child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
+        GestureDetector(onTap: pickAvatar, child: Container(padding: const EdgeInsets.all(2.5),
+          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.7), width: 2)),
+          child: CircleAvatar(radius: 30,
+            backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
+            child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 20)) : null))),
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(nick.isEmpty ? tr('未设置昵称') : nick, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(nick.isEmpty ? tr('未设置昵称') : nick, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
           const SizedBox(height: 2),
           Text(AppSettings.bio.isEmpty ? tr('这个人很懒，什么都没写') : AppSettings.bio,
-            style: const TextStyle(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (idCode.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4),
-            child: Text('身份码 $idCode', style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.primary))),
-          if (!Cloud.loggedIn) const Padding(padding: EdgeInsets.only(top: 4),
-            child: Text('登录账号后生成身份码并同步资料', style: TextStyle(fontSize: 10, color: Colors.grey))),
+            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.85)), maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (idCode.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 5),
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+              child: Text('身份码 $idCode', style: const TextStyle(fontSize: 10, color: Colors.white)))),
+          if (!Cloud.loggedIn) Padding(padding: const EdgeInsets.only(top: 5),
+            child: Text('游客模式 · 登录解锁云端同步', style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.8)))),
         ])),
       ]))),
       const SizedBox(height: 6),
@@ -854,9 +862,17 @@ class SearchSection extends StatefulWidget { const SearchSection({super.key}); @
 class _Home extends State<SearchSection> {
   final ctrl = TextEditingController(); Map<String, dynamic>? agg; bool loading = false;
   int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
+  List<String> history = [];
+  @override void initState() { super.initState(); _loadHistory(); }
+  Future<void> _loadHistory() async { final p = await SharedPreferences.getInstance();
+    history = p.getStringList('search_history') ?? []; if (mounted) setState(() {}); }
+  Future<void> _record(String q) async { final p = await SharedPreferences.getInstance();
+    history.remove(q); history.insert(0, q); history = history.take(15).toList();
+    await p.setStringList('search_history', history); }
   static final typeNames = [tr('全部'), tr('小说'), tr('漫画'), tr('视频'), tr('音乐')];
   static const typeKeys = ['', 'novel', 'comic', 'video', 'music'];
   Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
+    _record(q);
     setState(() { loading = true; agg = null; });
     try {
       if (typeFilter == 0) { final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}'); setState(() { agg = r['data']; }); }
@@ -893,6 +909,18 @@ class _Home extends State<SearchSection> {
       ]))),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: ListView(children: [
+      if (agg == null && history.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [ const Icon(Icons.history, size: 15, color: Colors.grey), const SizedBox(width: 4),
+            const Text('搜索历史', style: TextStyle(fontSize: 12, color: Colors.grey)), const Spacer(),
+            GestureDetector(onTap: () async { final p = await SharedPreferences.getInstance();
+                await p.remove('search_history'); setState(() => history = []); },
+              child: const Icon(Icons.delete_outline, size: 16, color: Colors.grey)) ]),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [ for (final h in history)
+            ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), visualDensity: VisualDensity.compact,
+              onPressed: () { ctrl.text = h; go(); }) ]),
+        ])),
       if (agg != null && agg!['single'] != null) ...[
         for (final g in ((agg!['single'] as List?) ?? [])) ...[
           if (g['ok'] == true) 
@@ -1010,7 +1038,13 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
     await p.setString('shelf_${widget.kind}', jsonEncode(items.map((e) => e.toJson()).toList())); setState(() {}); }
   // 番茄式网格书架: 封面大图 + 书名 + 阅读进度
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
-    : items.isEmpty ? const Center(child: Text('书架为空\n搜索后进入详情页加入', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+    : items.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.auto_stories_outlined, size: 56, color: Colors.grey.withValues(alpha: 0.5)),
+      const SizedBox(height: 10),
+      const Text('书架为空', style: TextStyle(color: Colors.grey, fontSize: 14)),
+      const SizedBox(height: 4),
+      const Text('搜索后进入详情页, 点书签图标加入', style: TextStyle(color: Colors.grey, fontSize: 11)),
+    ]))
     : GridView.builder(padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.52, mainAxisSpacing: 12, crossAxisSpacing: 12),
         itemCount: items.length, itemBuilder: (_, i) {
@@ -1026,17 +1060,32 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
             if (del == true) remove(b);
           },
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8),
-              child: b.coverUrl != '' ? Image.network(Api.img(b.coverUrl), width: double.infinity, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _coverFallback(b)) : _coverFallback(b))),
+            Expanded(child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 8, offset: const Offset(0, 3))]),
+              child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Stack(fit: StackFit.expand, children: [
+                b.coverUrl != '' ? Image.network(Api.img(b.coverUrl), fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _coverFallback(b)) : _coverFallback(b),
+                if (prog >= 0) Positioned(left: 0, right: 0, bottom: 0, child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black54])),
+                  child: Text('第${prog + 1}章', style: const TextStyle(fontSize: 9, color: Colors.white)))),
+              ])))),
             const SizedBox(height: 4),
             Text(b.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.2)),
             Text(prog >= 0 ? '读到第${prog + 1}章' : (b.author.isNotEmpty ? b.author : '未开始'),
               maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
           ])); });
-  Widget _coverFallback(Book b) => Container(width: double.infinity, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-    alignment: Alignment.center, child: Text(b.name.isEmpty ? '?' : b.name.characters.first,
-      style: TextStyle(fontSize: 28, color: Theme.of(context).colorScheme.primary))); }
+  Widget _coverFallback(Book b) {
+    const palette = [[0xFF5B7FFF, 0xFF8E5BFF], [0xFFFF7A59, 0xFFFFB347], [0xFF2EBD85, 0xFF56C6A9],
+      [0xFFF06292, 0xFFBA68C8], [0xFF4DD0E1, 0xFF5B7FFF], [0xFFFFB74D, 0xFFFF8A65]];
+    final h = b.name.codeUnits.fold<int>(0, (a, e) => (a + e) & 0x7fffffff);
+    final pair = palette[h % palette.length];
+    return Container(width: double.infinity, decoration: BoxDecoration(gradient: LinearGradient(
+      begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(pair[0]), Color(pair[1])])),
+      alignment: Alignment.center, child: Text(b.name.isEmpty ? '?' : b.name.characters.first,
+        style: const TextStyle(fontSize: 30, color: Colors.white, fontWeight: FontWeight.bold)));
+  } }
 
 class TocPage extends StatefulWidget { final Book book; const TocPage({super.key, required this.book}); @override State<TocPage> createState() => _T(); }
 class _T extends State<TocPage> { List chapters = []; bool loading = true; int lastRead = -1;
@@ -1981,8 +2030,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.7.0';
-  static const int currentCode = 47000;
+  static const String currentVersion = '4.7.1';
+  static const int currentCode = 47001;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {

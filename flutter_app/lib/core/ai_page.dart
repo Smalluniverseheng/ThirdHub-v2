@@ -181,16 +181,31 @@ class _AiSec extends State<AiSection> {
         itemCount: list.length + (streaming.isNotEmpty ? 1 : 0), itemBuilder: (_, i) {
           final m = i < list.length ? list[i] : {'role': 'assistant', 'content': streaming};
           final me = m['role'] == 'user';
-          return Align(alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-            child: GestureDetector(onLongPress: () { Clipboard.setData(ClipboardData(text: m['content'] ?? ''));
-                ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); },
-              child: Container(margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(c).size.width * 0.8),
-                decoration: BoxDecoration(color: me ? Theme.of(c).colorScheme.primary : Theme.of(c).cardTheme.color,
-                  borderRadius: BorderRadius.circular(14)),
-                child: Text(m['content'] ?? '', style: TextStyle(fontSize: 14, height: 1.6,
-                  color: me ? Colors.white : null)))));
+          final accent = Theme.of(c).colorScheme.primary;
+          final dark = Theme.of(c).brightness == Brightness.dark;
+          final bubble = GestureDetector(onLongPress: () { Clipboard.setData(ClipboardData(text: m['content'] ?? ''));
+              ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); },
+            child: Container(margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(c).size.width * 0.76),
+              decoration: BoxDecoration(
+                gradient: me ? LinearGradient(colors: [accent, accent.withValues(alpha: 0.78)]) : null,
+                color: me ? null : (dark ? const Color(0xFF1E2230) : Colors.white),
+                border: me ? null : Border.all(color: dark ? Colors.white10 : const Color(0xFFE8E6F0)),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
+                borderRadius: BorderRadius.only(topLeft: const Radius.circular(16), topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(me ? 16 : 4), bottomRight: Radius.circular(me ? 4 : 16))),
+              child: Text(m['content'] ?? '', style: TextStyle(fontSize: 14, height: 1.6,
+                color: me ? Colors.white : null))));
+          final avatar = CircleAvatar(radius: 14,
+            backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
+            child: Icon(me ? Icons.person_outline : Icons.smart_toy_outlined, size: 15,
+              color: me ? accent : const Color(0xFF7C6CFF)));
+          return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(
+            mainAxisAlignment: me ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start, children: me
+              ? [Flexible(child: bubble), const SizedBox(width: 8), avatar]
+              : [avatar, const SizedBox(width: 8), Flexible(child: bubble)]));
         }),
       if (pinned) Positioned(right: 16, bottom: 12, child: FloatingActionButton.small(
         onPressed: () { setState(() => pinned = false); _jumpBottom(); },
