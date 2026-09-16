@@ -12,8 +12,8 @@ android {
         applicationId = "com.thirdhub.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 40002
-        versionName = "4.0.0-m2"
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
     // 固定签名(CI注入): 覆盖安装保留数据的前提
     signingConfigs {
