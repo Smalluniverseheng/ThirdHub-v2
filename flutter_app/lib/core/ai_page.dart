@@ -348,9 +348,11 @@ class _AiSec extends State<AiSection> {
           if (c2.mounted) Navigator.pop(c2);
           if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存联网搜索配置'))); },
           child: const Text('保存')),
-      ]))));
+      ])));
     }));
   }
+
+
 
   // ── 抽屉(与网站一致: 头部 / AI模型入口 / Work·Chat / 四页签 / 底部搜索+新建) ──
   Widget _drawer(BuildContext c, bool dark) {

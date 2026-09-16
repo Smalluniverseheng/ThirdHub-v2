@@ -102,7 +102,7 @@ class _AiProv extends State<AiProvidersPage> {
           final hit = await AiKeyDetect.testKey(p, ctrl.text.trim());
           setD(() { testing = false; msg = hit != null ? '✓ 验证通过' : '验证失败 · Key 可能不属于该厂商(可保存后用自动识别)'; });
         }, child: const Text('验证')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]))));
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
     if (ok == true) { await AiRegistry.setKey(p.id, ctrl.text.trim()); await _load(); }
   }
 

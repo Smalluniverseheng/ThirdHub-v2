@@ -1379,9 +1379,11 @@ class _Cr extends State<ComicReaderPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [const _MusicPlaylist(), const MusicSearchResults(query: '')][sub]),
+    Expanded(child: [const _MusicPlaylist(),
+      HistoryPage(kind: 'music', builder: (b) => MusicPlayPage(item: {'name': b.name, 'url': b.bookUrl, 'artist': b.author, 'coverUrl': b.coverUrl}, sourceId: b.sourceId)),
+      const MusicSearchResults(query: '')][sub]),
   ]); }
 
 class _MusicPlaylist extends StatefulWidget { const _MusicPlaylist(); @override State<_MusicPlaylist> createState() => _MpList(); }
@@ -1456,7 +1458,9 @@ class _MPlay extends State<MusicPlayPage> {
   final AudioPlayer player = AudioPlayer(); bool loading = true; String? err; String lyric = '';
   bool showLyric = false;
   List<Map> queue = []; int qIdx = -1; late Map cur; late String curSource;
-  @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start(); }
+  @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start();
+    // 记录音乐历史
+    Book.recordHistory(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music'); }
   Future<void> _loadQueue() async {
     final p = await SharedPreferences.getInstance();
     try { queue = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>(); } catch (_) {}
@@ -1567,13 +1571,9 @@ class _MPlay extends State<MusicPlayPage> {
     ]))); }
 
 // ═══ 板块三: 视频播放器(UI先行, 数据源待后端drpy引擎) ═══
-class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
-class _Vs extends State<VideoSection> { int sub = 0;
-  @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text('片库')), ButtonSegment(value: 1, label: Text('直播'))],
-      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
-    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail), const LivePage()][sub]),
-  ]); }
+// 视频模块 = 纯片库(直播已拆到独立「直播」模块)
+class VideoSection extends StatelessWidget { const VideoSection({super.key});
+  @override Widget build(BuildContext c) => const ShelfPage(kind: 'video', builder: _videoDetail); }
 
 // 直播: drpy直播源搜索频道→直接播放(m3u8直播流)
 class LivePage extends StatefulWidget { const LivePage({super.key}); @override State<LivePage> createState() => _Live(); }
@@ -1740,7 +1740,7 @@ final Map<String, ModuleDef> kModules = {
   '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, _ComingSoonPage(name: '游戏')),
   '社区': const ModuleDef('社区', Icons.groups_outlined, _ComingSoonPage(name: '社区')),
   '论坛': const ModuleDef('论坛', Icons.article_outlined, _ComingSoonPage(name: '论坛')),
-  '直播': const ModuleDef('直播', Icons.live_tv, _ComingSoonPage(name: '直播')),
+  '直播': const ModuleDef('直播', Icons.live_tv, LivePage()),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
 
@@ -1800,7 +1800,8 @@ class _RootNavState extends State<RootNav> {
       if (mod.localKind != null) ...[
         IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
           onPressed: () => Navigator.push(c, smoothRoute(localLibPage(mod.localKind!)))),
-        IconButton(icon: const Icon(Icons.file_download_outlined), tooltip: '导入本地文件',
+        // 导入图标与下载图标统一(Icons.download)
+        IconButton(icon: const Icon(Icons.download), tooltip: '导入本地文件',
           onPressed: () async {
             final n = await importLocal(mod.localKind!);
             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
