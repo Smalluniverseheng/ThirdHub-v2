@@ -792,7 +792,18 @@ class _Eng extends State<EnginesPage> {
         style: const TextStyle(fontSize: 10, color: Colors.grey)),
     ]),
   ])));
-  @override Widget build(BuildContext c) => loading && builtin.isEmpty ? const Center(child: CircularProgressIndicator())
+  Widget emptyState() => Padding(padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48), child: Column(children: [
+    Container(width: 72, height: 72, decoration: BoxDecoration(color: Colors.blue.withOpacity(0.12), shape: BoxShape.circle),
+      child: const Icon(Icons.settings_input_antenna, size: 34, color: Colors.blueAccent)),
+    const SizedBox(height: 16),
+    const Text('暂无网络引擎在线', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+    const SizedBox(height: 8),
+    const Text('安装 ThirdHub 阅读引擎 / venera 漫画引擎后,\n同一局域网下会自动配对出现在这里', textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.5)),
+    const SizedBox(height: 16),
+    OutlinedButton.icon(onPressed: load, icon: const Icon(Icons.refresh, size: 16), label: const Text('重新扫描')),
+  ]));
+  @override Widget build(BuildContext c) => loading && builtin.isEmpty && network.isEmpty ? const Center(child: CircularProgressIndicator())
     : RefreshIndicator(onRefresh: load, child: ListView(children: [
       Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(
         '内置引擎 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络引擎 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
@@ -800,7 +811,7 @@ class _Eng extends State<EnginesPage> {
       for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
       if (network.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4), child: Text(tr('网络引擎(局域网设备)'), style: TextStyle(fontSize: 12, color: Colors.grey))),
       for (final e in network) engineCard(Map<String, dynamic>.from(e)),
-      if (network.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text('暂无在线引擎\n阅读引擎等设备装好后会自动出现(自动配对)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))),
+      if (network.isEmpty) emptyState(),
     ]));
 }
 
@@ -1745,15 +1756,22 @@ class _ComingSoonPage extends StatelessWidget {
 }
 
 // 底部导航壳(完全体同款): PageView 左右滑动切模块 + 底部"我的"固定最右, 其它模块横向自由滑动
-class RootNav extends StatefulWidget { const RootNav({super.key}); @override State<RootNav> createState() => _RootNavState(); }
+class RootNav extends StatefulWidget {
+  const RootNav({super.key});
+  // 导航设置变更时 +1, 触发 RootNav 即时重载(无需重启)
+  static final ValueNotifier<int> navTick = ValueNotifier(0);
+  @override State<RootNav> createState() => _RootNavState();
+}
 class _RootNavState extends State<RootNav> {
   List<String> enabled = ['我的'];
   int idx = 0;
   final PageController _page = PageController();
   final ScrollController _navScroll = ScrollController();
   @override void initState() { super.initState(); _load();
+    RootNav.navTick.addListener(_onNavChanged);
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
-  @override void dispose() { _page.dispose(); _navScroll.dispose(); super.dispose(); }
+  void _onNavChanged() { _load(); }
+  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
@@ -1774,7 +1792,9 @@ class _RootNavState extends State<RootNav> {
     ScreenFit.update(c);
     final key = enabled[idx];
     final mod = kModules[key]!;
+    // 模块滑动隔离: 禁止在模块间左右滑动, 各模块内部手势互不干扰
     final body = PageView(controller: _page, onPageChanged: (i) => setState(() => idx = i),
+      physics: const NeverScrollableScrollPhysics(),
       children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]);
     final appBar = AppBar(title: Text(mod.name), actions: [
       if (mod.localKind != null) ...[
@@ -1969,9 +1989,9 @@ Future<void> showNavSettings(BuildContext c) async {
       final list = kModules.keys.where((k) => sel.contains(k)).toList();
       if (!list.contains('我的')) list.add('我的');
       await p.setStringList('nav_modules', list);
+      RootNav.navTick.value++; // 即时生效, 无需重启
       if (c2.mounted) Navigator.pop(c2);
-      // 重启生效提示
-      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存 · 重启应用后生效')));
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存 · 已即时生效')));
     }, child: const Text('保存'))],
   )));
 }
@@ -2133,7 +2153,7 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.7.2';
+  static const String currentVersion = '4.8.0';
   static const int currentCode = 47002;
   static bool _checked = false;
 

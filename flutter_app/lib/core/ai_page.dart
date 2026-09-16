@@ -10,7 +10,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'ai.dart';
 import 'ai_agents_snapshot.dart';
+import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
+import 'mcp_page.dart';
 import 'vendor_icons.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
@@ -35,6 +37,9 @@ class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
 }
 // 非对话模型过滤(与网站 NON_CHAT_RE 一致)
 final _nonChatRe = RegExp(r'embed|whisper|tts|transcri|speech|audio|dall-e|image|imagen|moderation|rerank|babbage|davinci|clip|sora|veo|wanx|cogview|cogvideo|kolors|stable-diffusion|seedream|seedance|hailuo|sensemirage', caseSensitive: false);
+// 音频模型(语音合成/音乐生成)与识别模型(语音识别/转写)分类
+final _audioRe = RegExp(r'tts|speech|audio|voice|sound|music|suno|udio|song|melo', caseSensitive: false);
+final _recogRe = RegExp(r'whisper|transcri|asr|sensevoice|recogn|paraformer|funasr', caseSensitive: false);
 
 class AiSession {
   String id, title, providerId, model; String? agentId;
@@ -73,6 +78,7 @@ class _AiSec extends State<AiSection> {
   bool pinned = false; // 上拉钉住(回到底部按钮)
   // 抽屉状态
   double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; String _historyQuery = '';
+  String _rankCat = 'overall'; bool _webSearchOn = false; bool _mcpOn = true;
   StreamSubscription? _regSub;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
@@ -88,6 +94,10 @@ class _AiSec extends State<AiSection> {
   @override void dispose() { _regSub?.cancel(); input.dispose(); scroll.dispose(); super.dispose(); }
   Future<void> _boot() async {
     await AiStore.load();
+    await Mcp.init();
+    final prefs = await SharedPreferences.getInstance();
+    _webSearchOn = prefs.getBool('ai_websearch_on') ?? false;
+    _mcpOn = prefs.getBool('ai_mcp_on') ?? true;
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
@@ -130,9 +140,31 @@ class _AiSec extends State<AiSection> {
     });
     AiStore.save();
     _jumpBottom();
+    // 联网搜索: 先检索再把结果注入上下文(会话里只保留用户原文)
+    var msgs = session!.messages;
+    if (_webSearchOn) {
+      try {
+        if (await WebSearch.configured()) {
+          setState(() => streaming = '🔍 正在联网搜索…');
+          final items = await WebSearch.search(text);
+          if (items.isNotEmpty) {
+            msgs = [...msgs.sublist(0, msgs.length - 1),
+              {'role': 'user', 'content': WebSearch.toContext(text, items)}, msgs.last];
+          }
+          setState(() => streaming = '');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('联网搜索未配置 · 点输入框左侧 + → 联网搜索 去配置')));
+        }
+      } catch (e) {
+        setState(() => streaming = '');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('联网搜索失败: $e')));
+      }
+    }
     try {
-      final full = await AiChat.chat(provider: prov, model: session!.model, messages: session!.messages,
-        onDelta: (d) { setState(() => streaming += d); if (!pinned) _jumpBottom(); });
+      final full = await AiChat.chat(provider: prov, model: session!.model, messages: msgs,
+        mcpTools: _mcpOn ? Mcp.allTools() : null,
+        onToolCall: (name) { setState(() => streaming = '🛠 正在调用工具 $name…'); },
+        onDelta: (d) { setState(() { if (streaming.startsWith('🔍') || streaming.startsWith('🛠')) streaming = ''; streaming += d; }); if (!pinned) _jumpBottom(); });
       setState(() { session!.messages.add({'role': 'assistant', 'content': full}); streaming = ''; });
     } catch (e) {
       setState(() { session!.messages.add({'role': 'assistant', 'content': '出错了: $e'}); streaming = ''; });
@@ -265,16 +297,66 @@ class _AiSec extends State<AiSection> {
               Text(e.$1, style: const TextStyle(fontSize: 11))]),
         ]),
         const Divider(height: 24),
+        StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
+          secondary: Icon(Icons.travel_explore, color: _webSearchOn ? Colors.blueAccent : null),
+          title: const Text('联网搜索', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('先检索再把结果注入模型上下文', style: TextStyle(fontSize: 11)),
+          value: _webSearchOn, onChanged: (v) async {
+            setState(() => _webSearchOn = v); setS(() {});
+            final p = await SharedPreferences.getInstance(); await p.setBool('ai_websearch_on', v); })),
+        ListTile(dense: true, leading: const Icon(Icons.settings_ethernet), title: const Text('联网搜索服务配置', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('Tavily / Brave / SerpAPI / SearXNG', style: TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _searchConfigSheet(c); }),
+        StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
+          secondary: Icon(Icons.hub_outlined, color: _mcpOn ? Colors.blueAccent : null),
+          title: const Text('MCP 工具', style: TextStyle(fontSize: 14)),
+          subtitle: Text('已连接 ${Mcp.servers.where((s) => s.enabled && s.status == 'connected').length} 个服务 · 对话中自动调用', style: const TextStyle(fontSize: 11)),
+          value: _mcpOn, onChanged: (v) async {
+            setState(() => _mcpOn = v); setS(() {});
+            final p = await SharedPreferences.getInstance(); await p.setBool('ai_mcp_on', v); })),
+        ListTile(dense: true, leading: const Icon(Icons.cable), title: const Text('MCP 服务管理', style: TextStyle(fontSize: 14)),
+          trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2);
+            Navigator.push(c, MaterialPageRoute(builder: (_) => const McpPage())); }),
         ListTile(dense: true, leading: const Icon(Icons.smart_toy_outlined), title: const Text('厂商与 Key 管理', style: TextStyle(fontSize: 14)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2);
             Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage())); }),
       ]))));
   }
 
+  // 联网搜索服务配置(与网站 web-search.js 一致)
+  void _searchConfigSheet(BuildContext c) async {
+    final cfg = await WebSearch.config();
+    var svc = cfg['service']!; final keyC = TextEditingController(text: cfg['key']); final urlC = TextEditingController(text: cfg['url']);
+    if (!c.mounted) return;
+    await showModalBottomSheet(context: c, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+      final cur = WebSearch.serviceOf(svc);
+      return Padding(padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(c2).viewInsets.bottom + 16), child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('联网搜索服务', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        for (final s in WebSearch.services)
+          RadioListTile<String>(dense: true, value: s.id, groupValue: svc, title: Text(s.name, style: const TextStyle(fontSize: 13)),
+            subtitle: Text(s.desc, style: const TextStyle(fontSize: 10)), onChanged: (v) => setD(() => svc = v!)),
+        if (cur != null && !cur.needUrl) TextField(controller: keyC, obscureText: true,
+          decoration: InputDecoration(labelText: 'API Key', hintText: cur.keyHint, isDense: true, border: const OutlineInputBorder())),
+        if (cur != null && cur.needUrl) ...[
+          TextField(controller: urlC, decoration: const InputDecoration(labelText: '实例地址', hintText: 'https://searx.example.com', isDense: true, border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: keyC, obscureText: true, decoration: const InputDecoration(labelText: 'API Key(可留空)', isDense: true, border: OutlineInputBorder())),
+        ],
+        const SizedBox(height: 12),
+        FilledButton(onPressed: () async { await WebSearch.setConfig(svc, keyC.text, urlC.text);
+          if (c2.mounted) Navigator.pop(c2);
+          if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存联网搜索配置'))); },
+          child: const Text('保存')),
+      ]))));
+    }));
+  }
+
   // ── 抽屉(与网站一致: 头部 / AI模型入口 / Work·Chat / 四页签 / 底部搜索+新建) ──
   Widget _drawer(BuildContext c, bool dark) {
     final bg = dark ? const Color(0xFF181B22) : Colors.white;
-    return Material(color: bg, elevation: 8, child: SafeArea(child: Column(children: [
+    // 整个左侧抽屉一列到底, 可上下滑动
+    return Material(color: bg, elevation: 8, child: SafeArea(child: ListView(children: [
       // 头部: 头像+名称+设置
       ListTile(dense: true, leading: const CircleAvatar(radius: 16, child: Icon(Icons.smart_toy, size: 16)),
         title: const Text('ThirdHub AI', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -284,17 +366,17 @@ class _AiSec extends State<AiSection> {
         trailing: const Icon(Icons.chevron_right, size: 18),
         onTap: () => setState(() => _drawerTab = 'models')),
       const SizedBox(height: 4),
-      Expanded(child: _chatBox(c)),
+      ..._chatBox(c),
     ])));
   }
 
 
-  Widget _chatBox(BuildContext c) => Column(children: [
+  List<Widget> _chatBox(BuildContext c) => [
     ListTile(dense: true, leading: const Icon(Icons.add, size: 20), title: const Text('新对话', style: TextStyle(fontSize: 14)),
       onTap: () => _newChat()),
     // 四页签
     Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
-      for (final t in [('history', '历史会话'), ('models', 'AI模型'), ('agents', '智能体'), ('inspire', '灵感广场')])
+      for (final t in [('history', '历史会话'), ('models', 'AI模型'), ('agents', '智能体'), ('inspire', '灵感'), ('rank', '排行榜')])
         Expanded(child: GestureDetector(onTap: () => setState(() => _drawerTab = t.$1),
           child: Container(padding: const EdgeInsets.symmetric(vertical: 7),
             decoration: BoxDecoration(border: Border(bottom: BorderSide(width: 2,
@@ -302,16 +384,17 @@ class _AiSec extends State<AiSection> {
             child: Text(t.$2, textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: _drawerTab == t.$1 ? Theme.of(c).colorScheme.primary : Colors.grey))))),
     ])),
-    if (_drawerTab == 'models') Padding(padding: const EdgeInsets.only(top: 6), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      for (final f in [('all', '全部'), ('chat', '聊天'), ('image', '图片'), ('video', '视频')])
+    if (_drawerTab == 'models') Padding(padding: const EdgeInsets.only(top: 6), child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      for (final f in [('all', '全部'), ('chat', '聊天'), ('image', '图片'), ('video', '视频'), ('audio', '音频'), ('recog', '识别')])
         Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ChoiceChip(
           label: Text(f.$2, style: const TextStyle(fontSize: 11)), selected: _drawerFilter == f.$1,
           onSelected: (_) => setState(() => _drawerFilter = f.$1), visualDensity: VisualDensity.compact)),
-    ])),
+    ]))),
     const SizedBox(height: 4),
-    Expanded(child: _drawerTab == 'history' ? _historyList(c)
+    _drawerTab == 'history' ? _historyList(c)
       : _drawerTab == 'models' ? _modelsList(c)
-      : _drawerTab == 'agents' ? _agentsList(c) : _inspireList(c)),
+      : _drawerTab == 'agents' ? _agentsList(c)
+      : _drawerTab == 'rank' ? _rankList(c) : _inspireList(c),
     if (_drawerTab == 'history') Padding(padding: const EdgeInsets.all(10), child: Row(children: [
       Expanded(child: TextField(decoration: const InputDecoration(hintText: '搜索历史会话', isDense: true,
         prefixIcon: Icon(Icons.search, size: 18),
@@ -320,13 +403,13 @@ class _AiSec extends State<AiSection> {
       const SizedBox(width: 8),
       IconButton.filledTonal(icon: const Icon(Icons.add, size: 20), onPressed: () => _newChat()),
     ])),
-  ]);
+  ];
 
   Widget _historyList(BuildContext c) {
     var list = AiStore.sessions;
     if (_historyQuery.isNotEmpty) list = list.where((s) => s.title.contains(_historyQuery)).toList();
-    if (list.isEmpty) return const Center(child: Text('暂无会话', style: TextStyle(color: Colors.grey, fontSize: 12)));
-    return ListView(children: [ for (final s in list)
+    if (list.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('暂无会话', style: TextStyle(color: Colors.grey, fontSize: 12))));
+    return ListView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [ for (final s in list)
       Dismissible(key: Key(s.id), direction: DismissDirection.endToStart,
         background: Container(color: Colors.redAccent, alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 16), child: const Icon(Icons.delete_outline, color: Colors.white)),
@@ -337,10 +420,13 @@ class _AiSec extends State<AiSection> {
           onTap: () { setState(() => session = s); _closeDrawer(); })) ]);
   }
 
-  Widget _modelsList(BuildContext c) => ListView(children: [ for (final p in AiRegistry.providers) () {
+  Widget _modelsList(BuildContext c) => ListView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [ for (final p in AiRegistry.all) () {
     var models = switch (_drawerFilter) {
       'chat' => p.models.where((m) => !_nonChatRe.hasMatch(m)).toList(),
-      'image' => p.image, 'video' => p.video, _ => p.models };
+      'image' => p.image, 'video' => p.video,
+      'audio' => p.models.where((m) => _audioRe.hasMatch(m) && !_recogRe.hasMatch(m)).toList(),
+      'recog' => p.models.where((m) => _recogRe.hasMatch(m)).toList(),
+      _ => p.models };
     if (models.isEmpty) return const SizedBox();
     return ExpansionTile(dense: true, initiallyExpanded: AiRegistry.providers.length <= 3,
       leading: VendorIcon(p.id, size: 24),
@@ -353,7 +439,7 @@ class _AiSec extends State<AiSection> {
             if (session != null) { session!.providerId = p.id; session!.model = m; }
             setState(() {}); AiStore.save(); _closeDrawer(); }),
         // 历史模型(默认折叠, 与网站一致)
-        if (p.deprecated.isNotEmpty && _drawerFilter != 'image' && _drawerFilter != 'video')
+        if (p.deprecated.isNotEmpty && _drawerFilter != 'image' && _drawerFilter != 'video' && _drawerFilter != 'audio' && _drawerFilter != 'recog')
           ExpansionTile(dense: true, tilePadding: const EdgeInsets.only(left: 30, right: 16),
             title: Text('历史模型 (${p.deprecated.length})', style: const TextStyle(fontSize: 11, color: Colors.grey)),
             children: [ for (final m in p.deprecated)
@@ -364,7 +450,7 @@ class _AiSec extends State<AiSection> {
                   setState(() {}); AiStore.save(); _closeDrawer(); }) ]) ]);
   }() ]);
 
-  Widget _agentsList(BuildContext c) => GridView.count(crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [
+  Widget _agentsList(BuildContext c) => GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [
     for (final a in kAiAgents)
       Card(child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a['id'], system: a['system']),
         child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -374,9 +460,37 @@ class _AiSec extends State<AiSection> {
         ])))),
   ]);
 
+  // 排行榜(与网站 ai-rankings.js 一致: 分类榜 + 综合分)
+  Widget _rankList(BuildContext c) {
+    final rows = kRankings[_rankCat] ?? const <Map<String, dynamic>>[];
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(height: 34, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
+        for (final cat in kRankCategories)
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: ChoiceChip(
+            label: Text(cat.$2, style: const TextStyle(fontSize: 10)), selected: _rankCat == cat.$1,
+            onSelected: (_) => setState(() => _rankCat = cat.$1), visualDensity: VisualDensity.compact)),
+      ])),
+      const Padding(padding: EdgeInsets.symmetric(vertical: 4), child: Text('数据综合自公开榜单约值快照 · 随版本更新',
+        style: TextStyle(fontSize: 10, color: Colors.grey))),
+      ListView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [
+        for (var i = 0; i < rows.length; i++) () {
+          final r = rows[i];
+          final medal = i == 0 ? '🥇' : i == 1 ? '🥈' : i == 2 ? '🥉' : '${i + 1}';
+          return ListTile(dense: true,
+            leading: SizedBox(width: 56, child: Row(children: [
+              SizedBox(width: 26, child: Text(medal, style: const TextStyle(fontSize: 12))),
+              VendorIcon('${r['p']}', size: 22) ])),
+            title: Text('${r['m']}', style: const TextStyle(fontSize: 13)),
+            trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+              child: Text('${r['s']}', style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.bold))));
+        }() ]),
+    ]);
+  }
+
   Widget _inspireList(BuildContext c) {
     final cats = <String>{ for (final i in kAiInspirations) i['cat'] ?? '' };
-    return ListView(children: [ for (final cat in cats) ...[
+    return ListView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [ for (final cat in cats) ...[
       Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 4), child: Text(cat, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey))),
       for (final i in kAiInspirations.where((e) => e['cat'] == cat))
         ListTile(dense: true, title: Text(i['title'] ?? '', style: const TextStyle(fontSize: 13)),
