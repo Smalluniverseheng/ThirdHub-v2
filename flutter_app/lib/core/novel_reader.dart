@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
+import 'package:volume_watcher/volume_watcher.dart';
 import 'tts.dart';
 import 'ai.dart';
 
@@ -35,6 +36,7 @@ class ReaderCfg {
   static double get margin => p.getDouble('reader_margin') ?? 16.0;
   static String get flip => p.getString('flip_mode') ?? 'slide';
   static bool get eyeCare => p.getBool('eye_care') ?? false;
+  static bool get volTurn => p.getBool('vol_turn') ?? true; // 音量键翻页(默认开)
   static double get bright => p.getDouble('reader_brightness') ?? 1.0;
   static Color get bgColor => kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$1;
   static Color get fgColor => textColor != 0 ? Color(textColor) : kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$2;
@@ -56,6 +58,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool chrome = false; // 菜单显隐
   String? fontFamily;
   final Map<int, Map<String, dynamic>> chapCache = {};
+  final GlobalKey<_FlipPagerState> _pagerKey = GlobalKey<_FlipPagerState>();
+  int? _volId; double? _lastVol; DateTime _lastVolAt = DateTime.fromMillisecondsSinceEpoch(0);
   int get idx => widget.index;
   Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0;
@@ -64,6 +68,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   @override void initState() { super.initState(); _initTts(); _boot(); }
   Future<void> _boot() async {
     await ReaderCfg.init();
+    _initVolumeKeys();
     fontFamily = await FontManager.currentFamily();
     await load();
   }
@@ -71,7 +76,38 @@ class _NovelReaderState extends State<NovelReaderPage> {
   // ── 听书 ──
   StreamSubscription? _ttsSub;
   void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
-  @override void dispose() { _ttsSub?.cancel(); TtsManager.stop(); super.dispose(); }
+  @override void dispose() { _ttsSub?.cancel(); VolumeWatcher.removeListener(_volId); TtsManager.stop(); super.dispose(); }
+
+  // 音量键翻页: 监听系统音量变化方向(上=上一页/上一章, 下=下一页/下一章)
+  void _initVolumeKeys() {
+    _volId = VolumeWatcher.addListener((v) {
+      if (!mounted || !ReaderCfg.volTurn || v is! double) return;
+      final now = DateTime.now();
+      if (_lastVol == null) { _lastVol = v; return; }
+      final old = _lastVol!;
+      if ((v - old).abs() < 0.001) return;
+      _lastVol = v;
+      if (now.difference(_lastVolAt).inMilliseconds < 320) return;
+      _lastVolAt = now;
+      _volumeTurn(v < old); // 音量减=下一页(右手拇指自然向下), 音量加=上一页
+    });
+  }
+
+  void _volumeTurn(bool next) {
+    if (loading) return;
+    if (images.isNotEmpty || ReaderCfg.flip == 'vertical') {
+      if (next && hasNext) goChapter(idx + 1);
+      if (!next && hasPrev) goChapter(idx - 1);
+      return;
+    }
+    final st = _pagerKey.currentState;
+    if (st == null) {
+      if (next && hasNext) goChapter(idx + 1);
+      if (!next && hasPrev) goChapter(idx - 1);
+      return;
+    }
+    st.turn(next);
+  }
 
   void _ttsSheet() {
     showModalBottomSheet(context: context, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
@@ -185,7 +221,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
       return SingleChildScrollView(padding: EdgeInsets.all(ReaderCfg.margin), child: _paragraphs(text));
     }
     final pages = _paginate(text, box);
-    return _FlipPager(mode: mode, pages: pages, margin: ReaderCfg.margin,
+    return _FlipPager(key: _pagerKey, mode: mode, pages: pages, margin: ReaderCfg.margin,
       bg: ReaderCfg.bgColor, hasPrev: hasPrev, hasNext: hasNext,
       onPrevChapter: hasPrev ? () => goChapter(idx - 1) : null,
       onNextChapter: hasNext ? () => goChapter(idx + 1) : null,
@@ -264,6 +300,12 @@ class _NovelReaderState extends State<NovelReaderPage> {
           Row(children: [ rowLabel('其他'),
             TextButton(onPressed: () { Navigator.pop(c2); _spacingSheet(); },
               child: const Text('间距设置', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F)))),
+          ]),
+          Row(children: [ rowLabel('按键'),
+            const Text('音量键翻页', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
+            const Spacer(),
+            Switch(value: ReaderCfg.volTurn, activeColor: const Color(0xFFB59A6C),
+              onChanged: (v) { p.setBool('vol_turn', v); save(); }),
           ]),
         ])));
       }));
@@ -410,7 +452,7 @@ class _FlipPager extends StatefulWidget {
   final bool hasPrev, hasNext;
   final VoidCallback? onPrevChapter, onNextChapter;
   final Widget Function(String) pageBuilder;
-  const _FlipPager({required this.mode, required this.pages, required this.margin, required this.bg,
+  const _FlipPager({super.key, required this.mode, required this.pages, required this.margin, required this.bg,
     required this.hasPrev, required this.hasNext, this.onPrevChapter, this.onNextChapter, required this.pageBuilder});
   @override State<_FlipPager> createState() => _FlipPagerState();
 }
@@ -420,6 +462,18 @@ class _FlipPagerState extends State<_FlipPager> {
   double page = 0;
   @override void initState() { super.initState(); ctrl.addListener(() { if (mounted) setState(() => page = ctrl.page ?? 0); }); }
   @override void dispose() { ctrl.dispose(); super.dispose(); }
+
+  // 音量键翻页入口: 优先翻页, 到边界再翻章
+  void turn(bool next) {
+    final cur = ctrl.page?.round() ?? 0;
+    if (next) {
+      if (cur < widget.pages.length) { ctrl.nextPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
+      else { widget.onNextChapter?.call(); }
+    } else {
+      if (cur > 0) { ctrl.previousPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
+      else { widget.onPrevChapter?.call(); }
+    }
+  }
 
   @override Widget build(BuildContext c) {
     final n = widget.pages.length + 1; // 最后一页=章节导航页

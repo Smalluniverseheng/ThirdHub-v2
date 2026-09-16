@@ -140,7 +140,7 @@ class AiChat {
   static Future<String> chat({required AiProvider provider, required String model,
       required List<Map<String, String>> messages, required void Function(String delta) onDelta,
       List<Map<String, dynamic>>? mcpTools, void Function(String toolName)? onToolCall,
-      void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor}) async {
+      void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor, Map<String, dynamic>? extraBody}) async {
     final key = await AiRegistry.keyOf(provider.id);
     if (key.isEmpty) throw Exception('请先填写 ${provider.name} 的 API Key');
     // Harness 工具循环: 非流式带 tools → 有 tool_calls 就执行并追问(最多8轮) → 最终走流式回答
@@ -154,7 +154,7 @@ class AiChat {
         try {
           r = await http.post(Uri.parse('${provider.base}/chat/completions'),
             headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
-            body: jsonEncode({'model': model, 'messages': msgs, 'tools': tools, 'stream': false}))
+            body: jsonEncode({'model': model, 'messages': msgs, 'tools': tools, 'stream': false, ...?extraBody}))
             .timeout(const Duration(seconds: 90));
         } catch (_) { break; }
         if (r.statusCode != 200) break; // 不支持 tools 的厂商: 直接放弃工具, 走普通流式
@@ -202,7 +202,7 @@ class AiChat {
     }
     final req = http.Request('POST', Uri.parse('${provider.base}/chat/completions'));
     req.headers.addAll({'Authorization': 'Bearer $key', 'Content-Type': 'application/json'});
-    req.body = jsonEncode({'model': model, 'messages': messages, 'stream': true});
+    req.body = jsonEncode({'model': model, 'messages': messages, 'stream': true, ...?extraBody});
     http.StreamedResponse resp;
     try { resp = await http.Client().send(req).timeout(const Duration(seconds: 30)); }
     catch (_) { return _nonStream(provider, key, model, messages, onDelta, onReasoning); }

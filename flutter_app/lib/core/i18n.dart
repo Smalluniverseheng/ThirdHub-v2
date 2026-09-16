@@ -60,7 +60,7 @@ class I18n extends ChangeNotifier {
       '已添加下载': 'Download added', '选集': 'Episodes', '歌单': 'Playlist',
       '选照片同步': 'Sync photos', '已同步': 'Synced',
       '存储服务': 'Storage services', '下载任务': 'Downloads', '网盘': 'Cloud disk',
-      '引擎': 'Engines', '网络引擎(局域网设备)': 'Network engines (LAN devices)',
+      '引擎': 'Engines', '导航': 'Navigation', '底部导航栏': 'Bottom navigation', '回收站': 'Recycle bin', '网络引擎(局域网设备)': 'Network engines (LAN devices)',
       '内置引擎': 'Built-in engines', '能力': 'Capabilities',
     },
     'ja': {
@@ -73,7 +73,7 @@ class I18n extends ChangeNotifier {
       '主题外观': 'テーマ', '深色': 'ダーク', '浅色': 'ライト', '跟随系统': 'システム',
       '字号': '文字サイズ', '阅读主题': '阅读テーマ', '翻页模式': 'ページめくり', '滚动': 'スクロール',
       '昵称': 'ニックネーム', '简介': '自己紹介', '应用锁': 'アプリロック',
-      '在线': 'オンライン', '离线': 'オフライン', '书源': '書籍ソース', '图源': '漫画ソース',
+      '在线': 'オンライン', '离线': 'オフライン', '底部导航栏': '下部ナビ', '书源': '書籍ソース', '图源': '漫画ソース',
     },
     // fr/ru/es/ar: 核心词逐步补全(缺失回落中文)
     'fr': { '搜索': 'Rechercher', '书架': 'Bibliothèque', '漫画': 'BD', '视频': 'Vidéos', '音乐': 'Musique', '我的': 'Moi', '取消': 'Annuler', '保存': 'Sauver' },

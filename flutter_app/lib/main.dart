@@ -3,12 +3,14 @@
 // 每个板块右上角: [搜索] [设置→连接资源库]
 import 'dart:async'; import 'dart:convert'; import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -27,6 +29,7 @@ import 'core/i18n.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
 import 'core/browser_page.dart';
+import 'core/notify.dart';
 import 'core/engine_direct.dart';
 import 'core/engine_direct_page.dart';
 import 'core/gallery_page.dart';
@@ -38,6 +41,11 @@ Future<void> main() async {
   await Cloud.init();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
+  // 通知栏音乐控制(锁屏/通知栏播放键)
+  try { await JustAudioBackground.init(androidNotificationChannelId: 'com.thirdhub.app.audio',
+    androidNotificationChannelName: '音乐播放', androidNotificationOngoing: true); } catch (_) {}
+  unawaited(Notify.init());
+  unawaited(Notify.checkAnnouncements());
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
@@ -109,6 +117,17 @@ class AppSettings {
   // ── 导航(网页版-手表端导航栏位置) ──
   static String get navSide => p.getString('nav_side') ?? 'right'; // left|right(悬浮球默认吸附侧)
   static Future<void> setNavSide(String v) async { await p.setString('nav_side', v); await sync(); }
+  // 导航形态: bar=底部导航栏 | orb=悬浮球 | fold=折叠(细条,点按展开)
+  static String get navStyle => p.getString('nav_style') ?? 'bar';
+  static Future<void> setNavStyle(String v) async { await p.setString('nav_style', v); await sync(); }
+  // 悬浮球: 吸附边缘(开=自动吸边, 关=自由拖动停哪放哪)
+  static bool get orbSnap => p.getBool('orb_snap') ?? true;
+  static Future<void> setOrbSnap(bool v) async { await p.setBool('orb_snap', v); await sync(); }
+  static Offset get orbPos {
+    final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
+    return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
+  }
+  static Future<void> setOrbPos(Offset o) async { await p.setDouble('orb_x', o.dx); await p.setDouble('orb_y', o.dy); }
 
   // ── 资料(网页版-个人资料) ──
   static String get bio => p.getString('bio') ?? '';
@@ -219,6 +238,90 @@ class Book {
         body: jsonEncode({'kind': kind, 'book': b.toJson()})); } catch (_) {}
     }
   }
+}
+
+// ═══ 回收站(本地): 书架/歌单/安装包删除后先进这里, 可恢复或彻底删除 ═══
+class Trash {
+  static const key = 'recycle_bin';
+  static Future<List<Map<String, dynamic>>> list() async {
+    final p = await SharedPreferences.getInstance();
+    try { return (jsonDecode(p.getString(key) ?? '[]') as List).map((e) => Map<String, dynamic>.from(e)).toList(); }
+    catch (_) { return []; }
+  }
+  static Future<void> _save(List<Map<String, dynamic>> l) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(key, jsonEncode(l));
+  }
+  static Future<void> add(String kind, String title, Map<String, dynamic> payload) async {
+    final l = await list();
+    l.insert(0, {'id': DateTime.now().millisecondsSinceEpoch.toString(), 'kind': kind, 'title': title,
+      'payload': payload, 'at': DateTime.now().toString().substring(0, 16)});
+    await _save(l.take(200).toList());
+  }
+  static Future<void> remove(String id) async { final l = await list(); l.removeWhere((e) => e['id'] == id); await _save(l); }
+  static Future<void> clear() async { final p = await SharedPreferences.getInstance(); await p.remove(key); }
+}
+
+class RecycleBinPage extends StatefulWidget { const RecycleBinPage({super.key}); @override State<RecycleBinPage> createState() => _Rb(); }
+class _Rb extends State<RecycleBinPage> {
+  List<Map<String, dynamic>> items = []; bool loading = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await Trash.list(); if (mounted) setState(() => loading = false); }
+  IconData _icon(String k) => k == 'apk' ? Icons.android : k == 'music' ? Icons.music_note : k == 'shelf' ? Icons.auto_stories_outlined : Icons.delete_outline;
+  String _kindName(String k) => k == 'apk' ? '安装包' : k == 'music' ? '音乐' : k == 'shelf' ? '书架' : k;
+  Future<void> _restore(Map<String, dynamic> it) async {
+    final kind = it['kind'] as String? ?? '';
+    final payload = Map<String, dynamic>.from(it['payload'] ?? {});
+    try {
+      if (kind == 'shelf') {
+        await Book.add(Book.from(Map<String, dynamic>.from(payload['book'] ?? {})), payload['kind'] ?? 'novel', target: 'local');
+      } else if (kind == 'music') {
+        final p = await SharedPreferences.getInstance();
+        final l = (jsonDecode(p.getString('playlist') ?? '[]') as List).cast<Map>();
+        final m = Map<String, dynamic>.from(payload['item'] ?? {});
+        if (m.isNotEmpty && !l.any((x) => x['id'] == m['id'] && m['id'] != null)) { l.add(m); await p.setString('playlist', jsonEncode(l)); }
+      } else if (kind == 'apk') {
+        final src = File(payload['path'] ?? '');
+        if (await src.exists()) {
+          final dir = await Updater._updateDir();
+          final name = (payload['path'] as String).split('/').last;
+          final dst = File('$dir/$name');
+          await src.rename(dst.path);
+          final p = await SharedPreferences.getInstance();
+          final l = p.getStringList('update_apks') ?? [];
+          l.add('${dst.path}|${payload['name'] ?? '安装包'}|${payload['date'] ?? ''}');
+          await p.setStringList('update_apks', l);
+        }
+      }
+      await Trash.remove(it['id']);
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已恢复'))); _load(); }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('恢复失败: $e'))); }
+  }
+  Future<void> _destroy(Map<String, dynamic> it) async {
+    if (it['kind'] == 'apk') { try { await File('${it['payload']?['path'] ?? ''}').delete(); } catch (_) {} }
+    await Trash.remove(it['id']); _load();
+  }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('回收站'), actions: [
+      if (items.isNotEmpty) IconButton(icon: const Icon(Icons.delete_sweep_outlined), tooltip: '清空', onPressed: () async {
+        for (final it in items) { if (it['kind'] == 'apk') { try { await File('${it['payload']?['path'] ?? ''}').delete(); } catch (_) {} } }
+        await Trash.clear(); _load(); }),
+    ]),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : items.isEmpty ? const Center(child: Text('回收站为空', style: TextStyle(color: Colors.grey)))
+      : ListView(padding: const EdgeInsets.all(12), children: [
+        const Padding(padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text('删除的书架/歌单/安装包会先进入回收站, 可恢复或彻底删除', style: TextStyle(fontSize: 11, color: Colors.grey))),
+        Card(child: Column(children: [
+          for (final it in items) ListTile(dense: true,
+            leading: Icon(_icon(it['kind'] ?? ''), size: 20),
+            title: Text('${it['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+            subtitle: Text('${_kindName(it['kind'] ?? '')} · ${it['at'] ?? ''}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(icon: const Icon(Icons.restore, size: 18), tooltip: '恢复', onPressed: () => _restore(it)),
+              IconButton(icon: const Icon(Icons.delete_forever_outlined, size: 18, color: Colors.redAccent), tooltip: '彻底删除', onPressed: () => _destroy(it)),
+            ])),
+        ])),
+      ]));
 }
 
 // 下载位置三选: 前端本机 / 后端资源库 / 都下
@@ -439,7 +542,7 @@ class _Conn extends State<ConnectLibraryPage> {
         actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OrbShell())); }
+        runApp(ThApp(ready: true, base: baseC.text.trim(), token: tokenC.text.trim())); }
     } catch (e) { setState(() { busy = false; err = '连接失败: $e'; }); } }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
     child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -492,42 +595,6 @@ class _Als extends State<AppLockSettings> {
       maxLength: 6, decoration: InputDecoration(hintText: tr('设置PIN(4-6位)'), isDense: true, counterText: '', border: OutlineInputBorder()), style: const TextStyle(fontSize: 13))),
     if (msg.isNotEmpty) Text(msg, style: const TextStyle(fontSize: 11, color: Colors.blueAccent)),
   ]);
-}
-
-// ═══ 悬浮球外壳: 板块切换 ═══
-class OrbShell extends StatefulWidget { const OrbShell({super.key}); @override State<OrbShell> createState() => _Orb(); }
-class _Orb extends State<OrbShell> {
-  int tab = 0; bool menu = false;
-  Offset orb = const Offset(16, 520); final orbSize = 56.0;
-  static const _tabIcons = [Icons.search, Icons.menu_book, Icons.photo_library, Icons.play_circle, Icons.music_note, Icons.dns, Icons.link];
-  List<(String, IconData)> get tabs => [(tr('搜索'), _tabIcons[0]), (tr('小说'), _tabIcons[1]), (tr('漫画'), _tabIcons[2]), (tr('视频'), _tabIcons[3]), (tr('音乐'), _tabIcons[4]), (tr('后端'), _tabIcons[5]), (tr('资源库'), _tabIcons[6])];
-  void snap() { final w = MediaQuery.of(context).size.width;
-    setState(() => orb = Offset((orb.dx + orbSize / 2) < w / 2 ? 12 : w - orbSize - 12, orb.dy.clamp(80.0, MediaQuery.of(context).size.height - 160))); }
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return Scaffold(
-      appBar: AppBar(leading: IconButton(icon: const Icon(Icons.person_outline), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
-        title: Text(tabs[tab].$1), actions: [
-        if (tab >= 1 && tab <= 4) IconButton(icon: const Icon(Icons.search), onPressed: () => showSearch(context: context, delegate: ThSearchDelegate(tab))),
-        IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConnectLibraryPage()))),
-      ]),
-      body: Stack(children: [
-        [const SearchSection(), const NovelSection(), const ComicSection(), const VideoSection(), const MusicSection(),
-         const EnginesPage(), const ToolsSection()][tab],
-        if (menu) GestureDetector(onTap: () => setState(() => menu = false), child: Container(color: Colors.black54)),
-        if (menu) Positioned(left: orb.dx.clamp(8, size.width - 76), top: (orb.dy - 440).clamp(70.0, size.height - 540),
-          child: Column(children: [ for (var i = 0; i < tabs.length; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6),
-            child: NeuSurface(radius: 26, width: 52, height: 52, selected: tab == i,
-              onTap: () => setState(() { tab = i; menu = false; }),
-              child: Icon(tabs[i].$2, color: tab == i ? Colors.blueAccent : Colors.grey.shade400, size: 22)))])),
-        Positioned(left: orb.dx, top: orb.dy, child: GestureDetector(
-          onPanUpdate: (d) => setState(() => orb += d.delta), onPanEnd: (_) => snap(),
-          child: NeuSurface(radius: orbSize / 2, width: orbSize, height: orbSize, selected: menu,
-            onTap: () => setState(() => menu = !menu),
-            child: Icon(menu ? Icons.close : Icons.hub, color: Colors.blueAccent, size: 26)))),
-      ]));
-  }
 }
 
 // ═══ 全局搜索代理(按板块走各自API, 二期接后端) ═══
@@ -628,6 +695,8 @@ class _Pf extends State<ProfilePage> {
       _section('数据管理', [
         entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 阅读/venera 引擎 · 网页版', const DownloadAppsPage()),
         const Divider(height: 1, indent: 66),
+        entry(Icons.delete_outline, '回收站', '删除的书架/歌单/安装包可恢复', const RecycleBinPage()),
+        const Divider(height: 1, indent: 66),
         entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员 · 资料同步', const CloudPage()),
       ]),
       // ── 服务与安全 ──
@@ -642,7 +711,7 @@ class _Pf extends State<ProfilePage> {
       _section('设置', [
         entry(Icons.palette_outlined, tr('个性化'), '语言 · 主题外观 · 强调色 · 开屏动画', const AppearancePage()),
         const Divider(height: 1, indent: 66),
-        entry(Icons.navigation_outlined, tr('导航'), '底部导航栏 · 悬浮球位置', const NavSettingsPage()),
+        entry(Icons.navigation_outlined, tr('底部导航栏'), '导航栏 · 折叠 · 悬浮球位置', const NavSettingsPage()),
         const Divider(height: 1, indent: 66),
         entry(Icons.info_outline, tr('关于'), '使用指南 · 开源致谢', const AboutPage()),
       ]),
@@ -1014,7 +1083,7 @@ class _Home extends State<SearchSection> {
     // 先进搜索页: 输入框在最上, 搜索分类显示在输入框下方
     Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: Row(children: [
       Expanded(child: NeuInset(radius: 14, padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: TextField(controller: ctrl, textInputAction: TextInputAction.search, autofocus: true,
+        child: TextField(controller: ctrl, textInputAction: TextInputAction.search,
           onSubmitted: (_) => go(),
           decoration: InputDecoration(hintText: typeFilter == 0 ? '一次搜索: 书/漫画/视频/音乐' : '搜索${typeNames[typeFilter]}',
             prefixIcon: const Icon(Icons.search),
@@ -1157,6 +1226,7 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
   @override void initState() { super.initState(); load(); }
   Future<void> load() async { items = await Book.shelf(widget.kind); setState(() => loading = false); }
   Future<void> remove(Book b) async { final p = await SharedPreferences.getInstance();
+    await Trash.add('shelf', b.name, {'kind': widget.kind, 'book': b.toJson()});
     items.removeWhere((x) => x.bookUrl == b.bookUrl);
     await p.setString('shelf_${widget.kind}', jsonEncode(items.map((e) => e.toJson()).toList())); setState(() {}); }
   // 番茄式网格书架: 封面大图 + 书名 + 阅读进度
@@ -1408,6 +1478,7 @@ class _MpList extends State<_MusicPlaylist> {
     local = await LocalLib.list('music'); // 本地导入的音乐也进歌单体系
     setState(() => loading = false); }
   Future<void> remove(Map m) async { final p = await SharedPreferences.getInstance();
+    await Trash.add('music', '${m['name'] ?? ''}', {'item': Map<String, dynamic>.from(m)});
     items.removeWhere((x) => x['id'] == m['id']);
     await p.setString('playlist', jsonEncode(items)); setState(() {}); }
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
@@ -1520,8 +1591,10 @@ class _MPlay extends State<MusicPlayPage> {
         playUrl = r['data']?['url'] as String? ?? '';
       }
       if (playUrl.isEmpty) { setState(() { loading = false; err = '暂时无法播放这首歌'; }); return; }
-      if (playUrl.startsWith('/') || playUrl.startsWith('file://')) { await player.setFilePath(playUrl.replaceFirst('file://', '')); }
-      else { await player.setUrl(playUrl); }
+      final mediaItem = MediaItem(id: '${cur['id'] ?? playUrl}', title: '${cur['name'] ?? ''}',
+        artist: '${cur['artist'] ?? ''}', artUri: Uri.tryParse('${cur['coverUrl'] ?? ''}'));
+      if (playUrl.startsWith('/') || playUrl.startsWith('file://')) { await player.setAudioSource(AudioSource.file(playUrl.replaceFirst('file://', ''), tag: mediaItem)); }
+      else { await player.setAudioSource(AudioSource.uri(Uri.parse(playUrl), tag: mediaItem)); }
       await _restorePos();
       await player.play();
       setState(() => loading = false);
@@ -1823,6 +1896,7 @@ class _RootNavState extends State<RootNav> {
   }
   void _go(int i, {bool animate = true}) {
     if (i < 0 || i >= enabled.length) return;
+    HapticFeedback.selectionClick(); // 切换模块轻微震动
     setState(() => idx = i);
     if (!_page.hasClients) return;
     if (animate) { _page.animateToPage(i, duration: const Duration(milliseconds: 240), curve: Curves.easeOut); }
@@ -1857,14 +1931,40 @@ class _RootNavState extends State<RootNav> {
         body: Row(children: [
           NavigationRail(selectedIndex: idx, onDestinationSelected: (i) => _go(i),
             labelType: NavigationRailLabelType.all,
-            destinations: [ for (final k in enabled) NavigationRailDestination(icon: Icon(kModules[k]!.icon), label: Text(kModules[k]!.name)) ]),
+            destinations: [ for (final k in enabled) NavigationRailDestination(icon: Icon(kModules[k]!.icon), label: Text(tr(kModules[k]!.name))) ]),
           const VerticalDivider(width: 1),
           Expanded(child: Scaffold(appBar: appBar,
             body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: body)))),
         ]));
     }
+    // 导航形态: bar=底部导航栏 / orb=悬浮球 / fold=折叠细条
+    final navStyle = AppSettings.navStyle;
+    if (navStyle == 'orb') {
+      return Scaffold(appBar: appBar,
+        body: Stack(children: [body, const NavOrb()]));
+    }
+    if (navStyle == 'fold') {
+      return Scaffold(appBar: appBar, body: body,
+        bottomNavigationBar: _foldedNavBar());
+    }
     return Scaffold(appBar: appBar, body: body,
       bottomNavigationBar: _scrollNavBar());
+  }
+
+  // 折叠导航: 只显示当前模块细条, 点按弹出模块宫格
+  Widget _foldedNavBar() {
+    final scheme = Theme.of(context).colorScheme;
+    final mod = kModules[enabled[idx]]!;
+    return SafeArea(child: GestureDetector(
+      onTap: () { HapticFeedback.selectionClick(); NavOrb.showModuleGrid(context, enabled, idx, (i) => _go(i, animate: false)); },
+      child: Container(height: 40, margin: const EdgeInsets.fromLTRB(48, 0, 48, 8),
+        decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(mod.icon, size: 16, color: scheme.primary), const SizedBox(width: 6),
+          Text(tr(mod.name), style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 4),
+          Icon(Icons.keyboard_arrow_up, size: 16, color: scheme.primary),
+        ]))));
   }
 
   // 完全体同款底栏: 模块多→横向自由滑动, "我的"永远固定在最右端
@@ -1885,7 +1985,7 @@ class _RootNavState extends State<RootNav> {
               decoration: on ? BoxDecoration(color: scheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)) : null,
               child: Icon(m.icon, size: 21, color: fg)),
             const SizedBox(height: 2),
-            Text(m.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+            Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
               style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
           ])));
     }
@@ -2172,33 +2272,79 @@ class _At extends State<AccountTile> {
   }
 }
 
-// ═══ 下载中心: 产品列表(前端/后端/下载器/网页版) ═══
+// ═══ 下载中心: 产品列表(前端/后端/引擎/网页版), 点击进详情页再下载 ═══
 class DownloadCenterTile extends StatelessWidget {
   const DownloadCenterTile({super.key});
   static const _base = 'https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub';
   static const products = [
-    ('第三方聚合', 'Flutter 纯播放器前端(本应用)', '$_base/thirdhub-app.apk', Icons.phone_android),
-    ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns),
-    ('开源阅读引擎', 'Legado 书源引擎(THP 直连)', '$_base/thirdhub-engine.apk', Icons.menu_book),
-    ('venera 漫画引擎', 'venera JS 漫画源引擎(THP 直连)', '$_base/thirdhub-venera.apk', Icons.photo_library),
-    ('ThirdHub 下载器', '资源下载器', '$_base/thirdhub-downloader.apk', Icons.download),
-    ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language),
+    ('第三方聚合', 'Flutter 纯播放器前端(本应用)', '$_base/thirdhub-app.apk', Icons.phone_android,
+      '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'),
+    ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns,
+      '在手机上运行的资源库后端: 书源/影视源/音源/图源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。'),
+    ('开源阅读引擎', 'Legado 书源引擎(THP 直连)', '$_base/thirdhub-engine.apk', Icons.menu_book,
+      '兼容"开源阅读"书源格式的独立引擎。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。'),
+    ('venera 漫画引擎', 'venera JS 漫画源引擎(THP 直连)', '$_base/thirdhub-venera.apk', Icons.photo_library,
+      '兼容 venera JS 漫画源的独立引擎。支持图源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。'),
+    ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language,
+      '浏览器打开即用, 可安装为 PWA。与客户端同一账号体系, 数据全端互通。'),
   ];
   @override Widget build(BuildContext c) => Column(children: [
     for (final p in products)
       ListTile(dense: true, leading: Icon(p.$4, size: 20),
         title: Text(p.$1, style: const TextStyle(fontSize: 13)),
         subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
-        trailing: const Icon(Icons.open_in_new, size: 16),
-        onTap: () => launchUrl(Uri.parse(p.$3), mode: LaunchMode.externalApplication)),
+        trailing: const Icon(Icons.chevron_right, size: 18),
+        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ProductDetailPage(name: p.$1, sub: p.$2, url: p.$3, icon: p.$4, desc: p.$5)))),
   ]);
 }
 
+// 产品详情子页: 介绍 + 底部下载按钮
+class ProductDetailPage extends StatelessWidget {
+  final String name, sub, url, desc; final IconData icon;
+  const ProductDetailPage({super.key, required this.name, required this.sub, required this.url, required this.icon, required this.desc});
+  @override Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: Text(name)),
+    body: ListView(padding: const EdgeInsets.all(16), children: [
+      Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 20),
+        child: CircleAvatar(radius: 36, child: Icon(icon, size: 36)))),
+      Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 4),
+      Text(sub, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 20),
+      Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(desc, style: const TextStyle(fontSize: 13, height: 1.8)))),
+      const SizedBox(height: 12),
+      const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('覆盖安装, 数据自动保留\n下载完成的安装包会保存在"已下载的安装包"列表, 可随时重装或长按删除', style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.8)))),
+    ]),
+    bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.all(16),
+      child: FilledButton.icon(icon: const Icon(Icons.download), label: const Text('下载软件'),
+        onPressed: () => Updater.downloadProduct(c, url, name)))));
+}
+
+// 历史版本更新记录(与 FEATURES.md 同步)
+const kChangelog = [
+  ('v5.3.0', '更新误判修复 + 后台下载/安装包回收站 + 下载中心详情与历史 + 底部导航栏/折叠/悬浮球 + 语言即时生效 + AI抽屉防误滑/快捷模型/空会话清理 + 音量键翻页 + 通知栏音乐控制 + 公告系统通知'),
+  ('v5.2.0', 'venera漫画引擎App + 引擎漫画阅读器(条漫/翻页) + 音乐/视频断点续播 + 音乐收藏 + 后端依赖随包修复'),
+  ('v5.1.0', '引擎直连漫画阅读器 + 下载中心4件套 + server依赖内置'),
+  ('v5.0.0', 'AI思考链 + 消息排队 + TH-Harness本机工具 + 技能注入 + 上下文管理 + 相册/文件/浏览器模块 + 引擎直连 + THP v1.1'),
+  ('v4.8.0', 'AI模型六分类 + 排行榜 + 中转站/Key自动识别 + 统一密钥管理 + 联网搜索 + MCP + 导航即时生效'),
+];
+
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '5.2.0';
-  static const int currentCode = 50200;
+  static const String currentVersion = '5.3.0';
+  static const int currentCode = 50300;
   static bool _checked = false;
+
+  // 语义化版本比较: a>b 返回正数
+  static int _verCmp(String a, String b) {
+    List<int> p(String v) => v.replaceAll(RegExp(r'[^0-9.]'), '').split('.').map((e) => int.tryParse(e) ?? 0).toList();
+    final x = p(a), y = p(b);
+    for (var i = 0; i < 3; i++) {
+      final d = (i < x.length ? x[i] : 0) - (i < y.length ? y[i] : 0);
+      if (d != 0) return d;
+    }
+    return 0;
+  }
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
     if (_checked && !manual) return;
@@ -2206,7 +2352,10 @@ class Updater {
     final m = await Cloud.latestManifest('app');
     if (m == null) { if (manual && c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('暂无更新信息'))); return; }
     final code = m['versionCode'] as int? ?? 0;
-    if (code <= currentCode) { if (manual && c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已是最新版本'))); return; }
+    final ver0 = m['version'] as String? ?? '';
+    // 判定修复: versionCode 与版本号双重比较, 同版本绝不弹窗
+    final isNewer = code > currentCode || _verCmp(ver0, currentVersion) > 0;
+    if (!isNewer) { if (manual && c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已是最新版本'))); return; }
     if (!c.mounted) return;
     final url = m['url'] as String? ?? '';
     final notes = m['notes'] as String? ?? '';
@@ -2224,6 +2373,46 @@ class Updater {
   }
   static String newVer = '';
 
+  // 通用产品下载(下载中心用): 进度弹窗 + 后台下载 + 完成通知 + 留档
+  static Future<void> downloadProduct(BuildContext c, String url, String name) async {
+    final progress = ValueNotifier<double>(0);
+    var background = false;
+    showDialog(context: c, barrierDismissible: false, builder: (c2) => AlertDialog(
+      title: Text('正在下载 $name'),
+      content: ValueListenableBuilder<double>(valueListenable: progress, builder: (_, v, __) => Column(mainAxisSize: MainAxisSize.min, children: [
+        LinearProgressIndicator(value: v > 0 ? v : null),
+        const SizedBox(height: 8),
+        Text(v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : '连接中…', style: const TextStyle(fontSize: 12)),
+      ])),
+      actions: [TextButton(onPressed: () { background = true; Navigator.pop(c2);
+          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
+        }, child: const Text('后台下载'))]));
+    try {
+      final req = await HttpClient().getUrl(Uri.parse(url));
+      final resp = await req.close();
+      final total = resp.contentLength;
+      final dir = await _updateDir();
+      final safe = name.replaceAll(RegExp(r'[\\/:*?"<>| ]'), '-');
+      final f = File('$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
+      final sink = f.openWrite();
+      var got = 0;
+      await for (final chunk in resp) { sink.add(chunk); got += chunk.length; if (total > 0) progress.value = got / total; }
+      await sink.close();
+      final p = await SharedPreferences.getInstance();
+      final list = p.getStringList('update_apks') ?? [];
+      list.add('${f.path}|$name|${DateTime.now().toString().substring(0, 16)}');
+      await p.setStringList('update_apks', list);
+      if (!background && c.mounted) Navigator.pop(c);
+      if (background) await Notify.show(88003, '$name 下载完成', '点按安装包即可安装');
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(duration: const Duration(seconds: 6),
+        content: Text('已保存: ${f.path}'),
+        action: SnackBarAction(label: '安装', onPressed: () => OpenFilex.open(f.path))));
+    } catch (e) {
+      if (!background && c.mounted) Navigator.pop(c);
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e')));
+    }
+  }
+
   static Future<String> _updateDir() async {
     // 应用外部目录: 文件管理器 Android/data/包名/files/updates 可见, 卸载才清除
     try {
@@ -2239,13 +2428,17 @@ class Updater {
 
   static Future<void> _downloadAndInstall(BuildContext c, String url) async {
     final progress = ValueNotifier<double>(0);
+    var background = false;
     showDialog(context: c, barrierDismissible: false, builder: (c2) => AlertDialog(
       title: const Text('正在下载更新'),
       content: ValueListenableBuilder<double>(valueListenable: progress, builder: (_, v, __) => Column(mainAxisSize: MainAxisSize.min, children: [
         LinearProgressIndicator(value: v > 0 ? v : null),
         const SizedBox(height: 8),
         Text(v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : '连接中…', style: const TextStyle(fontSize: 12)),
-      ]))));
+      ])),
+      actions: [TextButton(onPressed: () { background = true; Navigator.pop(c2);
+          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
+        }, child: const Text('后台下载'))]));
     try {
       final req = await HttpClient().getUrl(Uri.parse(url));
       final resp = await req.close();
@@ -2264,12 +2457,16 @@ class Updater {
       final list = p.getStringList('update_apks') ?? [];
       list.add('${f.path}|v$newVer|${DateTime.now().toString().substring(0, 16)}');
       await p.setStringList('update_apks', list);
-      if (c.mounted) Navigator.pop(c);
+      if (!background && c.mounted) Navigator.pop(c);
+      if (background) {
+        await Notify.show(88002, '更新包下载完成', 'v$newVer 已就绪, 点击安装');
+      }
       if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(duration: const Duration(seconds: 6),
         content: Text('安装包已保存: ${f.path}')));
       await OpenFilex.open(f.path);
     } catch (e) {
-      if (c.mounted) { Navigator.pop(c); ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e'))); }
+      if (!background && c.mounted) Navigator.pop(c);
+      if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e')));
     }
   }
 }
@@ -2496,20 +2693,52 @@ class _Da extends State<DownloadAppsPage> {
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('下载 App')),
     body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
       const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
-        child: Text('ThirdHub 全系列产品 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
+        child: Text('ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
       const Card(child: DownloadCenterTile()),
       if (apks.isNotEmpty) ...[
         const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
-          child: Text('已下载的安装包(点按直接安装)', style: TextStyle(fontSize: 12, color: Colors.grey))),
+          child: Text('已下载的安装包(点按安装 · 长按删除)', style: TextStyle(fontSize: 12, color: Colors.grey))),
         Card(child: Column(children: [
           for (final e in apks)
             ListTile(dense: true, leading: const Icon(Icons.android, size: 20),
               title: Text(e.split('|').length > 1 ? e.split('|')[1] : '安装包', style: const TextStyle(fontSize: 13)),
               subtitle: Text(e.split('|').first, style: const TextStyle(fontSize: 9, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: const Icon(Icons.install_mobile, size: 18),
-              onTap: () => OpenFilex.open(e.split('|').first)),
+              onTap: () => OpenFilex.open(e.split('|').first),
+              onLongPress: () async {
+                final ok = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
+                  title: const Text('删除安装包'),
+                  content: Text('删除 ${e.split('|').length > 1 ? e.split('|')[1] : '该安装包'}? 删除后需重新下载'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+                if (ok == true) {
+                  try {
+                    final src = File(e.split('|').first);
+                    final dir = await Updater._updateDir();
+                    final td = Directory('$dir/trash'); if (!await td.exists()) await td.create(recursive: true);
+                    final np = '${td.path}/${src.path.split('/').last}';
+                    if (await src.exists()) await src.rename(np);
+                    final parts = e.split('|');
+                    await Trash.add('apk', parts.length > 1 ? parts[1] : '安装包',
+                      {'path': np, 'name': parts.length > 1 ? parts[1] : '安装包', 'date': parts.length > 2 ? parts[2] : ''});
+                  } catch (_) {}
+                  final p = await SharedPreferences.getInstance();
+                  final list = p.getStringList('update_apks') ?? [];
+                  list.remove(e);
+                  await p.setStringList('update_apks', list);
+                  _load();
+                }
+              }),
         ])),
       ],
+      const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
+        child: Text('历史版本更新记录', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      Card(child: Column(children: [
+        for (final v in kChangelog)
+          ListTile(dense: true, leading: const Icon(Icons.history, size: 18),
+            title: Text(v.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            subtitle: Text(v.$2, style: const TextStyle(fontSize: 11))),
+      ])),
     ]));
 }
 
@@ -2561,6 +2790,21 @@ class _Ns extends State<NavSettingsPage> {
         ListTile(leading: const Icon(Icons.navigation_outlined, size: 20), title: const Text('底部导航栏', style: TextStyle(fontSize: 14)),
           subtitle: const Text('像网站一样自定义显示哪些模块', style: TextStyle(fontSize: 11)),
           onTap: () => showNavSettings(c)),
+        const Divider(height: 1, indent: 56),
+        // 导航形态: 底部导航栏 / 折叠细条 / 悬浮球
+        ListTile(leading: const Icon(Icons.dashboard_customize_outlined, size: 20), title: const Text('导航形态', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('底部导航栏 · 折叠 · 悬浮球', style: TextStyle(fontSize: 11)),
+          trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [ButtonSegment(value: 'bar', label: Text('导航栏', style: TextStyle(fontSize: 10))),
+              ButtonSegment(value: 'fold', label: Text('折叠', style: TextStyle(fontSize: 10))),
+              ButtonSegment(value: 'orb', label: Text('悬浮球', style: TextStyle(fontSize: 10)))],
+            selected: {AppSettings.navStyle},
+            onSelectionChanged: (s) { AppSettings.setNavStyle(s.first).then((_) { RootNav.navTick.value++; setState(() {}); }); })),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.ads_click, size: 20), title: const Text('悬浮球自动吸附边缘', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('关闭后可自由拖动, 停哪放哪', style: TextStyle(fontSize: 11)),
+          trailing: Switch(value: AppSettings.orbSnap,
+            onChanged: (v) => AppSettings.setOrbSnap(v).then((_) => setState(() {})))),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: const TextStyle(fontSize: 14)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -2825,3 +3069,64 @@ class _Ecr extends State<EngineComicReader> {
     ])) : null);
 }
 
+
+// ═══ 导航悬浮球: 可自由拖动/自动吸边, 点按弹出模块宫格(按屏宽自适应排布) ═══
+class NavOrb extends StatefulWidget {
+  const NavOrb({super.key});
+  // 模块宫格: 悬浮球与折叠导航共用
+  static void showModuleGrid(BuildContext c, List<String> enabled, int cur, void Function(int) onGo) {
+    showModalBottomSheet(context: c, builder: (c2) {
+      final w = MediaQuery.of(c2).size.width;
+      final cols = (w / 88).floor().clamp(3, 8);
+      return SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('切换模块', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        GridView.count(shrinkWrap: true, crossAxisCount: cols, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.1,
+          children: [ for (var i = 0; i < enabled.length; i++) () {
+            final m = kModules[enabled[i]]!; final on = i == cur;
+            return InkWell(borderRadius: BorderRadius.circular(14), onTap: () { Navigator.pop(c2); onGo(i); },
+              child: Container(decoration: BoxDecoration(
+                  color: on ? Theme.of(c2).colorScheme.primaryContainer : null,
+                  borderRadius: BorderRadius.circular(14)),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(m.icon, size: 24, color: on ? Theme.of(c2).colorScheme.primary : null),
+                  const SizedBox(height: 4),
+                  Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ])));
+          }() ]),
+      ])));
+    });
+  }
+  @override State<NavOrb> createState() => _NavOrbState();
+}
+class _NavOrbState extends State<NavOrb> {
+  Offset pos = const Offset(-1, -1);
+  static const double sz = 52;
+  @override void initState() { super.initState(); pos = AppSettings.orbPos; }
+  void _snap(Size screen) {
+    if (!AppSettings.orbSnap) { AppSettings.setOrbPos(pos); return; } // 自由模式: 停哪放哪
+    setState(() => pos = Offset((pos.dx + sz / 2) < screen.width / 2 ? 10 : screen.width - sz - 10,
+      pos.dy.clamp(80.0, screen.height - 220)));
+    AppSettings.setOrbPos(pos);
+  }
+  @override Widget build(BuildContext c) {
+    final screen = MediaQuery.of(c).size;
+    if (pos.dx < 0) { // 首次: 按默认侧边放置
+      final right = AppSettings.navSide == 'right';
+      pos = Offset(right ? screen.width - sz - 10 : 10, screen.height * 0.55);
+    }
+    return Positioned(left: pos.dx, top: pos.dy, child: GestureDetector(
+      onPanUpdate: (d) => setState(() => pos = Offset(
+        (pos.dx + d.delta.dx).clamp(0.0, screen.width - sz), (pos.dy + d.delta.dy).clamp(60.0, screen.height - 120))),
+      onPanEnd: (_) => _snap(screen),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        final st = c.findAncestorStateOfType<_RootNavState>();
+        if (st != null) NavOrb.showModuleGrid(c, st.enabled, st.idx, (i) => st._go(i, animate: false));
+      },
+      child: Container(width: sz, height: sz, decoration: BoxDecoration(
+          color: Theme.of(c).colorScheme.primaryContainer.withValues(alpha: 0.92), shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)]),
+        child: Icon(Icons.apps, color: Theme.of(c).colorScheme.primary))));
+  }
+}

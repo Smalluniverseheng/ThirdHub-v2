@@ -16,23 +16,34 @@ import 'ai_skills.dart';
 import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
+import 'tts.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
 class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
-  double sx = 0; double sy = 0; bool active = false;
+  double sx = 0; double sy = 0; bool active = false; bool claimed = false;
   void Function(double dx)? onUpdate; void Function(double dx, double vx)? onEnd;
   @override String get debugDescription => 'edgeSwipe';
   @override void addAllowedPointer(PointerDownEvent e) {
-    sx = e.position.dx; sy = e.position.dy; active = true;
-    resolve(GestureDisposition.accepted); // 立即抢占, PageView 纵向/横向都抢不走
+    sx = e.position.dx; sy = e.position.dy; active = true; claimed = false;
     startTrackingPointer(e.pointer);
   }
   @override void handleEvent(PointerEvent e) {
     if (!active) return;
-    if (e is PointerMoveEvent) onUpdate?.call(e.position.dx - sx);
+    if (e is PointerMoveEvent) {
+      final dx = e.position.dx - sx, dy = e.position.dy - sy;
+      if (!claimed) {
+        // 明确的横向右滑意图才认领(阈值12px且水平位移大于垂直), 避免误触/列表滚动误开抽屉
+        if (dx > 12 && dx > dy.abs() * 1.5) { claimed = true; resolve(GestureDisposition.accepted); }
+        else if (dy.abs() > 12 || dx < -8) { // 垂直滚动或左滑 → 放弃
+          active = false; stopTrackingPointer(e.pointer); return;
+        } else { return; }
+      }
+      onUpdate?.call(dx);
+    }
     if (e is PointerUpEvent || e is PointerCancelEvent) {
-      active = false; stopTrackingPointer(e.pointer);
-      onEnd?.call(e is PointerUpEvent ? e.position.dx - sx : 0, 0);
+      final wasClaimed = claimed; final dx = e.position.dx - sx;
+      active = false; claimed = false; stopTrackingPointer(e.pointer);
+      if (wasClaimed) onEnd?.call(e is PointerUpEvent ? dx : 0, 0);
     }
   }
   @override void didStopTrackingLastPointer(int pointer) {}
@@ -58,6 +69,10 @@ class AiStore {
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     try { sessions = (jsonDecode(p.getString('ai_sessions') ?? '[]') as List).map((e) => AiSession.from(e)).toList(); } catch (_) { sessions = []; }
+    // 自动清理没有任何消息的空会话(不浪费空间)
+    final before = sessions.length;
+    sessions.removeWhere((s) => s.messages.isEmpty);
+    if (sessions.length != before) await save();
   }
   static Future<void> save() async {
     final p = await SharedPreferences.getInstance();
@@ -124,12 +139,81 @@ class _AiSec extends State<AiSection> {
   void _settleDrag(double dx) {
     _applyDrag(dx);
     final open = _drawerP >= 0.4;
+    if (open && !_drawerOpen) HapticFeedback.selectionClick(); // 滑出抽屉轻微震动
     setState(() { _drawerOpen = open; _drawerP = open ? 1.0 : 0.0; });
   }
-  void _openDrawer() => setState(() { _drawerOpen = true; _drawerP = 1.0; });
+  void _openDrawer() { HapticFeedback.selectionClick(); setState(() { _drawerOpen = true; _drawerP = 1.0; }); }
   void _closeDrawer() => setState(() { _drawerOpen = false; _drawerP = 0.0; });
 
+  // ── 模型快捷切换面板(Kimi 同款): 常用模型(可在抽屉长按模型设置) + 思考等级 + 对话长度 ──
+  static final _thinkRe = RegExp(r'reason|thinking|qwq|\bo1|\bo3|\bo4|\br1|k1\.5|k2|glm-4\.5|hunyuan-t', caseSensitive: false);
+  bool get _supportsThinking => session != null && _thinkRe.hasMatch(session!.model);
+  Future<List<String>> _quickModels() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getStringList('ai_quick_models') ?? [];
+  }
+  Future<void> _toggleQuick(String prov, String model) async {
+    final p = await SharedPreferences.getInstance();
+    final list = p.getStringList('ai_quick_models') ?? [];
+    final e = '$prov|$model';
+    list.contains(e) ? list.remove(e) : (list.insert(0, e), list.length > 3 ? list.removeLast() : null);
+    await p.setStringList('ai_quick_models', list);
+  }
+  Future<String> _thinkLevel() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString('ai_think_${session?.model}') ?? '标准';
+  }
+  void _quickSheet() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+      return FutureBuilder<List<String>>(future: _quickModels(), builder: (_, snap) {
+        final list = snap.data ?? (session == null ? <String>[] : ['${session!.providerId}|${session!.model}']);
+        return SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(8, 16, 8, 16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (final e in list) () {
+            final parts = e.split('|'); final pid = parts.first; final mid = parts.length > 1 ? parts.sublist(1).join('|') : '';
+            final prov = AiRegistry.byId(pid);
+            final on = session?.providerId == pid && session?.model == mid;
+            return ListTile(
+              leading: VendorIcon(pid, size: 26),
+              title: Text(mid, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(prov?.name ?? pid, style: const TextStyle(fontSize: 11)),
+              trailing: on ? const Icon(Icons.check, color: Colors.blueAccent) : IconButton(icon: const Icon(Icons.star_border, size: 18),
+                tooltip: '移出常用', onPressed: () async { await _toggleQuick(pid, mid); setD(() {}); }),
+              onTap: () async { await AiRegistry.setLastModel(pid, mid);
+                if (session != null) { session!.providerId = pid; session!.model = mid; }
+                setState(() {}); AiStore.save(); if (c2.mounted) Navigator.pop(c2); });
+          }(),
+          if (list.isEmpty) const Padding(padding: EdgeInsets.all(20),
+            child: Text('还没有常用模型 · 去抽屉模型列表长按任意模型设为常用', style: TextStyle(fontSize: 12, color: Colors.grey))),
+          const Divider(),
+          ListTile(dense: true, leading: const Icon(Icons.add_circle_outline, size: 20), title: const Text('新会话', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('快速对话, 即时响应', style: TextStyle(fontSize: 11)),
+            onTap: () { Navigator.pop(c2); _newChat(); }),
+          if (_supportsThinking)
+            ListTile(dense: true, leading: const Icon(Icons.psychology_outlined, size: 20), title: const Text('思考等级', style: TextStyle(fontSize: 14)),
+              trailing: FutureBuilder<String>(future: _thinkLevel(), builder: (_, s) => Text(s.data ?? '标准', style: const TextStyle(fontSize: 12, color: Colors.grey))),
+              onTap: () async {
+                final p = await SharedPreferences.getInstance();
+                const lv = ['低', '标准', '高'];
+                final cur = p.getString('ai_think_${session?.model}') ?? '标准';
+                final nxt = lv[(lv.indexOf(cur) + 1) % 3];
+                await p.setString('ai_think_${session?.model}', nxt);
+                setD(() {});
+              }),
+          ListTile(dense: true, leading: const Icon(Icons.history_edu, size: 20), title: const Text('对话长度', style: TextStyle(fontSize: 14)),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () { Navigator.pop(c2); _ctxSheet(context); }),
+        ])));
+      });
+    }));
+  }
+
+
   void _newChat({String? agentId, String? system}) {
+    // 空对话复用: 当前会话一条消息都没有时直接沿用, 不产生垃圾会话
+    if (session != null && session!.messages.isEmpty && agentId == null && system == null) {
+      _closeDrawer(); return;
+    }
     setState(() { session = AiStore.create(session?.providerId ?? 'deepseek', session?.model ?? 'deepseek-chat', agentId: agentId, system: system); streaming = ''; });
     _closeDrawer();
   }
@@ -198,9 +282,15 @@ class _AiSec extends State<AiSection> {
       }
     }
     try {
+      // 思考等级: 仅支持思考类模型时注入 reasoning_effort
+      Map<String, dynamic>? extra;
+      if (_thinkRe.hasMatch(session!.model)) {
+        final lv = await _thinkLevel();
+        if (lv != '标准') extra = {'reasoning_effort': lv == '低' ? 'low' : 'high'};
+      }
       final full = await AiChat.chat(provider: prov, model: session!.model, messages: msgs,
         mcpTools: _mcpOn ? [...Mcp.allTools(), ...LocalTools.schemas()] : null,
-        toolExecutor: _runTool,
+        toolExecutor: _runTool, extraBody: extra,
         onReasoning: (r) { setState(() { _reasoning += r; }); if (!pinned) _jumpBottom(); },
         onToolCall: (name) { setState(() {
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
@@ -296,7 +386,7 @@ class _AiSec extends State<AiSection> {
     final s = session;
     return Scaffold(
       appBar: AppBar(leading: IconButton(icon: const Icon(Icons.menu), onPressed: _openDrawer),
-        title: GestureDetector(onTap: () { _openDrawer(); setState(() => _drawerTab = 'models'); },
+        title: GestureDetector(onTap: _quickSheet,
           child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(18)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -391,8 +481,7 @@ class _AiSec extends State<AiSection> {
           final me = m['role'] == 'user';
           final accent = Theme.of(c).colorScheme.primary;
           final dark = Theme.of(c).brightness == Brightness.dark;
-          final bubble = GestureDetector(onLongPress: () { Clipboard.setData(ClipboardData(text: m['content'] ?? ''));
-              ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); },
+          final bubble = GestureDetector(onLongPress: () => _msgActions(c, m['content'] ?? ''),
             child: Container(margin: const EdgeInsets.symmetric(vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               constraints: BoxConstraints(maxWidth: MediaQuery.of(c).size.width * 0.76),
@@ -433,6 +522,21 @@ class _AiSec extends State<AiSection> {
         onPressed: () { setState(() => pinned = false); _jumpBottom(); },
         child: const Icon(Icons.arrow_downward, size: 18))),
     ]);
+  }
+
+  // 长按消息: 复制 / 朗读(系统离线 TTS)
+  void _msgActions(BuildContext c, String text) {
+    if (text.isEmpty) return;
+    showModalBottomSheet(context: c, builder: (c2) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('复制'),
+        onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(c2);
+          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); }),
+      ListTile(leading: const Icon(Icons.record_voice_over_outlined), title: const Text('朗读'),
+        subtitle: const Text('系统离线语音引擎, 无需联网', style: TextStyle(fontSize: 11)),
+        onTap: () { Navigator.pop(c2); TtsManager.speak(text); }),
+      ListTile(leading: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent), title: const Text('停止朗读'),
+        onTap: () { Navigator.pop(c2); TtsManager.stop(); }),
+    ])));
   }
 
   Widget _inputBar(BuildContext c, bool dark) => SafeArea(child: Padding(
@@ -634,7 +738,10 @@ class _AiSec extends State<AiSection> {
       subtitle: Text('${models.length} 个模型', style: const TextStyle(fontSize: 10)),
       children: [ for (final m in models)
         ListTile(dense: true, title: Text(m, style: const TextStyle(fontSize: 12)),
+          subtitle: _thinkRe.hasMatch(m) ? const Text('支持思考等级', style: TextStyle(fontSize: 9, color: Colors.teal)) : null,
           trailing: session?.providerId == p.id && session?.model == m ? const Icon(Icons.check, size: 16, color: Colors.blueAccent) : null,
+          onLongPress: () async { await _toggleQuick(p.id, m); setState(() {});
+            ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已更新常用模型(顶栏模型名下拉里可快速切换)'), duration: Duration(seconds: 1))); },
           onTap: () async { await AiRegistry.setLastModel(p.id, m);
             if (session != null) { session!.providerId = p.id; session!.model = m; }
             setState(() {}); AiStore.save(); _closeDrawer(); }),

@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 5.2.0+50200
+version: 5.3.0+50300
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -27,6 +27,9 @@ dependencies:
   cryptography: ^2.7.0
   share_plus: ^10.0.2
   device_info_plus: ^11.1.0
+  just_audio_background: ^0.0.1-beta.13
+  volume_watcher: ^2.0.1
+  flutter_local_notifications: ^17.2.3
 
 dev_dependencies:
   flutter_test:
