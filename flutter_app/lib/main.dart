@@ -1470,7 +1470,20 @@ class _MPlay extends State<MusicPlayPage> {
   final AudioPlayer player = AudioPlayer(); bool loading = true; String? err; String lyric = '';
   bool showLyric = false;
   List<Map> queue = []; int qIdx = -1; late Map cur; late String curSource;
+  Timer? _posTimer; bool _resumed = false;
+  String get _posKey => 'mpos_${cur['url'] ?? cur['id'] ?? cur['name']}';
+  void _savePos() { if (player.playing && player.position.inSeconds > 5) AppSettings.p.setInt(_posKey, player.position.inSeconds); }
+  Future<void> _restorePos() async {
+    final s = AppSettings.p.getInt(_posKey) ?? 0;
+    final dur = player.duration ?? Duration.zero;
+    if (s > 10 && (dur == Duration.zero || s < dur.inSeconds - 10)) {
+      await player.seek(Duration(seconds: s));
+      if (mounted && !_resumed) { _resumed = true;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已从 ${_fmt(Duration(seconds: s))} 继续播放'), duration: const Duration(seconds: 2))); }
+    }
+  }
   @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start();
+    _posTimer = Timer.periodic(const Duration(seconds: 3), (_) => _savePos());
     // 记录音乐历史
     Book.recordHistory(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music'); }
   Future<void> _loadQueue() async {
@@ -1480,7 +1493,7 @@ class _MPlay extends State<MusicPlayPage> {
     if (mounted) setState(() {});
     // 播完自动下一首(按播放模式)
     player.playerStateStream.listen((s) {
-      if (s.processingState == ProcessingState.completed) _next(auto: true);
+      if (s.processingState == ProcessingState.completed) { AppSettings.p.remove(_posKey); _next(auto: true); }
     });
   }
   String get playMode => AppSettings.p.getString('play_mode') ?? 'seq';
@@ -1509,6 +1522,7 @@ class _MPlay extends State<MusicPlayPage> {
       if (playUrl.isEmpty) { setState(() { loading = false; err = '暂时无法播放这首歌'; }); return; }
       if (playUrl.startsWith('/') || playUrl.startsWith('file://')) { await player.setFilePath(playUrl.replaceFirst('file://', '')); }
       else { await player.setUrl(playUrl); }
+      await _restorePos();
       await player.play();
       setState(() => loading = false);
       // 歌词(尽力而为)
@@ -1517,7 +1531,7 @@ class _MPlay extends State<MusicPlayPage> {
           lyric = l['data']?['lyric'] as String? ?? ''; if (mounted) setState(() {}); } catch (_) {}
       }
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override void dispose() { player.dispose(); super.dispose(); }
+  @override void dispose() { _posTimer?.cancel(); _savePos(); player.dispose(); super.dispose(); }
   String _fmt(Duration d) { final m = d.inMinutes.toString().padLeft(2, '0'); final s = (d.inSeconds % 60).toString().padLeft(2, '0'); return '$m:$s'; }
   IconData get _modeIcon => playMode == 'one' ? Icons.repeat_one : playMode == 'rand' ? Icons.shuffle : Icons.repeat;
   void _cycleMode() { final modes = ['seq', 'one', 'rand']; final n = (modes.indexOf(playMode) + 1) % 3;
@@ -1535,6 +1549,9 @@ class _MPlay extends State<MusicPlayPage> {
       ])));
   }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(cur['name'] ?? '', style: const TextStyle(fontSize: 15)), actions: [
+      IconButton(icon: const Icon(Icons.favorite_border), tooltip: '收藏到歌单架',
+        onPressed: () async { await Book.add(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music');
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已收藏到音乐架'), duration: Duration(seconds: 1))); }),
       IconButton(icon: Icon(showLyric ? Icons.album : Icons.lyrics_outlined), tooltip: showLyric ? '封面' : '歌词',
         onPressed: () => setState(() => showLyric = !showLyric)),
       IconButton(icon: const Icon(Icons.queue_music), tooltip: '播放队列', onPressed: _queueSheet)]),
@@ -1792,7 +1809,16 @@ class _RootNavState extends State<RootNav> {
   final ScrollController _navScroll = ScrollController();
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
-    Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
+    Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); });
+    // 首次启动: 喜好分类选择(决定底部导航模块)
+    Future.delayed(const Duration(milliseconds: 600), () => _maybeOnboard()); }
+  Future<void> _maybeOnboard() async {
+    final p = await SharedPreferences.getInstance();
+    if ((p.getBool('onboarded_v1') ?? false) || !mounted) return;
+    final picked = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const OnboardingPage()));
+    await p.setBool('onboarded_v1', true);
+    if (picked == true) { RootNav.navTick.value++; }
+  }
   void _onNavChanged() { _load(); }
   @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
@@ -2179,8 +2205,8 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '5.1.0';
-  static const int currentCode = 50100;
+  static const String currentVersion = '5.2.0';
+  static const int currentCode = 50200;
   static bool _checked = false;
 
   static Future<void> check(BuildContext c, {bool manual = false}) async {
@@ -2709,17 +2735,36 @@ class UrlVideoPlayer extends StatefulWidget { final String url, title; final Map
   const UrlVideoPlayer({super.key, required this.url, required this.title, this.headers = const {}}); @override State<UrlVideoPlayer> createState() => _Uvp(); }
 class _Uvp extends State<UrlVideoPlayer> {
   VideoPlayerController? vc; ChewieController? cc; String err = '';
+  Timer? _posTimer;
+  String get _posKey => 'vpos_${widget.url}';
   @override void initState() { super.initState(); _boot(); }
   Future<void> _boot() async {
     try {
       vc = VideoPlayerController.networkUrl(Uri.parse(widget.url), httpHeaders: widget.headers);
       await vc!.initialize();
+      // 断点续播: 恢复上次进度(>10s 且未到结尾)
+      final s = AppSettings.p.getInt(_posKey) ?? 0;
+      final dur = vc!.value.duration;
+      final startAt = (s > 10 && s < dur.inSeconds - 10) ? Duration(seconds: s) : null;
       cc = ChewieController(videoPlayerController: vc!, autoPlay: true, allowFullScreen: true,
+        startAt: startAt,
         playbackSpeeds: const [0.5, 1.0, 1.25, 1.5, 2.0, 3.0]);
+      if (startAt != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已从 ${startAt.inMinutes.toString().padLeft(2, '0')}:${(startAt.inSeconds % 60).toString().padLeft(2, '0')} 继续播放'), duration: const Duration(seconds: 2)));
+      }
+      _posTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (vc != null && vc!.value.isPlaying && vc!.value.position.inSeconds > 5) {
+          AppSettings.p.setInt(_posKey, vc!.value.position.inSeconds);
+        }
+      });
     } catch (e) { err = '$e'; }
     if (mounted) setState(() {});
   }
-  @override void dispose() { cc?.dispose(); vc?.dispose(); super.dispose(); }
+  @override void dispose() {
+    _posTimer?.cancel();
+    if (vc != null && vc!.value.position.inSeconds > 5) AppSettings.p.setInt(_posKey, vc!.value.position.inSeconds);
+    cc?.dispose(); vc?.dispose(); super.dispose();
+  }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
     body: Center(child: err.isNotEmpty ? Text('播放失败: $err', style: const TextStyle(color: Colors.redAccent))
       : cc == null ? const CircularProgressIndicator()
@@ -2787,4 +2832,35 @@ class _Ecr extends State<EngineComicReader> {
       Text('${idx + 1}/${widget.chapters.length} 话', style: const TextStyle(fontSize: 12, color: Colors.grey)),
       TextButton(onPressed: idx < widget.chapters.length - 1 ? () => _go(idx + 1) : null, child: const Text('下一话')),
     ])) : null);
+}
+
+// 首次启动喜好分类: 选择感兴趣的模块 → 直接成为底部导航(可随时在 我的→导航设置 调整)
+class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key}); @override State<OnboardingPage> createState() => _Ob(); }
+class _Ob extends State<OnboardingPage> {
+  final Set<String> sel = {'小说', '漫画', '视频', '音乐', 'AI'};
+  static const candidates = ['搜索', '小说', '漫画', '视频', '音乐', '直播', 'AI', '浏览器', '相册', '文件', '聊天', '游戏', '社区', '论坛'];
+  Future<void> _done() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList('nav_modules', [...sel, '我的']);
+    if (mounted) Navigator.pop(context, true);
+  }
+  @override Widget build(BuildContext c) => Scaffold(body: SafeArea(child: Padding(padding: const EdgeInsets.all(24),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const SizedBox(height: 32),
+      const Text('欢迎来到 ThirdHub', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      const Text('选择你感兴趣的内容分类, 会成为你的底部导航(之后可随时调整)', style: TextStyle(color: Colors.grey, fontSize: 13)),
+      const SizedBox(height: 24),
+      Expanded(child: SingleChildScrollView(child: Wrap(spacing: 10, runSpacing: 10, children: [
+        for (final k in candidates)
+          FilterChip(selected: sel.contains(k), avatar: Icon(kModules[k]!.icon, size: 18),
+            label: Text(kModules[k]!.name),
+            onSelected: (v) => setState(() => v ? sel.add(k) : sel.remove(k))),
+      ]))),
+      Row(children: [
+        TextButton(onPressed: () { sel.clear(); sel.addAll(['小说', '漫画', '视频', '音乐', 'AI']); _done(); }, child: const Text('跳过, 用默认')),
+        const Spacer(),
+        FilledButton.icon(onPressed: sel.isEmpty ? null : _done, icon: const Icon(Icons.check), label: Text('开始 (${sel.length})')),
+      ]),
+    ]))));
 }
