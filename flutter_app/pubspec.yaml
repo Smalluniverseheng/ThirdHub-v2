@@ -28,7 +28,6 @@ dependencies:
   share_plus: ^10.0.2
   device_info_plus: ^11.1.0
   just_audio_background: ^0.0.1-beta.13
-  volume_watcher: ^2.0.1
   flutter_local_notifications: ^17.2.3
 
 dev_dependencies:

@@ -4,10 +4,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
-import 'package:volume_watcher/volume_watcher.dart';
 import 'tts.dart';
 import 'ai.dart';
 
@@ -59,7 +59,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   String? fontFamily;
   final Map<int, Map<String, dynamic>> chapCache = {};
   final GlobalKey<_FlipPagerState> _pagerKey = GlobalKey<_FlipPagerState>();
-  int? _volId; double? _lastVol; DateTime _lastVolAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _volChan = MethodChannel('thirdhub/volume_keys');
+  DateTime _lastVolAt = DateTime.fromMillisecondsSinceEpoch(0);
   int get idx => widget.index;
   Map<String, dynamic> get chapter => widget.chapters[idx];
   bool get hasPrev => idx > 0;
@@ -76,20 +77,17 @@ class _NovelReaderState extends State<NovelReaderPage> {
   // ── 听书 ──
   StreamSubscription? _ttsSub;
   void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
-  @override void dispose() { _ttsSub?.cancel(); VolumeWatcher.removeListener(_volId); TtsManager.stop(); super.dispose(); }
+  @override void dispose() { _ttsSub?.cancel(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop(); super.dispose(); }
 
-  // 音量键翻页: 监听系统音量变化方向(上=上一页/上一章, 下=下一页/下一章)
+  // 音量键翻页: MainActivity 原生拦截音量键并回传(只在阅读页启用, 不改变系统音量)
   void _initVolumeKeys() {
-    _volId = VolumeWatcher.addListener((v) {
-      if (!mounted || !ReaderCfg.volTurn || v is! double) return;
+    _volChan.invokeMethod('enable', true);
+    _volChan.setMethodCallHandler((call) async {
+      if (!mounted || !ReaderCfg.volTurn || call.method != 'press') return;
       final now = DateTime.now();
-      if (_lastVol == null) { _lastVol = v; return; }
-      final old = _lastVol!;
-      if ((v - old).abs() < 0.001) return;
-      _lastVol = v;
-      if (now.difference(_lastVolAt).inMilliseconds < 320) return;
+      if (now.difference(_lastVolAt).inMilliseconds < 280) return;
       _lastVolAt = now;
-      _volumeTurn(v < old); // 音量减=下一页(右手拇指自然向下), 音量加=上一页
+      _volumeTurn(call.arguments == 'down'); // 音量减=下一页/下一章, 音量加=上一页/上一章
     });
   }
 
