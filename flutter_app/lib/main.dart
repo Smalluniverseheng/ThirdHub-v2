@@ -1809,16 +1809,7 @@ class _RootNavState extends State<RootNav> {
   final ScrollController _navScroll = ScrollController();
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
-    Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); });
-    // 首次启动: 喜好分类选择(决定底部导航模块)
-    Future.delayed(const Duration(milliseconds: 600), () => _maybeOnboard()); }
-  Future<void> _maybeOnboard() async {
-    final p = await SharedPreferences.getInstance();
-    if ((p.getBool('onboarded_v1') ?? false) || !mounted) return;
-    final picked = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const OnboardingPage()));
-    await p.setBool('onboarded_v1', true);
-    if (picked == true) { RootNav.navTick.value++; }
-  }
+    Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
   void _onNavChanged() { _load(); }
   @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
@@ -2834,33 +2825,3 @@ class _Ecr extends State<EngineComicReader> {
     ])) : null);
 }
 
-// 首次启动喜好分类: 选择感兴趣的模块 → 直接成为底部导航(可随时在 我的→导航设置 调整)
-class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key}); @override State<OnboardingPage> createState() => _Ob(); }
-class _Ob extends State<OnboardingPage> {
-  final Set<String> sel = {'小说', '漫画', '视频', '音乐', 'AI'};
-  static const candidates = ['搜索', '小说', '漫画', '视频', '音乐', '直播', 'AI', '浏览器', '相册', '文件', '聊天', '游戏', '社区', '论坛'];
-  Future<void> _done() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setStringList('nav_modules', [...sel, '我的']);
-    if (mounted) Navigator.pop(context, true);
-  }
-  @override Widget build(BuildContext c) => Scaffold(body: SafeArea(child: Padding(padding: const EdgeInsets.all(24),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 32),
-      const Text('欢迎来到 ThirdHub', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8),
-      const Text('选择你感兴趣的内容分类, 会成为你的底部导航(之后可随时调整)', style: TextStyle(color: Colors.grey, fontSize: 13)),
-      const SizedBox(height: 24),
-      Expanded(child: SingleChildScrollView(child: Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final k in candidates)
-          FilterChip(selected: sel.contains(k), avatar: Icon(kModules[k]!.icon, size: 18),
-            label: Text(kModules[k]!.name),
-            onSelected: (v) => setState(() => v ? sel.add(k) : sel.remove(k))),
-      ]))),
-      Row(children: [
-        TextButton(onPressed: () { sel.clear(); sel.addAll(['小说', '漫画', '视频', '音乐', 'AI']); _done(); }, child: const Text('跳过, 用默认')),
-        const Spacer(),
-        FilledButton.icon(onPressed: sel.isEmpty ? null : _done, icon: const Icon(Icons.check), label: Text('开始 (${sel.length})')),
-      ]),
-    ]))));
-}
