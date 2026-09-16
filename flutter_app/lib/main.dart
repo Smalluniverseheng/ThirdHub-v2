@@ -26,12 +26,16 @@ import 'core/reader_fonts.dart';
 import 'core/i18n.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
+import 'core/browser_page.dart';
+import 'core/engine_direct.dart';
+import 'core/engine_direct_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings.init();
   await Cloud.init();
   unawaited(AiRegistry.init());
+  unawaited(EngineDirect.init());
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
@@ -628,6 +632,8 @@ class _Pf extends State<ProfilePage> {
       _section('服务与安全', [
         entry(Icons.person_outline, '账号', logged ? Cloud.email : '登录 / 注册 ThirdHub 账号', const AccountPage()),
         const Divider(height: 1, indent: 66),
+        entry(Icons.extension, '引擎直连', EngineDirect.connected ? '已连接 ${EngineDirect.name}' : '局域网引擎发现 · 不经后端直接搜索', const EngineDirectPage()),
+        const Divider(height: 1, indent: 66),
         entry(Icons.settings_outlined, tr('系统'), '连接器 · 应用锁 · 缓存 · 版本更新', const SystemPage()),
       ]),
       // ── 设置 ──
@@ -1083,10 +1089,11 @@ class _Home extends State<SearchSection> {
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('搜索')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)),
       HistoryPage(kind: 'novel', builder: (b) => TocPage(book: b)),
+      EngineDiscoverView(type: 'novel', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'novel', item: it)))),
       const NovelSearchResults(query: '')][sub]),
   ]); }
 
@@ -1253,9 +1260,11 @@ class NovelReadPage extends StatelessWidget {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('搜索')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
+      HistoryPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
+      EngineDiscoverView(type: 'comic', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'comic', item: it)))),
       const ComicSearchResults(query: '')][sub]),
   ]); }
 
@@ -1379,10 +1388,11 @@ class _Cr extends State<ComicReaderPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('搜索')))],
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
     Expanded(child: [const _MusicPlaylist(),
       HistoryPage(kind: 'music', builder: (b) => MusicPlayPage(item: {'name': b.name, 'url': b.bookUrl, 'artist': b.author, 'coverUrl': b.coverUrl}, sourceId: b.sourceId)),
+      EngineDiscoverView(type: 'music', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'music', item: it)))),
       const MusicSearchResults(query: '')][sub]),
   ]); }
 
@@ -1571,9 +1581,17 @@ class _MPlay extends State<MusicPlayPage> {
     ]))); }
 
 // ═══ 板块三: 视频播放器(UI先行, 数据源待后端drpy引擎) ═══
-// 视频模块 = 纯片库(直播已拆到独立「直播」模块)
-class VideoSection extends StatelessWidget { const VideoSection({super.key});
-  @override Widget build(BuildContext c) => const ShelfPage(kind: 'video', builder: _videoDetail); }
+// 视频模块 = 片库 + 历史 + 引擎发现(直播已拆到独立「直播」模块)
+class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
+class _Vs extends State<VideoSection> { int sub = 0;
+  @override Widget build(BuildContext c) => Column(children: [
+    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('片库'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现')))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail),
+      HistoryPage(kind: 'video', builder: _videoDetail),
+      EngineDiscoverView(type: 'video', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'video', item: it)))),
+    ][sub]),
+  ]); }
 
 // 直播: drpy直播源搜索频道→直接播放(m3u8直播流)
 class LivePage extends StatefulWidget { const LivePage({super.key}); @override State<LivePage> createState() => _Live(); }
@@ -1741,6 +1759,7 @@ final Map<String, ModuleDef> kModules = {
   '社区': const ModuleDef('社区', Icons.groups_outlined, _ComingSoonPage(name: '社区')),
   '论坛': const ModuleDef('论坛', Icons.article_outlined, _ComingSoonPage(name: '论坛')),
   '直播': const ModuleDef('直播', Icons.live_tv, LivePage()),
+  '浏览器': const ModuleDef('浏览器', Icons.language, BrowserPage()),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
 
@@ -2154,7 +2173,7 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.8.0';
+  static const String currentVersion = '4.9.0';
   static const int currentCode = 47002;
   static bool _checked = false;
 
@@ -2595,4 +2614,98 @@ class AboutPage extends StatelessWidget { const AboutPage({super.key});
       const SizedBox(height: 12),
       Center(child: Text('ThirdHub v${Updater.currentVersion}', style: const TextStyle(fontSize: 11, color: Colors.grey))),
     ]));
+}
+
+
+// ═══ 直连引擎条目详情: 目录→内容(不经过后端, THP 直连) ═══
+class EngineItemPage extends StatefulWidget { final String type; final Map item;
+  const EngineItemPage({super.key, required this.type, required this.item}); @override State<EngineItemPage> createState() => _Ei(); }
+class _Ei extends State<EngineItemPage> {
+  List<Map<String, dynamic>> chapters = []; bool loading = true; String err = '';
+  String get id => '${widget.item['id'] ?? widget.item['bookUrl'] ?? widget.item['url'] ?? ''}';
+  String get name => '${widget.item['name'] ?? widget.item['title'] ?? ''}';
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async {
+    try { chapters = await EngineDirect.chapters(widget.type, id); }
+    catch (e) { err = '$e'; }
+    // 无目录的直出条目(音乐单曲/视频直链): 直接取内容
+    if (chapters.isEmpty && err.isEmpty) { _open(null); return; }
+    if (mounted) setState(() => loading = false);
+  }
+  Future<Map<String, dynamic>> _content(String chapter) async {
+    final d = await EngineDirect.content(widget.type, id, chapter);
+    if (d['pages'] != null && d['images'] == null) d['images'] = d['pages']; // THP v1 images/pages 归一
+    return d;
+  }
+  Future<void> _open(int? index) async {
+    final t = widget.type;
+    if (t == 'novel' || t == 'comic') {
+      final i = index ?? 0;
+      Navigator.push(context, MaterialPageRoute(builder: (_) => NovelReaderPage(
+        sourceId: 'engine', chapters: chapters, index: i, bookName: name, bookUrl: id,
+        fetchContent: (s, url) => _content(url))));
+      return;
+    }
+    // 音乐/视频: 取内容地址直接播
+    try {
+      final d = await _content(index != null ? '${chapters[index]['url'] ?? index}' : '');
+      if (!mounted) return;
+      if (t == 'music') {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => MusicPlayPage(item: {
+          'name': index != null ? '${chapters[index]['name'] ?? name}' : name,
+          'url': d['url'] ?? '', 'artist': '${widget.item['author'] ?? ''}',
+          'coverUrl': '${widget.item['coverUrl'] ?? ''}', 'lyric': d['lyric'] ?? ''})));
+      } else {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => UrlVideoPlayer(
+          url: '${d['url'] ?? ''}', title: index != null ? '${chapters[index]['name'] ?? name}' : name,
+          headers: Map<String, String>.from(d['headers'] ?? d['header'] ?? {}))));
+      }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('获取播放地址失败: $e'))); }
+  }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : err.isNotEmpty ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('加载目录失败: $err', style: const TextStyle(color: Colors.redAccent))))
+      : ListView(children: [
+        // 信息头
+        Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 72, height: 96,
+            child: ('${widget.item['coverUrl'] ?? '') != '' ? Image.network('${widget.item['coverUrl']}', fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26)) : const ColoredBox(color: Colors.black26))),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            if ('${widget.item['author'] ?? ''}' != '') Text('${widget.item['author']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            if ('${widget.item['intro'] ?? ''}' != '') Padding(padding: const EdgeInsets.only(top: 4),
+              child: Text('${widget.item['intro']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey))),
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text('${chapters.length} 个章节/选集 · 来自 ${EngineDirect.name}',
+              style: const TextStyle(fontSize: 10, color: Colors.grey))),
+          ])),
+        ])),
+        const Divider(height: 1),
+        for (var i = 0; i < chapters.length; i++)
+          ListTile(dense: true, title: Text('${chapters[i]['name'] ?? '第${i + 1}集'}', style: const TextStyle(fontSize: 13)),
+            onTap: () => _open(i)),
+      ]));
+}
+
+// 直链视频播放器(引擎直连内容用)
+class UrlVideoPlayer extends StatefulWidget { final String url, title; final Map<String, String> headers;
+  const UrlVideoPlayer({super.key, required this.url, required this.title, this.headers = const {}}); @override State<UrlVideoPlayer> createState() => _Uvp(); }
+class _Uvp extends State<UrlVideoPlayer> {
+  VideoPlayerController? vc; ChewieController? cc; String err = '';
+  @override void initState() { super.initState(); _boot(); }
+  Future<void> _boot() async {
+    try {
+      vc = VideoPlayerController.networkUrl(Uri.parse(widget.url), httpHeaders: widget.headers);
+      await vc!.initialize();
+      cc = ChewieController(videoPlayerController: vc!, autoPlay: true, allowFullScreen: true,
+        playbackSpeeds: const [0.5, 1.0, 1.25, 1.5, 2.0, 3.0]);
+    } catch (e) { err = '$e'; }
+    if (mounted) setState(() {});
+  }
+  @override void dispose() { cc?.dispose(); vc?.dispose(); super.dispose(); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+    body: Center(child: err.isNotEmpty ? Text('播放失败: $err', style: const TextStyle(color: Colors.redAccent))
+      : cc == null ? const CircularProgressIndicator()
+      : AspectRatio(aspectRatio: vc!.value.aspectRatio > 0 ? vc!.value.aspectRatio : 16 / 9, child: Chewie(controller: cc!))));
 }
