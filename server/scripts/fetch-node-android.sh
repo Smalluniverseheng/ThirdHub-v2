@@ -49,7 +49,9 @@ cp -r "$ROOT/server"/* "$OUT/server/"
 rm -rf "$OUT/server/scripts" "$OUT/server/public" "$OUT/server/data" 2>/dev/null || true
 
 echo "== 安装 server 依赖(node_modules 随包) =="
-# npm 偶发 "Exit handler never called"(npm/cli 已知 flake): 重试 + 清缓存兜底
+# CI runner 的 Node24 自带 npm 有 "Exit handler never called" bug: 固定 npm@10 解决
+npm install -g npm@10.9.2 --no-audit --no-fund --loglevel=error || true
+hash -r 2>/dev/null || true
 ok=""
 for i in 1 2 3; do
   if ( cd "$OUT/server" && npm install --omit=dev --no-audit --no-fund --loglevel=error ); then ok=1; break; fi
