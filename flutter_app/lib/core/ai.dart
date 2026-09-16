@@ -130,30 +130,39 @@ class AiRegistry {
   }
 }
 
+// 工具调用结果回调: (serverId, toolName, args) → 文本结果
+typedef AiToolExecutor = Future<String> Function(String serverId, String name, Map<String, dynamic> args);
+
 // OpenAI 兼容流式对话(anthropic 类型走 /messages 非流式)
+// TH-Harness v1: 统一工具循环(MCP+本机工具), 多轮 plan-act-observe, 思考链(reasoning_content)解析
 class AiChat {
-  // onDelta: 增量文本; 返回完整文本
-  // mcpTools: 注入的 MCP 工具(OpenAI function-calling); onToolCall(name): 工具调用进度提示
+  // onDelta: 正文增量; onReasoning: 思考链增量; mcpTools: 统一工具表(MCP+本机); toolExecutor: 统一工具执行
   static Future<String> chat({required AiProvider provider, required String model,
       required List<Map<String, String>> messages, required void Function(String delta) onDelta,
-      List<Map<String, dynamic>>? mcpTools, void Function(String toolName)? onToolCall}) async {
+      List<Map<String, dynamic>>? mcpTools, void Function(String toolName)? onToolCall,
+      void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor}) async {
     final key = await AiRegistry.keyOf(provider.id);
     if (key.isEmpty) throw Exception('请先填写 ${provider.name} 的 API Key');
-    // MCP 工具链: 非流式请求带 tools → 有 tool_calls 就执行并追问(最多3轮) → 最终走流式回答
+    // Harness 工具循环: 非流式带 tools → 有 tool_calls 就执行并追问(最多8轮) → 最终走流式回答
     if (mcpTools != null && mcpTools.isNotEmpty && provider.type != 'anthropic') {
       final msgs = messages.map((m) => Map<String, dynamic>.from(m)).toList();
       final tools = [ for (final t in mcpTools) {'type': 'function', 'function': {
         'name': t['name'], 'description': t['description'] ?? '',
         'parameters': t['inputSchema'] ?? {'type': 'object', 'properties': {}}}} ];
-      for (var round = 0; round < 3; round++) {
-        final r = await http.post(Uri.parse('${provider.base}/chat/completions'),
-          headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
-          body: jsonEncode({'model': model, 'messages': msgs, 'tools': tools, 'stream': false}))
-          .timeout(const Duration(seconds: 60));
+      for (var round = 0; round < 8; round++) {
+        http.Response r;
+        try {
+          r = await http.post(Uri.parse('${provider.base}/chat/completions'),
+            headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
+            body: jsonEncode({'model': model, 'messages': msgs, 'tools': tools, 'stream': false}))
+            .timeout(const Duration(seconds: 90));
+        } catch (_) { break; }
         if (r.statusCode != 200) break; // 不支持 tools 的厂商: 直接放弃工具, 走普通流式
         final j = jsonDecode(utf8.decode(r.bodyBytes));
         final msg = j['choices']?[0]?['message'];
         if (msg == null) break;
+        final thinking = '${msg['reasoning_content'] ?? ''}';
+        if (thinking.isNotEmpty) onReasoning?.call(thinking);
         final calls = (msg['tool_calls'] as List? ?? []);
         if (calls.isEmpty) break; // 模型不需要工具
         msgs.add({'role': 'assistant', 'content': msg['content'] ?? '', 'tool_calls': calls});
@@ -166,10 +175,14 @@ class AiChat {
           try {
             Map<String, dynamic> args = {};
             try { args = Map<String, dynamic>.from(jsonDecode('${fn['arguments'] ?? '{}'}')); } catch (_) {}
-            final result = await Mcp.callTool('${tool['serverId']}', name, args);
-            // MCP 返回 content: [{type:'text', text:...}]
-            out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
-            if (out.isEmpty) out = jsonEncode(result);
+            if (toolExecutor != null) { out = await toolExecutor('${tool['serverId'] ?? ''}', name, args); }
+            else {
+              final result = await Mcp.callTool('${tool['serverId']}', name, args);
+              out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
+              if (out.isEmpty) out = jsonEncode(result);
+            }
+            // 单条工具结果截断, 防爆上下文
+            if (out.length > 12000) out = '${out.substring(0, 12000)}\n…(结果截断)';
           } catch (e) { out = '工具调用失败: $e'; }
           msgs.add({'role': 'tool', 'tool_call_id': '${call['id'] ?? ''}', 'content': out});
         }
@@ -192,7 +205,7 @@ class AiChat {
     req.body = jsonEncode({'model': model, 'messages': messages, 'stream': true});
     http.StreamedResponse resp;
     try { resp = await http.Client().send(req).timeout(const Duration(seconds: 30)); }
-    catch (_) { return _nonStream(provider, key, model, messages, onDelta); }
+    catch (_) { return _nonStream(provider, key, model, messages, onDelta, onReasoning); }
     if (resp.statusCode != 200) {
       final body = await resp.stream.bytesToString();
       throw Exception('HTTP ${resp.statusCode}: ${body.substring(0, body.length.clamp(0, 200))}');
@@ -208,23 +221,30 @@ class AiChat {
         final payload = line.substring(5).trim();
         if (payload == '[DONE]') break;
         try {
-          final delta = jsonDecode(payload)['choices']?[0]?['delta']?['content'];
+          final d0 = jsonDecode(payload)['choices']?[0]?['delta'];
+          final rc = d0?['reasoning_content'] ?? d0?['reasoning'];
+          if (rc is String && rc.isNotEmpty) onReasoning?.call(rc);
+          final delta = d0?['content'];
           if (delta is String && delta.isNotEmpty) { buf.write(delta); onDelta(delta); }
         } catch (_) {}
       }
     }
     // 流式没吐出任何内容(部分厂商不支持 stream) → 自动回退非流式
-    if (buf.isEmpty) return _nonStream(provider, key, model, messages, onDelta);
+    if (buf.isEmpty) return _nonStream(provider, key, model, messages, onDelta, onReasoning);
     return buf.toString();
   }
 
   static Future<String> _nonStream(AiProvider provider, String key, String model,
-      List<Map<String, String>> messages, void Function(String) onDelta) async {
+      List<Map<String, String>> messages, void Function(String) onDelta,
+      [void Function(String)? onReasoning]) async {
     final r = await http.post(Uri.parse('${provider.base}/chat/completions'),
       headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
       body: jsonEncode({'model': model, 'messages': messages, 'stream': false})).timeout(const Duration(seconds: 60));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
-    final text = jsonDecode(utf8.decode(r.bodyBytes))['choices']?[0]?['message']?['content'] ?? '';
+    final msg = jsonDecode(utf8.decode(r.bodyBytes))['choices']?[0]?['message'];
+    final rc = msg?['reasoning_content'];
+    if (rc is String && rc.isNotEmpty) onReasoning?.call(rc);
+    final text = msg?['content'] ?? '';
     if (text.isEmpty) throw Exception('模型没有返回内容');
     onDelta(text); return text;
   }

@@ -12,6 +12,8 @@ import 'ai.dart';
 import 'ai_agents_snapshot.dart';
 import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
+import 'ai_skills.dart';
+import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
 
@@ -74,6 +76,12 @@ class AiStore {
 class AiSection extends StatefulWidget { const AiSection({super.key}); @override State<AiSection> createState() => _AiSec(); }
 class _AiSec extends State<AiSection> {
   AiSession? session; bool sending = false; String streaming = '';
+  // 思考链 + 工具步骤(当前正在生成的消息)
+  String _reasoning = ''; final List<Map<String, String>> _steps = [];
+  // 消息排队(Kimi 同款): 生成中继续发消息进入队列
+  final List<String> _queue = []; bool queuePaused = false;
+  // 技能注入 + 上下文管理
+  String _skillId = ''; int _ctxTurns = 0; // 0=全部
   final input = TextEditingController(); final scroll = ScrollController();
   bool pinned = false; // 上拉钉住(回到底部按钮)
   // 抽屉状态
@@ -98,6 +106,8 @@ class _AiSec extends State<AiSection> {
     final prefs = await SharedPreferences.getInstance();
     _webSearchOn = prefs.getBool('ai_websearch_on') ?? false;
     _mcpOn = prefs.getBool('ai_mcp_on') ?? true;
+    _skillId = prefs.getString('ai_skill') ?? '';
+    _ctxTurns = prefs.getInt('ai_ctx_turns') ?? 0;
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
@@ -124,8 +134,20 @@ class _AiSec extends State<AiSection> {
     _closeDrawer();
   }
 
+  // 统一工具执行: 本机工具(local_*)走 LocalTools, 其余走 MCP
+  Future<String> _runTool(String serverId, String name, Map<String, dynamic> args) async {
+    if (serverId == 'local') return LocalTools.call(name, args);
+    final result = await Mcp.callTool(serverId, name, args);
+    final out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
+    return out.isEmpty ? jsonEncode(result) : out;
+  }
+
   Future<void> _send() async {
-    final text = input.text.trim(); if (text.isEmpty || sending || session == null) return;
+    final text = input.text.trim(); if (text.isEmpty || session == null) return;
+    // 生成中 → 进入排队(Kimi 同款)
+    if (sending) { input.clear(); setState(() => _queue.add(text));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入排队, 上一条完成后自动发送')));
+      return; }
     final prov = AiRegistry.byId(session!.providerId);
     if (prov == null) return;
     if ((await AiRegistry.keyOf(prov.id)).isEmpty) {
@@ -136,42 +158,109 @@ class _AiSec extends State<AiSection> {
     setState(() {
       session!.messages.add({'role': 'user', 'content': text});
       if (session!.title == '新对话') session!.title = text.length > 18 ? '${text.substring(0, 18)}…' : text;
-      sending = true; streaming = '';
+      sending = true; streaming = ''; _reasoning = ''; _steps.clear();
     });
     AiStore.save();
     _jumpBottom();
-    // 联网搜索: 先检索再把结果注入上下文(会话里只保留用户原文)
+    // 上下文管理: 系统消息 + 最近 N 轮(0=全部), 技能注入上下文
     var msgs = session!.messages;
+    if (_ctxTurns > 0) {
+      final sys = msgs.where((m) => m['role'] == 'system').toList();
+      final rest = msgs.where((m) => m['role'] != 'system').toList();
+      final keep = rest.length > _ctxTurns ? rest.sublist(rest.length - _ctxTurns) : rest;
+      msgs = [...sys, ...keep];
+    }
+    if (_skillId.isNotEmpty) {
+      Map<String, String>? skill;
+      for (final s in kAiSkills) { if (s['id'] == _skillId) { skill = Map<String, String>.from(s); break; } }
+      if (skill != null) {
+        msgs = [{'role': 'system', 'content': '${skill['system']}'},
+          ...msgs.where((m) => m['role'] != 'system')];
+      }
+    }
+    // 联网搜索: 先检索再把结果注入上下文(会话里只保留用户原文)
     if (_webSearchOn) {
       try {
         if (await WebSearch.configured()) {
-          setState(() => streaming = '🔍 正在联网搜索…');
+          setState(() => _steps.add({'icon': '🔍', 'text': '联网搜索: $text', 'status': 'running'}));
           final items = await WebSearch.search(text);
           if (items.isNotEmpty) {
             msgs = [...msgs.sublist(0, msgs.length - 1),
               {'role': 'user', 'content': WebSearch.toContext(text, items)}, msgs.last];
           }
-          setState(() => streaming = '');
+          setState(() { _steps.last['status'] = 'done'; _steps.last['text'] = '联网搜索完成 · ${items.length} 条结果'; });
         } else {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('联网搜索未配置 · 点输入框左侧 + → 联网搜索 去配置')));
         }
       } catch (e) {
-        setState(() => streaming = '');
+        setState(() { if (_steps.isNotEmpty) { _steps.last['status'] = 'error'; } });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('联网搜索失败: $e')));
       }
     }
     try {
       final full = await AiChat.chat(provider: prov, model: session!.model, messages: msgs,
-        mcpTools: _mcpOn ? Mcp.allTools() : null,
-        onToolCall: (name) { setState(() => streaming = '🛠 正在调用工具 $name…'); },
-        onDelta: (d) { setState(() { if (streaming.startsWith('🔍') || streaming.startsWith('🛠')) streaming = ''; streaming += d; }); if (!pinned) _jumpBottom(); });
-      setState(() { session!.messages.add({'role': 'assistant', 'content': full}); streaming = ''; });
+        mcpTools: _mcpOn ? [...Mcp.allTools(), ...LocalTools.schemas()] : null,
+        toolExecutor: _runTool,
+        onReasoning: (r) { setState(() { _reasoning += r; }); if (!pinned) _jumpBottom(); },
+        onToolCall: (name) { setState(() {
+          for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
+          _steps.add({'icon': '🛠', 'text': '正在调用工具 $name', 'status': 'running'});
+        }); if (!pinned) _jumpBottom(); },
+        onDelta: (d) { setState(() {
+          for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
+          streaming += d; }); if (!pinned) _jumpBottom(); });
+      setState(() {
+        for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
+        session!.messages.add({'role': 'assistant', 'content': full,
+          if (_reasoning.isNotEmpty) 'reasoning': _reasoning,
+          if (_steps.isNotEmpty) 'steps': jsonEncode(_steps)});
+        streaming = '';
+      });
     } catch (e) {
-      setState(() { session!.messages.add({'role': 'assistant', 'content': '出错了: $e'}); streaming = ''; });
+      setState(() { session!.messages.add({'role': 'assistant', 'content': '出错了: $e',
+        if (_reasoning.isNotEmpty) 'reasoning': _reasoning,
+        if (_steps.isNotEmpty) 'steps': jsonEncode(_steps)}); streaming = ''; });
     }
     AiStore.save();
-    setState(() => sending = false);
+    setState(() { sending = false; _reasoning = ''; _steps.clear(); });
     _jumpBottom();
+    // 队列下一条自动发送
+    if (!queuePaused && _queue.isNotEmpty) { input.text = _queue.removeAt(0); _send(); }
+  }
+
+  // 排队面板: 立即发送/编辑/删除 + 暂停排队/清空排队
+  void _queueSheet() {
+    showModalBottomSheet(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Padding(padding: const EdgeInsets.fromLTRB(16, 12, 8, 4), child: Row(children: [
+        Text('排队中 (${_queue.length})', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        const Spacer(),
+        PopupMenuButton<String>(icon: const Icon(Icons.more_vert, size: 20), onSelected: (v) {
+          if (v == 'pause') { setState(() => queuePaused = !queuePaused); setD(() {}); }
+          if (v == 'clear') { setState(() => _queue.clear()); Navigator.pop(c2); }
+        }, itemBuilder: (_) => [
+          PopupMenuItem(value: 'pause', child: Text(queuePaused ? '▶ 继续排队' : '⏸ 暂停排队')),
+          const PopupMenuItem(value: 'clear', child: Text('🗑 清空排队', style: TextStyle(color: Colors.redAccent))),
+        ]),
+      ])),
+      Flexible(child: ListView(shrinkWrap: true, children: [
+        for (var i = 0; i < _queue.length; i++)
+          Card(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              CircleAvatar(radius: 10, child: Text('${i + 1}', style: const TextStyle(fontSize: 10))),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_queue[i], maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+            ]),
+            Row(children: [
+              TextButton.icon(onPressed: () { final t = _queue.removeAt(i); input.text = t; Navigator.pop(c2); _send(); },
+                icon: const Icon(Icons.send, size: 14), label: const Text('立即发送', style: TextStyle(fontSize: 12))),
+              TextButton.icon(onPressed: () { input.text = _queue.removeAt(i); setState(() {}); Navigator.pop(c2); },
+                icon: const Icon(Icons.edit_outlined, size: 14), label: const Text('编辑', style: TextStyle(fontSize: 12))),
+              TextButton.icon(onPressed: () { setState(() => _queue.removeAt(i)); setD(() {}); if (_queue.isEmpty) Navigator.pop(c2); },
+                icon: const Icon(Icons.delete_outline, size: 14, color: Colors.redAccent), label: const Text('删除', style: TextStyle(fontSize: 12, color: Colors.redAccent))),
+            ]),
+          ]))),
+      ])),
+    ]))));
   }
   void _jumpBottom() { WidgetsBinding.instance.addPostFrameCallback((_) {
     if (scroll.hasClients) scroll.jumpTo(scroll.position.maxScrollExtent); }); }
@@ -216,8 +305,19 @@ class _AiSec extends State<AiSection> {
               const Icon(Icons.arrow_drop_down, size: 18)]))),
         actions: [IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat())]),
       body: Column(children: [
+        // 排队提示条(Kimi 同款: ☰ 排队 | N 条消息排队中)
+        if (_queue.isNotEmpty) InkWell(onTap: _queueSheet, child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 0), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Icon(queuePaused ? Icons.pause_circle_outline : Icons.playlist_play, size: 18, color: Colors.grey),
+            const SizedBox(width: 8),
+            Expanded(child: Text('排队 | ${_queue.length} 条消息排队中${queuePaused ? ' (已暂停)' : ''}',
+              style: const TextStyle(fontSize: 13))),
+            const Icon(Icons.keyboard_arrow_up, size: 18, color: Colors.grey),
+          ]))),
         Expanded(child: s == null ? const Center(child: CircularProgressIndicator())
-          : (s.messages.where((m) => m['role'] != 'system').isEmpty && streaming.isEmpty)
+          : (s.messages.where((m) => m['role'] != 'system').isEmpty && streaming.isEmpty && _reasoning.isEmpty && _steps.isEmpty)
             ? _emptyHint(c) : _msgList(c, s)),
         _inputBar(c, dark),
       ]));
@@ -232,12 +332,62 @@ class _AiSec extends State<AiSection> {
     const Text('左滑边缘或点菜单打开抽屉: 历史/模型/智能体/灵感', style: TextStyle(color: Colors.grey, fontSize: 11)),
   ]));
 
+  // 思考链卡片(Kimi 同款: 思考已完成/思考中…, 可展开)
+  Widget _thinkingCard(BuildContext c, String reasoning, bool done) {
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    return Container(margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(color: dark ? const Color(0xFF1A1D26) : const Color(0xFFF6F5FA),
+        borderRadius: BorderRadius.circular(12)),
+      child: Theme(data: Theme.of(c).copyWith(dividerColor: Colors.transparent), child: ExpansionTile(
+        dense: true, initiallyExpanded: !done,
+        title: Row(children: [
+          Icon(done ? Icons.check_circle_outline : Icons.psychology_outlined, size: 14, color: Colors.grey),
+          const SizedBox(width: 6),
+          Text(done ? '思考已完成' : '思考中…', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ]),
+        children: [Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          child: Text(reasoning, style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.5)))],
+      )));
+  }
+
+  // 工具步骤卡片(Kimi 同款: 步骤列表 + 状态)
+  Widget _stepsCard(BuildContext c, List<Map<String, String>> steps, bool done) {
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    return Container(margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(color: dark ? const Color(0xFF1A1D26) : const Color(0xFFF6F5FA),
+        borderRadius: BorderRadius.circular(12)),
+      child: Theme(data: Theme.of(c).copyWith(dividerColor: Colors.transparent), child: ExpansionTile(
+        dense: true, initiallyExpanded: !done,
+        title: Row(children: [
+          Icon(done ? Icons.playlist_add_check : Icons.handyman_outlined, size: 14, color: Colors.grey),
+          const SizedBox(width: 6),
+          Text(done ? '工具调用完成 (${steps.length})' : steps.last['text'] ?? '工具调用中…',
+            style: const TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis),
+        ]),
+        children: [ for (final s in steps) Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+          child: Row(children: [
+            Text(s['icon'] ?? '•', style: const TextStyle(fontSize: 12)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(s['text'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis)),
+            Icon(s['status'] == 'done' ? Icons.check : s['status'] == 'error' ? Icons.error_outline : Icons.hourglass_top,
+              size: 13, color: s['status'] == 'error' ? Colors.redAccent : Colors.grey),
+          ])) ],
+      )));
+  }
+
   Widget _msgList(BuildContext c, AiSession s) {
     final list = s.messages.where((m) => m['role'] != 'system').toList();
+    final liveActive = streaming.isNotEmpty || _reasoning.isNotEmpty || _steps.isNotEmpty;
     return Stack(children: [
       ListView.builder(controller: scroll, padding: const EdgeInsets.all(14),
-        itemCount: list.length + (streaming.isNotEmpty ? 1 : 0), itemBuilder: (_, i) {
-          final m = i < list.length ? list[i] : {'role': 'assistant', 'content': streaming};
+        itemCount: list.length + (liveActive ? 1 : 0), itemBuilder: (_, i) {
+          final live = i >= list.length;
+          final m = live ? {'role': 'assistant', 'content': streaming} : list[i];
+          final reasoning = live ? _reasoning : (m['reasoning'] ?? '');
+          List<Map<String, String>> steps = live ? _steps : [];
+          if (!live && m['steps'] != null) {
+            try { steps = [ for (final e in jsonDecode(m['steps']!) as List) Map<String, String>.from(e) ]; } catch (_) {}
+          }
           final me = m['role'] == 'user';
           final accent = Theme.of(c).colorScheme.primary;
           final dark = Theme.of(c).brightness == Brightness.dark;
@@ -259,11 +409,25 @@ class _AiSec extends State<AiSection> {
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
             child: Icon(me ? Icons.person_outline : Icons.smart_toy_outlined, size: 15,
               color: me ? accent : const Color(0xFF7C6CFF)));
-          return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(
+          final row = Row(
             mainAxisAlignment: me ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start, children: me
               ? [Flexible(child: bubble), const SizedBox(width: 8), avatar]
-              : [avatar, const SizedBox(width: 8), Flexible(child: bubble)]));
+              : [avatar, const SizedBox(width: 8), Flexible(child: bubble)]);
+          // 助手消息: 思考链 + 工具步骤卡片在气泡上方(Kimi 同款)
+          if (!me && (reasoning.isNotEmpty || steps.isNotEmpty)) {
+            return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+              avatar, const SizedBox(width: 8),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (reasoning.isNotEmpty) _thinkingCard(c, reasoning, !live || streaming.isNotEmpty || !sending),
+                if (steps.isNotEmpty) _stepsCard(c, steps, !live || streaming.isNotEmpty || !sending),
+                if (live && streaming.isEmpty) const Padding(padding: EdgeInsets.all(8),
+                  child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))
+                else row.children[2], // 气泡(不带重复头像)
+              ])) ]));
+          }
+          return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: row);
         }),
       if (pinned) Positioned(right: 16, bottom: 12, child: FloatingActionButton.small(
         onPressed: () { setState(() => pinned = false); _jumpBottom(); },
@@ -309,11 +473,17 @@ class _AiSec extends State<AiSection> {
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _searchConfigSheet(c); }),
         StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
           secondary: Icon(Icons.hub_outlined, color: _mcpOn ? Colors.blueAccent : null),
-          title: const Text('MCP 工具', style: TextStyle(fontSize: 14)),
-          subtitle: Text('已连接 ${Mcp.servers.where((s) => s.enabled && s.status == 'connected').length} 个服务 · 对话中自动调用', style: const TextStyle(fontSize: 11)),
+          title: const Text('工具调用(Harness)', style: TextStyle(fontSize: 14)),
+          subtitle: Text('本机工具 ${LocalTools.all.length} 个 + MCP ${Mcp.servers.where((s) => s.enabled && s.status == 'connected').length} 个服务 · 多轮自动调用', style: const TextStyle(fontSize: 11)),
           value: _mcpOn, onChanged: (v) async {
             setState(() => _mcpOn = v); setS(() {});
             final p = await SharedPreferences.getInstance(); await p.setBool('ai_mcp_on', v); })),
+        ListTile(dense: true, leading: const Icon(Icons.phone_android), title: const Text('本机工具清单', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('设备信息/剪贴板/朗读/文件/分享/打开链接…', style: TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _localToolsSheet(c); }),
+        ListTile(dense: true, leading: const Icon(Icons.compress), title: const Text('上下文管理', style: TextStyle(fontSize: 14)),
+          subtitle: Text(_ctxTurns == 0 ? '携带全部历史消息' : '只携带最近 $_ctxTurns 条消息', style: const TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _ctxSheet(c); }),
         ListTile(dense: true, leading: const Icon(Icons.cable), title: const Text('MCP 服务管理', style: TextStyle(fontSize: 14)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2);
             Navigator.push(c, MaterialPageRoute(builder: (_) => const McpPage())); }),
@@ -321,6 +491,34 @@ class _AiSec extends State<AiSection> {
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2);
             Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage())); }),
       ]))));
+  }
+
+  // 本机工具清单弹层
+  void _localToolsSheet(BuildContext c) {
+    showModalBottomSheet(context: c, builder: (c2) => SafeArea(child: SizedBox(height: 420, child: Column(children: [
+      const Padding(padding: EdgeInsets.all(12), child: Text('本机工具(开启工具调用后 AI 自动使用)', style: TextStyle(fontWeight: FontWeight.bold))),
+      Expanded(child: ListView(children: [ for (final t in LocalTools.all)
+        ListTile(dense: true, leading: const Icon(Icons.build_circle_outlined, size: 20),
+          title: Text(t.name, style: const TextStyle(fontSize: 13)),
+          subtitle: Text(t.description, style: const TextStyle(fontSize: 11, color: Colors.grey))) ])),
+    ]))));
+  }
+
+  // 上下文管理弹层
+  void _ctxSheet(BuildContext c) {
+    showModalBottomSheet(context: c, builder: (c2) => StatefulBuilder(builder: (c2, setD) => SafeArea(child: Padding(padding: const EdgeInsets.all(16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('上下文管理', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        const Text('限制每次请求携带的历史消息条数, 省 token、防超长; 系统提示词始终携带',
+          style: TextStyle(fontSize: 11, color: Colors.grey)),
+        const SizedBox(height: 8),
+        for (final n in [0, 6, 10, 20, 40])
+          RadioListTile<int>(dense: true, value: n, groupValue: _ctxTurns,
+            title: Text(n == 0 ? '全部历史' : '最近 $n 条', style: const TextStyle(fontSize: 13)),
+            onChanged: (v) async { setState(() => _ctxTurns = v!); setD(() {});
+              final p = await SharedPreferences.getInstance(); await p.setInt('ai_ctx_turns', v!); }),
+      ])))));
   }
 
   // 联网搜索服务配置(与网站 web-search.js 一致)
@@ -452,14 +650,33 @@ class _AiSec extends State<AiSection> {
                   setState(() {}); AiStore.save(); _closeDrawer(); }) ]) ]);
   }() ]);
 
-  Widget _agentsList(BuildContext c) => GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [
-    for (final a in kAiAgents)
-      Card(child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a['id'], system: a['system']),
-        child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(a['name'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(a['desc'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-        ])))),
+  Widget _agentsList(BuildContext c) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+    GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [
+      for (final a in kAiAgents)
+        Card(child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a['id'], system: a['system']),
+          child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(a['name'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(a['desc'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ])))),
+    ]),
+    // 技能(注入对话上下文, 单选, 再点取消)
+    const Padding(padding: EdgeInsets.fromLTRB(14, 4, 14, 4),
+      child: Text('技能(注入上下文)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey))),
+    for (final sk in kAiSkills)
+      ListTile(dense: true,
+        leading: Text(sk['icon']!, style: const TextStyle(fontSize: 18)),
+        title: Text(sk['name']!, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(sk['desc']!, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        trailing: _skillId == sk['id'] ? const Icon(Icons.check_circle, size: 18, color: Colors.blueAccent) : null,
+        onTap: () async {
+          setState(() => _skillId = _skillId == sk['id'] ? '' : sk['id']!);
+          final p = await SharedPreferences.getInstance();
+          await p.setString('ai_skill', _skillId);
+          if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(
+            _skillId.isEmpty ? '已取消技能' : '已启用技能「${sk['name']}」, 后续对话自动注入')));
+        }),
+    const SizedBox(height: 8),
   ]);
 
   // 排行榜(与网站 ai-rankings.js 一致: 分类榜 + 综合分)

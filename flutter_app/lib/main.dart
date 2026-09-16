@@ -29,6 +29,8 @@ import 'core/ai_page.dart';
 import 'core/browser_page.dart';
 import 'core/engine_direct.dart';
 import 'core/engine_direct_page.dart';
+import 'core/gallery_page.dart';
+import 'core/files_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1760,6 +1762,8 @@ final Map<String, ModuleDef> kModules = {
   '论坛': const ModuleDef('论坛', Icons.article_outlined, _ComingSoonPage(name: '论坛')),
   '直播': const ModuleDef('直播', Icons.live_tv, LivePage()),
   '浏览器': const ModuleDef('浏览器', Icons.language, BrowserPage()),
+  '相册': const ModuleDef('相册', Icons.photo_library_outlined, GalleryPage()),
+  '文件': const ModuleDef('文件', Icons.folder_outlined, FilesPage()),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
 };
 
@@ -2173,7 +2177,7 @@ class DownloadCenterTile extends StatelessWidget {
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.9.0';
+  static const String currentVersion = '5.0.0';
   static const int currentCode = 47002;
   static bool _checked = false;
 
@@ -2624,6 +2628,9 @@ class _Ei extends State<EngineItemPage> {
   List<Map<String, dynamic>> chapters = []; bool loading = true; String err = '';
   String get id => '${widget.item['id'] ?? widget.item['bookUrl'] ?? widget.item['url'] ?? ''}';
   String get name => '${widget.item['name'] ?? widget.item['title'] ?? ''}';
+  String get cover => '${widget.item['coverUrl'] ?? ''}';
+  String get authorS => '${widget.item['author'] ?? ''}';
+  String get introS => '${widget.item['intro'] ?? ''}';
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
     try { chapters = await EngineDirect.chapters(widget.type, id); }
@@ -2648,16 +2655,17 @@ class _Ei extends State<EngineItemPage> {
     }
     // 音乐/视频: 取内容地址直接播
     try {
-      final d = await _content(index != null ? '${chapters[index]['url'] ?? index}' : '');
+      final chapUrl = index != null ? '${chapters[index]['url'] ?? index}' : '';
+      final title = index != null ? '${chapters[index]['name'] ?? name}' : name;
+      final d = await _content(chapUrl);
       if (!mounted) return;
       if (t == 'music') {
         Navigator.push(context, MaterialPageRoute(builder: (_) => MusicPlayPage(item: {
-          'name': index != null ? '${chapters[index]['name'] ?? name}' : name,
-          'url': d['url'] ?? '', 'artist': '${widget.item['author'] ?? ''}',
-          'coverUrl': '${widget.item['coverUrl'] ?? ''}', 'lyric': d['lyric'] ?? ''})));
+          'name': title, 'url': d['url'] ?? '', 'artist': authorS,
+          'coverUrl': cover, 'lyric': d['lyric'] ?? ''})));
       } else {
         Navigator.push(context, MaterialPageRoute(builder: (_) => UrlVideoPlayer(
-          url: '${d['url'] ?? ''}', title: index != null ? '${chapters[index]['name'] ?? name}' : name,
+          url: '${d['url'] ?? ''}', title: title,
           headers: Map<String, String>.from(d['headers'] ?? d['header'] ?? {}))));
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('获取播放地址失败: $e'))); }
@@ -2669,21 +2677,21 @@ class _Ei extends State<EngineItemPage> {
         // 信息头
         Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 72, height: 96,
-            child: ('${widget.item['coverUrl'] ?? '') != '' ? Image.network('${widget.item['coverUrl']}', fit: BoxFit.cover,
+            child: cover.isNotEmpty ? Image.network(cover, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26)) : const ColoredBox(color: Colors.black26))),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            if ('${widget.item['author'] ?? ''}' != '') Text('${widget.item['author']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            if ('${widget.item['intro'] ?? ''}' != '') Padding(padding: const EdgeInsets.only(top: 4),
-              child: Text('${widget.item['intro']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey))),
+            if (authorS.isNotEmpty) Text(authorS, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            if (introS.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4),
+              child: Text(introS, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey))),
             Padding(padding: const EdgeInsets.only(top: 6), child: Text('${chapters.length} 个章节/选集 · 来自 ${EngineDirect.name}',
               style: const TextStyle(fontSize: 10, color: Colors.grey))),
           ])),
         ])),
         const Divider(height: 1),
         for (var i = 0; i < chapters.length; i++)
-          ListTile(dense: true, title: Text('${chapters[i]['name'] ?? '第${i + 1}集'}', style: const TextStyle(fontSize: 13)),
+          ListTile(dense: true, title: Text(() { final n = '${chapters[i]['name'] ?? ''}'; return n.isNotEmpty ? n : '第${i + 1}集'; }(), style: const TextStyle(fontSize: 13)),
             onTap: () => _open(i)),
       ]));
 }
