@@ -156,7 +156,7 @@ class _AiSec extends State<AiSection> {
     final p = await SharedPreferences.getInstance();
     final list = p.getStringList('ai_quick_models') ?? [];
     final e = '$prov|$model';
-    list.contains(e) ? list.remove(e) : (list.insert(0, e), list.length > 3 ? list.removeLast() : null);
+    if (list.contains(e)) { list.remove(e); } else { list.insert(0, e); if (list.length > 3) list.removeLast(); }
     await p.setStringList('ai_quick_models', list);
   }
   Future<String> _thinkLevel() async {
