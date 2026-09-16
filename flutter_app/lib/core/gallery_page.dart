@@ -43,7 +43,7 @@ class _Gp extends State<GalleryPage> {
       const SizedBox(height: 12),
       FilledButton.tonal(onPressed: () { PhotoManager.openSetting(); }, child: const Text('去授权')),
     ])));
-    return Column(children: [
+    return SafeArea(child: Column(children: [
       // 相册选择条
       SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
         for (final a in albums)
@@ -61,7 +61,7 @@ class _Gp extends State<GalleryPage> {
               child: AssetEntityImage(e, isOriginal: false, thumbnailSize: const ThumbnailSize.square(200), fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26)));
           })),
-    ]);
+    ]));
   }
 }
 
