@@ -18,8 +18,14 @@ jobs:
       - name: pub get
         working-directory: flutter_app
         run: flutter pub get
+      - name: decode release keystore
+        run: echo "${{ secrets.TH_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/thirdhub-release.jks"
       - name: build APK (arm64)
         working-directory: flutter_app/android
+        env:
+          TH_STORE_FILE: ${{ runner.temp }}/thirdhub-release.jks
+          TH_STORE_PASSWORD: ${{ secrets.TH_STORE_PASSWORD }}
+          TH_KEY_PASSWORD: ${{ secrets.TH_KEY_PASSWORD }}
         # 直接调 gradlew：flutter build apk 在某些环境找不到产物路径
         run: bash ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
       - name: read version
