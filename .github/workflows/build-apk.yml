@@ -22,7 +22,9 @@ jobs:
       - name: read version
         id: v
         working-directory: flutter_app
-        run: echo "ver=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//')" >> "$GITHUB_OUTPUT"
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version: ([0-9.]+).*/\1/')
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
       - name: rename artifact
         run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk "ThirdHub-${{ steps.v.outputs.ver }}.apk"
       - uses: actions/upload-artifact@v4
