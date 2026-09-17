@@ -124,9 +124,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   @override void initState() { super.initState(); _boot();
     _regSub = AiRegistry.onChange.listen((_) { if (mounted) setState(() {}); });
     // 切模块时静默收起抽屉(修复: 切模块回来侧边栏莫名展开/遮罩残留)
-    _navSub = RootNav.moduleTick.listen((_) {
-      if (RootNav.currentModuleKey != 'AI') _closeDrawerSilent();
-    });
+    RootNav.moduleTick.addListener(_onModuleTick);
     // 右上角「新会话」按钮触发
     AiSection.newSessionTick.addListener(_onNewSessionTick);
     scroll.addListener(() {
@@ -136,10 +134,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     });
   }
   @override void dispose() {
-    _regSub?.cancel(); _navSub?.cancel();
+    _regSub?.cancel();
+    RootNav.moduleTick.removeListener(_onModuleTick);
     AiSection.newSessionTick.removeListener(_onNewSessionTick);
     input.dispose(); scroll.dispose(); super.dispose(); }
-  StreamSubscription? _navSub;
+  void _onModuleTick() { if (RootNav.currentModuleKey != 'AI') _closeDrawerSilent(); }
   Future<void> _onNewSessionTick() async {
     final (p, m) = await AiRegistry.lastModel(); // 与启动逻辑一致: 沿用上次用的模型
     setState(() { session = AiStore.create(p, m); _closeDrawerSilent(); });

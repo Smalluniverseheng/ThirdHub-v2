@@ -783,7 +783,7 @@ class _Pf extends State<ProfilePage> {
   @override void initState() { super.initState(); AppSettings.loadFromBackend().then((_) { if (mounted) setState(() {}); }); }
 
 
-  : 渐变底 + 漂浮光点 + 头像环(卡片式头像框回归) ──
+  // ── 顶部个人大卡: 渐变底 + 漂浮光点 + 头像环(卡片式头像框回归) ──
   Widget _heroCard() {
     final logged = Cloud.loggedIn;
     final nick = AppSettings.nickname;
