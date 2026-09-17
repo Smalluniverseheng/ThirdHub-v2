@@ -2,6 +2,8 @@
 // 亮度/护眼/字号/字体/字色/背景/翻页(仿真/覆盖/平移/上下/无动画)/间距
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +43,10 @@ class ReaderCfg {
   static Color get bgColor => kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$1;
   static Color get fgColor => textColor != 0 ? Color(textColor) : kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$2;
   static bool get landscape => p.getBool('reader_landscape') ?? false;
+  static String get bgImage => p.getString('reader_bg_img') ?? '';
+  static double get bgImageAlpha => p.getDouble('reader_bg_img_alpha') ?? 0.25;
+  static bool get autoRead => p.getBool('reader_auto') ?? false;
+  static double get autoReadSec => p.getDouble('reader_auto_sec') ?? 6.0;
 
   // ── 书签(按书) ──
   static List<Map<String, dynamic>> bookmarks(String bookUrl) {
@@ -84,7 +90,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool get hasPrev => idx > 0;
   bool get hasNext => idx < widget.chapters.length - 1;
 
-  @override void initState() { super.initState(); _initTts(); _applyOrientation(); _boot(); }
+  @override void initState() { super.initState(); _initTts(); _applyOrientation(); _boot();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoRead()); }
   void _applyOrientation() {
     SystemChrome.setPreferredOrientations(ReaderCfg.landscape
       ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
@@ -100,7 +107,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   // ── 听书 ──
   StreamSubscription? _ttsSub;
   void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
-  @override void dispose() { _ttsSub?.cancel(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop();
+  @override void dispose() { _ttsSub?.cancel(); _autoTimer?.cancel(); _vScroll.dispose(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values); super.dispose(); }
 
   // 音量键翻页: MainActivity 原生拦截音量键并回传(只在阅读页启用, 不改变系统音量)
@@ -257,6 +264,78 @@ class _NovelReaderState extends State<NovelReaderPage> {
   }
 
   // ── 书签 ──
+  // ── 自动阅读: 翻页模式定时翻页 / 上下模式平滑滚动 ──
+  Timer? _autoTimer;
+  final ScrollController _vScroll = ScrollController();
+  void _syncAutoRead() {
+    _autoTimer?.cancel();
+    if (!ReaderCfg.autoRead) return;
+    _autoTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      if (!mounted || loading) return;
+      if (ReaderCfg.flip == 'vertical') {
+        if (!_vScroll.hasClients) return;
+        final max = _vScroll.position.maxScrollExtent;
+        // 速度: 秒数越大越慢 — 每帧前进 (每屏高度/sec) 的 1/60
+        final step = MediaQuery.of(context).size.height / (ReaderCfg.autoReadSec * 60);
+        final next = _vScroll.offset + step;
+        if (next >= max) { if (hasNext) { goChapter(idx + 1); } else { _autoTimer?.cancel(); } }
+        else _vScroll.jumpTo(next);
+      }
+    });
+    if (ReaderCfg.flip != 'vertical') {
+      // 翻页模式: 每 autoReadSec 秒翻一页
+      _autoTimer = Timer.periodic(Duration(milliseconds: (ReaderCfg.autoReadSec * 1000).round()), (_) {
+        if (!mounted || loading) return;
+        _pagerKey.currentState?.turn(true);
+      });
+    }
+  }
+
+  // ── 本章搜索 ──
+  void _searchSheet() {
+    final ctrl = TextEditingController();
+    showModalBottomSheet(context: context, isScrollControlled: true,
+      builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+        final q = ctrl.text.trim();
+        final hits = <int>[];
+        if (q.isNotEmpty) {
+          var from = 0;
+          while (hits.length < 100) {
+            final i = text.indexOf(q, from);
+            if (i < 0) break;
+            hits.add(i); from = i + q.length;
+          }
+        }
+        return Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(c2).viewInsets.bottom),
+          child: SafeArea(child: SizedBox(height: 420, child: Column(children: [
+            Padding(padding: const EdgeInsets.all(10), child: TextField(controller: ctrl, autofocus: true,
+              decoration: InputDecoration(hintText: '搜索本章内容', isDense: true, filled: true,
+                prefixIcon: const Icon(Icons.search, size: 18),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none)),
+              onChanged: (_) => setD(() {}))),
+            Expanded(child: q.isEmpty ? const Center(child: Text('输入关键词', style: TextStyle(color: Colors.grey)))
+              : hits.isEmpty ? const Center(child: Text('本章未找到', style: TextStyle(color: Colors.grey)))
+              : ListView(children: [ for (final h in hits)
+                  ListTile(dense: true,
+                    title: Text(text.substring((h - 18).clamp(0, text.length), (h + q.length + 18).clamp(0, text.length)).replaceAll('\n', ' '),
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                    onTap: () { Navigator.pop(c2); _jumpToChar(h); }) ])),
+          ]))));
+      }));
+  }
+
+  // 跳到字符位置: 翻页模式→跳到对应页; 上下模式→按比例滚动
+  void _jumpToChar(int charIdx) {
+    HapticFeedback.selectionClick();
+    if (ReaderCfg.flip == 'vertical') {
+      if (_vScroll.hasClients && text.isNotEmpty) {
+        _vScroll.jumpTo((_vScroll.position.maxScrollExtent * charIdx / text.length).clamp(0, double.infinity));
+      }
+    } else {
+      _pagerKey.currentState?.jumpToChar(charIdx);
+    }
+  }
+
   DateTime _lastBmAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _bmCooling() {
     final now = DateTime.now();
@@ -304,7 +383,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
           }
           return false;
         },
-        child: SingleChildScrollView(physics: const AlwaysScrollableScrollPhysics(),
+        child: SingleChildScrollView(controller: _vScroll, physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(ReaderCfg.margin), child: _paragraphs(text)));
     }
     final pages = _paginate(text, box);
@@ -387,6 +466,35 @@ class _NovelReaderState extends State<NovelReaderPage> {
           Row(children: [ rowLabel('其他'),
             TextButton(onPressed: () { Navigator.pop(c2); _spacingSheet(); },
               child: const Text('间距设置', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F)))),
+          ]),
+          // 自定义皮肤(背景图导入)
+          Row(children: [ rowLabel('皮肤'),
+            TextButton.icon(icon: const Icon(Icons.image_outlined, size: 16, color: Color(0xFF6B5D4F)),
+              label: Text(ReaderCfg.bgImage.isEmpty ? '导入背景图' : '更换背景图',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
+              onPressed: () async {
+                final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600);
+                if (x == null) return;
+                await p.setString('reader_bg_img', x.path);
+                save();
+              }),
+            if (ReaderCfg.bgImage.isNotEmpty) ...[
+              Expanded(child: Slider(value: ReaderCfg.bgImageAlpha, min: 0.05, max: 0.8,
+                activeColor: const Color(0xFFB59A6C),
+                onChanged: (v) { p.setDouble('reader_bg_img_alpha', v); save(); })),
+              GestureDetector(onTap: () { p.remove('reader_bg_img'); save(); },
+                child: const Icon(Icons.close, size: 18, color: Color(0xFF6B5D4F))),
+            ] else
+              const Expanded(child: Text('自定义图片做阅读背景', style: TextStyle(fontSize: 10, color: Colors.grey))),
+          ]),
+          // 自动阅读
+          Row(children: [ rowLabel('自动'),
+            const Text('自动阅读', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
+            Switch(value: ReaderCfg.autoRead, activeColor: const Color(0xFFB59A6C),
+              onChanged: (v) { p.setBool('reader_auto', v); _syncAutoRead(); save(); }),
+            if (ReaderCfg.autoRead) Expanded(child: Slider(value: ReaderCfg.autoReadSec, min: 2, max: 20,
+              activeColor: const Color(0xFFB59A6C),
+              onChanged: (v) { p.setDouble('reader_auto_sec', v); _syncAutoRead(); save(); })),
           ]),
           Row(children: [ rowLabel('屏幕'),
             const Text('横屏阅读', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
@@ -489,8 +597,20 @@ class _NovelReaderState extends State<NovelReaderPage> {
 
   @override Widget build(BuildContext c) {
     final bg = ReaderCfg.bgColor;
+    final hasBgImg = ReaderCfg.bgImage.isNotEmpty && File(ReaderCfg.bgImage).existsSync();
     final content = Scaffold(
       backgroundColor: bg,
+      body: hasBgImg ? Container(decoration: BoxDecoration(
+        image: DecorationImage(image: FileImage(File(ReaderCfg.bgImage)), fit: BoxFit.cover,
+          colorFilter: ColorFilter.mode(bg.withValues(alpha: 1 - ReaderCfg.bgImageAlpha), BlendMode.srcOver))),
+        child: _readerBody(c)) : _readerBody(c),
+    );
+  }
+
+  Widget _readerBody(BuildContext c) {
+    final bg = ReaderCfg.bgColor;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
       body: GestureDetector(
         onTapUp: (d) {
           final w = MediaQuery.of(c).size.width;
@@ -523,6 +643,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
               _barItem(Icons.list, '目录', _tocSheet),
               _barItem(Icons.bookmark_border, '书签', _bookmarkSheet),
+              _barItem(Icons.search, '搜索', _searchSheet),
               _barItem(Icons.headphones, TtsManager.state == TtsState.idle ? '听书' : '听书中', _ttsSheet),
               _barItem(Icons.nightlight_round, '夜间', _toggleNight),
               _barItem(Icons.settings_outlined, '设置', _settingsSheet),
@@ -530,7 +651,6 @@ class _NovelReaderState extends State<NovelReaderPage> {
               _barItem(Icons.skip_next, '下一章', hasNext ? () => goChapter(idx + 1) : null),
             ]))),
         ]))));
-    return content;
   }
 
   Widget _barItem(IconData ic, String t, VoidCallback? onTap) => GestureDetector(onTap: onTap,

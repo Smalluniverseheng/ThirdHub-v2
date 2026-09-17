@@ -511,7 +511,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.22.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.23.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -1966,7 +1966,7 @@ class _MPlay extends State<MusicPlayPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已从 ${_fmt(Duration(seconds: s))} 继续播放'), duration: const Duration(seconds: 2))); }
     }
   }
-  @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start();
+  @override void initState() { super.initState(); cur = widget.item; curSource = widget.sourceId; _loadQueue(); start(); _initEq();
     _posTimer = Timer.periodic(const Duration(seconds: 3), (_) => _savePos());
     // 记录音乐历史
     Book.recordHistory(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music'); }
@@ -2057,7 +2057,7 @@ class _MPlay extends State<MusicPlayPage> {
       // 歌词(尽力而为, 支持LRC同步)
       unawaited(_loadLyric(playUrl));
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override void dispose() { _posTimer?.cancel(); _sleepTimer?.cancel(); _savePos(); _coverPager.dispose(); _lrcScroll.dispose(); player.dispose(); super.dispose(); }
+  @override void dispose() { _posTimer?.cancel(); _sleepTimer?.cancel(); _eqSub?.cancel(); _savePos(); _coverPager.dispose(); _lrcScroll.dispose(); player.dispose(); super.dispose(); }
   String _fmt(Duration d) { final m = d.inMinutes.toString().padLeft(2, '0'); final s = (d.inSeconds % 60).toString().padLeft(2, '0'); return '$m:$s'; }
   IconData get _modeIcon => playMode == 'one' ? Icons.repeat_one : playMode == 'rand' ? Icons.shuffle : Icons.repeat;
   void _cycleMode() { final modes = ['seq', 'one', 'rand']; final n = (modes.indexOf(playMode) + 1) % 3;
@@ -2074,6 +2074,66 @@ class _MPlay extends State<MusicPlayPage> {
               onTap: () { Navigator.pop(c2); _switchTo(i); }))),
       ])));
   }
+  // ── 均衡器(Android audiofx, 挂播放会话) ──
+  static const _eqCh = MethodChannel('thirdhub/eq');
+  int? _eqSession; Map<String, dynamic>? _eqInfo; List<int> _eqLevels = [];
+  StreamSubscription? _eqSub;
+  void _initEq() {
+    _eqSub = player.androidAudioSessionIdStream.listen((sid) async {
+      _eqSession = sid;
+      if (sid == null) return;
+      try {
+        final r = await _eqCh.invokeMethod('attach', {'sessionId': sid});
+        if (r is Map && mounted) setState(() {
+          _eqInfo = Map<String, dynamic>.from(r);
+          _eqLevels = (r['levels'] as List).cast<int>();
+        });
+      } catch (_) {}
+    });
+  }
+
+  void _eqSheet() {
+    if (_eqInfo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('等待音频会话就绪…'), duration: Duration(seconds: 1)));
+      return;
+    }
+    final min = (_eqInfo!['min'] as num).toInt(), max = (_eqInfo!['max'] as num).toInt();
+    final freqs = (_eqInfo!['freqs'] as List).cast<num>();
+    final presets = (_eqInfo!['presets'] as List).cast<String>();
+    showModalBottomSheet(context: context, isScrollControlled: true,
+      builder: (c2) => StatefulBuilder(builder: (c2, setD) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('均衡器', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          SizedBox(height: 34, child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (var pi = 0; pi < presets.length; pi++)
+              Padding(padding: const EdgeInsets.only(right: 6), child: ActionChip(
+                label: Text(presets[pi], style: const TextStyle(fontSize: 11)),
+                onPressed: () async {
+                  final r = await _eqCh.invokeMethod('preset', {'index': pi});
+                  if (r is List) setD(() => _eqLevels = r.cast<int>());
+                  if (mounted) setState(() {});
+                })),
+          ])),
+          const SizedBox(height: 8),
+          SizedBox(height: 170, child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+            for (var b = 0; b < _eqLevels.length; b++)
+              Column(children: [
+                Expanded(child: RotatedBox(quarterTurns: 3, child: Slider(
+                  value: _eqLevels[b].clamp(min, max).toDouble(), min: min.toDouble(), max: max.toDouble(),
+                  onChanged: (v) {
+                    setD(() => _eqLevels[b] = v.round());
+                    _eqCh.invokeMethod('setBand', {'band': b, 'level': v.round()});
+                  }))),
+                Text(freqs[b] >= 1000 ? '${(freqs[b] / 1000).toStringAsFixed(1)}k' : '${freqs[b].round()}',
+                  style: const TextStyle(fontSize: 9, color: Colors.grey)),
+              ]),
+          ])),
+          Text('${min ~/ 100}.${(min.abs() % 100) ~/ 10}dB ~ +${max ~/ 100}dB · 拖滑杆或选预设', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        ])))));
+  }
+
   // ── 睡眠定时 ──
   DateTime? _sleepEnd; Timer? _sleepTimer;
   void _sleepSheet() {
@@ -2124,6 +2184,7 @@ class _MPlay extends State<MusicPlayPage> {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已收藏到音乐架'), duration: Duration(seconds: 1))); }),
       IconButton(icon: Icon(showLyric ? Icons.album : Icons.lyrics_outlined), tooltip: showLyric ? '封面' : '歌词',
         onPressed: () => _coverPager.animateToPage(showLyric ? 0 : 1, duration: const Duration(milliseconds: 240), curve: Curves.easeOut)),
+      IconButton(icon: Icon(Icons.equalizer, color: _eqInfo != null ? null : Colors.grey), tooltip: '均衡器', onPressed: _eqSheet),
       IconButton(icon: Icon(Icons.bedtime_outlined, color: _sleepEnd != null ? Theme.of(context).colorScheme.primary : null),
         tooltip: '睡眠定时', onPressed: _sleepSheet),
       IconButton(icon: const Icon(Icons.queue_music), tooltip: '播放队列', onPressed: _queueSheet)]),
@@ -3132,6 +3193,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.23.0', '阅读器完全体+音乐均衡器: ① 本地小说阅读器升级——txt/epub 本地书全部接入专业阅读器(横屏/长按段落/下拉书签/字体皮肤/翻页动画全继承, 自动记忆进度) ② 自定义皮肤导入: 相册选图做阅读背景+透明度滑杆 ③ 本章搜索: 关键词高亮定位, 翻页模式按字符跳页/滚动模式按比例跳 ④ 自动阅读: 上下模式平滑滚动(速度可调, 到底自动下一章), 翻页模式定时翻页 ⑤ 音乐均衡器: 真硬件级 audiofx 均衡器挂播放会话, 频段滑杆+官方预设(摇滚/流行/古典等)', ''),
   ('v4.22.0', '顶级播放器+浏览器批: ① 系统级"打开方式"——文件管理器/其他App打开 txt·epub·音频·视频·网页链接 或分享文本时, 本App 出现在系统选择列表并直达对应阅读器/播放器/浏览器 ② 小说阅读器: 横屏阅读开关 / 长按段落菜单(复制·朗读本段·从此段听书·加书签) / 顶部下拉加书签 / 书签列表 ③ 浏览器: 搜索引擎切换(必应/百度/谷歌/DDG/搜狗) / 广告拦截(域名拦截清单+页面去广告元素) / 外部链接直达开新标签 ④ 音乐播放器: 睡眠定时(含播完本曲) + 倍速 ⑤ 视频播放器: 双击左右±10s快进退 / 倍速 / 断点续播 / 横屏全屏 ⑥ 底部导航焕新: 浮动圆角胶囊+渐变选中胶囊+弹性图标动画+触感反馈', '里程碑'),
   ('v4.21.1', 'THP/1.0 协议前端补全: 发现层解析新格式 HELLO(实例ID/角色/名称) + BYE 优雅下线, 兼容旧草稿格式; 配套阅读引擎 engine-v1.2.0(THP 服务层)', ''),
   ('v4.21.0', '体验大修: ① 我的页回归头像大卡(渐变+漂浮光点+头像环+身份码胶囊) ② AI 抽屉带惯性甩动+速度判定+开关震动反馈, 修复切模块后侧边栏误展开(模块切换广播静默收起) ③ AI 右上角新会话快捷按钮 ④ 多语言真生效: 60 个模块名全入字典(英/日), 顶栏/底栏/模块抽屉/导航管理全部随语言切换 ⑤ 悬浮窗/折叠屏适配保持', '里程碑'),
@@ -3153,7 +3215,7 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.22.0';
+  static const String currentVersion = '4.23.0';
   static const int currentCode = 50510;
   static bool _checked = false;
 
@@ -3360,40 +3422,43 @@ class _Ln extends State<LocalNovelsPage> {
 
 class LocalNovelReader extends StatefulWidget { final Map<String, dynamic> book; const LocalNovelReader({super.key, required this.book}); @override State<LocalNovelReader> createState() => _Lnr(); }
 class _Lnr extends State<LocalNovelReader> {
-  List<String> chapters = []; int idx = 0; bool loading = true;
+  List<Map<String, String>> chapters = []; int idx = 0; bool loading = true;
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
+    List<String> raw;
     try {
       final bytes = await File(widget.book['path']).readAsBytes();
       String text;
       try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
-      chapters = LocalLib.splitChapters(text);
-    } catch (_) { chapters = ['读取失败']; }
+      raw = LocalLib.splitChapters(text);
+    } catch (_) { raw = ['读取失败']; }
+    chapters = [ for (var i = 0; i < raw.length; i++) {
+      final firstLine = raw[i].split('\n').first.trim();
+      {'name': firstLine.isEmpty ? '第${i + 1}节' : (firstLine.length > 30 ? '${firstLine.substring(0, 30)}…' : firstLine),
+       'url': '$i'};
+    } ];
+    // 恢复上次进度
+    final p = await SharedPreferences.getInstance();
+    idx = (p.getInt('progress_local_${widget.book['path']}') ?? 0).clamp(0, chapters.length - 1);
     setState(() => loading = false);
   }
   @override Widget build(BuildContext c) {
     if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final title = chapters[idx].split('\n').first.trim();
-    return Scaffold(appBar: AppBar(title: Text(title.length > 20 ? '${title.substring(0, 20)}…' : title, style: const TextStyle(fontSize: 14)),
-      actions: [IconButton(icon: const Icon(Icons.list), onPressed: () async {
-        final sel = await showModalBottomSheet<int>(context: c, builder: (c2) => ListView.builder(itemCount: chapters.length,
-          itemBuilder: (_, i) => ListTile(dense: true, selected: i == idx,
-            title: Text(chapters[i].split('\n').first.trim(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-            onTap: () => Navigator.pop(c2, i))));
-        if (sel != null) setState(() => idx = sel);
-      })]),
-      body: GestureDetector(
-        onHorizontalDragEnd: (d) { final v = d.primaryVelocity ?? 0;
-          if (v < -300 && idx < chapters.length - 1) setState(() => idx++);
-          else if (v > 300 && idx > 0) setState(() => idx--); },
-        child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-          child: Text(chapters[idx], style: const TextStyle(fontSize: 16, height: 1.8)))),
-      bottomNavigationBar: Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          TextButton(onPressed: idx > 0 ? () => setState(() => idx--) : null, child: const Text('上一章')),
-          Text('${idx + 1}/${chapters.length}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          TextButton(onPressed: idx < chapters.length - 1 ? () => setState(() => idx++) : null, child: const Text('下一章')),
-        ])));
+    return NovelReaderPage(
+      sourceId: 'local', chapters: chapters, index: idx,
+      bookName: widget.book['name'] ?? '', bookUrl: 'local_${widget.book['path']}',
+      fetchContent: (sid, url) async {
+        final i = int.tryParse(url) ?? 0;
+        final bytes = await File(widget.book['path']).readAsBytes();
+        String text;
+        try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
+        final raw = LocalLib.splitChapters(text);
+        return {'text': raw[i.clamp(0, raw.length - 1)], 'images': <String>[]};
+      },
+      onProgress: (i, name) async {
+        final p = await SharedPreferences.getInstance();
+        await p.setInt('progress_local_${widget.book['path']}', i);
+      });
   }
 }
 

@@ -22,6 +22,55 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+
+        // 均衡器: 挂到 just_audio 的音频会话
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/eq").setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "attach" -> {
+                        val sid = call.argument<Int>("sessionId") ?: 0
+                        equalizer?.release()
+                        equalizer = null
+                        if (sid > 0) {
+                            val eq = android.media.audiofx.Equalizer(0, sid)
+                            eq.enabled = true
+                            equalizer = eq
+                            val bands = eq.numberOfBands.toInt()
+                            val range = eq.bandLevelRange
+                            result.success(mapOf(
+                                "bands" to bands,
+                                "min" to range[0].toInt(),
+                                "max" to range[1].toInt(),
+                                "freqs" to (0 until bands).map { eq.getCenterFreq(it.toShort()) / 1000 },
+                                "levels" to (0 until bands).map { eq.getBandLevel(it.toShort()).toInt() },
+                                "presets" to (0 until eq.numberOfPresets).map { eq.getPresetName(it.toShort()) }
+                            ))
+                        } else result.success(null)
+                    }
+                    "setBand" -> {
+                        val eq = equalizer
+                        if (eq == null) { result.success(false); return@setMethodCallHandler }
+                        eq.setBandLevel((call.argument<Int>("band") ?: 0).toShort(),
+                            (call.argument<Int>("level") ?: 0).toShort())
+                        result.success(true)
+                    }
+                    "preset" -> {
+                        val eq = equalizer
+                        if (eq == null) { result.success(false); return@setMethodCallHandler }
+                        val idx = call.argument<Int>("index") ?: 0
+                        eq.usePreset(idx.toShort())
+                        val bands = eq.numberOfBands.toInt()
+                        result.success((0 until bands).map { eq.getBandLevel(it.toShort()).toInt() })
+                    }
+                    "off" -> { equalizer?.enabled = false; result.success(true) }
+                    "on" -> { equalizer?.enabled = true; result.success(true) }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                result.error("EQ_ERR", e.message, null)
+            }
+        }
+
         // 打开方式/分享: 捕获 VIEW / SEND 意图
         val intentCh = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/intent")
         pendingIntentPayload = extractIntent(intent)
@@ -62,6 +111,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingIntentPayload: Map<String, String?>? = null
+    private var equalizer: android.media.audiofx.Equalizer? = null
 
     private fun extractIntent(i: Intent?): Map<String, String?>? {
         i ?: return null
