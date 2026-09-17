@@ -115,4 +115,27 @@ class Cloud {
     } catch (_) {}
     return null;
   }
+
+  // ── 多前端数据共享(th_shared): 每用户/每类/每名单行, last-write-wins ──
+  static Future<void> syncUp(String kind, String name, Map<String, dynamic> payload) async {
+    if (!loggedIn) return;
+    try {
+      await http.post(Uri.parse('$base/rest/v1/th_shared'),
+        headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
+        body: jsonEncode({'user_id': userId, 'kind': kind, 'name': name,
+          'payload': payload, 'updated_at': DateTime.now().toUtc().toIso8601String()}));
+    } catch (_) {}
+  }
+
+  static Future<List<Map<String, dynamic>>> syncDown(String kind) async {
+    if (!loggedIn) return [];
+    try {
+      final r = await http.get(Uri.parse('$base/rest/v1/th_shared?user_id=eq.$userId&kind=eq.$kind&select=name,payload,updated_at'),
+        headers: _authHeaders);
+      if (r.statusCode == 200) {
+        return [for (final e in jsonDecode(utf8.decode(r.bodyBytes)) as List) Map<String, dynamic>.from(e)];
+      }
+    } catch (_) {}
+    return [];
+  }
 }

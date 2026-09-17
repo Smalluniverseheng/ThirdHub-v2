@@ -9,6 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'cloud.dart';
 
 class _Store2 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -133,7 +134,25 @@ class _Cal extends State<CalendarPage> {
   List<Map<String, dynamic>> events = []; // {date: yyyy-m-d, time: HH:mm, title}
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => events = await _Store2.list(widget.storageKey));
+  Future<void> _load() async {
+    setState(() async => events = await _Store2.list(widget.storageKey));
+    if (widget.storageKey == 'family_calendar_events') _pullCloud();
+  }
+
+  // 家庭日历: 登录后与云端同步(多台设备/家庭成员共享)
+  Future<void> _pullCloud() async {
+    try {
+      final remote = await Cloud.syncDown('family_calendar');
+      if (remote.isNotEmpty) {
+        final items = [for (final it in (remote.first['payload']?['events'] ?? [])) Map<String, dynamic>.from(it)];
+        events = items;
+        await _Store2.save(widget.storageKey, events);
+        if (mounted) setState(() {});
+      } else if (events.isNotEmpty) {
+        await Cloud.syncUp('family_calendar', 'main', {'events': events});
+      }
+    } catch (_) {}
+  }
 
   static String _d(DateTime d) => '${d.year}-${d.month}-${d.day}';
 
@@ -157,7 +176,8 @@ class _Cal extends State<CalendarPage> {
     events.add({'date': _d(day), 'time': '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
       'title': titleC.text.trim()});
     events.sort((a, b) => '${a['date']}${a['time']}'.compareTo('${b['date']}${b['time']}'));
-    await _Store2.save('calendar_events', events);
+    await _Store2.save(widget.storageKey, events);
+    if (widget.storageKey == 'family_calendar_events') Cloud.syncUp('family_calendar', 'main', {'events': events});
     _load();
   }
 
@@ -180,7 +200,9 @@ class _Cal extends State<CalendarPage> {
           leading: Text(e['time'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           title: Text(e['title'] ?? '', style: const TextStyle(fontSize: 14)),
           trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
-            onPressed: () { events.remove(e); _Store2.save('calendar_events', events).then((_) { _load(); setD(() {}); Navigator.pop(c2); }); })),
+            onPressed: () { events.remove(e); _Store2.save(widget.storageKey, events).then((_) {
+              if (widget.storageKey == 'family_calendar_events') Cloud.syncUp('family_calendar', 'main', {'events': events});
+              _load(); setD(() {}); Navigator.pop(c2); }); })),
       ])))));
   }
 

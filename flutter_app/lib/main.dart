@@ -387,7 +387,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.19.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.20.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -1404,7 +1404,22 @@ class _NSR extends State<NovelSearchResults> {
 class ShelfPage extends StatefulWidget { final String kind; final Widget Function(Book) builder; const ShelfPage({super.key, required this.kind, required this.builder}); @override State<ShelfPage> createState() => _Sh(); }
 class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
   @override void initState() { super.initState(); load(); }
-  Future<void> load() async { items = await Book.shelf(widget.kind); setState(() => loading = false); }
+  Future<void> load() async {
+    items = await Book.shelf(widget.kind);
+    // 云端书架同步读取: 后端资源库已下载的书(shelf_ 前缀)合并进书架, 换设备不丢
+    if (widget.kind == 'novel' && Api.base.isNotEmpty) {
+      try {
+        final r = await Api.get('/v1/library');
+        final cloudBooks = [for (final b in (r['data'] as List? ?? []))
+          if ((b['id'] as String? ?? '').startsWith('shelf_'))
+            Book(b['name'] ?? '', b['author'] ?? '', b['coverUrl'] ?? '', '', 'lib:${b['id']}', 'lib')];
+        for (final cb in cloudBooks) {
+          if (!items.any((x) => x.bookUrl == cb.bookUrl)) items.add(cb);
+        }
+      } catch (_) {}
+    }
+    setState(() => loading = false);
+  }
   Future<void> remove(Book b) async { final p = await SharedPreferences.getInstance();
     await Trash.add('shelf', b.name, {'kind': widget.kind, 'book': b.toJson()});
     items.removeWhere((x) => x.bookUrl == b.bookUrl);
@@ -1464,8 +1479,15 @@ class TocPage extends StatefulWidget { final Book book; const TocPage({super.key
 class _T extends State<TocPage> { List chapters = []; bool loading = true; int lastRead = -1;
   @override void initState() { super.initState(); Book.recordHistory(widget.book, 'novel'); load(); }
   Future<void> load() async { try {
-      final r = await Api.get('/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
-      chapters = r['data'] ?? []; } catch (e) {}
+      if (widget.book.bookUrl.startsWith('lib:')) {
+        // 后端资源库书: 全书已在库, 直接取目录
+        final r = await Api.get('/v1/library/book?id=${Uri.encodeComponent(widget.book.bookUrl.substring(4))}');
+        final chs = (r['data']?['chapters'] as List? ?? []);
+        chapters = [for (var i = 0; i < chs.length; i++) {'name': chs[i]['name'] ?? '第${i + 1}章', 'url': '$i', 'index': i}];
+      } else {
+        final r = await Api.get('/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
+        chapters = r['data'] ?? [];
+      } } catch (e) {}
     final p = await SharedPreferences.getInstance();
     lastRead = p.getInt('progress_${widget.book.bookUrl}') ?? -1;
     try { final r = await Api.get('/v1/reading-progress');
@@ -1497,6 +1519,11 @@ class NovelReadPage extends StatelessWidget {
   @override Widget build(BuildContext c) => NovelReaderPage(
     sourceId: sourceId, chapters: chapters, index: index, bookName: bookName, bookUrl: bookUrl,
     fetchContent: (sid, url) async {
+      if (bookUrl.startsWith('lib:')) {
+        final r = await Api.get('/v1/library/chapter?id=${Uri.encodeComponent(bookUrl.substring(4))}&index=${int.tryParse(url) ?? 0}');
+        final d = Map<String, dynamic>.from(r['data'] ?? {});
+        return {'content': d['text'] ?? d['content'] ?? ''};
+      }
       final r = await Api.get('/v1/content?sourceId=${Uri.encodeComponent(sid)}&url=${Uri.encodeComponent(url)}');
       return Map<String, dynamic>.from(r['data'] ?? {});
     },
@@ -2833,6 +2860,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.20.0', '云同步落地: 共享清单/家庭日历登录后自动多台设备同步(新建 th_shared 表, 后写赢合并); 书架云端同步读取——后端资源库已下载的书自动合并进书架(换设备不丢), 点开直接读(全书已在库); 修复家庭日历写入个人日历存储的错位 bug', '里程碑'),
   ('v4.19.0', '小模块做实第7-11批(共8个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地连播) / 短剧(竖屏连播) / 文件互传(局域网扫码秒传) / 家庭影院(本地视频库) / 家庭音乐库(本地音乐+随机播放) / 共享清单(多清单+勾选) / 家庭日历(独立家庭日程) / 共享相册(本地相册浏览+幻灯片) / 摄像头(网络摄像机实时画面) / 设备互联(局域网设备扫描); 短信读取改为自研通道(原 telephony 插件已无人维护且不兼容新构建链)', '里程碑'),
   ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
   ('v4.17.0', '小模块做实第一批: 计算器(四则/乘方/括号+历史) / 文本工具箱(JSON/Base64/URL/时间戳/字数统计) / 二维码(生成+保存PNG+历史) / 待办(分组+滑动删除) / 笔记(Markdown编辑预览+搜索) / 记账(分类+月度收支统计) / 剪贴板(收藏+置顶) — 全部点开即用, 不再是骨架页; 修复 AI 厂商中文名乱码(在线注册表强制 UTF-8 解码)', ''),
@@ -2850,8 +2878,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.19.0';
-  static const int currentCode = 50506;
+  static const String currentVersion = '4.20.0';
+  static const int currentCode = 50507;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

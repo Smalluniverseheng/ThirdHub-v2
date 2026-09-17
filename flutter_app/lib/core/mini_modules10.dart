@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'cloud.dart';
 
 class SharedListPage extends StatefulWidget { const SharedListPage({super.key}); @override State<SharedListPage> createState() => _Sl(); }
 class _Sl extends State<SharedListPage> {
@@ -21,11 +22,40 @@ class _Sl extends State<SharedListPage> {
     if (lists.isEmpty) lists['购物清单'] = [];
     current = lists.keys.first;
     setState(() {});
+    _pullCloud();
+  }
+
+  // 云端同步: 登录后, 同名清单云端覆盖本地(后写赢), 本地独有的推上去
+  String syncMsg = '';
+  Future<void> _pullCloud() async {
+    try {
+      final remote = await Cloud.syncDown('shared_list');
+      var changed = false;
+      for (final row in remote) {
+        final name = row['name'] as String;
+        final items = [for (final it in (row['payload']?['items'] ?? [])) Map<String, dynamic>.from(it)];
+        lists[name] = items;
+        changed = true;
+      }
+      for (final entry in lists.entries.toList()) {
+        if (remote.every((r) => r['name'] != entry.key)) {
+          await Cloud.syncUp('shared_list', entry.key, {'items': entry.value});
+        }
+      }
+      if (changed) {
+        if (!lists.containsKey(current)) current = lists.keys.first;
+        await _save();
+        if (mounted) setState(() => syncMsg = '已与云端同步');
+      }
+    } catch (_) {}
   }
 
   Future<void> _save() async {
     final p = await SharedPreferences.getInstance();
     await p.setString(_key, jsonEncode(lists));
+    if (lists.containsKey(current)) {
+      Cloud.syncUp('shared_list', current, {'items': lists[current]});
+    }
   }
 
   void _addItem() {
