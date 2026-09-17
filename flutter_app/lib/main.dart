@@ -4,6 +4,7 @@
 import 'dart:async'; import 'dart:convert'; import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,6 +39,8 @@ import 'core/files_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings.init();
+  // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
+  runApp(SplashApp(anim: AppSettings.splashAnim));
   await Cloud.init();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
@@ -123,6 +126,9 @@ class AppSettings {
   // 悬浮球: 吸附边缘(开=自动吸边, 关=自由拖动停哪放哪)
   static bool get orbSnap => p.getBool('orb_snap') ?? true;
   static Future<void> setOrbSnap(bool v) async { await p.setBool('orb_snap', v); await sync(); }
+  // 底部导航栏: 向下滚动自动收起(去文字, 高度缩1/3), 向上滚动展开(网页端 nav-folded 同款)
+  static bool get navAutoHide => p.getBool('nav_autohide') ?? true;
+  static Future<void> setNavAutoHide(bool v) async { await p.setBool('nav_autohide', v); await sync(); }
   static Offset get orbPos {
     final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
     return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
@@ -336,6 +342,121 @@ Future<String?> chooseDownloadTarget(BuildContext c) => showDialog<String>(conte
       child: const ListTile(dense: true, leading: Icon(Icons.sync), title: Text('都下'), subtitle: Text('本机+资源库各存一份', style: TextStyle(fontSize: 11)))),
   ]));
 
+
+// ── 开屏: 加载用(初始化完成即消失); 动画可在 我的→外观 关闭, 关闭后白屏加载(属正常) ──
+class SplashApp extends StatelessWidget {
+  final bool anim;
+  const SplashApp({super.key, required this.anim});
+  @override Widget build(BuildContext c) => MaterialApp(debugShowCheckedModeBanner: false,
+    home: anim ? const SplashPage() : const Scaffold(backgroundColor: Colors.white, body: SizedBox.expand()));
+}
+class SplashPage extends StatefulWidget { const SplashPage({super.key}); @override State<SplashPage> createState() => _Sp(); }
+class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
+  late final AnimationController ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..forward();
+  @override void dispose() { ac.dispose(); super.dispose(); }
+  @override Widget build(BuildContext c) {
+    const accent = Color(0xFF3B5BFD);
+    return Scaffold(backgroundColor: Colors.white, body: SafeArea(child: Column(children: [
+      const Spacer(),
+      FadeTransition(opacity: CurvedAnimation(parent: ac, curve: Curves.easeOut),
+        child: ScaleTransition(scale: Tween<double>(begin: 0.82, end: 1).animate(CurvedAnimation(parent: ac, curve: Curves.easeOutBack)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 84, height: 84, decoration: BoxDecoration(borderRadius: BorderRadius.circular(22),
+              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [accent, Color(0xFF7C6CFF)])),
+              child: const Icon(Icons.hub_outlined, color: Colors.white, size: 46)),
+            const SizedBox(height: 18),
+            const Text('ThirdHub', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1A1D26), letterSpacing: 0.5)),
+            const SizedBox(height: 6),
+            const Text('资源 · 引擎 · 互联', style: TextStyle(fontSize: 12, color: Color(0xFF9AA0AE))),
+          ]))),
+      const SizedBox(height: 40),
+      const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: accent)),
+      const Spacer(),
+      const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
+        Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        SizedBox(width: 10),
+        Text('v4.14.1', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+      ]),
+      const SizedBox(height: 18),
+    ])));
+  }
+}
+
+// ── 首启协议门: 未同意《用户服务协议》与《隐私政策》前不进入主界面(大厂同款) ──
+class ConsentGate extends StatefulWidget {
+  final bool locked, fresh;
+  const ConsentGate({super.key, required this.locked, required this.fresh});
+  @override State<ConsentGate> createState() => _Cg();
+}
+class _Cg extends State<ConsentGate> {
+  late bool agreed = AppSettings.p.getBool('agreed_terms_v1') ?? false;
+  @override Widget build(BuildContext c) {
+    if (!agreed) return ConsentPage(onAgree: () async {
+      await AppSettings.p.setBool('agreed_terms_v1', true);
+      if (mounted) setState(() => agreed = true);
+    });
+    return widget.locked ? const LockScreen() : widget.fresh ? const OnboardingPage() : const RootNav();
+  }
+}
+class ConsentPage extends StatelessWidget {
+  final VoidCallback onAgree;
+  const ConsentPage({super.key, required this.onAgree});
+  @override Widget build(BuildContext c) {
+    const accent = Color(0xFF3B5BFD);
+    Widget link(String label, String asset, String title) => GestureDetector(
+      onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => LegalDocPage(title: title, asset: asset))),
+      child: Text(label, style: const TextStyle(color: accent, fontWeight: FontWeight.w600, fontSize: 13.5, height: 1.6)));
+    return Scaffold(backgroundColor: const Color(0xFFF6F7FB), body: SafeArea(child: Center(child: SingleChildScrollView(
+      padding: const EdgeInsets.all(28),
+      child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420), child: Card(elevation: 0, color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: Padding(padding: const EdgeInsets.fromLTRB(24, 30, 24, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
+            gradient: const LinearGradient(colors: [accent, Color(0xFF7C6CFF)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+            child: const Icon(Icons.hub_outlined, color: Colors.white, size: 34)),
+          const SizedBox(height: 16),
+          const Text('用户协议与隐私政策', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          Wrap(alignment: WrapAlignment.center, children: [
+            const Text('欢迎使用 ThirdHub！请您仔细阅读并同意 ', style: TextStyle(fontSize: 13.5, height: 1.6)),
+            link('《用户服务协议》', 'assets/legal/terms.md', '用户服务协议'),
+            const Text(' 与 ', style: TextStyle(fontSize: 13.5, height: 1.6)),
+            link('《隐私政策》', 'assets/legal/privacy.md', '隐私政策'),
+            const Text('。', style: TextStyle(fontSize: 13.5, height: 1.6)),
+          ]),
+          const SizedBox(height: 10),
+          const Text('ThirdHub 是纯播放器：不收集、不上传您的任何个人信息；AI 密钥等敏感数据仅加密保存在本机。THP 引擎是用户自制的协议插件，与本软件相互独立。',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, height: 1.7, color: Color(0xFF6B7280))),
+          const SizedBox(height: 24),
+          SizedBox(width: double.infinity, child: FilledButton(onPressed: onAgree,
+            style: FilledButton.styleFrom(backgroundColor: accent, padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: const Text('同意并继续', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)))),
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: TextButton(onPressed: () => showDialog(context: c, builder: (d) => AlertDialog(
+            title: const Text('不同意并退出'),
+            content: const Text('若您不同意本协议与隐私政策，很遗憾将无法继续使用 ThirdHub。您可以在同意后随时回来。'),
+            actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('再想想')),
+              FilledButton(onPressed: () => SystemNavigator.pop(), child: const Text('退出应用'))])),
+            child: const Text('不同意并退出', style: TextStyle(color: Color(0xFF9AA0AE))))),
+        ]))))))));
+  }
+}
+
+// 内置法律文档阅读页(打包进 assets, 离线可读, 无需联网)
+class LegalDocPage extends StatelessWidget {
+  final String title, asset;
+  const LegalDocPage({super.key, required this.title, required this.asset});
+  @override Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: FutureBuilder<String>(future: rootBundle.loadString(asset),
+      builder: (c2, s) => s.hasData
+        ? Scrollbar(child: SingleChildScrollView(padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+            child: SelectableText(s.data!, style: const TextStyle(fontSize: 13.5, height: 1.75))))
+        : const Center(child: CircularProgressIndicator())));
+}
+
 class ThApp extends StatefulWidget {
   final bool ready, locked, fresh; final String base, token;
   const ThApp({super.key, required this.ready, required this.base, required this.token, this.locked = false, this.fresh = false});
@@ -371,7 +492,7 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(title: 'ThirdHub',
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
-      home: widget.locked ? const LockScreen() : widget.fresh ? const OnboardingPage() : const RootNav()); }
+      home: ConsentGate(locked: widget.locked, fresh: widget.fresh)); }
 }
 
 // 首启引导: 语言 → 外观 → 模块选择 → 账号(登录/注册/游客), 全程可跳过
@@ -1539,7 +1660,11 @@ class _MSR extends State<MusicSearchResults> {
 class MusicPlayPage extends StatefulWidget { final Map item; final String sourceId; const MusicPlayPage({super.key, required this.item, this.sourceId = ''}); @override State<MusicPlayPage> createState() => _MPlay(); }
 class _MPlay extends State<MusicPlayPage> {
   final AudioPlayer player = AudioPlayer(); bool loading = true; String? err; String lyric = '';
-  bool showLyric = false;
+  // LRC 歌词: (毫秒, 文本) 有序列表; 纯文本歌词则只有一行无法同步
+  List<({int ms, String text})> lrc = [];
+  final PageController _coverPager = PageController(); int _coverPage = 0; // 0封面 1歌词(左右滑动切换)
+  final ScrollController _lrcScroll = ScrollController(); int _lrcLine = -1;
+  bool get showLyric => _coverPage == 1;
   List<Map> queue = []; int qIdx = -1; late Map cur; late String curSource;
   Timer? _posTimer; bool _resumed = false;
   String get _posKey => 'mpos_${cur['url'] ?? cur['id'] ?? cur['name']}';
@@ -1579,8 +1704,51 @@ class _MPlay extends State<MusicPlayPage> {
   void _prev() { if (queue.isEmpty) return; _switchTo((qIdx - 1 + queue.length) % queue.length); }
   Future<void> _switchTo(int i) async {
     qIdx = i; cur = queue[i]; curSource = cur['sourceId'] as String? ?? '';
-    lyric = ''; setState(() { loading = true; err = null; });
+    lyric = ''; lrc = []; _lrcLine = -1; setState(() { loading = true; err = null; });
     await start();
+  }
+  // 解析 LRC: [mm:ss.xx] 时间戳行 → 有序 (ms, text); 无时间戳则返回空
+  static List<({int ms, String text})> _parseLrc(String raw) {
+    final out = <({int ms, String text})>[];
+    final re = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
+    for (final line in const LineSplitter().convert(raw)) {
+      final ms = re.allMatches(line).toList();
+      if (ms.isEmpty) continue;
+      final text = line.replaceAll(re, '').trim();
+      for (final m0 in ms) {
+        final mm = int.parse(m0.group(1)!), ss = int.parse(m0.group(2)!);
+        var frac = m0.group(3) ?? '0';
+        if (frac.length == 1) frac = frac + '00'; else if (frac.length == 2) frac = frac + '0';
+        out.add((ms: mm * 60000 + ss * 1000 + (int.tryParse(frac.substring(0, 3)) ?? 0), text: text));
+      }
+    }
+    out.sort((a, b) => a.ms.compareTo(b.ms));
+    return out;
+  }
+  // 歌词获取: 内联字段(lrc/lyric, 支持文本或URL) → 本地同名.lrc → 后端 /v1/music/lyric
+  Future<void> _loadLyric(String playUrl) async {
+    String raw = '';
+    try {
+      for (final k in ['lrc', 'lyric', 'lrcUrl']) {
+        final v = '${cur[k] ?? ''}'.trim();
+        if (v.isEmpty) continue;
+        if (v.startsWith('http')) { final r = await http.get(Uri.parse(v)); if (r.statusCode == 200) { raw = utf8.decode(r.bodyBytes); break; } }
+        else { raw = v; break; }
+      }
+      if (raw.isEmpty && (playUrl.startsWith('/') || playUrl.startsWith('file://'))) {
+        final path = playUrl.replaceFirst('file://', '');
+        final dot = path.lastIndexOf('.');
+        final lf = File('${dot > 0 ? path.substring(0, dot) : path}.lrc');
+        if (await lf.exists()) { final b = await lf.readAsBytes();
+          try { raw = utf8.decode(b); } catch (_) { raw = latin1.decode(b); } }
+      }
+      if (raw.isEmpty && curSource.isNotEmpty) {
+        final l = await Api.get('/v1/music/lyric?sourceId=${Uri.encodeComponent(curSource)}&item=${Uri.encodeComponent(jsonEncode(cur))}');
+        raw = l['data']?['lyric'] as String? ?? '';
+      }
+    } catch (_) {}
+    if (!mounted || raw.isEmpty) return;
+    setState(() { lyric = raw; lrc = _parseLrc(raw); });
   }
   Future<void> start() async {
     try {
@@ -1598,13 +1766,10 @@ class _MPlay extends State<MusicPlayPage> {
       await _restorePos();
       await player.play();
       setState(() => loading = false);
-      // 歌词(尽力而为)
-      if (curSource.isNotEmpty) {
-        try { final l = await Api.get('/v1/music/lyric?sourceId=${Uri.encodeComponent(curSource)}&item=${Uri.encodeComponent(jsonEncode(cur))}');
-          lyric = l['data']?['lyric'] as String? ?? ''; if (mounted) setState(() {}); } catch (_) {}
-      }
+      // 歌词(尽力而为, 支持LRC同步)
+      unawaited(_loadLyric(playUrl));
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override void dispose() { _posTimer?.cancel(); _savePos(); player.dispose(); super.dispose(); }
+  @override void dispose() { _posTimer?.cancel(); _savePos(); _coverPager.dispose(); _lrcScroll.dispose(); player.dispose(); super.dispose(); }
   String _fmt(Duration d) { final m = d.inMinutes.toString().padLeft(2, '0'); final s = (d.inSeconds % 60).toString().padLeft(2, '0'); return '$m:$s'; }
   IconData get _modeIcon => playMode == 'one' ? Icons.repeat_one : playMode == 'rand' ? Icons.shuffle : Icons.repeat;
   void _cycleMode() { final modes = ['seq', 'one', 'rand']; final n = (modes.indexOf(playMode) + 1) % 3;
@@ -1626,20 +1791,54 @@ class _MPlay extends State<MusicPlayPage> {
         onPressed: () async { await Book.add(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music');
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已收藏到音乐架'), duration: Duration(seconds: 1))); }),
       IconButton(icon: Icon(showLyric ? Icons.album : Icons.lyrics_outlined), tooltip: showLyric ? '封面' : '歌词',
-        onPressed: () => setState(() => showLyric = !showLyric)),
+        onPressed: () => _coverPager.animateToPage(showLyric ? 0 : 1, duration: const Duration(milliseconds: 240), curve: Curves.easeOut)),
       IconButton(icon: const Icon(Icons.queue_music), tooltip: '播放队列', onPressed: _queueSheet)]),
     body: SafeArea(child: Column(children: [
       const SizedBox(height: 12),
-      // 封面 / 歌词 切换
-      Expanded(child: showLyric
-        ? (lyric.isEmpty ? const Center(child: Text('暂无歌词', style: TextStyle(color: Colors.grey)))
-            : SingleChildScrollView(padding: const EdgeInsets.all(20),
-                child: Text(lyric, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.8))))
-        : Center(child: ClipRRect(borderRadius: BorderRadius.circular(16),
-            child: (cur['coverUrl'] ?? '') != ''
-              ? Image.network(Api.img(cur['coverUrl']), width: 230, height: 230, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 140))
-              : const Icon(Icons.music_note, size: 140)))),
+      // 封面 ↔ 歌词: 左右滑动切换(落雪/venera 同款手势)
+      Expanded(child: Column(children: [
+        Expanded(child: PageView(controller: _coverPager,
+          onPageChanged: (i) => setState(() => _coverPage = i),
+          children: [
+            // 封面页
+            Center(child: ClipRRect(borderRadius: BorderRadius.circular(16),
+              child: (cur['coverUrl'] ?? '') != ''
+                ? Image.network(Api.img(cur['coverUrl']), width: 230, height: 230, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 140))
+                : const Icon(Icons.music_note, size: 140))),
+            // 歌词页: LRC同步高亮+自动滚动; 无时间戳则整段展示
+            lyric.isEmpty ? const Center(child: Text('暂无歌词', style: TextStyle(color: Colors.grey)))
+            : lrc.isEmpty ? SingleChildScrollView(padding: const EdgeInsets.all(20),
+                child: Text(lyric, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, height: 1.8)))
+            : StreamBuilder<Duration>(stream: player.positionStream, builder: (_, ps) {
+                final pos = (ps.data ?? Duration.zero).inMilliseconds;
+                var curLine = 0;
+                for (var i = 0; i < lrc.length; i++) { if (lrc[i].ms <= pos) curLine = i; else break; }
+                if (curLine != _lrcLine) { _lrcLine = curLine;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_lrcScroll.hasClients) _lrcScroll.animateTo((curLine * 40.0 - 120).clamp(0.0, _lrcScroll.position.maxScrollExtent).toDouble(),
+                      duration: const Duration(milliseconds: 300), curve: Curves.easeOut); });
+                }
+                final scheme = Theme.of(c).colorScheme;
+                return ListView.builder(controller: _lrcScroll, padding: const EdgeInsets.symmetric(vertical: 140, horizontal: 16),
+                  itemCount: lrc.length, itemExtent: 40, itemBuilder: (_, i) {
+                    final on = i == curLine;
+                    return Center(child: AnimatedDefaultTextStyle(duration: const Duration(milliseconds: 200),
+                      style: TextStyle(fontSize: on ? 16 : 13, height: 1.4,
+                        fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                        color: on ? scheme.primary : scheme.onSurface.withValues(alpha: 0.45)),
+                      child: Text(lrc[i].text.isEmpty ? '·' : lrc[i].text, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)));
+                  });
+              }),
+          ])),
+        // 页点指示
+        Padding(padding: const EdgeInsets.only(bottom: 4), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          for (var i = 0; i < 2; i++) AnimatedContainer(duration: const Duration(milliseconds: 200),
+            width: _coverPage == i ? 16 : 6, height: 6, margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(3),
+              color: _coverPage == i ? Theme.of(c).colorScheme.primary : Colors.grey.withValues(alpha: 0.35))),
+        ])),
+      ])),
       const SizedBox(height: 8),
       Text(cur['name'] ?? '', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
       Text(cur['artist'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
@@ -1878,13 +2077,20 @@ class RootNav extends StatefulWidget {
 class _RootNavState extends State<RootNav> {
   List<String> enabled = ['我的'];
   int idx = 0;
+  bool _navCollapsed = false; // 滚动收起(去文字, 缩到 ~1/3 高)
   final PageController _page = PageController();
   final ScrollController _navScroll = ScrollController();
+  // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
+  static const _noAppBarModules = {'浏览器', '相册'};
+  // 全沉浸模块: 连底部导航也隐藏(屏幕留给正文, 通过模块宫格返回)
+  static const _noNavModules = {'浏览器'};
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
+    // 浏览器等沉浸页的"切换模块"入口
+    BrowserHooks.openModules = (c) => NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
   void _onNavChanged() { _load(); }
-  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); _page.dispose(); _navScroll.dispose(); super.dispose(); }
+  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); BrowserHooks.openModules = null; _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
@@ -1906,11 +2112,22 @@ class _RootNavState extends State<RootNav> {
     ScreenFit.update(c);
     final key = enabled[idx];
     final mod = kModules[key]!;
+    final hideBar = _noAppBarModules.contains(key);   // 顶栏: 该模块自带页头则隐藏
+    final hideNav = _noNavModules.contains(key);      // 底栏: 沉浸页不显示
+    final kbOpen = MediaQuery.viewInsetsOf(c).bottom > 100; // 键盘弹出时底栏让位(网页端 kb-open 同款)
     // 模块滑动隔离: 禁止在模块间左右滑动, 各模块内部手势互不干扰
-    final body = PageView(controller: _page, onPageChanged: (i) => setState(() => idx = i),
-      physics: const NeverScrollableScrollPhysics(),
-      children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]);
-    final appBar = AppBar(title: Text(mod.name), actions: [
+    // 滚动感知: 正文向下滚→底栏收起(网页端 nav-folded 同款), 向上滚→展开
+    final body = NotificationListener<UserScrollNotification>(
+      onNotification: (n) {
+        if (!AppSettings.navAutoHide || hideNav) return false;
+        final collapse = n.direction == ScrollDirection.forward;
+        if (collapse != _navCollapsed && mounted) setState(() => _navCollapsed = collapse);
+        return false;
+      },
+      child: PageView(controller: _page, onPageChanged: (i) => setState(() { idx = i; _navCollapsed = false; }),
+        physics: const NeverScrollableScrollPhysics(),
+        children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
+    final appBar = hideBar ? null : AppBar(title: Text(mod.name), actions: [
       if (mod.localKind != null) ...[
         IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
           onPressed: () => Navigator.push(c, smoothRoute(localLibPage(mod.localKind!)))),
@@ -1945,10 +2162,13 @@ class _RootNavState extends State<RootNav> {
     }
     if (navStyle == 'fold') {
       return Scaffold(appBar: appBar, body: body,
-        bottomNavigationBar: _foldedNavBar());
+        bottomNavigationBar: hideNav ? null : _foldedNavBar());
     }
     return Scaffold(appBar: appBar, body: body,
-      bottomNavigationBar: _scrollNavBar());
+      bottomNavigationBar: (hideNav || kbOpen) ? null
+        : AnimatedSize(duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _scrollNavBar(collapsed: _navCollapsed && AppSettings.navAutoHide)));
   }
 
   // 折叠导航: 只显示当前模块细条, 点按弹出模块宫格
@@ -1968,30 +2188,34 @@ class _RootNavState extends State<RootNav> {
   }
 
   // 完全体同款底栏: 模块多→横向自由滑动, "我的"永远固定在最右端
-  Widget _scrollNavBar() {
+  // collapsed=滚动收起态: 去掉文字只留图标, 高度 60→34 (约省1/3, 网页端 nav-folded 同款动画)
+  Widget _scrollNavBar({bool collapsed = false}) {
     final mineIdx = enabled.indexOf('我的');
     final scrollKeys = [ for (var i = 0; i < enabled.length; i++) if (i != mineIdx) i ];
     final scheme = Theme.of(context).colorScheme;
+    final barH = collapsed ? 34.0 : 60.0;
     Widget item(int i, {double? width}) {
       final k = enabled[i]; final m = kModules[k]!; final on = i == idx;
       final fg = on ? scheme.primary : scheme.onSurface.withValues(alpha: 0.55);
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _go(i),
-        child: SizedBox(width: width, height: 60,
+        child: SizedBox(width: width, height: barH,
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             AnimatedContainer(duration: const Duration(milliseconds: 150), curve: Curves.easeOut,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: collapsed ? 1 : 3),
               decoration: on ? BoxDecoration(color: scheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)) : null,
-              child: Icon(m.icon, size: 21, color: fg)),
-            const SizedBox(height: 2),
-            Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
+              child: Icon(m.icon, size: collapsed ? 19 : 21, color: fg)),
+            if (!collapsed) ...[
+              const SizedBox(height: 2),
+              Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
+            ],
           ])));
     }
-    return Material(elevation: 8, color: Theme.of(context).colorScheme.surface,
-      child: SafeArea(top: false, child: SizedBox(height: 60, child: LayoutBuilder(builder: (ctx, box) {
-        const itemW = 76.0;
+    return Material(elevation: collapsed ? 2 : 8, color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(top: false, child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
+        final itemW = collapsed ? 52.0 : 76.0;
         final mineW = itemW;
         final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
         // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
@@ -2112,22 +2336,38 @@ Future<int> importLocal(String kind) {
   }
 }
 
-// 底部导航自定义(像网站: 勾选哪些模块显示在底部)
+// 底部导航自定义(像网站: 勾选哪些模块 + 按住拖动调整顺序)
 Future<void> showNavSettings(BuildContext c) async {
   final p = await SharedPreferences.getInstance();
   final saved = p.getStringList('nav_modules') ?? ['我的'];
-  final sel = saved.toSet();
+  // 顺序: 已保存顺序在前(保持用户排序), 未勾选的模块排在后面
+  final order = <String>[ ...saved.where((k) => kModules.containsKey(k)),
+    ...kModules.keys.where((k) => !saved.contains(k)) ];
+  final sel = saved.where((k) => kModules.containsKey(k)).toSet();
   await showDialog(context: c, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
     title: const Text('底部导航栏'),
-    content: SizedBox(width: 300, child: ListView(shrinkWrap: true, children: [
-      const Text('勾选要显示在底部导航的模块', style: TextStyle(fontSize: 12, color: Colors.grey)),
-      for (final e in kModules.entries)
-        CheckboxListTile(dense: true, value: sel.contains(e.key),
-          title: Row(children: [Icon(e.value.icon, size: 18), const SizedBox(width: 8), Text(e.key)]),
-          onChanged: e.key == '我的' ? null : (v) => setD(() { v == true ? sel.add(e.key) : sel.remove(e.key); })),
+    content: SizedBox(width: 320, height: 420, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('勾选显示模块 · 按住 ≡ 拖动调整顺序', style: TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 6),
+      Expanded(child: ReorderableListView(buildDefaultDragHandles: false,
+        onReorder: (oldI, newI) => setD(() {
+          if (newI > oldI) newI--;
+          final it = order.removeAt(oldI); order.insert(newI, it);
+        }),
+        children: [ for (var i = 0; i < order.length; i++) () {
+          final k = order[i]; final e = kModules[k]!;
+          return Row(key: ValueKey(k), children: [
+            Checkbox(value: sel.contains(k), onChanged: k == '我的' ? null : (v) => setD(() { v == true ? sel.add(k) : sel.remove(k); })),
+            Icon(e.icon, size: 18), const SizedBox(width: 8),
+            Expanded(child: Text(k, style: TextStyle(fontSize: 14, color: sel.contains(k) ? null : Colors.grey))),
+            ReorderableDragStartListener(index: i, child: const Padding(padding: EdgeInsets.all(8),
+              child: Icon(Icons.drag_indicator, size: 18, color: Colors.grey))),
+          ]);
+        }() ]),
+      ),
     ])),
     actions: [FilledButton(onPressed: () async {
-      final list = kModules.keys.where((k) => sel.contains(k)).toList();
+      final list = order.where((k) => sel.contains(k)).toList(); // 保存=勾选模块按拖动后顺序
       if (!list.contains('我的')) list.add('我的');
       await p.setStringList('nav_modules', list);
       RootNav.navTick.value++; // 即时生效, 无需重启
@@ -2320,19 +2560,22 @@ class ProductDetailPage extends StatelessWidget {
         onPressed: () => Updater.downloadProduct(c, url, name)))));
 }
 
-// 历史版本更新记录(与 FEATURES.md 同步)
+// 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
-  ('v5.3.0', '更新误判修复 + 后台下载/安装包回收站 + 下载中心详情与历史 + 底部导航栏/折叠/悬浮球 + 语言即时生效 + AI抽屉防误滑/快捷模型/空会话清理 + 音量键翻页 + 通知栏音乐控制 + 公告系统通知'),
-  ('v5.2.0', 'venera漫画引擎App + 引擎漫画阅读器(条漫/翻页) + 音乐/视频断点续播 + 音乐收藏 + 后端依赖随包修复'),
-  ('v5.1.0', '引擎直连漫画阅读器 + 下载中心4件套 + server依赖内置'),
-  ('v5.0.0', 'AI思考链 + 消息排队 + TH-Harness本机工具 + 技能注入 + 上下文管理 + 相册/文件/浏览器模块 + 引擎直连 + THP v1.1'),
-  ('v4.8.0', 'AI模型六分类 + 排行榜 + 中转站/Key自动识别 + 统一密钥管理 + 联网搜索 + MCP + 导航即时生效'),
+  ('v4.14.1', 'THP/1.0协议漏洞修复(blob乱序写入/sha256校验/Range校验/content:batch NDJSON/关停BYE广播/双栈IPv6) + 模块介绍页 + 历史版本下载', '重构'),
+  ('v4.14.0', 'THP/1.0正式协议全量落地(发现/搜索/目录/内容/订阅/大文件/作业 25项全通过) + 后端模块化重构 + 首启协议弹窗(隐私政策/服务条款) + 加载式开屏可关动画 + 开屏IPv6标识', '里程碑'),
+  ('v4.13.0', '相册权限修复(真正能打开系统相册) + 音乐通知栏服务补全 + LRC同步歌词左右滑动 + 底部导航拖动排序 + 滚动自动收起导航栏(省1/3空间) + 浏览器/相册沉浸布局 + 浏览器全屏模式', ''),
+  ('v4.12.0', '更新误判修复 + 后台下载/安装包回收站 + 下载中心详情与历史 + 底部导航栏/折叠/悬浮球 + 语言即时生效 + AI抽屉防误滑/快捷模型/空会话清理 + 音量键翻页 + 通知栏音乐控制 + 公告系统通知', ''),
+  ('v4.11.0', 'venera漫画引擎App + 引擎漫画阅读器(条漫/翻页) + 音乐/视频断点续播 + 音乐收藏 + 后端依赖随包修复', ''),
+  ('v4.10.0', '引擎直连漫画阅读器 + 下载中心4件套 + server依赖内置', ''),
+  ('v4.9.0', 'AI思考链 + 消息排队 + TH-Harness本机工具 + 技能注入 + 上下文管理 + 相册/文件/浏览器模块 + 引擎直连 + THP v1.1', '里程碑'),
+  ('v4.8.0', 'AI模型六分类 + 排行榜 + 中转站/Key自动识别 + 统一密钥管理 + 联网搜索 + MCP + 导航即时生效', ''),
 ];
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '5.3.0';
-  static const int currentCode = 50300;
+  static const String currentVersion = '4.14.1';
+  static const int currentCode = 50501;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -2733,14 +2976,45 @@ class _Da extends State<DownloadAppsPage> {
       ],
       const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
         child: Text('历史版本更新记录', style: TextStyle(fontSize: 12, color: Colors.grey))),
-      Card(child: Column(children: [
-        for (final v in kChangelog)
-          ListTile(dense: true, leading: const Icon(Icons.history, size: 18),
-            title: Text(v.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            subtitle: Text(v.$2, style: const TextStyle(fontSize: 11))),
-      ])),
+      FutureBuilder<Map<String, dynamic>?>(future: Cloud.latestManifest('app'),
+        builder: (c2, snap) {
+          final m = snap.data;
+          final latestVer = (m?['version'] as String?) ?? '';
+          final latestUrl = (m?['url'] as String?) ?? '';
+          return Card(child: Column(children: [
+            for (var i = 0; i < kChangelog.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 56),
+              Builder(builder: (c3) {
+                final v = kChangelog[i];
+                final isCurrent = v.$1 == 'v${Updater.currentVersion}';
+                final isLatestAvail = latestVer.isNotEmpty && v.$1 == 'v$latestVer'
+                    && Updater._verCmp(latestVer, Updater.currentVersion) > 0;
+                return ListTile(dense: true, leading: const Icon(Icons.history, size: 18),
+                  title: Row(children: [
+                    Text(v.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    if (i == 0) _tag('最新', Colors.blueAccent),
+                    if (isCurrent) _tag('当前版本', Colors.green),
+                    if (v.$3.isNotEmpty) _tag(v.$3, v.$3 == '重构' ? Colors.deepOrange : Colors.purple),
+                  ]),
+                  subtitle: Text(v.$2, style: const TextStyle(fontSize: 11)),
+                  trailing: isLatestAvail
+                    ? FilledButton.tonal(style: FilledButton.styleFrom(visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10)),
+                        onPressed: () => Updater.downloadProduct(c3, latestUrl, 'ThirdHub-$latestVer.apk'),
+                        child: const Text('下载此版本', style: TextStyle(fontSize: 11)))
+                    : null);
+              }),
+            ],
+          ]));
+        }),
     ]));
 }
+
+Widget _tag(String t, Color c) => Container(margin: const EdgeInsets.only(left: 6),
+  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+  decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4),
+    border: Border.all(color: c.withValues(alpha: 0.4), width: 0.5)),
+  child: Text(t, style: TextStyle(fontSize: 9, color: c, fontWeight: FontWeight.w600)));
 
 // ── 子页面: 个性化(语言/主题/强调色/开屏动画) ──
 class AppearancePage extends StatefulWidget { const AppearancePage({super.key}); @override State<AppearancePage> createState() => _Ape(); }
@@ -2776,7 +3050,17 @@ class _Ape extends State<AppearancePage> {
                 color: Color(col), shape: BoxShape.circle, border: AppSettings.accentColor == col ? Border.all(color: Colors.white, width: 2) : null))) ])),
         const Divider(height: 1, indent: 56),
         SwitchListTile(secondary: const Icon(Icons.movie_filter_outlined, size: 20), title: Text(tr('开屏动画'), style: const TextStyle(fontSize: 14)),
-          value: AppSettings.splashAnim, onChanged: (v) => AppSettings.setSplashAnim(v).then((_) => setState(() {}))),
+          value: AppSettings.splashAnim, onChanged: (v) async {
+            if (!v) {
+              final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+                title: const Text('关闭开屏动画'),
+                content: const Text('关闭后启动时将白屏加载（应用仍在正常初始化），属正常现象，并非卡顿。开屏动画仅用于展示加载过程，本身不会延长启动时间。'),
+                actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+                  FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('仍然关闭'))]));
+              if (ok != true) return;
+            }
+            await AppSettings.setSplashAnim(v); if (mounted) setState(() {});
+          }),
       ])),
     ]));
 }
@@ -2805,6 +3089,12 @@ class _Ns extends State<NavSettingsPage> {
           subtitle: const Text('关闭后可自由拖动, 停哪放哪', style: TextStyle(fontSize: 11)),
           trailing: Switch(value: AppSettings.orbSnap,
             onChanged: (v) => AppSettings.setOrbSnap(v).then((_) => setState(() {})))),
+        const Divider(height: 1, indent: 56),
+        SwitchListTile(secondary: const Icon(Icons.unfold_less, size: 20),
+          title: const Text('滚动时自动收起导航栏', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('向下滚动收起为图标条(省约1/3高度), 向上滚动展开', style: TextStyle(fontSize: 11)),
+          value: AppSettings.navAutoHide,
+          onChanged: (v) => AppSettings.setNavAutoHide(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: const TextStyle(fontSize: 14)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -2868,18 +3158,45 @@ class CloudPage extends StatelessWidget { const CloudPage({super.key});
     ]));
 }
 
-// ── 子页面: 关于 ──
+// ── 子页面: 关于(模块介绍 + 协议入口 + 致谢) ──
 class AboutPage extends StatelessWidget { const AboutPage({super.key});
+  static const _features = {
+    '搜索': '全局聚合搜索 · 同时检索资源库与局域网引擎 · 结果按模块分类',
+    '小说': '书架/历史/发现 · 沉浸阅读器(字体/主题/翻页) · 音量键翻页 · 本地导入',
+    '漫画': '条漫/翻页双模式 · 引擎直连阅读 · 本地漫画导入',
+    '视频': '片库/历史/发现 · 断点续播 · 选集连播 · 本地播放',
+    '音乐': '歌单/收藏/历史 · 通知栏控制 · LRC同步歌词 · 断点续播',
+    'AI': '多模型六分类 · 统一密钥库 · 思考链 · 联网搜索 · MCP · 消息排队',
+    '直播': '直播源聚合播放 · 低延迟',
+    '浏览器': '内置网页浏览 · 全屏模式 · 沉浸式布局',
+    '相册': '系统相册浏览 · 一键备份到资源库',
+    '文件': '本地文件管理 · 与资源库互通 · 回收站',
+    '我的': '账号云端同步 · 个性化外观 · 导航定制 · 版本更新',
+  };
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('关于'))),
     body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
       Card(child: Column(children: [
-        ListTile(leading: const Icon(Icons.menu_book_outlined, size: 20), title: Text(tr('使用指南'), style: const TextStyle(fontSize: 14)), enabled: false),
+        const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Align(alignment: Alignment.centerLeft,
+            child: Text('模块介绍', style: TextStyle(fontSize: 12, color: Colors.grey)))),
+        for (final e in kModules.entries)
+          if (_features.containsKey(e.key))
+            ListTile(dense: true, leading: Icon(e.value.icon, size: 20),
+              title: Text(e.value.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: Text(_features[e.key]!, style: const TextStyle(fontSize: 11))),
+      ])),
+      Card(child: Column(children: [
+        ListTile(leading: const Icon(Icons.privacy_tip_outlined, size: 20), title: const Text('隐私政策', style: TextStyle(fontSize: 14)),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const LegalDocPage(title: '隐私政策', asset: 'assets/legal/privacy.md')))),
+        const Divider(height: 1, indent: 56),
+        ListTile(leading: const Icon(Icons.description_outlined, size: 20), title: const Text('用户服务协议', style: TextStyle(fontSize: 14)),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const LegalDocPage(title: '用户服务协议', asset: 'assets/legal/terms.md')))),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: const TextStyle(fontSize: 14)),
           subtitle: const Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 11))),
       ])),
       const SizedBox(height: 12),
-      Center(child: Text('ThirdHub v${Updater.currentVersion}', style: const TextStyle(fontSize: 11, color: Colors.grey))),
+      Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6', style: const TextStyle(fontSize: 11, color: Colors.grey))),
     ]));
 }
 
@@ -3084,7 +3401,13 @@ class NavOrb extends StatefulWidget {
         GridView.count(shrinkWrap: true, crossAxisCount: cols, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.1,
           children: [ for (var i = 0; i < enabled.length; i++) () {
             final m = kModules[enabled[i]]!; final on = i == cur;
-            return InkWell(borderRadius: BorderRadius.circular(14), onTap: () { Navigator.pop(c2); onGo(i); },
+            // 网页端 vb-pop 同款: 逐格上移+缩放入场
+            return TweenAnimationBuilder<double>(tween: Tween(begin: 0, end: 1),
+              duration: Duration(milliseconds: 180 + i * 30), curve: Curves.easeOutCubic,
+              builder: (_, v, child) => Opacity(opacity: v,
+                child: Transform.translate(offset: Offset(0, 10 * (1 - v)),
+                  child: Transform.scale(scale: 0.97 + 0.03 * v, child: child))),
+              child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () { Navigator.pop(c2); onGo(i); },
               child: Container(decoration: BoxDecoration(
                   color: on ? Theme.of(c2).colorScheme.primaryContainer : null,
                   borderRadius: BorderRadius.circular(14)),
@@ -3092,7 +3415,7 @@ class NavOrb extends StatefulWidget {
                   Icon(m.icon, size: 24, color: on ? Theme.of(c2).colorScheme.primary : null),
                   const SizedBox(height: 4),
                   Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ])));
+                ]))));
           }() ]),
       ])));
     });
