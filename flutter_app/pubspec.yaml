@@ -1,1 +1,45 @@
 name: thirdhub
+description: ThirdHub 纯播放器前端
+publish_to: 'none'
+version: 4.14.0+50500
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  video_player: ^2.9.1
+  chewie: ^1.8.5
+  just_audio: ^0.9.40
+  flutter_tts: ^4.2.0
+  photo_manager: ^3.2.0
+  photo_manager_image_provider: ^2.1.0
+  webview_flutter: ^4.8.0
+  image: ^4.2.0
+  url_launcher: ^6.3.0
+  file_picker: ^8.0.0
+  open_filex: ^4.5.0
+  path_provider: ^2.1.4
+  archive: ^3.6.0
+  cryptography: ^2.7.0
+  share_plus: ^10.0.2
+  device_info_plus: ^11.1.0
+  just_audio_background: ^0.0.1-beta.13
+  flutter_local_notifications: ^17.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/legal/
+
+dependency_overrides:
+  # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，
+  # 与当前 Flutter stable 内置版本不兼容，锁回 9.5.0
+  objective_c: 9.5.0
