@@ -40,7 +40,7 @@ class _He extends State<HealthPage> {
           decoration: const InputDecoration(labelText: '舒张压(低压)', isDense: true)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]));
     if (ok != true) return;
     final a = double.tryParse(v1.text.trim());
     if (a == null || a <= 0) return;

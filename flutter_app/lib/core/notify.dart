@@ -31,7 +31,8 @@ class Notify {
         tz.TZDateTime.from(when, tz.local),
         const NotificationDetails(android: AndroidNotificationDetails('reminder', '提醒',
           importance: Importance.high, priority: Priority.high)),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle);
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime);
     } catch (_) {}
   }
   static Future<void> cancel(int id) async { try { await _plugin.cancel(id); } catch (_) {} }
