@@ -388,7 +388,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.21.1', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.21.2', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -2966,8 +2966,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.21.1';
-  static const int currentCode = 50509;
+  static const String currentVersion = '4.21.2';
+  static const int currentCode = 50510;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
