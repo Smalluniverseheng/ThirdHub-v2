@@ -34,6 +34,8 @@ const fingerprint = crypto.createHash('sha256')
 const dgram = require('dgram');
 const THP_PORT = 19527;
 const thp1 = require('./thp1');
+const THP_CAPS_CSV = thp1.CAPS.join(','); // 与 thp1 声明的能力集保持唯一事实来源
+let thpBcSock = null; // 广播 socket, 关停时发 BYE
 try {
   const udp = dgram.createSocket('udp4');
   udp.on('message', (msg, rinfo) => {
@@ -68,13 +70,14 @@ try {
     else devices.push({ device_url: url, device_type: 'thp', caps, paired_at: Date.now(), last_seen: Date.now() });
   });
   udp.bind(THP_PORT, () => console.log('[thp] UDP :' + THP_PORT + ' 监听中'));
-  // 资源库自身广播: THP/1.0 新格式（含 instanceId/role/caps）
+  // 资源库自身广播: THP/1.0 新格式（含 instanceId/role/caps, caps 取自 thp1.CAPS）
   try {
     const bc = dgram.createSocket('udp4');
+    thpBcSock = bc;
     bc.bind(() => {
       bc.setBroadcast(true);
       const hello = Buffer.from('THP/1 HELLO 9527 ' + thp1.INSTANCE_ID + ' library ' +
-        'library,m:novel,m:comic,m:video,m:music,post-query,events,jobs ThirdHub资源库');
+        THP_CAPS_CSV + ' ThirdHub资源库');
       setInterval(() => {
         bc.send(hello, THP_PORT, '255.255.255.255', () => {});
       }, 30000);
@@ -87,7 +90,7 @@ try {
 try {
   const bonjour = new Bonjour();
   bonjour.publish({ name: 'ThirdHub资源库', type: 'thp', port: 9527, protocol: 'tcp',
-    txt: { port: '9527', iid: thp1.INSTANCE_ID, role: 'library', caps: 'library,m:novel,m:comic,m:video,m:music', name: 'ThirdHub资源库' } });
+    txt: { port: '9527', iid: thp1.INSTANCE_ID, role: 'library', caps: THP_CAPS_CSV, name: 'ThirdHub资源库' } });
   console.log('[thp] mDNS _thp._tcp 已发布');
 } catch (e) { console.log('[thp] mDNS 发布失败', e.message); }
 
@@ -280,7 +283,7 @@ async function handle(req, res, body) {
       if (!d.device_url || !d.device_type) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺device_url/type' }});
       const existing = devices.find(x => x.device_url === d.device_url);
       if (existing) Object.assign(existing, d, { last_seen: Date.now() });
-      else devices.push({ ...d, paired_at: Date.now() });
+      else devices.push({ ...d, paired_at: Date.now(), last_seen: Date.now() });
       saveDevices(devices);
       console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
@@ -390,13 +393,28 @@ function startStorage() {
 })();
 startStorage();
 
-server.listen(9527, '0.0.0.0', () => {
+// 优雅下线（THP/1.0 §4.1: BYE 必选）——通知局域网内所有 peer 立即摘除本实例
+function thpShutdown() {
+  try {
+    if (thpBcSock) {
+      const bye = Buffer.from('THP/1 BYE ' + thp1.INSTANCE_ID);
+      thpBcSock.send(bye, THP_PORT, '255.255.255.255', () => {});
+      console.log('[thp] BYE 已广播');
+    }
+  } catch {}
+  setTimeout(() => process.exit(0), 200);
+}
+process.on('SIGINT', thpShutdown);
+process.on('SIGTERM', thpShutdown);
+
+// 双栈监听: '::' 同时接受 IPv6 与 IPv4-mapped 连接（纯 IPv6 网络可用）
+server.listen(9527, '::', () => {
   const os = require('os');
-  const nets = Object.values(os.networkInterfaces()).flat().filter(n => n && n.family === 'IPv4' && !n.internal);
+  const nets = Object.values(os.networkInterfaces()).flat().filter(n => n && !n.internal);
   console.log('════════════════════════════════════');
   console.log('ThirdHub v4.0.0-m1 后端就绪');
-  console.log('监听: https://0.0.0.0:9527');
-  nets.forEach(n => console.log('  本机: https://' + n.address + ':9527'));
+  console.log('监听: https://:::9527 (IPv4+IPv6 双栈)');
+  nets.forEach(n => console.log('  本机: ' + (n.family === 'IPv6' ? 'https://[' + n.address + ']:9527' : 'https://' + n.address + ':9527')));
   console.log('SHA256 指纹(前端首次连接确认):');
   console.log('  ' + fingerprint);
   console.log('访问密钥(前端配置用): ' + SECRET);

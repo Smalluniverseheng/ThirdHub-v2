@@ -146,9 +146,14 @@ const isEnvelope = j => isOkEnvelope(j) || isErrEnvelope(j);
   // ── 8. 可选能力（按 caps 声明验证）───────────────────────────
   console.log('【8】可选能力验证');
   if (caps.includes('batch-content')) {
-    const bc = await req('POST', `/thp/m/${MODULE}/content:batch`, { id: first?.id || 'x', items: ['__bad__'] });
+    const bc = await req('POST', `/thp/m/${MODULE}/content:batch`, { items: [{ id: first?.id || 'x', chapterId: '__bad__' }] });
     const ct = bc.headers.get('content-type') || '';
-    ok('batch-content 为 NDJSON 流', ct.includes('x-ndjson') || (bc.text || '').split('\n').filter(Boolean).every(l => { try { return isEnvelope(JSON.parse(l)); } catch { return false; } }), ct);
+    // 声明了 batch-content 就必须真的是 NDJSON 流（防止单条 JSON 信封蒙混过关）
+    ok('batch-content Content-Type 必须为 application/x-ndjson', ct.includes('x-ndjson'), `got "${ct}"`);
+    if (ct.includes('x-ndjson')) {
+      const lines = (bc.text || '').split('\n').filter(Boolean);
+      ok('batch-content 每行都是合法信封', lines.length > 0 && lines.every(l => { try { return isEnvelope(JSON.parse(l)); } catch { return false; } }));
+    }
   } else skipped('batch-content NDJSON', '未声明 caps');
   if (caps.includes('events')) {
     try {
@@ -169,6 +174,56 @@ const isEnvelope = j => isOkEnvelope(j) || isErrEnvelope(j);
     if (isOkEnvelope(tl.json) && tl.json.data[0])
       ok('工具含 name/description/params(JSON Schema)', !!(tl.json.data[0].name && tl.json.data[0].params));
   } else skipped('tools', '未声明 caps');
+
+  // ── 9. blob 完整性回环（library 必选：声明 sha256 去重就要真校验）──
+  if (ROLE === 'library') {
+    console.log('【9】blob 完整性回环');
+    const crypto = require('crypto');
+    const payload = crypto.randomBytes(4096); // 单块小文件
+    const sha = crypto.createHash('sha256').update(payload).digest('hex');
+    const declare = await req('POST', '/thp/blob', { sha256: sha, size: payload.length, mime: 'application/octet-stream' });
+    ok('blob 声明返回信封', isOkEnvelope(declare.json), `HTTP ${declare.status}`);
+    if (isOkEnvelope(declare.json) && declare.json.data?.id) {
+      const id = declare.json.data.id;
+      if (!declare.json.data.dedup) {
+        // 故意乱序/补传：先传 chunk0（单块场景即全部）
+        const up = await fetch(base + `/thp/blob/${id}/chunks/0`, { method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' }, body: payload, signal: AbortSignal.timeout(15000) });
+        let upj = null; try { upj = await up.json(); } catch {}
+        ok('分块上传返回信封且 complete=true', isOkEnvelope(upj) && upj.data?.complete === true,
+           `HTTP ${up.status}`);
+        // 越界 chunk 必须 400
+        const oob = await fetch(base + `/thp/blob/${id}/chunks/9`, { method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' }, body: payload, signal: AbortSignal.timeout(15000) });
+        let oobj = null; try { oobj = await oob.json(); } catch {}
+        ok('越界 chunk → 400 错误信封', oob.status === 400 && isErrEnvelope(oobj), `HTTP ${oob.status}`);
+      }
+      // 取回比对 sha256
+      const dn = await fetch(base + `/thp/blob/${id}`, { signal: AbortSignal.timeout(15000) });
+      const got = Buffer.from(await dn.arrayBuffer());
+      ok('blob 取回内容 sha256 一致', dn.status === 200 &&
+         crypto.createHash('sha256').update(got).digest('hex') === sha);
+      // Range 合法/非法
+      const rg = await fetch(base + `/thp/blob/${id}`, { headers: { Range: 'bytes=0-9' }, signal: AbortSignal.timeout(15000) });
+      ok('Range 请求 → 206 且长度正确', rg.status === 206 && (await rg.arrayBuffer()).byteLength === 10, `HTTP ${rg.status}`);
+      const rgBad = await fetch(base + `/thp/blob/${id}`, { headers: { Range: 'bytes=999999-' }, signal: AbortSignal.timeout(15000) });
+      ok('越界 Range → 416', rgBad.status === 416, `HTTP ${rgBad.status}`);
+      // 再次声明同 sha256 → 秒传
+      const dedup = await req('POST', '/thp/blob', { sha256: sha, size: payload.length });
+      ok('同 sha256 再声明 → dedup', isOkEnvelope(dedup.json) && dedup.json.data?.dedup === true);
+      // 错误 sha256 必须被拒（脏数据不得入库）
+      const badPayload = crypto.randomBytes(2048);
+      const badDeclare = await req('POST', '/thp/blob', { sha256: 'f'.repeat(64), size: badPayload.length });
+      if (isOkEnvelope(badDeclare.json) && badDeclare.json.data?.id) {
+        const badId = badDeclare.json.data.id;
+        await fetch(base + `/thp/blob/${badId}/chunks/0`, { method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' }, body: badPayload, signal: AbortSignal.timeout(15000) });
+        const badGet = await fetch(base + `/thp/blob/${badId}`, { signal: AbortSignal.timeout(15000) });
+        let badGetJ = null; try { badGetJ = await badGet.json(); } catch {}
+        ok('sha256 不符 → 作废且不可取回', badGet.status === 404, `HTTP ${badGet.status} ${JSON.stringify(badGetJ || '')}`);
+      }
+    }
+  }
 
   // ── 汇总 ────────────────────────────────────────────────────
   console.log(`\n结果：${pass} 通过 · ${fail} 失败 · ${skip} 跳过`);
