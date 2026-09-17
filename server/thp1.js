@@ -101,26 +101,33 @@ function newJob(type, payload) {
 let DEPS = {};
 function init(deps) { DEPS = deps; } // { thpOnline, thpCallV1, library, saveLib, LIB_DIR, searchLocal }
 
-// 调引擎：优先 THP/1.0 端点（POST /thp/m/{module}/search），404/信封错误回落旧草稿（GET /thp/search?type=）
+class UpstreamErr extends Error {} // 上游业务错误：不回落, 直接抛给调用方
+
+// 调引擎（§7.3 降级链：POST → 404/UNSUPPORTED 回落 GET 新版 → 再回落旧草稿）
 async function engineCall(dev, module, op, params) {
   const t0 = Date.now();
-  // 新端点
-  try {
-    const r = await fetch(dev.device_url + `/thp/m/${module}/${op}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params), signal: AbortSignal.timeout(8000),
-    });
-    if (r.status !== 404) {
+  const p1 = `/thp/m/${module}/${op}`;
+  const qs = new URLSearchParams(Object.fromEntries(
+    Object.entries(params).map(([k, v]) => [k, String(v ?? '')]))).toString();
+  for (const attempt of ['post', 'get']) {
+    try {
+      const r = attempt === 'post'
+        ? await fetch(dev.device_url + p1, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params), signal: AbortSignal.timeout(8000) })
+        : await fetch(dev.device_url + p1 + '?' + qs, { signal: AbortSignal.timeout(8000) });
+      if (r.status === 404) continue; // 该形态不存在, 试下一形态
       const j = await r.json();
       if (j && j.ok === true) return { data: j.data, meta: { ...(j.meta || {}), latency: Date.now() - t0 } };
-      if (j && j.ok === false && j.error?.code !== 'UNSUPPORTED' && j.error?.code !== 'NOT_FOUND')
-        throw new Error(j.error.message || j.error.code);
-    }
-  } catch (e) { /* 回落旧协议 */ }
+      if (j && j.ok === false) {
+        if (j.error && (j.error.code === 'UNSUPPORTED' || j.error.code === 'NOT_FOUND')) continue;
+        throw new UpstreamErr(j.error.message || j.error.code || 'upstream error'); // 业务错误不回落
+      }
+    } catch (e) { if (e instanceof UpstreamErr) throw e; /* 网络/解析错误: 回落下一形态 */ }
+  }
   // 旧草稿端点（兼容期）
   const legacyPath = { search: '/thp/search', toc: '/thp/chapters', content: '/thp/content' }[op];
-  const qs = new URLSearchParams({ type: module, ...params }).toString();
-  const r = await fetch(dev.device_url + legacyPath + '?' + qs, { signal: AbortSignal.timeout(8000) });
+  const lqs = new URLSearchParams({ type: module, ...params }).toString();
+  const r = await fetch(dev.device_url + legacyPath + '?' + lqs, { signal: AbortSignal.timeout(8000) });
   const j = await r.json();
   if (j && j.object === 'error') throw new Error(j.data?.message || 'upstream error');
   // 旧格式归一：{items:[...]} / {object:list,data} / 裸 content
@@ -142,7 +149,7 @@ async function handle(req, res, body, u) {
     sendOk(res, {
       protocol: 'THP/1.0', instanceId: INSTANCE_ID, role: 'library',
       name: 'ThirdHub 资源库', version: '1.0.0', vendor: 'thirdhub',
-      caps: CAPS, auth: ['none', 'token', 'tls'], remote: false,
+      caps: CAPS, auth: ['none', 'tls'], remote: false,
       endpoints: ['search', 'toc', 'content', 'extra', 'items', 'blob', 'changes', 'events', 'jobs'],
       deprecated: [], ext: {},
     }, { source: 'library' }, rid);
@@ -169,16 +176,19 @@ async function handle(req, res, body, u) {
   }
 
   // ── /thp/blob ──
+  const CHUNK_SIZE = 8 * 1024 * 1024;
   if (p === '/thp/blob' && req.method === 'POST') {
     const d = parseBody();
-    if (!d.sha256 || !d.size) return sendErr(res, 'BAD_REQUEST', '缺 sha256/size', 400, rid), true;
+    if (!d.sha256 || !/^[0-9a-f]{64}$/i.test(String(d.sha256))) return sendErr(res, 'BAD_REQUEST', 'sha256 非法', 400, rid), true;
+    if (!Number.isFinite(d.size) || d.size <= 0) return sendErr(res, 'BAD_REQUEST', 'size 非法', 400, rid), true;
     const id = blobId(d.sha256);
-    if (fs.existsSync(blobDataFile(id))) {
-      sendOk(res, { id, dedup: true }, { source: 'library' }, rid);
+    if (fs.existsSync(blobDataFile(id)) && fs.existsSync(blobMetaFile(id))
+        && JSON.parse(fs.readFileSync(blobMetaFile(id), 'utf8')).complete) {
+      sendOk(res, { id, dedup: true }, { source: 'library' }, rid); // 秒传
     } else {
-      const chunkSize = 8 * 1024 * 1024;
-      fs.writeFileSync(blobMetaFile(id), JSON.stringify({ id, sha256: d.sha256, size: d.size, mime: d.mime || 'application/octet-stream', received: [], createdAt: nowISO() }));
-      sendOk(res, { id, chunks: Math.ceil(d.size / chunkSize), chunkSize }, { source: 'library' }, rid);
+      fs.writeFileSync(blobMetaFile(id), JSON.stringify({ id, sha256: d.sha256.toLowerCase(), size: d.size, mime: d.mime || 'application/octet-stream', received: [], complete: false, createdAt: nowISO() }));
+      fs.writeFileSync(blobDataFile(id), Buffer.alloc(0)); // 预创建, 供 r+ 随机写
+      sendOk(res, { id, chunks: Math.ceil(d.size / CHUNK_SIZE), chunkSize: CHUNK_SIZE }, { source: 'library' }, rid);
     }
     return true;
   }
@@ -186,29 +196,50 @@ async function handle(req, res, body, u) {
   if (mb) {
     const id = mb[1], chunkN = mb[2];
     if (chunkN !== undefined && req.method === 'POST') {
+      if (!fs.existsSync(blobMetaFile(id))) return sendErr(res, 'NOT_FOUND', 'blob 未声明（先 POST /thp/blob）', 404, rid), true;
       const meta = JSON.parse(fs.readFileSync(blobMetaFile(id), 'utf8'));
-      const off = parseInt(chunkN) * 8388608;
+      const idx = parseInt(chunkN);
+      const total = Math.ceil(meta.size / CHUNK_SIZE);
+      if (idx < 0 || idx >= total) return sendErr(res, 'BAD_REQUEST', `chunk 越界（0..${total - 1}）`, 400, rid), true;
       const bin = req.rawBody && req.rawBody.length ? req.rawBody : Buffer.from(body, 'binary');
-      const fd = fs.openSync(blobDataFile(id), 'a+');
-      fs.writeSync(fd, bin, 0, bin.length, off);
+      if (!bin.length) return sendErr(res, 'BAD_REQUEST', '空块', 400, rid), true;
+      const fd = fs.openSync(blobDataFile(id), 'r+'); // 随机写: a+ 在 Linux 下忽略 offset, 会乱序损坏
+      fs.writeSync(fd, bin, 0, bin.length, idx * CHUNK_SIZE);
       fs.closeSync(fd);
-      meta.received.push(parseInt(chunkN));
+      if (!meta.received.includes(idx)) meta.received.push(idx);
+      if (meta.received.length === total) {
+        // 全部到齐 → 校验 sha256, 不符即作废
+        const sum = crypto.createHash('sha256').update(fs.readFileSync(blobDataFile(id))).digest('hex');
+        if (sum !== meta.sha256) {
+          fs.rmSync(blobDataFile(id), { force: true }); fs.rmSync(blobMetaFile(id), { force: true });
+          return sendErr(res, 'CHECKSUM_MISMATCH', 'sha256 校验失败, 已作废', 400, rid), true;
+        }
+        meta.complete = true; meta.completedAt = nowISO();
+        sseEmit('blob.complete', { id });
+      }
       fs.writeFileSync(blobMetaFile(id), JSON.stringify(meta));
-      sendOk(res, { id, chunk: parseInt(chunkN), received: meta.received.length }, { source: 'library' }, rid);
+      sendOk(res, { id, chunk: idx, received: meta.received.length, complete: !!meta.complete }, { source: 'library' }, rid);
       return true;
     }
     if (req.method === 'GET') {
       const f = blobDataFile(id);
-      if (!fs.existsSync(f)) return sendErr(res, 'NOT_FOUND', 'blob 不存在', 404, rid), true;
+      if (!fs.existsSync(f) || !fs.existsSync(blobMetaFile(id))) return sendErr(res, 'NOT_FOUND', 'blob 不存在', 404, rid), true;
+      const meta = JSON.parse(fs.readFileSync(blobMetaFile(id), 'utf8'));
+      if (!meta.complete) return sendErr(res, 'BLOB_INCOMPLETE', `blob 未传完（${meta.received.length}/${Math.ceil(meta.size / CHUNK_SIZE)}）`, 409, rid), true;
       const size = fs.statSync(f).size;
+      const rh = { 'Accept-Ranges': 'bytes', ...(rid ? { 'X-TH-Request-Id': rid } : {}) };
       const range = req.headers.range;
       if (range) {
-        const m2 = range.match(/bytes=(\d+)-(\d*)/);
-        const start = parseInt(m2[1]), end = m2[2] ? parseInt(m2[2]) : size - 1;
-        res.writeHead(206, { 'Content-Type': 'application/octet-stream', 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes' });
-        fs.createReadStream(f, { start, end }).pipe(res);
+        const m2 = range.match(/^bytes=(\d+)-(\d*)$/);
+        if (!m2) { res.writeHead(416, { ...rh, 'Content-Range': `bytes */${size}` }); res.end(); return true; }
+        const start = parseInt(m2[1]);
+        const end = m2[2] ? parseInt(m2[2]) : size - 1;
+        if (start >= size || end < start) { res.writeHead(416, { ...rh, 'Content-Range': `bytes */${size}` }); res.end(); return true; }
+        const e2 = Math.min(end, size - 1);
+        res.writeHead(206, { 'Content-Type': meta.mime || 'application/octet-stream', 'Content-Range': `bytes ${start}-${e2}/${size}`, 'Content-Length': e2 - start + 1, ...rh });
+        fs.createReadStream(f, { start, end: e2 }).pipe(res);
       } else {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': size, 'Accept-Ranges': 'bytes' });
+        res.writeHead(200, { 'Content-Type': meta.mime || 'application/octet-stream', 'Content-Length': size, ...rh });
         fs.createReadStream(f).pipe(res);
       }
       return true;
@@ -294,7 +325,34 @@ async function handle(req, res, body, u) {
     const merged = [...local, ...perEngine.flat()];
     const r = page(merged, params.limit, params.cursor || '');
     if (r.error) return sendErr(res, 'BAD_REQUEST', 'cursor 非法', 400, rid), true;
-    sendOk(res, r.data, { ...r.meta, source: 'library', latency: undefined, ext: { engines: engines.length } }, rid);
+    sendOk(res, r.data, { ...r.meta, source: 'library', ext: { engines: engines.length } }, rid);
+    return true;
+  }
+
+  // content:batch（NDJSON 流, 每行一个信封, 1MB/行, ≤200 条/次）
+  if (op === 'content' && batchOp === 'batch') {
+    if (!isPost) return sendErr(res, 'METHOD_NOT_ALLOWED', 'content:batch 仅支持 POST', 405, rid), true;
+    const list = Array.isArray(params.items) ? params.items.slice(0, 200) : [];
+    if (!list.length) return sendErr(res, 'BAD_REQUEST', 'items 为空或缺省', 400, rid), true;
+    const engines = DEPS.thpOnline ? DEPS.thpOnline(module) : [];
+    const LINE_CAP = 1024 * 1024;
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', ...(rid ? { 'X-TH-Request-Id': rid } : {}) });
+    for (const it of list) {
+      let line;
+      try {
+        const iid = String(it.id || '');
+        const peerRef = it.peer || (iid.includes('@') ? iid.split('@').pop() : null);
+        const dev = peerRef ? engines.find(d => (d.instanceId || d.device_url) === peerRef) : engines[0];
+        if (!dev) { const e = new Error('无在线引擎'); e.code = 'UPSTREAM_FAIL'; throw e; }
+        const r = await engineCall(dev, module, 'content', { id: iid, chapterId: it.chapterId || '' });
+        line = JSON.stringify({ ok: true, data: { id: iid, chapterId: it.chapterId || '', content: r.data } });
+      } catch (e) {
+        line = JSON.stringify({ ok: false, error: { code: e.code || 'UPSTREAM_FAIL', message: String(e.message || e) }, item: { id: it.id || '', chapterId: it.chapterId || '' } });
+      }
+      if (line.length > LINE_CAP) line = JSON.stringify({ ok: false, error: { code: 'TOO_LARGE', message: '条目超过 1MB 行上限' }, item: { id: it.id || '', chapterId: it.chapterId || '' } });
+      res.write(line + '\n');
+    }
+    res.end();
     return true;
   }
 
