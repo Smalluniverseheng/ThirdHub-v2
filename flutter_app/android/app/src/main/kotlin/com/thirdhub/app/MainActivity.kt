@@ -20,6 +20,33 @@ class MainActivity : FlutterActivity() {
                 result.notImplemented()
             }
         }
+        // 短信读取(替代无人维护的 telephony 插件)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/sms").setMethodCallHandler { call, result ->
+            if (call.method == "inbox") {
+                val limit = (call.arguments as? Int) ?: 2000
+                val out = ArrayList<Map<String, Any>>()
+                try {
+                    val cur = contentResolver.query(
+                        android.net.Uri.parse("content://sms/inbox"),
+                        arrayOf("address", "body", "date"), null, null, "date DESC")
+                    cur?.use {
+                        var n = 0
+                        while (it.moveToNext() && n < limit) {
+                            out.add(mapOf(
+                                "address" to (it.getString(0) ?: ""),
+                                "body" to (it.getString(1) ?: ""),
+                                "date" to it.getLong(2)))
+                            n++
+                        }
+                    }
+                    result.success(out)
+                } catch (e: Exception) {
+                    result.error("SMS_ERR", e.message, null)
+                }
+            } else {
+                result.notImplemented()
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

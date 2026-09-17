@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:telephony/telephony.dart';
 
 // ═══ 通讯录备份: 读取联系人 → 本地加密级存储(文件) + 恢复 ═══
 class ContactsBackupPage extends StatefulWidget { const ContactsBackupPage({super.key}); @override State<ContactsBackupPage> createState() => _Cb(); }
@@ -110,7 +110,6 @@ class _Cb extends State<ContactsBackupPage> {
 // ═══ 短信备份: 读取收件箱 → 本地 JSON + 关键词搜索 + 验证码提取 ═══
 class SmsBackupPage extends StatefulWidget { const SmsBackupPage({super.key}); @override State<SmsBackupPage> createState() => _Sms(); }
 class _Sms extends State<SmsBackupPage> {
-  final _tel = Telephony.instance;
   List<Map<String, dynamic>> msgs = [];
   bool busy = false;
   String msg = '';
@@ -120,12 +119,14 @@ class _Sms extends State<SmsBackupPage> {
   Future<void> _loadSms() async {
     setState(() { busy = true; msg = ''; });
     try {
-      final granted = await _tel.requestSmsPermissions ?? false;
-      if (!granted) throw Exception('需要短信读取权限');
-      final list = await _tel.getInboxSms(columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE], sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)]);
-      msgs = [for (final m in list.take(2000)) {
-        'from': m.address ?? '', 'body': m.body ?? '',
-        'ts': int.tryParse(m.date?.toString() ?? '') ?? 0,
+      final granted = await Permission.sms.request();
+      if (!granted.isGranted) throw Exception('需要短信读取权限');
+      const ch = MethodChannel('thirdhub/sms');
+      final list = await ch.invokeMethod<List<dynamic>>('inbox', 2000);
+      if (list == null) throw Exception('读取失败');
+      msgs = [for (final m in list) {
+        'from': (m as Map)['address']?.toString() ?? '', 'body': m['body']?.toString() ?? '',
+        'ts': (m['date'] as num?)?.toInt() ?? 0,
       }];
       // 存本地备份文件
       final ext = await getExternalStorageDirectory();
