@@ -3424,6 +3424,12 @@ class LocalNovelReader extends StatefulWidget { final Map<String, dynamic> book;
 class _Lnr extends State<LocalNovelReader> {
   List<Map<String, String>> chapters = []; int idx = 0; bool loading = true;
   @override void initState() { super.initState(); _load(); }
+  Map<String, String> _chapMeta(String text, int i) {
+    final firstLine = text.split('\n').first.trim();
+    return {'name': firstLine.isEmpty ? '第${i + 1}节' : (firstLine.length > 30 ? '${firstLine.substring(0, 30)}…' : firstLine),
+      'url': '$i'};
+  }
+
   Future<void> _load() async {
     List<String> raw;
     try {
@@ -3432,11 +3438,7 @@ class _Lnr extends State<LocalNovelReader> {
       try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
       raw = LocalLib.splitChapters(text);
     } catch (_) { raw = ['读取失败']; }
-    chapters = [ for (var i = 0; i < raw.length; i++) {
-      final firstLine = raw[i].split('\n').first.trim();
-      {'name': firstLine.isEmpty ? '第${i + 1}节' : (firstLine.length > 30 ? '${firstLine.substring(0, 30)}…' : firstLine),
-       'url': '$i'};
-    } ];
+    chapters = [ for (var i = 0; i < raw.length; i++) _chapMeta(raw[i], i) ];
     // 恢复上次进度
     final p = await SharedPreferences.getInstance();
     idx = (p.getInt('progress_local_${widget.book['path']}') ?? 0).clamp(0, chapters.length - 1);

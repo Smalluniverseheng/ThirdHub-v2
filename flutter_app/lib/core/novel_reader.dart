@@ -605,6 +605,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
           colorFilter: ColorFilter.mode(bg.withValues(alpha: 1 - ReaderCfg.bgImageAlpha), BlendMode.srcOver))),
         child: _readerBody(c)) : _readerBody(c),
     );
+    return content;
   }
 
   Widget _readerBody(BuildContext c) {
@@ -676,6 +677,16 @@ class _FlipPagerState extends State<_FlipPager> {
   double page = 0;
   @override void initState() { super.initState(); ctrl.addListener(() { if (mounted) setState(() => page = ctrl.page ?? 0); }); }
   @override void dispose() { ctrl.dispose(); super.dispose(); }
+
+  // 搜索跳转: 按字符位置估算页码
+  void jumpToChar(int charIdx) {
+    if (widget.pages.isEmpty) return;
+    final total = widget.pages.fold<int>(0, (s, p) => s + p.length);
+    if (total == 0) return;
+    final per = total / widget.pages.length;
+    final page = (charIdx / per).floor().clamp(0, widget.pages.length - 1);
+    ctrl.jumpToPage(page);
+  }
 
   // 音量键翻页入口: 优先翻页, 到边界再翻章
   void turn(bool next) {
