@@ -1,6 +1,7 @@
 // AI 模块: 1:1 复刻网站(thirdhub.pages.dev) AI 页
 // 顶栏(菜单/模型胶囊/新对话) · 左侧抽屉(历史会话/AI模型/智能体/灵感广场 + Work/Chat)
 // 手势: 边缘右滑开抽屉·抽屉左滑关闭·跟手拖动·松手≥40%吸附 · 输入栏贴底 · 流式渐进渲染
+import '../main.dart' show RootNav;
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import 'tts.dart';
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
 class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
   double sx = 0; double sy = 0; bool active = false; bool claimed = false;
+  final List<(int, double)> _trail = []; // (毫秒, dx) 速度估计
   void Function(double dx)? onUpdate; void Function(double dx, double vx)? onEnd;
   @override String get debugDescription => 'edgeSwipe';
   @override void addAllowedPointer(PointerDownEvent e) {
@@ -38,12 +40,23 @@ class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
           active = false; stopTrackingPointer(e.pointer); return;
         } else { return; }
       }
+      _trail.add((e.timeStamp.inMilliseconds, dx));
+      if (_trail.length > 8) _trail.removeAt(0);
       onUpdate?.call(dx);
     }
     if (e is PointerUpEvent || e is PointerCancelEvent) {
       final wasClaimed = claimed; final dx = e.position.dx - sx;
+      // 用最近 100ms 的位移估算甩动速度(px/s), 提供惯性判定
+      double vx = 0;
+      if (_trail.length >= 2) {
+        final now = e.timeStamp.inMilliseconds;
+        final old = _trail.firstWhere((t) => now - t.$1 <= 100, orElse: () => _trail.first);
+        final dt = now - old.$1;
+        if (dt > 0) vx = (dx - old.$2) / dt * 1000;
+      }
+      _trail.clear();
       active = false; claimed = false; stopTrackingPointer(e.pointer);
-      if (wasClaimed) onEnd?.call(e is PointerUpEvent ? dx : 0, 0);
+      if (wasClaimed) onEnd?.call(e is PointerUpEvent ? dx : 0, vx);
     }
   }
   @override void didStopTrackingLastPointer(int pointer) {}
@@ -88,8 +101,10 @@ class AiStore {
 }
 
 // 入口: 直接就是 AI 对话页(与网站一致)
-class AiSection extends StatefulWidget { const AiSection({super.key}); @override State<AiSection> createState() => _AiSec(); }
-class _AiSec extends State<AiSection> {
+class AiSection extends StatefulWidget {
+  // 顶栏「新会话」按钮: +1 触发(RootNav 调用)
+  static final ValueNotifier<int> newSessionTick = ValueNotifier(0); const AiSection({super.key}); @override State<AiSection> createState() => _AiSec(); }
+class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   AiSession? session; bool sending = false; String streaming = '';
   // 思考链 + 工具步骤(当前正在生成的消息)
   String _reasoning = ''; final List<Map<String, String>> _steps = [];
@@ -108,13 +123,28 @@ class _AiSec extends State<AiSection> {
 
   @override void initState() { super.initState(); _boot();
     _regSub = AiRegistry.onChange.listen((_) { if (mounted) setState(() {}); });
+    // 切模块时静默收起抽屉(修复: 切模块回来侧边栏莫名展开/遮罩残留)
+    _navSub = RootNav.moduleTick.listen((_) {
+      if (RootNav.currentModuleKey != 'AI') _closeDrawerSilent();
+    });
+    // 右上角「新会话」按钮触发
+    AiSection.newSessionTick.addListener(_onNewSessionTick);
     scroll.addListener(() {
       final dist = scroll.position.maxScrollExtent - scroll.position.pixels;
       final p = dist > 60;
       if (p != pinned) setState(() => pinned = p);
     });
   }
-  @override void dispose() { _regSub?.cancel(); input.dispose(); scroll.dispose(); super.dispose(); }
+  @override void dispose() {
+    _regSub?.cancel(); _navSub?.cancel();
+    AiSection.newSessionTick.removeListener(_onNewSessionTick);
+    input.dispose(); scroll.dispose(); super.dispose(); }
+  StreamSubscription? _navSub;
+  Future<void> _onNewSessionTick() async {
+    final (p, m) = await AiRegistry.lastModel(); // 与启动逻辑一致: 沿用上次用的模型
+    setState(() { session = AiStore.create(p, m); _closeDrawerSilent(); });
+    HapticFeedback.lightImpact();
+  }
   Future<void> _boot() async {
     await AiStore.load();
     await Mcp.init();
@@ -129,21 +159,39 @@ class _AiSec extends State<AiSection> {
     if (mounted) setState(() {});
   }
 
-  // ── 抽屉手势(1:1: 边缘30px右滑开·跟手·≥0.4吸附; 抽屉上左滑关) ──
+  // ── 抽屉手势(边缘36px右滑开·跟手·速度/距离双判定·惯性动画·震动反馈) ──
   double _cum = 0;
+  late final AnimationController _drawerAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 260));
   void _applyDrag(double dx) {
     final w = _drawerW(context);
     final base = _drawerOpen ? w : 0.0;
     setState(() => _drawerP = ((base + dx) / w).clamp(0.0, 1.0));
   }
-  void _settleDrag(double dx) {
+  void _settleDrag(double dx, double vx) {
     _applyDrag(dx);
-    final open = _drawerP >= 0.4;
-    if (open && !_drawerOpen) HapticFeedback.selectionClick(); // 滑出抽屉轻微震动
-    setState(() { _drawerOpen = open; _drawerP = open ? 1.0 : 0.0; });
+    // 速度优先(惯性): 快甩即开/关; 慢拖看距离阈值 0.4
+    final open = vx > 350 ? true : vx < -350 ? false : _drawerP >= 0.4;
+    _animateDrawerTo(open);
   }
-  void _openDrawer() { HapticFeedback.selectionClick(); setState(() { _drawerOpen = true; _drawerP = 1.0; }); }
-  void _closeDrawer() => setState(() { _drawerOpen = false; _drawerP = 0.0; });
+  void _animateDrawerTo(bool open) {
+    if (open && !_drawerOpen) HapticFeedback.mediumImpact(); // 滑出抽屉震动
+    if (!open && _drawerOpen) HapticFeedback.lightImpact(); // 收起轻震
+    _drawerOpen = open;
+    final from = _drawerP;
+    _drawerAnim.stop();
+    _drawerAnim.removeListener(_drawerTick);
+    void tick() => setState(() => _drawerP = from + ((open ? 1.0 : 0.0) - from) * Curves.easeOutCubic.transform(_drawerAnim.value));
+    _drawerTick = tick;
+    _drawerAnim.addListener(tick);
+    _drawerAnim.forward(from: 0);
+  }
+  VoidCallback _drawerTick = () {};
+  void _openDrawer() { _animateDrawerTo(true); }
+  void _closeDrawer() => _animateDrawerTo(false);
+  void _closeDrawerSilent() { // 切模块时静默收起(不震动不动画)
+    _drawerAnim.stop();
+    if (_drawerOpen || _drawerP > 0) setState(() { _drawerOpen = false; _drawerP = 0.0; });
+  }
 
   // ── 模型快捷切换面板(Kimi 同款): 常用模型(可在抽屉长按模型设置) + 思考等级 + 对话长度 ──
   static final _thinkRe = RegExp(r'reason|thinking|qwq|\bo1|\bo3|\bo4|\br1|k1\.5|k2|glm-4\.5|hunyuan-t', caseSensitive: false);
@@ -369,14 +417,14 @@ class _AiSec extends State<AiSection> {
         child: SizedBox(width: w, child: GestureDetector(
           onHorizontalDragStart: _drawerOpen ? (_) => _cum = 0 : null,
           onHorizontalDragUpdate: _drawerOpen ? (d) { _cum += d.delta.dx; _applyDrag(_cum); } : null,
-          onHorizontalDragEnd: _drawerOpen ? (_) { _settleDrag(_cum); } : null,
+          onHorizontalDragEnd: _drawerOpen ? (d) { _settleDrag(_cum, d.velocity.pixelsPerSecond.dx); } : null,
           child: _drawer(c, dark)))),
       // 边缘热区: 按下即抢占(网站30px), 关闭态右滑开抽屉
-      if (!_drawerOpen) Positioned(left: 0, top: 0, bottom: 0, width: 30,
+      if (!_drawerOpen) Positioned(left: 0, top: 0, bottom: 0, width: 36,
         child: RawGestureDetector(gestures: { _EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<_EdgeSwipeRecognizer>(
           () => _EdgeSwipeRecognizer(),
           (r) { r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
-                r.onEnd = (dx, vx) { if (dx > 0) _settleDrag(dx); }; }) },
+                r.onEnd = (dx, vx) { if (dx > 0) _settleDrag(dx, vx); }; }) },
           child: Container(color: Colors.transparent))),
     ]));
   }

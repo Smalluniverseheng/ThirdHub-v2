@@ -1,7 +1,8 @@
 // ThirdHub v4 Flutter m2: 纯播放器前端 = 小说阅读器 + 漫画播放器 + 视频播放器
 // 定位: 零处理逻辑, 只渲染后端IR。净化在插件(Legado)完成, 后端转发。
 // 每个板块右上角: [搜索] [设置→连接资源库]
-import 'dart:async'; import 'dart:convert'; import 'dart:io';
+import 'dart:async'; import 'dart:convert';
+import 'dart:math'; import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -387,7 +388,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.20.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.21.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -747,9 +748,85 @@ class ThSearchDelegate extends SearchDelegate {
 }
 
 // 个人中心: 昵称头像(本地)+收藏统计+清理+关于
+
+// ── 漂浮光点背景(个人卡/炫酷效果用) ──
+class _Particles extends StatefulWidget { const _Particles(); @override State<_Particles> createState() => _ParticlesState(); }
+class _ParticlesState extends State<_Particles> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(seconds: 9))..repeat();
+  static final _rnd = Random(7);
+  static final List<Offset> _pts = [for (var i = 0; i < 26; i++) Offset(_rnd.nextDouble(), _rnd.nextDouble())];
+  static final List<double> _r = [for (var i = 0; i < 26; i++) 1.2 + _rnd.nextDouble() * 2.8];
+  static final List<double> _sp = [for (var i = 0; i < 26; i++) 0.2 + _rnd.nextDouble() * 0.8];
+  @override void dispose() { _c.dispose(); super.dispose(); }
+  @override Widget build(BuildContext c) => AnimatedBuilder(animation: _c, builder: (_, __) => CustomPaint(
+    painter: _ParticlesPainter(_c.value, _pts, _r, _sp)));
+}
+class _ParticlesPainter extends CustomPainter {
+  final double t; final List<Offset> pts; final List<double> r; final List<double> sp;
+  _ParticlesPainter(this.t, this.pts, this.r, this.sp);
+  @override void paint(Canvas canvas, Size size) {
+    for (var i = 0; i < pts.length; i++) {
+      final p = pts[i];
+      // 缓慢上飘 + 左右摆动 + 透明度呼吸
+      final y = (p.dy - t * sp[i]) % 1.0;
+      final x = (p.dx + 0.03 * sin((t * 2 * pi * sp[i]) + i)) % 1.0;
+      final a = 0.12 + 0.18 * (0.5 + 0.5 * sin(t * 2 * pi * sp[i] + i * 1.7));
+      canvas.drawCircle(Offset(x * size.width, (y < 0 ? y + 1 : y) * size.height), r[i],
+        Paint()..color = Colors.white.withValues(alpha: a));
+    }
+  }
+  @override bool shouldRepaint(_ParticlesPainter old) => true;
+}
+
 class ProfilePage extends StatefulWidget { const ProfilePage({super.key}); @override State<ProfilePage> createState() => _Pf(); }
 class _Pf extends State<ProfilePage> {
   @override void initState() { super.initState(); AppSettings.loadFromBackend().then((_) { if (mounted) setState(() {}); }); }
+
+
+  : 渐变底 + 漂浮光点 + 头像环(卡片式头像框回归) ──
+  Widget _heroCard() {
+    final logged = Cloud.loggedIn;
+    final nick = AppSettings.nickname;
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [
+          scheme.primary.withValues(alpha: 0.85),
+          scheme.tertiary.withValues(alpha: 0.75),
+          scheme.primaryContainer,
+        ])),
+      child: Stack(children: [
+        const Positioned.fill(child: ClipRRect(
+          borderRadius: BorderRadius.all(Radius.circular(24)),
+          child: _Particles())),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 26), child: Column(children: [
+          GestureDetector(onTap: pickAvatar, child: Container(
+            padding: const EdgeInsets.all(3.5),
+            decoration: BoxDecoration(shape: BoxShape.circle,
+              gradient: SweepGradient(colors: [Colors.white, Colors.white.withValues(alpha: 0.25), Colors.white]),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 6))]),
+            child: CircleAvatar(radius: 44, backgroundColor: scheme.surface,
+              backgroundImage: AppSettings.avatarB64.isNotEmpty ? MemoryImage(base64Decode(AppSettings.avatarB64)) : null,
+              child: AppSettings.avatarB64.isEmpty
+                ? Icon(Icons.person, size: 44, color: scheme.primary) : null))),
+          const SizedBox(height: 12),
+          Text(logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录 · 游客模式',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+          const SizedBox(height: 4),
+          Text(logged ? Cloud.email : '本地播放 + 局域网资源库可用, 登录解锁云同步',
+            style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.85))),
+          if (logged && AppSettings.identityCode.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues(alpha: 0.35))),
+              child: Text('身份码 ${AppSettings.identityCode}', style: const TextStyle(fontSize: 11, color: Colors.white, letterSpacing: 0.5))),
+          ],
+        ])),
+      ]));
+  }
 
   Future<void> pickAvatar() async {
     final permitted = await pm.PhotoManager.requestPermissionExtend();
@@ -803,6 +880,8 @@ class _Pf extends State<ProfilePage> {
     final nick = AppSettings.nickname;
     final logged = Cloud.loggedIn;
     return Scaffold(appBar: AppBar(title: Text(tr('设置'))), body: ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 20), children: [
+      _heroCard(),
+      const SizedBox(height: 10),
       _section('', [
         entry(Icons.person_outline, '账号安全', value: logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录', page: const ProfileSubPage()),
         _sep(),
@@ -2310,6 +2389,9 @@ class RootNav extends StatefulWidget {
   static final ValueNotifier<int> navTick = ValueNotifier(0);
   // 全屏模式: 任何模块可经右上角 ⋯ → 全屏 进入, 隐藏顶栏+底栏+系统栏
   static final ValueNotifier<bool> fullscreen = ValueNotifier(false);
+  // 当前模块广播(模块切换时 +1): AI 抽屉等用它静默收起, 避免切模块误触发侧边栏
+  static final ValueNotifier<int> moduleTick = ValueNotifier(0);
+  static String currentModuleKey = '';
   @override State<RootNav> createState() => _RootNavState();
 }
 class _RootNavState extends State<RootNav> {
@@ -2367,12 +2449,16 @@ class _RootNavState extends State<RootNav> {
         if (!AppSettings.navAutoHide || hideNav || _navCollapsed) return;
         setState(() => _navCollapsed = true);
       },
-      child: PageView(controller: _page, onPageChanged: (i) => setState(() { idx = i; }),
+      child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++; },
         physics: const NeverScrollableScrollPhysics(),
         children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
     // 右上角 ⋯: 每个模块自己的菜单(不再一刀切播放器设置)
     const settingsModules = {'小说', '漫画', '视频', '音乐', '直播'};
-    final appBar = hideBar ? null : AppBar(title: Text(mod.name), actions: [
+    final appBar = hideBar ? null : AppBar(title: Text(tr(mod.name)), actions: [
+      // 按模块定制的专属快捷动作(每个模块是独立空间)
+      if (key == 'AI')
+        IconButton(icon: const Icon(Icons.add_comment_outlined, size: 21), tooltip: '新会话',
+          onPressed: () => AiSection.newSessionTick.value++),
       PopupMenuButton<String>(icon: const Icon(Icons.more_vert), tooltip: '${mod.name}菜单',
         onSelected: (v) async {
           switch (v) {
@@ -2632,7 +2718,7 @@ Future<void> showNavSettings(BuildContext c) async {
           return Row(key: ValueKey('on_$k'), children: [
             Checkbox(value: true, onChanged: k == '我的' ? null : (v) => setD(() { sel.remove(k); order.remove(k); })),
             Icon(e.icon, size: 18), const SizedBox(width: 8),
-            Expanded(child: Text(k, style: const TextStyle(fontSize: 14))),
+            Expanded(child: Text(tr(k), style: const TextStyle(fontSize: 14))),
             ReorderableDragStartListener(index: i, child: const Padding(padding: EdgeInsets.all(8),
               child: Icon(Icons.drag_indicator, size: 18, color: Colors.grey))),
           ]);
@@ -2655,7 +2741,7 @@ Future<void> showNavSettings(BuildContext c) async {
                   byCat[cat]!.remove(k);
                 })),
                 Icon(e.icon, size: 18), const SizedBox(width: 8),
-                Expanded(child: Text(k, style: const TextStyle(fontSize: 14, color: Colors.grey))),
+                Expanded(child: Text(tr(k), style: const TextStyle(fontSize: 14, color: Colors.grey))),
               ]));
             }() ]),
     ])),
@@ -2860,6 +2946,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.21.0', '体验大修: ① 我的页回归头像大卡(渐变+漂浮光点+头像环+身份码胶囊) ② AI 抽屉带惯性甩动+速度判定+开关震动反馈, 修复切模块后侧边栏误展开(模块切换广播静默收起) ③ AI 右上角新会话快捷按钮 ④ 多语言真生效: 60 个模块名全入字典(英/日), 顶栏/底栏/模块抽屉/导航管理全部随语言切换 ⑤ 悬浮窗/折叠屏适配保持', '里程碑'),
   ('v4.20.0', '云同步落地: 共享清单/家庭日历登录后自动多台设备同步(新建 th_shared 表, 后写赢合并); 书架云端同步读取——后端资源库已下载的书自动合并进书架(换设备不丢), 点开直接读(全书已在库); 修复家庭日历写入个人日历存储的错位 bug; 悬浮便签升级为真全局悬浮窗(SYSTEM_ALERT_WINDOW, 退出App也能看到, 可拖动)', '里程碑'),
   ('v4.19.0', '小模块做实第7-11批(共8个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地连播) / 短剧(竖屏连播) / 文件互传(局域网扫码秒传) / 家庭影院(本地视频库) / 家庭音乐库(本地音乐+随机播放) / 共享清单(多清单+勾选) / 家庭日历(独立家庭日程) / 共享相册(本地相册浏览+幻灯片) / 摄像头(网络摄像机实时画面) / 设备互联(局域网设备扫描); 短信读取改为自研通道(原 telephony 插件已无人维护且不兼容新构建链)', '里程碑'),
   ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
@@ -2878,8 +2965,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.20.0';
-  static const int currentCode = 50507;
+  static const String currentVersion = '4.21.0';
+  static const int currentCode = 50508;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

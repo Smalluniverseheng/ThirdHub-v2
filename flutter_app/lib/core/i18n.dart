@@ -62,6 +62,7 @@ class I18n extends ChangeNotifier {
       '存储服务': 'Storage services', '下载任务': 'Downloads', '网盘': 'Cloud disk',
       '引擎': 'Engines', '导航': 'Navigation', '底部导航栏': 'Bottom navigation', '回收站': 'Recycle bin', '网络引擎(局域网设备)': 'Network engines (LAN devices)',
       '内置引擎': 'Built-in engines', '能力': 'Capabilities',
+      'AI': 'AI', 'Markdown': 'Markdown', '书签': 'Bookmarks', '二维码': 'QR Code', '代码片段': 'Snippets', '传感器': 'Sensors', '作业中心': 'Work Center', '健康记录': 'Health', '共享清单': 'Shared Lists', '共享相册': 'Shared Album', '剪贴板': 'Clipboard', '壁纸': 'Wallpapers', '天气快递': 'Weather & Express', '学习工具': 'Study', '家庭中心': 'Family Hub', '家庭影院': 'Home Cinema', '家庭日历': 'Family Calendar', '家庭音乐库': 'Home Music', '工具箱': 'Toolbox', '广播': 'Radio', '录音机': 'Recorder', '待办': 'To-do', '悬浮便签': 'Sticky Notes', '扫描仪': 'Scanner', '提醒中心': 'Reminders', '摄像头': 'Cameras', '播客': 'Podcasts', '文件': 'Files', '文件互传': 'File Share', '文本工具箱': 'Text Tools', '日历': 'Calendar', '日记': 'Diary', '智能家居': 'Smart Home', '有声书': 'Audiobooks', '游戏': 'Games', '白板': 'Whiteboard', '相册': 'Gallery', '短信备份': 'SMS Backup', '短剧': 'Short Drama', '社区': 'Community', '笔记': 'Notes', '翻译': 'Translate', '聊天': 'Chat', '菜谱': 'Recipes', '计算器': 'Calculator', '记账': 'Ledger', '论坛': 'Forum', '设备互联': 'Device Link', '课程表': 'Timetable', '资讯': 'News', '远程打印': 'Remote Print', '通讯录备份': 'Contacts Backup', '视频设置': 'Video Settings', '新会话': 'New Chat', 
     },
     'ja': {
       '搜索': '検索', '书架': '本棚', '小说': '小説', '漫画': '漫画', '视频': '動画',
@@ -74,6 +75,7 @@ class I18n extends ChangeNotifier {
       '字号': '文字サイズ', '阅读主题': '阅读テーマ', '翻页模式': 'ページめくり', '滚动': 'スクロール',
       '昵称': 'ニックネーム', '简介': '自己紹介', '应用锁': 'アプリロック',
       '在线': 'オンライン', '离线': 'オフライン', '底部导航栏': '下部ナビ', '书源': '書籍ソース', '图源': '漫画ソース',
+      '书签': 'ブックマーク', '二维码': 'QRコード', '作业中心': '作業センター', '健康记录': '健康記録', '共享清单': '共有リスト', '共享相册': '共有アルバム', '剪贴板': 'クリップボード', '壁纸': '壁紙', '天气快递': '天気・宅配', '学习工具': '学習', '家庭中心': 'ファミリー', '家庭影院': 'ホームシネマ', '家庭日历': '家族カレンダー', '家庭音乐库': 'ホーム音楽', '工具箱': 'ツール箱', '广播': 'ラジオ', '录音机': 'レコーダー', '待办': 'ToDo', '悬浮便签': '付箋', '扫描仪': 'スキャナー', '提醒中心': 'リマインダー', '摄像头': 'カメラ', '播客': 'ポッドキャスト', '文件': 'ファイル', '文件互传': 'ファイル共有', '文本工具箱': 'テキスト工具', '日历': 'カレンダー', '日记': '日記', '智能家居': 'スマートホーム', '有声书': 'オーディオブック', '游戏': 'ゲーム', '白板': 'ホワイトボード', '短信备份': 'SMSバックアップ', '短剧': '短編ドラマ', '社区': 'コミュニティ', '笔记': 'ノート', '翻译': '翻訳', '聊天': 'チャット', '菜谱': 'レシピ', '计算器': '電卓', '记账': '家計簿', '论坛': 'フォーラム', '设备互联': 'デバイス連携', '课程表': '時間割', '资讯': 'ニュース', '远程打印': 'リモート印刷', '通讯录备份': '連絡先バックアップ', '新会话': '新規チャット', 
     },
     // fr/ru/es/ar: 核心词逐步补全(缺失回落中文)
     'fr': { '搜索': 'Rechercher', '书架': 'Bibliothèque', '漫画': 'BD', '视频': 'Vidéos', '音乐': 'Musique', '我的': 'Moi', '取消': 'Annuler', '保存': 'Sauver' },
