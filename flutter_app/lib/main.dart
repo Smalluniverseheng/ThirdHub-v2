@@ -376,7 +376,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.15.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.16.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -2195,7 +2195,59 @@ final Map<String, ModuleDef> kModules = {
     ['遥控后端播放', '第二屏投送', '设备状态总览']),
   '家庭日历': _scaffold('家庭日历', Icons.family_restroom, '全家日程共享(区别于个人日历)',
     ['家庭共享日程', '成员生日提醒', '家庭待办联动']),
+  // ── 聚合入口(一个模块装一类, 导航栏不再排长队) ──
+  '工具箱': const ModuleDef('工具箱', Icons.construction_outlined, ModuleHubPage(name: '工具箱', icon: Icons.construction_outlined,
+    desc: '效率工具聚合: 翻译/扫描/二维码/计算器等一处直达',
+    children: ['翻译', '扫描仪', '二维码', '悬浮便签', '计算器', '白板', '文本工具箱', '传感器', '文件互传', '远程打印'])),
+  '家庭中心': const ModuleDef('家庭中心', Icons.home_work_outlined, ModuleHubPage(name: '家庭中心', icon: Icons.home_work_outlined,
+    desc: '家庭/多端聚合: 共享相册/影院/智能家居等一处直达',
+    children: ['共享相册', '共享清单', '家庭影院', '家庭音乐库', '摄像头', '智能家居', '设备互联', '家庭日历'])),
 };
+
+// ═══ 模块分类(导航栏管理树状分组用) ═══
+const kCatOrder = ['核心', '内容', '生活', '效率', '家庭', '实验室'];
+const Map<String, String> kModuleCats = {
+  '搜索': '核心', 'AI': '核心', '浏览器': '核心', '文件': '核心', '相册': '核心', '我的': '核心',
+  '小说': '内容', '漫画': '内容', '视频': '内容', '音乐': '内容', '直播': '内容',
+  '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容', '游戏': '内容',
+  '笔记': '生活', '待办': '生活', '录音机': '生活', '日历': '生活', '提醒中心': '生活', '日记': '生活', '记账': '生活',
+  '剪贴板': '生活', '书签': '生活', '代码片段': '生活', 'Markdown': '生活', '健康记录': '生活',
+  '通讯录备份': '生活', '短信备份': '生活', '天气快递': '生活', '菜谱': '生活', '学习工具': '生活', '课程表': '生活',
+  '作业中心': '效率', '工具箱': '效率', '翻译': '效率', '扫描仪': '效率', '二维码': '效率', '计算器': '效率',
+  '白板': '效率', '文本工具箱': '效率', '传感器': '效率', '文件互传': '效率', '远程打印': '效率', '悬浮便签': '效率',
+  '家庭中心': '家庭', '共享相册': '家庭', '共享清单': '家庭', '家庭影院': '家庭', '家庭音乐库': '家庭',
+  '摄像头': '家庭', '智能家居': '家庭', '设备互联': '家庭', '家庭日历': '家庭',
+  '聊天': '实验室', '社区': '实验室', '论坛': '实验室',
+};
+String moduleCat(String k) => kModuleCats[k] ?? '其他';
+
+// ═══ 聚合模块页: 一个入口装一类子模块, 点进子模块单独开页 ═══
+class ModuleHubPage extends StatelessWidget {
+  final String name; final IconData icon; final String desc; final List<String> children;
+  const ModuleHubPage({super.key, required this.name, required this.icon, required this.desc, required this.children});
+  @override Widget build(BuildContext c) {
+    final accent = Theme.of(c).colorScheme.primary;
+    return ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+        Icon(icon, size: 22, color: accent), const SizedBox(width: 10),
+        Expanded(child: Text(desc, style: const TextStyle(fontSize: 12, color: Colors.grey))),
+      ]))),
+      const SizedBox(height: 10),
+      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: (MediaQuery.of(c).size.width / 110).floor().clamp(3, 6),
+        mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.15,
+        children: [ for (final k in children) if (kModules.containsKey(k)) () {
+          final m = kModules[k]!;
+          return InkWell(borderRadius: BorderRadius.circular(16),
+            onTap: () => Navigator.push(c, smoothRoute(Scaffold(appBar: AppBar(title: Text(tr(m.name))), body: m.page))),
+            child: Card(margin: EdgeInsets.zero, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(m.icon, size: 26, color: accent), const SizedBox(height: 6),
+              Text(tr(m.name), style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ])));
+        }() ]),
+    ]);
+  }
+}
 
 class _ComingSoonPage extends StatelessWidget {
   final String name; const _ComingSoonPage({required this.name});
@@ -2258,12 +2310,14 @@ class RootNav extends StatefulWidget {
   const RootNav({super.key});
   // 导航设置变更时 +1, 触发 RootNav 即时重载(无需重启)
   static final ValueNotifier<int> navTick = ValueNotifier(0);
+  // 全屏模式: 任何模块可经右上角 ⋯ → 全屏 进入, 隐藏顶栏+底栏+系统栏
+  static final ValueNotifier<bool> fullscreen = ValueNotifier(false);
   @override State<RootNav> createState() => _RootNavState();
 }
 class _RootNavState extends State<RootNav> {
   List<String> enabled = ['我的'];
   int idx = 0;
-  bool _navCollapsed = false; // 滚动收起(去文字, 缩到 ~1/3 高)
+  bool _navCollapsed = false; // 点按正文收起(去文字, 缩到 ~1/3 高, 点细条恢复)
   final PageController _page = PageController();
   final ScrollController _navScroll = ScrollController();
   // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
@@ -2272,11 +2326,17 @@ class _RootNavState extends State<RootNav> {
   static const _noNavModules = {'浏览器'};
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
+    RootNav.fullscreen.addListener(_onFs);
     // 浏览器等沉浸页的"切换模块"入口
     BrowserHooks.openModules = (c) => NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
   void _onNavChanged() { _load(); }
-  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); BrowserHooks.openModules = null; _page.dispose(); _navScroll.dispose(); super.dispose(); }
+  void _onFs() {
+    if (RootNav.fullscreen.value) { SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky); }
+    else { SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); }
+    if (mounted) setState(() {});
+  }
+  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); RootNav.fullscreen.removeListener(_onFs); BrowserHooks.openModules = null; _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
@@ -2302,32 +2362,55 @@ class _RootNavState extends State<RootNav> {
     final hideNav = _noNavModules.contains(key);      // 底栏: 沉浸页不显示
     final kbOpen = MediaQuery.viewInsetsOf(c).bottom > 100; // 键盘弹出时底栏让位(网页端 kb-open 同款)
     // 模块滑动隔离: 禁止在模块间左右滑动, 各模块内部手势互不干扰
-    // 滚动感知: 正文向下滚→底栏收起(网页端 nav-folded 同款), 向上滚→展开
-    final body = NotificationListener<UserScrollNotification>(
-      onNotification: (n) {
-        if (!AppSettings.navAutoHide || hideNav) return false;
-        final collapse = n.direction == ScrollDirection.forward;
-        if (collapse != _navCollapsed && mounted) setState(() => _navCollapsed = collapse);
-        return false;
+    // 点按正文→底栏收起为 1/3 细条(保持收起, 不再因松手/上滑弹回); 点细条恢复
+    final body = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        if (!AppSettings.navAutoHide || hideNav || _navCollapsed) return;
+        setState(() => _navCollapsed = true);
       },
-      child: PageView(controller: _page, onPageChanged: (i) => setState(() { idx = i; _navCollapsed = false; }),
+      child: PageView(controller: _page, onPageChanged: (i) => setState(() { idx = i; }),
         physics: const NeverScrollableScrollPhysics(),
         children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
+    // 右上角 ⋯: 每个模块自己的菜单(不再一刀切播放器设置)
+    const settingsModules = {'小说', '漫画', '视频', '音乐', '直播'};
     final appBar = hideBar ? null : AppBar(title: Text(mod.name), actions: [
-      if (mod.localKind != null) ...[
-        IconButton(icon: const Icon(Icons.folder_open), tooltip: '本地库',
-          onPressed: () => Navigator.push(c, smoothRoute(localLibPage(mod.localKind!)))),
-        // 导入图标与下载图标统一(Icons.download)
-        IconButton(icon: const Icon(Icons.download), tooltip: '导入本地文件',
-          onPressed: () async {
-            final n = await importLocal(mod.localKind!);
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
-          }),
-      ],
-      // 右上角=该模块自己的播放器设置(全局设置在"我的"里)
-      IconButton(icon: const Icon(Icons.tune), tooltip: '${mod.name}设置',
-        onPressed: () => showModuleSettings(c, key)),
+      PopupMenuButton<String>(icon: const Icon(Icons.more_vert), tooltip: '${mod.name}菜单',
+        onSelected: (v) async {
+          switch (v) {
+            case 'lib':
+              Navigator.push(c, smoothRoute(localLibPage(mod.localKind!)));
+            case 'import':
+              final n = await importLocal(mod.localKind!);
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入')));
+            case 'settings':
+              showModuleSettings(c, key);
+            case 'fullscreen':
+              RootNav.fullscreen.value = true;
+            case 'switch':
+              NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
+          }
+        },
+        itemBuilder: (_) => [
+          if (mod.localKind != null) ...[
+            const PopupMenuItem(value: 'lib', child: ListTile(dense: true, leading: Icon(Icons.folder_open, size: 20), title: Text('本地库'))),
+            const PopupMenuItem(value: 'import', child: ListTile(dense: true, leading: Icon(Icons.download, size: 20), title: Text('导入本地文件'))),
+          ],
+          if (settingsModules.contains(key))
+            PopupMenuItem(value: 'settings', child: ListTile(dense: true, leading: const Icon(Icons.tune, size: 20), title: Text('${mod.name}设置'))),
+          const PopupMenuItem(value: 'fullscreen', child: ListTile(dense: true, leading: Icon(Icons.fullscreen, size: 20), title: Text('全屏'))),
+          const PopupMenuItem(value: 'switch', child: ListTile(dense: true, leading: Icon(Icons.apps, size: 20), title: Text('切换模块'))),
+        ]),
     ]);
+    // 全屏模式: 顶栏+底栏+系统栏全隐藏, 右上角悬浮退出按钮
+    if (RootNav.fullscreen.value) {
+      return Scaffold(body: Stack(children: [
+        Positioned.fill(child: body),
+        Positioned(top: 0, right: 8, child: SafeArea(child: Material(color: Colors.black45, shape: const CircleBorder(),
+          child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), tooltip: '退出全屏',
+            onPressed: () => RootNav.fullscreen.value = false)))),
+      ]));
+    }
     // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
     if (ScreenFit.isWide) {
       return Scaffold(
@@ -2399,7 +2482,11 @@ class _RootNavState extends State<RootNav> {
             ],
           ])));
     }
-    return Material(elevation: collapsed ? 2 : 8, color: Theme.of(context).colorScheme.surface,
+    return GestureDetector(
+      // 收起态: 点按细条恢复完整底栏; 任意状态: 长按弹出模块抽屉
+      onTap: collapsed ? () => setState(() => _navCollapsed = false) : null,
+      onLongPress: () { HapticFeedback.selectionClick(); NavOrb.showModuleGrid(context, enabled, idx, (i) => _go(i, animate: false)); },
+      child: Material(elevation: collapsed ? 2 : 8, color: Theme.of(context).colorScheme.surface,
       child: SafeArea(top: false, child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
         final itemW = collapsed ? 52.0 : 76.0;
         final mineW = itemW;
@@ -2418,11 +2505,9 @@ class _RootNavState extends State<RootNav> {
           if (mineIdx >= 0) Container(decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 0.5))),
             child: SizedBox(width: mineW, child: item(mineIdx))),
         ]);
-      }))));
+      })))));
   }
 }
-
-// PageView 模块页保活: 滑走再滑回, 搜索词/滚动位置不丢
 class _KeepAlivePage extends StatefulWidget { const _KeepAlivePage({super.key, required this.child}); final Widget child;
   @override State<_KeepAlivePage> createState() => _KeepAlivePageState(); }
 class _KeepAlivePageState extends State<_KeepAlivePage> with AutomaticKeepAliveClientMixin {
@@ -2526,37 +2611,61 @@ Future<int> importLocal(String kind) {
 Future<void> showNavSettings(BuildContext c) async {
   final p = await SharedPreferences.getInstance();
   final saved = p.getStringList('nav_modules') ?? ['我的'];
-  // 顺序: 已保存顺序在前(保持用户排序), 未勾选的模块排在后面
-  final order = <String>[ ...saved.where((k) => kModules.containsKey(k)),
-    ...kModules.keys.where((k) => !saved.contains(k)) ];
-  final sel = saved.where((k) => kModules.containsKey(k)).toSet();
+  final order = <String>[ ...saved.where((k) => kModules.containsKey(k)) ]; // 已启用(可拖动排序)
+  final sel = order.toSet();
+  // 未启用模块按分类树状分组
+  final byCat = <String, List<String>>{};
+  for (final k in kModules.keys) {
+    if (sel.contains(k)) continue;
+    byCat.putIfAbsent(moduleCat(k), () => []).add(k);
+  }
   await showDialog(context: c, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
     title: const Text('底部导航栏'),
-    content: SizedBox(width: 320, height: 420, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('勾选显示模块 · 按住 ≡ 拖动调整顺序', style: TextStyle(fontSize: 12, color: Colors.grey)),
+    content: SizedBox(width: 340, height: 500, child: ListView(children: [
+      const Text('已启用 · 按住 ≡ 拖动排序 · 建议 ≤6 个, 其余用聚合模块(工具箱/家庭中心)收纳', style: TextStyle(fontSize: 11, color: Colors.grey)),
       const SizedBox(height: 6),
-      Expanded(child: ReorderableListView(buildDefaultDragHandles: false,
+      ReorderableListView(buildDefaultDragHandles: false, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
         onReorder: (oldI, newI) => setD(() {
           if (newI > oldI) newI--;
           final it = order.removeAt(oldI); order.insert(newI, it);
         }),
         children: [ for (var i = 0; i < order.length; i++) () {
           final k = order[i]; final e = kModules[k]!;
-          return Row(key: ValueKey(k), children: [
-            Checkbox(value: sel.contains(k), onChanged: k == '我的' ? null : (v) => setD(() { v == true ? sel.add(k) : sel.remove(k); })),
+          return Row(key: ValueKey('on_$k'), children: [
+            Checkbox(value: true, onChanged: k == '我的' ? null : (v) => setD(() { sel.remove(k); order.remove(k); })),
             Icon(e.icon, size: 18), const SizedBox(width: 8),
-            Expanded(child: Text(k, style: TextStyle(fontSize: 14, color: sel.contains(k) ? null : Colors.grey))),
+            Expanded(child: Text(k, style: const TextStyle(fontSize: 14))),
             ReorderableDragStartListener(index: i, child: const Padding(padding: EdgeInsets.all(8),
               child: Icon(Icons.drag_indicator, size: 18, color: Colors.grey))),
           ]);
         }() ]),
-      ),
+      const Divider(height: 20),
+      const Text('全部模块(按分类)', style: TextStyle(fontSize: 11, color: Colors.grey)),
+      // 树状分类: 分类为父节点, 模块为子节点
+      for (final cat in [...kCatOrder, '其他'])
+        if ((byCat[cat] ?? []).isNotEmpty)
+          ExpansionTile(dense: true, tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            childrenPadding: EdgeInsets.zero,
+            leading: Icon({'核心': Icons.star_outline, '内容': Icons.play_circle_outline, '生活': Icons.coffee_outlined,
+              '效率': Icons.bolt_outlined, '家庭': Icons.home_outlined, '实验室': Icons.science_outlined}[cat] ?? Icons.folder_outlined, size: 18),
+            title: Text('$cat (${byCat[cat]!.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            children: [ for (final k in byCat[cat]!) () {
+              final e = kModules[k]!;
+              return Padding(padding: const EdgeInsets.only(left: 12), child: Row(key: ValueKey('off_$k'), children: [
+                Checkbox(value: false, onChanged: (v) => setD(() {
+                  sel.add(k); order.insert(order.contains('我的') ? order.indexOf('我的') : order.length, k);
+                  byCat[cat]!.remove(k);
+                })),
+                Icon(e.icon, size: 18), const SizedBox(width: 8),
+                Expanded(child: Text(k, style: const TextStyle(fontSize: 14, color: Colors.grey))),
+              ]));
+            }() ]),
     ])),
     actions: [FilledButton(onPressed: () async {
-      final list = order.where((k) => sel.contains(k)).toList(); // 保存=勾选模块按拖动后顺序
+      final list = order.where((k) => sel.contains(k)).toList();
       if (!list.contains('我的')) list.add('我的');
       await p.setStringList('nav_modules', list);
-      RootNav.navTick.value++; // 即时生效, 无需重启
+      RootNav.navTick.value++;
       if (c2.mounted) Navigator.pop(c2);
       if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存 · 已即时生效')));
     }, child: const Text('保存'))],
@@ -2713,6 +2822,8 @@ class DownloadCenterTile extends StatelessWidget {
       '兼容 venera JS 漫画源的独立引擎。支持图源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。'),
     ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language,
       '浏览器打开即用, 可安装为 PWA。与客户端同一账号体系, 数据全端互通。'),
+    ('网页版 1.0(经典旧版)', '最初网页版存档 · 怀旧/老设备', 'https://0d57a5ba.thirdhub.pages.dev', Icons.history,
+      'ThirdHub 最初的网页版 1.0 存档(2026-08-06 首次部署)。功能与界面以新版网页版为准, 此版本仅供老设备兼容与怀旧使用。'),
   ];
   @override Widget build(BuildContext c) => Column(children: [
     for (final p in products)
@@ -2742,12 +2853,16 @@ class ProductDetailPage extends StatelessWidget {
       const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('覆盖安装, 数据自动保留\n下载完成的安装包会保存在"已下载的安装包"列表, 可随时重装或长按删除', style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.8)))),
     ]),
     bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.all(16),
-      child: FilledButton.icon(icon: const Icon(Icons.download), label: const Text('下载软件'),
-        onPressed: () => Updater.downloadProduct(c, url, name)))));
+      child: url.toLowerCase().endsWith('.apk')
+        ? FilledButton.icon(icon: const Icon(Icons.download), label: const Text('下载软件'),
+            onPressed: () => Updater.downloadProduct(c, url, name))
+        : FilledButton.icon(icon: const Icon(Icons.open_in_new), label: const Text('打开网页版'),
+            onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)))));
 }
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.16.0', '固定Release签名(从此覆盖安装不再要求卸载) + 应用内下载修复(安装权限/FileProvider/三镜像自动切换/浏览器下载兜底) + 下载中心补网页版1.0 + 模块树状分类管理 + 聚合模块(工具箱/家庭中心) + 长按底栏弹模块抽屉 + 点击正文底栏收起为1/3保持 + 全模块右上角⋯菜单(全屏/切换模块/模块专属项, 不再一刀切播放器设置)', '里程碑'),
   ('v4.15.0', '功能规划v2.0全量模块框架落地(作业中心/笔记/待办/录音机/日历/提醒/日记/记账/剪贴板/书签/代码片段/Markdown/健康/播客/有声书/广播/短剧/壁纸/资讯/天气快递/菜谱/学习工具/课程表/翻译/扫描仪/二维码/悬浮便签/计算器/白板/文本工具箱/传感器/文件互传/远程打印/家庭系列等41个新模块, 在「我的→功能管理」开启) + 「我的」页重构为Kimi式设置(分组卡片/通知设置/帮助中心/退出登录)', '里程碑'),
   ('v4.14.1', 'THP/1.0协议漏洞修复(blob乱序写入/sha256校验/Range校验/content:batch NDJSON/关停BYE广播/双栈IPv6) + 模块介绍页 + 历史版本下载', '重构'),
   ('v4.14.0', 'THP/1.0正式协议全量落地(发现/搜索/目录/内容/订阅/大文件/作业 25项全通过) + 后端模块化重构 + 首启协议弹窗(隐私政策/服务条款) + 加载式开屏可关动画 + 开屏IPv6标识', '里程碑'),
@@ -2761,8 +2876,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.15.0';
-  static const int currentCode = 50502;
+  static const String currentVersion = '4.16.0';
+  static const int currentCode = 50503;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -2798,10 +2913,41 @@ class Updater {
         const Text('覆盖安装, 数据自动保留', style: TextStyle(fontSize: 11, color: Colors.grey)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('稍后')),
+        TextButton(onPressed: () { Navigator.pop(c2, false); launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }, child: const Text('浏览器下载')),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('立即更新'))]));
     if (go == true && url.isNotEmpty && c.mounted) { newVer = ver; _downloadAndInstall(c, url); }
   }
   static String newVer = '';
+
+  // 多镜像: 主URL(云端) → Supabase版本包 → GitHub Release, 依次尝试直到成功
+  static List<String> _mirrorUrls(String url, String ver) {
+    final list = <String>[url];
+    if (ver.isNotEmpty) {
+      list.add('https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
+      list.add('https://github.com/Smalluniverseheng/ThirdHub-v2/releases/download/v$ver/ThirdHub-$ver.apk');
+    }
+    return list.toSet().toList();
+  }
+
+  // 单镜像下载到文件(非200视为失败抛异常), 供两个下载入口共用
+  static Future<void> _fetchTo(String url, File f, ValueNotifier<double> progress) async {
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      final resp = await req.close().timeout(const Duration(seconds: 30));
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw Exception('HTTP ${resp.statusCode}');
+      }
+      final total = resp.contentLength;
+      final sink = f.openWrite();
+      var got = 0;
+      await for (final chunk in resp) { sink.add(chunk); got += chunk.length; if (total > 0) progress.value = got / total; }
+      await sink.close();
+      final len = await f.length();
+      if (total > 0 && len != total) { await f.delete(); throw Exception('文件不完整($len/$total)'); }
+      if (len < 1024 * 1024) { await f.delete(); throw Exception('文件过小($len字节), 疑似错误页'); }
+    } finally { client.close(); }
+  }
 
   // 通用产品下载(下载中心用): 进度弹窗 + 后台下载 + 完成通知 + 留档
   static Future<void> downloadProduct(BuildContext c, String url, String name) async {
@@ -2818,16 +2964,23 @@ class Updater {
           ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
         }, child: const Text('后台下载'))]));
     try {
-      final req = await HttpClient().getUrl(Uri.parse(url));
-      final resp = await req.close();
-      final total = resp.contentLength;
       final dir = await _updateDir();
       final safe = name.replaceAll(RegExp(r'[\\/:*?"<>| ]'), '-');
       final f = File('$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
-      final sink = f.openWrite();
-      var got = 0;
-      await for (final chunk in resp) { sink.add(chunk); got += chunk.length; if (total > 0) progress.value = got / total; }
-      await sink.close();
+      // 从文件名提取版本号用于拼镜像地址
+      final vm = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(name);
+      final mirrors = _mirrorUrls(url, vm?.group(1) ?? '');
+      Exception? lastErr;
+      var ok = false;
+      for (var i = 0; i < mirrors.length && !ok; i++) {
+        try {
+          if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+          progress.value = 0;
+          await _fetchTo(mirrors[i], f, progress);
+          ok = true;
+        } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
+      }
+      if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
       list.add('${f.path}|$name|${DateTime.now().toString().substring(0, 16)}');
@@ -2870,18 +3023,20 @@ class Updater {
           ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
         }, child: const Text('后台下载'))]));
     try {
-      final req = await HttpClient().getUrl(Uri.parse(url));
-      final resp = await req.close();
-      final total = resp.contentLength;
       final dir = await _updateDir();
       final f = File('$dir/thirdhub-update-${DateTime.now().millisecondsSinceEpoch}.apk');
-      final sink = f.openWrite();
-      var got = 0;
-      await for (final chunk in resp) {
-        sink.add(chunk); got += chunk.length;
-        if (total > 0) progress.value = got / total;
+      final mirrors = _mirrorUrls(url, newVer);
+      Exception? lastErr;
+      var ok = false;
+      for (var i = 0; i < mirrors.length && !ok; i++) {
+        try {
+          if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+          progress.value = 0;
+          await _fetchTo(mirrors[i], f, progress);
+          ok = true;
+        } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
       }
-      await sink.close();
+      if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
       // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
@@ -2893,7 +3048,12 @@ class Updater {
       }
       if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(duration: const Duration(seconds: 6),
         content: Text('安装包已保存: ${f.path}')));
-      await OpenFilex.open(f.path);
+      final r = await OpenFilex.open(f.path);
+      if (r.type != ResultType.done && c.mounted) {
+        ScaffoldMessenger.of(c).showSnackBar(SnackBar(duration: const Duration(seconds: 10),
+          content: Text('无法自动调起安装(${r.message})\n请到 下载App 页找到安装包手动安装'),
+          action: SnackBarAction(label: '浏览器下载', onPressed: () => launchUrl(Uri.parse(mirrors.first), mode: LaunchMode.externalApplication))));
+      }
     } catch (e) {
       if (!background && c.mounted) Navigator.pop(c);
       if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('下载失败: $e')));
@@ -3278,8 +3438,8 @@ class _Ns extends State<NavSettingsPage> {
             onChanged: (v) => AppSettings.setOrbSnap(v).then((_) => setState(() {})))),
         const Divider(height: 1, indent: 56),
         SwitchListTile(secondary: const Icon(Icons.unfold_less, size: 20),
-          title: const Text('滚动时自动收起导航栏', style: TextStyle(fontSize: 14)),
-          subtitle: const Text('向下滚动收起为图标条(省约1/3高度), 向上滚动展开', style: TextStyle(fontSize: 11)),
+          title: const Text('点击正文自动收起导航栏', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('点一下正文收起为 1/3 细条并保持, 点细条恢复; 长按底栏弹出模块抽屉', style: TextStyle(fontSize: 11)),
           value: AppSettings.navAutoHide,
           onChanged: (v) => AppSettings.setNavAutoHide(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
         const Divider(height: 1, indent: 56),
