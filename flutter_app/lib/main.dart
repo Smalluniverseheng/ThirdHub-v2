@@ -25,6 +25,8 @@ import 'core/mini_modules3.dart';
 import 'core/mini_modules4.dart';
 import 'core/mini_modules5.dart';
 import 'core/mini_modules6.dart';
+import 'core/mini_modules7.dart';
+import 'core/mini_modules8.dart';
 import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
@@ -382,7 +384,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.18.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.19.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -2126,17 +2128,13 @@ final Map<String, ModuleDef> kModules = {
   '代码片段': const ModuleDef('代码片段', Icons.code, SnippetsPage()),
   'Markdown': const ModuleDef('Markdown', Icons.text_fields, MarkdownPage()),
   '健康记录': const ModuleDef('健康记录', Icons.favorite_border, HealthPage()),
-  '通讯录备份': _scaffold('通讯录备份', Icons.contacts_outlined, '换机不丢, 加密存资源库',
-    ['通讯录加密备份到资源库', '换机一键恢复', '增量同步'], note: '数据仅存用户资源库, 云端不可见'),
-  '短信备份': _scaffold('短信备份', Icons.sms_outlined, '短信归档+关键词搜索',
-    ['短信归档到资源库', '关键词搜索', '验证码自动提取'], note: '数据仅存用户资源库, 云端不可见'),
+  '通讯录备份': const ModuleDef('通讯录备份', Icons.contacts_outlined, ContactsBackupPage()),
+  '短信备份': const ModuleDef('短信备份', Icons.sms_outlined, SmsBackupPage()),
   // ── 内容消费 ──
   '播客': const ModuleDef('播客', Icons.podcasts, PodcastPage()),
-  '有声书': _scaffold('有声书', Icons.headphones, '分集音频书库',
-    ['分集音频书库', '断点续听', '书架管理', '有声书引擎接入(THP m:audiobook)']),
+  '有声书': ModuleDef('有声书', Icons.headphones_outlined, AudiobookPage()),
   '广播': const ModuleDef('广播', Icons.radio, RadioPage()),
-  '短剧': _scaffold('短剧', Icons.movie_outlined, '竖屏短剧/漫剧',
-    ['竖屏短剧播放', '选集连播', '观看历史', '短剧引擎接入(THP m:shortplay)']),
+  '短剧': ModuleDef('短剧', Icons.movie_outlined, ShortPlayPage()),
   '壁纸': const ModuleDef('壁纸', Icons.wallpaper, WallpaperPage()),
   '资讯': const ModuleDef('资讯', Icons.newspaper, NewsPage()),
   '天气快递': const ModuleDef('天气快递', Icons.wb_sunny_outlined, WeatherPage()),
@@ -2145,16 +2143,14 @@ final Map<String, ModuleDef> kModules = {
   '课程表': const ModuleDef('课程表', Icons.table_chart_outlined, TimetablePage()),
   // ── 工具效率 ──
   '翻译': const ModuleDef('翻译', Icons.translate, TranslatePage()),
-  '扫描仪': _scaffold('扫描仪', Icons.document_scanner_outlined, 'OCR 转 PDF 入笔记',
-    ['拍照扫描', 'OCR 文字识别', '生成 PDF 入笔记/文件', '多页连拍']),
+  '扫描仪': ModuleDef('扫描仪', Icons.document_scanner_outlined, ScannerPage()),
   '二维码': const ModuleDef('二维码', Icons.qr_code_scanner, QrPage()),
   '悬浮便签': const ModuleDef('悬浮便签', Icons.note_alt_outlined, QuickNotePage()),
   '计算器': const ModuleDef('计算器', Icons.calculate_outlined, CalcPage()),
   '白板': const ModuleDef('白板', Icons.draw_outlined, WhiteboardPage()),
   '文本工具箱': const ModuleDef('文本工具箱', Icons.text_snippet_outlined, TextToolsPage()),
   '传感器': const ModuleDef('传感器', Icons.sensors, SensorPage()),
-  '文件互传': _scaffold('文件互传', Icons.swap_horiz, '手机↔后端↔电脑秒传(THP blob)',
-    ['局域网互传(blob 分块+秒传)', '扫码配对', '传输历史', '大文件断点续传']),
+  '文件互传': ModuleDef('文件互传', Icons.send_to_mobile_outlined, FileSharePage()),
   '远程打印': _scaffold('远程打印', Icons.print_outlined, '后端接打印机',
     ['文档/图片发送到资源库打印', '打印队列', '打印记录'], note: '依赖资源库接打印机'),
   // ── 家庭/多端 ──
@@ -2841,6 +2837,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.19.0', '小模块做实第7-8批(共6个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地文件夹连播) / 短剧(本地竖屏连播) / 文件互传(局域网扫码秒传)'),
   ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
   ('v4.17.0', '小模块做实第一批: 计算器(四则/乘方/括号+历史) / 文本工具箱(JSON/Base64/URL/时间戳/字数统计) / 二维码(生成+保存PNG+历史) / 待办(分组+滑动删除) / 笔记(Markdown编辑预览+搜索) / 记账(分类+月度收支统计) / 剪贴板(收藏+置顶) — 全部点开即用, 不再是骨架页; 修复 AI 厂商中文名乱码(在线注册表强制 UTF-8 解码)', ''),
   ('v4.16.0', '固定Release签名(从此覆盖安装不再要求卸载) + 应用内下载修复(安装权限/FileProvider/三镜像自动切换/浏览器下载兜底) + 下载中心补网页版1.0 + 模块树状分类管理 + 聚合模块(工具箱/家庭中心) + 长按底栏弹模块抽屉 + 点击正文底栏收起为1/3保持 + 全模块右上角⋯菜单(全屏/切换模块/模块专属项, 不再一刀切播放器设置)', '里程碑'),
@@ -2857,8 +2854,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.18.0';
-  static const int currentCode = 50505;
+  static const String currentVersion = '4.19.0';
+  static const int currentCode = 50506;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
