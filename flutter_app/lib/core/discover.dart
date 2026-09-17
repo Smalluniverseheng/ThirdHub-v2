@@ -6,10 +6,11 @@ import 'dart:io';
 
 class ThpDevice {
   final String host; final int port; final List<String> caps; DateTime seen;
-  ThpDevice(this.host, this.port, this.caps, this.seen);
+  final String? instanceId; final String name;
+  ThpDevice(this.host, this.port, this.caps, this.seen, {this.instanceId, this.name = ''});
   bool get isLibrary => caps.contains('library');
   String get url => 'http://$host:$port';
-  String get label => isLibrary ? '资源库' : '引擎(${caps.join('/')})';
+  String get label => name.isNotEmpty ? name : (isLibrary ? '资源库' : '引擎(${caps.join('/')})');
 }
 
 class ThpDiscovery {
@@ -28,13 +29,35 @@ class ThpDiscovery {
         final dg = _sock!.receive();
         if (dg == null) return;
         final msg = utf8.decode(dg.data, allowMalformed: true).trim();
-        final m = RegExp(r'^THP/1 HELLO (\d+) ([\w,\-]+)$').firstMatch(msg);
-        if (m == null) return;
-        final port = int.parse(m.group(1)!);
-        final caps = m.group(2)!.split(',');
         final host = dg.address.address;
-        final key = '$host:$port';
-        devices[key] = ThpDevice(host, port, caps, DateTime.now());
+        // 优雅下线: THP/1 BYE <instanceId>
+        final bye = RegExp(r'^THP/1 BYE ([\w\-]+)$').firstMatch(msg);
+        if (bye != null) {
+          final iid = bye.group(1)!;
+          final before = devices.length;
+          devices.removeWhere((_, d) => d.instanceId == iid);
+          if (devices.length != before) _chg.add(null);
+          return;
+        }
+        // 新格式 THP/1.0: HELLO <port> <instanceId> <engine|library> <caps> [name]
+        var m = RegExp(r'^THP/1 HELLO (\d+) ([\w\-]+) (engine|library) ([\w:,\-]+)(?:\s+(.*))?$').firstMatch(msg);
+        String? instanceId; String name = '';
+        int port; List<String> caps;
+        if (m != null) {
+          port = int.parse(m.group(1)!);
+          instanceId = m.group(2)!;
+          caps = m.group(4)!.split(',');
+          if (m.group(3) == 'library' && !caps.contains('library')) caps = [...caps, 'library'];
+          name = m.group(5) ?? '';
+        } else {
+          // 旧草稿格式(兼容): HELLO <port> <caps>
+          final m2 = RegExp(r'^THP/1 HELLO (\d+) ([\w,\-]+)$').firstMatch(msg);
+          if (m2 == null) return;
+          port = int.parse(m2.group(1)!);
+          caps = m2.group(2)!.split(',');
+        }
+        final key = instanceId != null ? 'iid:$instanceId' : '$host:$port';
+        devices[key] = ThpDevice(host, port, caps, DateTime.now(), instanceId: instanceId, name: name);
         _chg.add(null);
       });
       // 每 30s 清理 90s 没再见到的设备
