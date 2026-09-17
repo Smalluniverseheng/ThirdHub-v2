@@ -376,7 +376,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.14.1', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.15.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -767,79 +767,127 @@ class _Pf extends State<ProfilePage> {
       if (mounted) setState(() {});
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e'))); } }
 
-  Widget entry(IconData icon, String title, String sub, Widget page) => ListTile(
-    leading: Container(width: 38, height: 38, decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
-      child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary)),
-    title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-    subtitle: sub.isEmpty ? null : Text(sub, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-    trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-    onTap: () => Navigator.push(context, smoothRoute(page)));
+  // Kimi 式设置行: 素色左图标 + 标题 + 右侧灰值 + chevron
+  Widget entry(IconData icon, String title, {String value = '', Widget? page, VoidCallback? onTap}) => ListTile(
+    dense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    leading: Icon(icon, size: 21),
+    title: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+      if (value.isNotEmpty) Text(value, style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
+      const SizedBox(width: 2),
+      const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+    ]),
+    onTap: onTap ?? (page != null ? () => Navigator.push(context, smoothRoute(page)).then((_) { if (mounted) setState(() {}); }) : null));
 
-  // 网页版同款分区: 数据管理 / 服务与安全 / 设置
+  // Kimi 式分组: 组名在卡片外(灰小字), 卡片大圆角
   Widget _section(String title, List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+    if (title.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 14, 14, 6),
       child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey))),
-    Card(margin: EdgeInsets.zero, child: Column(children: children)),
+    Card(margin: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(children: children)),
   ]);
+  Widget _sep() => const Divider(height: 1, indent: 52);
 
   @override Widget build(BuildContext c) {
-    final avatar = AppSettings.avatarB64;
     final nick = AppSettings.nickname;
     final logged = Cloud.loggedIn;
-    final accent = Theme.of(c).colorScheme.primary;
-    return Scaffold(appBar: AppBar(title: Text(tr('我的'))), body: ListView(padding: const EdgeInsets.all(14), children: [
-      // ── 用户卡(网页版同款: 头像+昵称+等级牌+邮箱, 点击进个人资料子页) ──
-      Card(margin: EdgeInsets.zero, child: InkWell(borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.push(c, smoothRoute(const ProfileSubPage())).then((_) => setState(() {})),
-        child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
-          CircleAvatar(radius: 26,
-            backgroundImage: avatar.isNotEmpty ? MemoryImage(base64Decode(avatar)) : null,
-            child: avatar.isEmpty ? Text(nick.isEmpty ? 'T' : nick[0].toUpperCase(), style: const TextStyle(fontSize: 17)) : null),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Flexible(child: Text(logged || nick.isNotEmpty ? (nick.isEmpty ? Cloud.email : nick) : '未登录',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
-              const SizedBox(width: 6),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                decoration: BoxDecoration(color: (logged ? accent : Colors.grey).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-                child: Text(logged ? '会员' : '游客', style: TextStyle(fontSize: 9, color: logged ? accent : Colors.grey))),
-            ]),
-            const SizedBox(height: 2),
-            Text(logged ? Cloud.email : '点按设置头像、昵称、登录账号',
-              style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
-          ])),
-          const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-        ])))),
-      // ── 数据管理 ──
-      _section('数据管理', [
-        entry(Icons.apps_outlined, '下载 App', '前端 · 后端 · 阅读/venera 引擎 · 网页版', const DownloadAppsPage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.delete_outline, '回收站', '删除的书架/歌单/安装包可恢复', const RecycleBinPage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.cloud_outlined, tr('云端'), '云存储 · 会员 · 资料同步', const CloudPage()),
+    return Scaffold(appBar: AppBar(title: Text(tr('设置'))), body: ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 20), children: [
+      _section('', [
+        entry(Icons.person_outline, '账号安全', value: logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录', page: const ProfileSubPage()),
+        _sep(),
+        entry(Icons.notifications_none, '通知', page: const NotificationSettingsPage()),
+        _sep(),
+        entry(Icons.wb_sunny_outlined, tr('外观'), page: const AppearancePage()),
+        _sep(),
+        entry(Icons.dashboard_customize_outlined, '功能管理', page: const NavSettingsPage()),
       ]),
-      // ── 服务与安全 ──
-      _section('服务与安全', [
-        entry(Icons.person_outline, '账号', logged ? Cloud.email : '登录 / 注册 ThirdHub 账号', const AccountPage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.extension, '引擎直连', EngineDirect.connected ? '已连接 ${EngineDirect.name}' : '局域网引擎发现 · 不经后端直接搜索', const EngineDirectPage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.settings_outlined, tr('系统'), '连接器 · 应用锁 · 缓存 · 版本更新', const SystemPage()),
+      _section('数据', [
+        entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
+        _sep(),
+        entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
+        _sep(),
+        entry(Icons.download_outlined, '下载 App', page: const DownloadAppsPage()),
       ]),
-      // ── 设置 ──
-      _section('设置', [
-        entry(Icons.palette_outlined, tr('个性化'), '语言 · 主题外观 · 强调色 · 开屏动画', const AppearancePage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.navigation_outlined, tr('底部导航栏'), '导航栏 · 折叠 · 悬浮球位置', const NavSettingsPage()),
-        const Divider(height: 1, indent: 66),
-        entry(Icons.info_outline, tr('关于'), '使用指南 · 开源致谢', const AboutPage()),
+      _section('服务', [
+        entry(Icons.extension_outlined, '引擎直连', value: EngineDirect.connected ? '已连接' : '', page: const EngineDirectPage()),
+        _sep(),
+        entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
       ]),
-      const SizedBox(height: 18),
-      Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端', style: const TextStyle(fontSize: 11, color: Colors.grey))),
+      _section('帮助中心', [
+        entry(Icons.help_outline, '帮助中心', page: const HelpPage()),
+        _sep(),
+        entry(Icons.mail_outline, '反馈问题', onTap: () => launchUrl(Uri.parse('https://github.com/Smalluniverseheng/ThirdHub-v2/issues'), mode: LaunchMode.externalApplication)),
+        _sep(),
+        entry(Icons.info_outline, '关于 ThirdHub', page: const AboutPage()),
+        _sep(),
+        entry(Icons.system_update_alt, '检查更新', value: 'v${Updater.currentVersion}', onTap: () => Updater.check(context, manual: true)),
+      ]),
+      if (logged) ...[
+        const SizedBox(height: 18),
+        FilledButton.tonal(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23))),
+          onPressed: () async { await Cloud.signOut(); if (mounted) setState(() {}); },
+          child: const Text('退出登录')),
+      ],
+      const SizedBox(height: 12),
+      Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6', style: const TextStyle(fontSize: 10.5, color: Colors.grey))),
     ]));
   }
+}
+
+// ── 通知设置(Kimi 格式子页) ──
+class NotificationSettingsPage extends StatefulWidget { const NotificationSettingsPage({super.key}); @override State<NotificationSettingsPage> createState() => _Nsp(); }
+class _Nsp extends State<NotificationSettingsPage> {
+  bool _ann = true, _work = true, _update = true;
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() { _ann = p.getBool('notify_ann') ?? true; _work = p.getBool('notify_work') ?? true; _update = p.getBool('notify_update') ?? true; });
+  }
+  Future<void> _set(String k, bool v) async { final p = await SharedPreferences.getInstance(); await p.setBool(k, v); setState(() {}); }
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('通知')),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: Column(children: [
+        SwitchListTile(dense: true, value: _ann, onChanged: (v) { _ann = v; _set('notify_ann', v); },
+          title: const Text('公告通知', style: TextStyle(fontSize: 14.5)), subtitle: const Text('版本公告与活动', style: TextStyle(fontSize: 11))),
+        const Divider(height: 1, indent: 52),
+        SwitchListTile(dense: true, value: _work, onChanged: (v) { _work = v; _set('notify_work', v); },
+          title: const Text('作业完成提醒', style: TextStyle(fontSize: 14.5)), subtitle: const Text('Work 作业完成/待确认时提醒', style: TextStyle(fontSize: 11))),
+        const Divider(height: 1, indent: 52),
+        SwitchListTile(dense: true, value: _update, onChanged: (v) { _update = v; _set('notify_update', v); },
+          title: const Text('追更提醒', style: TextStyle(fontSize: 14.5)), subtitle: const Text('书架有新章节时提醒', style: TextStyle(fontSize: 11))),
+      ])),
+    ]));
+}
+
+// ── 帮助中心(Kimi 格式子页) ──
+class HelpPage extends StatelessWidget { const HelpPage({super.key});
+  Widget _row(BuildContext c, IconData icon, String title, VoidCallback onTap) => ListTile(dense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    leading: Icon(icon, size: 21), title: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+    trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey), onTap: onTap);
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('帮助中心')),
+    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: Column(children: [
+        _row(c, Icons.menu_book_outlined, '使用文档', () => launchUrl(Uri.parse('https://github.com/Smalluniverseheng/ThirdHub-v2'), mode: LaunchMode.externalApplication)),
+        const Divider(height: 1, indent: 52),
+        _row(c, Icons.privacy_tip_outlined, '隐私政策', () => Navigator.push(c, smoothRoute(const LegalDocPage(title: '隐私政策', asset: 'assets/legal/privacy.md')))),
+        const Divider(height: 1, indent: 52),
+        _row(c, Icons.description_outlined, '用户服务协议', () => Navigator.push(c, smoothRoute(const LegalDocPage(title: '用户服务协议', asset: 'assets/legal/terms.md')))),
+      ])),
+      const Padding(padding: EdgeInsets.fromLTRB(16, 14, 14, 6),
+        child: Text('常见问题', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      Card(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: const Column(children: [
+        ListTile(dense: true, title: Text('后端/引擎连不上?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text('确认手机与后端在同一局域网; 后端已启动且指纹已确认; 引擎靠局域网广播自动发现, 无需配置', style: TextStyle(fontSize: 11.5))),
+        Divider(height: 1, indent: 16),
+        ListTile(dense: true, title: Text('数据存在哪?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text('用户数据全部存你自己的资源库; 云端只存账号、头像、设置与公钥', style: TextStyle(fontSize: 11.5))),
+        Divider(height: 1, indent: 16),
+        ListTile(dense: true, title: Text('内容从哪来?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text('ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的引擎提供', style: TextStyle(fontSize: 11.5))),
+      ])),
+    ]));
 }
 
 // ── 个人资料子页(网页版同款): 大头像带相机角标 + 可编辑资料行 + 退出登录 ──
@@ -2054,6 +2102,99 @@ final Map<String, ModuleDef> kModules = {
   '相册': const ModuleDef('相册', Icons.photo_library_outlined, GalleryPage()),
   '文件': const ModuleDef('文件', Icons.folder_outlined, FilesPage()),
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
+  // ═══ 规划文档 v2.0 全量模块框架(骨架页, 功能按版本逐步落地) ═══
+  // ── Work 模式 ──
+  '作业中心': _scaffold('作业中心', Icons.assignment_turned_in_outlined, 'Work 模式: 放着不管的长任务在这里跑, 前端被杀作业继续',
+    ['作业列表(运行中/排队/待确认/已完成/失败)', '作业详情+步骤回放(复用工具卡片)', 'T3 确认队列集中审批', '定时调度(每天摘要/每周整理)', '结果自动归档到笔记/待办/相册', '作业模板: 缓存全书/相册去重/失效源巡检', '完成通知(webhook/ntfy 自配)', '作业权限范围(模块/工具白名单/时长上限)', '断点续跑: 后端重启自动恢复', '维护/开发类作业: 批量URL替换/索引重建/规则批量测试/生成修复代码'],
+    note: '依赖资源库 Agent 运行时(P6), 骨架先行'),
+  // ── 私有数据 ──
+  '笔记': _scaffold('笔记', Icons.edit_note, 'Markdown 笔记, AI 摘要, 承接对话导出/阅读批注/网页摘录',
+    ['Markdown 编辑与预览', 'AI 一键摘要/整理', '承接对话导出与阅读批注', '全文搜索', '多端同步(THP changes)']),
+  '待办': _scaffold('待办', Icons.check_circle_outline, 'AI 对话提取任务, 购物清单变体, 与日历联动',
+    ['任务增删改/勾选完成', 'AI 从对话提取待办', '清单分组(购物/工作/生活)', '与日历联动提醒']),
+  '录音机': _scaffold('录音机', Icons.mic_none, '录音入库, AI 转写+摘要=Work 作业, 结果落笔记',
+    ['一键录音/暂停/续录', '录音入资源库 blob', 'AI 转写(Work 作业)', 'AI 摘要自动落笔记']),
+  '日历': _scaffold('日历', Icons.calendar_month_outlined, 'AI 识别时间建日程, 多端提醒',
+    ['月/周/日视图', 'AI 从对话识别时间自动建日程', '多端同步提醒', '与待办/家庭日历互通']),
+  '提醒中心': _scaffold('提醒中心', Icons.alarm, '统一闹钟/提醒入口',
+    ['全部提醒一处管理', '追更/作业/日程提醒汇聚', '免打扰时段']),
+  '日记': _scaffold('日记', Icons.book_outlined, '每日记录, AI 周回顾=Work 作业',
+    ['日记撰写(图文)', '时间轴回顾', 'AI 周回顾自动生成', '心情/天气标记']),
+  '记账': _scaffold('记账', Icons.account_balance_wallet_outlined, 'AI 自动分类, 月度报告=Work 作业',
+    ['快速记一笔', 'AI 自动分类', '月度收支报告(Work 作业)', '图表统计']),
+  '剪贴板': _scaffold('剪贴板', Icons.content_paste, '跨设备剪贴板历史',
+    ['剪贴板历史记录', '跨设备同步(THP)', '常用内容置顶', '敏感内容自动打码']),
+  '书签': _scaffold('书签', Icons.bookmark_border, '网页书签多端同步, 承接浏览器',
+    ['书签收藏/分组', '多端同步(THP bookmark 模块)', '失效书签清理作业', '从浏览器一键收藏']),
+  '代码片段': _scaffold('代码片段', Icons.code, '代码收藏, AI 一句"找我上次那个函数"',
+    ['按语言/标签收藏片段', 'AI 语义检索', '从 AI 对话一键保存', '语法高亮']),
+  'Markdown': _scaffold('Markdown', Icons.text_fields, 'Markdown 编辑器, AI 润色',
+    ['实时预览编辑', 'AI 润色/扩写', '导出 PDF/图片', '与笔记模块互通']),
+  '健康记录': _scaffold('健康记录', Icons.favorite_border, '体重/血压手动记, AI 看趋势=Work 作业',
+    ['体重/血压/睡眠记录', '趋势图表', 'AI 趋势分析(Work 作业)', '导出报告']),
+  '通讯录备份': _scaffold('通讯录备份', Icons.contacts_outlined, '换机不丢, 加密存资源库',
+    ['通讯录加密备份到资源库', '换机一键恢复', '增量同步'], note: '数据仅存用户资源库, 云端不可见'),
+  '短信备份': _scaffold('短信备份', Icons.sms_outlined, '短信归档+关键词搜索',
+    ['短信归档到资源库', '关键词搜索', '验证码自动提取'], note: '数据仅存用户资源库, 云端不可见'),
+  // ── 内容消费 ──
+  '播客': _scaffold('播客', Icons.podcasts, 'RSS 播客源, 断点续听',
+    ['RSS 订阅管理', '断点续听', '倍速/睡眠定时', '播客引擎接入(THP m:podcast)']),
+  '有声书': _scaffold('有声书', Icons.headphones, '分集音频书库',
+    ['分集音频书库', '断点续听', '书架管理', '有声书引擎接入(THP m:audiobook)']),
+  '广播': _scaffold('广播', Icons.radio, '网络电台聚合',
+    ['网络电台聚合收听', '收藏频道', '后台播放']),
+  '短剧': _scaffold('短剧', Icons.movie_outlined, '竖屏短剧/漫剧',
+    ['竖屏短剧播放', '选集连播', '观看历史', '短剧引擎接入(THP m:shortplay)']),
+  '壁纸': _scaffold('壁纸', Icons.wallpaper, 'Wallhaven 官方 API, 收藏同步',
+    ['壁纸浏览/搜索', '一键设为壁纸', '收藏多端同步', '每日壁纸']),
+  '资讯': _scaffold('资讯', Icons.newspaper, 'article 模块, 每日 AI 摘要=定时作业',
+    ['资讯流浏览', '每日 AI 摘要(定时作业)', '订阅源管理', '稍后读']),
+  '天气快递': _scaffold('天气快递', Icons.wb_sunny_outlined, '公开 API 天气+快递查询',
+    ['多日天气预报', '快递单号查询', '城市多端同步', '桌面小部件(规划)']),
+  '菜谱': _scaffold('菜谱', Icons.restaurant_menu, '菜谱浏览, 收藏入本地库',
+    ['菜谱搜索/分类', '收藏入本地库', '购物清单生成(联动待办)', 'AI 问答(怎么做)']),
+  '学习工具': _scaffold('学习工具', Icons.school_outlined, '查词卡/背诵清单, 学生场景',
+    ['单词卡片', '背诵清单', 'AI 出题/讲解', '学习计划']),
+  '课程表': _scaffold('课程表', Icons.table_chart_outlined, '课表+上课提醒',
+    ['周课表视图', '上课前提醒', '单双周支持', '导入分享']),
+  // ── 工具效率 ──
+  '翻译': _scaffold('翻译', Icons.translate, '文本/截图/文档翻译, 调 AI',
+    ['文本互译(多模型)', '截图翻译(OCR)', '文档翻译', '历史记录']),
+  '扫描仪': _scaffold('扫描仪', Icons.document_scanner_outlined, 'OCR 转 PDF 入笔记',
+    ['拍照扫描', 'OCR 文字识别', '生成 PDF 入笔记/文件', '多页连拍']),
+  '二维码': _scaffold('二维码', Icons.qr_code_scanner, '扫一扫万能入口',
+    ['扫码识别(链接/文本/WiFi)', '生成二维码', '扫码历史']),
+  '悬浮便签': _scaffold('悬浮便签', Icons.note_alt_outlined, '全局悬浮速记(复用悬浮球体系)',
+    ['全局悬浮速记窗', '速记自动落笔记', '透明度/位置自定义']),
+  '计算器': _scaffold('计算器', Icons.calculate_outlined, '计算+单位/汇率换算',
+    ['科学计算', '单位换算', '汇率换算', '历史记录']),
+  '白板': _scaffold('白板', Icons.draw_outlined, '手写板, 作品入图库',
+    ['自由手绘/多色笔', '图形工具', '保存入相册', '手写公式(规划)']),
+  '文本工具箱': _scaffold('文本工具箱', Icons.text_snippet_outlined, 'JSON 格式化/编解码等',
+    ['JSON 格式化/校验', 'Base64/URL 编解码', '时间戳转换', '正则测试', '文本对比']),
+  '传感器': _scaffold('传感器', Icons.sensors, '尺子/水平仪/取色器',
+    ['屏幕尺子', '水平仪', '取色器', '指南针/光线计(按硬件)']),
+  '文件互传': _scaffold('文件互传', Icons.swap_horiz, '手机↔后端↔电脑秒传(THP blob)',
+    ['局域网互传(blob 分块+秒传)', '扫码配对', '传输历史', '大文件断点续传']),
+  '远程打印': _scaffold('远程打印', Icons.print_outlined, '后端接打印机',
+    ['文档/图片发送到资源库打印', '打印队列', '打印记录'], note: '依赖资源库接打印机'),
+  // ── 家庭/多端 ──
+  '共享相册': _scaffold('共享相册', Icons.group_outlined, '多人备份到同一后端, 共享时间轴',
+    ['家庭成员共享时间轴', '多人备份汇聚', '成员权限管理']),
+  '共享清单': _scaffold('共享清单', Icons.playlist_add_check, '购物/待办家人共用',
+    ['家庭购物清单', '共享待办', '完成实时同步']),
+  '家庭影院': _scaffold('家庭影院', Icons.theaters, '后端视频库海报墙',
+    ['视频库海报墙', '元数据刮削(引擎)', '多设备续播']),
+  '家庭音乐库': _scaffold('家庭音乐库', Icons.library_music_outlined, '统一点播',
+    ['后端音乐库点播', '家庭歌单', '多人排队点歌']),
+  '摄像头': _scaffold('摄像头', Icons.videocam_outlined, '局域网 RTSP 实时看',
+    ['RTSP 摄像头实时画面', '多路画面', '录像回放(规划)']),
+  '智能家居': _scaffold('智能家居', Icons.home_outlined, '米家/HA 控制走引擎模式',
+    ['设备控制面板', '场景联动', '引擎模式接入(官方零内置)']),
+  '设备互联': _scaffold('设备互联', Icons.devices, '手机遥控后端/第二屏',
+    ['遥控后端播放', '第二屏投送', '设备状态总览']),
+  '家庭日历': _scaffold('家庭日历', Icons.family_restroom, '全家日程共享(区别于个人日历)',
+    ['家庭共享日程', '成员生日提醒', '家庭待办联动']),
 };
 
 class _ComingSoonPage extends StatelessWidget {
@@ -2066,6 +2207,51 @@ class _ComingSoonPage extends StatelessWidget {
     const Text('敬请期待', style: TextStyle(color: Colors.grey, fontSize: 11)),
   ]));
 }
+
+// ═══ 模块骨架页: 规划文档全量模块先立框架, 功能按版本逐步落地 ═══
+class ModuleScaffoldPage extends StatelessWidget {
+  final String name; final IconData icon; final String desc; final List<String> features; final String note;
+  const ModuleScaffoldPage({super.key, required this.name, required this.icon, required this.desc, required this.features, this.note = ''});
+  @override Widget build(BuildContext c) {
+    final accent = Theme.of(c).colorScheme.primary;
+    return ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+      Card(child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
+        Container(width: 52, height: 52, decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
+          child: Icon(icon, size: 26, color: accent)),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Flexible(child: Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+            const SizedBox(width: 8),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+              child: const Text('框架已就位', style: TextStyle(fontSize: 9, color: Colors.orange))),
+          ]),
+          const SizedBox(height: 4),
+          Text(desc, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ])),
+      ]))),
+      const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
+        child: Text('规划功能(按版本逐步落地)', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      Card(child: Column(children: [
+        for (var i = 0; i < features.length; i++) ...[
+          if (i > 0) const Divider(height: 1, indent: 44),
+          ListTile(dense: true,
+            leading: Icon(Icons.check_circle_outline, size: 18, color: Colors.grey.withValues(alpha: 0.6)),
+            title: Text(features[i], style: const TextStyle(fontSize: 13))),
+        ],
+      ])),
+      if (note.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+        child: Text(note, style: const TextStyle(fontSize: 11, color: Colors.grey))),
+      Padding(padding: const EdgeInsets.only(top: 10),
+        child: Text('已在「我的 → 底部导航栏」中可开关/排序此模块', style: TextStyle(fontSize: 10, color: Colors.grey.withValues(alpha: 0.7))),
+      ),
+    ]);
+  }
+}
+ModuleDef _scaffold(String name, IconData icon, String desc, List<String> feats, {String note = '', String? localKind}) =>
+  ModuleDef(name, icon, ModuleScaffoldPage(name: name, icon: icon, desc: desc, features: feats, note: note), localKind: localKind);
 
 // 底部导航壳(完全体同款): PageView 左右滑动切模块 + 底部"我的"固定最右, 其它模块横向自由滑动
 class RootNav extends StatefulWidget {
@@ -2562,6 +2748,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.15.0', '功能规划v2.0全量模块框架落地(作业中心/笔记/待办/录音机/日历/提醒/日记/记账/剪贴板/书签/代码片段/Markdown/健康/播客/有声书/广播/短剧/壁纸/资讯/天气快递/菜谱/学习工具/课程表/翻译/扫描仪/二维码/悬浮便签/计算器/白板/文本工具箱/传感器/文件互传/远程打印/家庭系列等41个新模块, 在「我的→功能管理」开启) + 「我的」页重构为Kimi式设置(分组卡片/通知设置/帮助中心/退出登录)', '里程碑'),
   ('v4.14.1', 'THP/1.0协议漏洞修复(blob乱序写入/sha256校验/Range校验/content:batch NDJSON/关停BYE广播/双栈IPv6) + 模块介绍页 + 历史版本下载', '重构'),
   ('v4.14.0', 'THP/1.0正式协议全量落地(发现/搜索/目录/内容/订阅/大文件/作业 25项全通过) + 后端模块化重构 + 首启协议弹窗(隐私政策/服务条款) + 加载式开屏可关动画 + 开屏IPv6标识', '里程碑'),
   ('v4.13.0', '相册权限修复(真正能打开系统相册) + 音乐通知栏服务补全 + LRC同步歌词左右滑动 + 底部导航拖动排序 + 滚动自动收起导航栏(省1/3空间) + 浏览器/相册沉浸布局 + 浏览器全屏模式', ''),
@@ -2574,8 +2761,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.14.1';
-  static const int currentCode = 50501;
+  static const String currentVersion = '4.15.0';
+  static const int currentCode = 50502;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
