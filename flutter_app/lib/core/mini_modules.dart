@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -24,61 +25,65 @@ class _Store {
 }
 
 // ═══ 计算器: 四则/括号/百分/乘方 + 历史 ═══
+// 递归下降解析器: + - * / % ^ ( ) 小数 负号(类方法, 支持相互递归)
+class _CalcParser {
+  final String s; int i = 0;
+  _CalcParser(this.s);
+  double parse() {
+    final v = _expr();
+    while (i < s.length && s[i] == ' ') i++;
+    if (i != s.length) throw '表达式有误';
+    return v;
+  }
+  double _expr() {
+    var v = _term();
+    while (i < s.length && (s[i] == '+' || s[i] == '-')) {
+      final op = s[i++]; final r = _term();
+      v = op == '+' ? v + r : v - r;
+    }
+    return v;
+  }
+  double _term() {
+    var v = _factor();
+    while (i < s.length && (s[i] == '*' || s[i] == '/' || s[i] == '%')) {
+      final op = s[i++]; final r = _factor();
+      if (op == '*') v *= r; else if (op == '/') { if (r == 0) throw '除数为 0'; v /= r; } else v %= r;
+    }
+    return v;
+  }
+  double _factor() {
+    var base = _unary();
+    if (i < s.length && s[i] == '^') { i++; base = math.pow(base, _factor()).toDouble(); }
+    return base;
+  }
+  double _unary() {
+    if (i < s.length && s[i] == '-') { i++; return -_unary(); }
+    if (i < s.length && s[i] == '+') { i++; return _unary(); }
+    return _atom();
+  }
+  double _atom() {
+    while (i < s.length && s[i] == ' ') i++;
+    if (i < s.length && s[i] == '(') {
+      i++; final v = _expr();
+      if (i >= s.length || s[i] != ')') throw '括号不配对';
+      i++; return v;
+    }
+    final m = RegExp(r'\d+\.?\d*|\.\d+').matchAsPrefix(s, i);
+    if (m == null) throw '表达式有误';
+    i = m.end; return double.parse(m.group(0)!);
+  }
+}
+
 class CalcPage extends StatefulWidget { const CalcPage({super.key}); @override State<CalcPage> createState() => _Calc(); }
 class _Calc extends State<CalcPage> {
   String expr = '', result = '';
+  bool isErr = false;
   List<String> history = [];
 
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     setState(() => history = p.getStringList('calc_history') ?? []);
-  }
-
-  // 递归下降解析: + - * / % ^ ( ) 小数 负号
-  static double _parse(String s) {
-    var i = 0;
-    double parseExpr() {
-      var v = parseTerm();
-      while (i < s.length && (s[i] == '+' || s[i] == '-')) {
-        final op = s[i++]; final r = parseTerm();
-        v = op == '+' ? v + r : v - r;
-      }
-      return v;
-    }
-    double parseTerm() {
-      var v = parseFactor();
-      while (i < s.length && (s[i] == '*' || s[i] == '/' || s[i] == '%')) {
-        final op = s[i++]; final r = parseFactor();
-        if (op == '*') v *= r; else if (op == '/') { if (r == 0) throw '除数为 0'; v /= r; } else v %= r;
-      }
-      return v;
-    }
-    double parseFactor() {
-      var base = parseUnary();
-      if (i < s.length && s[i] == '^') { i++; base = math.pow(base, parseFactor()).toDouble(); }
-      return base;
-    }
-    double parseUnary() {
-      if (i < s.length && s[i] == '-') { i++; return -parseUnary(); }
-      if (i < s.length && s[i] == '+') { i++; return parseUnary(); }
-      return parseAtom();
-    }
-    double parseAtom() {
-      while (i < s.length && s[i] == ' ') i++;
-      if (i < s.length && s[i] == '(') {
-        i++; final v = parseExpr();
-        if (i >= s.length || s[i] != ')') throw '括号不配对';
-        i++; return v;
-      }
-      final m = RegExp(r'\d+\.?\d*|\.\d+').matchAsPrefix(s, i);
-      if (m == null) throw '表达式有误';
-      i = m.end; return double.parse(m.group(0)!);
-    }
-    final v = parseExpr();
-    while (i < s.length && s[i] == ' ') i++;
-    if (i != s.length) throw '表达式有误';
-    return v;
   }
 
   static String _fmt(double v) {
@@ -89,16 +94,17 @@ class _Calc extends State<CalcPage> {
 
   void _tap(String k) => setState(() {
     switch (k) {
-      case 'C': expr = ''; result = '';
+      case 'C': expr = ''; result = ''; isErr = false;
       case '⌫': if (expr.isNotEmpty) expr = expr.substring(0, expr.length - 1);
       case '=':
         if (expr.isEmpty) break;
         try {
-          result = _fmt(_parse(expr.replaceAll('×', '*').replaceAll('÷', '/')));
+          result = _fmt(_CalcParser(expr.replaceAll('×', '*').replaceAll('÷', '/')).parse());
           history.insert(0, '$expr = $result');
           if (history.length > 50) history = history.sublist(0, 50);
           SharedPreferences.getInstance().then((p) => p.setStringList('calc_history', history));
-        } catch (e) { result = '$e'; }
+          isErr = false;
+        } catch (e) { result = '$e'; isErr = true; }
       default: expr += k;
     }
   });
@@ -129,7 +135,7 @@ class _Calc extends State<CalcPage> {
               child: Text(expr.isEmpty ? '0' : expr, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w300))),
             const SizedBox(height: 6),
             Text(result, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600,
-              color: result == '错误' || result.contains('误') || result.contains('0') && result.startsWith('除') ? Colors.redAccent : scheme.primary)),
+              color: isErr ? Colors.redAccent : scheme.primary)),
           ])))),
       for (final row in keys) Row(children: [
         for (final k in row) Expanded(child: Padding(padding: const EdgeInsets.all(4),
@@ -231,7 +237,7 @@ class _Qr extends State<QrPage> {
     try {
       final painter = QrPainter(data: data, version: QrVersions.auto, gapless: true);
       final img = await painter.toImage(600);
-      final bytes = (await img.toByteData(format: ImageByteFormat.png))!.buffer.asUint8List();
+      final bytes = (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
       final ext = await getExternalStorageDirectory();
       final dir = Directory('${ext!.path}/qrcodes'); if (!await dir.exists()) await dir.create(recursive: true);
       final f = File('${dir.path}/qr-${DateTime.now().millisecondsSinceEpoch}.png');
