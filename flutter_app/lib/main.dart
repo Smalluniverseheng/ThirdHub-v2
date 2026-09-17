@@ -20,6 +20,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'core/mini_modules.dart';
+import 'core/mini_modules2.dart';
+import 'core/mini_modules3.dart';
+import 'core/mini_modules4.dart';
+import 'core/mini_modules5.dart';
+import 'core/mini_modules6.dart';
 import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
@@ -377,7 +382,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.17.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.18.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -2111,63 +2116,43 @@ final Map<String, ModuleDef> kModules = {
   // ── 私有数据 ──
   '笔记': const ModuleDef('笔记', Icons.edit_note, NotesPage()),
   '待办': const ModuleDef('待办', Icons.check_circle_outline, TodoPage()),
-  '录音机': _scaffold('录音机', Icons.mic_none, '录音入库, AI 转写+摘要=Work 作业, 结果落笔记',
-    ['一键录音/暂停/续录', '录音入资源库 blob', 'AI 转写(Work 作业)', 'AI 摘要自动落笔记']),
-  '日历': _scaffold('日历', Icons.calendar_month_outlined, 'AI 识别时间建日程, 多端提醒',
-    ['月/周/日视图', 'AI 从对话识别时间自动建日程', '多端同步提醒', '与待办/家庭日历互通']),
-  '提醒中心': _scaffold('提醒中心', Icons.alarm, '统一闹钟/提醒入口',
-    ['全部提醒一处管理', '追更/作业/日程提醒汇聚', '免打扰时段']),
-  '日记': _scaffold('日记', Icons.book_outlined, '每日记录, AI 周回顾=Work 作业',
-    ['日记撰写(图文)', '时间轴回顾', 'AI 周回顾自动生成', '心情/天气标记']),
+  '录音机': const ModuleDef('录音机', Icons.mic_none, RecorderPage()),
+  '日历': const ModuleDef('日历', Icons.calendar_month_outlined, CalendarPage()),
+  '提醒中心': const ModuleDef('提醒中心', Icons.alarm, RemindersPage()),
+  '日记': const ModuleDef('日记', Icons.book_outlined, DiaryPage()),
   '记账': const ModuleDef('记账', Icons.account_balance_wallet_outlined, LedgerPage()),
   '剪贴板': const ModuleDef('剪贴板', Icons.content_paste, ClipboardPage()),
-  '书签': _scaffold('书签', Icons.bookmark_border, '网页书签多端同步, 承接浏览器',
-    ['书签收藏/分组', '多端同步(THP bookmark 模块)', '失效书签清理作业', '从浏览器一键收藏']),
-  '代码片段': _scaffold('代码片段', Icons.code, '代码收藏, AI 一句"找我上次那个函数"',
-    ['按语言/标签收藏片段', 'AI 语义检索', '从 AI 对话一键保存', '语法高亮']),
-  'Markdown': _scaffold('Markdown', Icons.text_fields, 'Markdown 编辑器, AI 润色',
-    ['实时预览编辑', 'AI 润色/扩写', '导出 PDF/图片', '与笔记模块互通']),
-  '健康记录': _scaffold('健康记录', Icons.favorite_border, '体重/血压手动记, AI 看趋势=Work 作业',
-    ['体重/血压/睡眠记录', '趋势图表', 'AI 趋势分析(Work 作业)', '导出报告']),
+  '书签': const ModuleDef('书签', Icons.bookmark_border, BookmarksPage()),
+  '代码片段': const ModuleDef('代码片段', Icons.code, SnippetsPage()),
+  'Markdown': const ModuleDef('Markdown', Icons.text_fields, MarkdownPage()),
+  '健康记录': const ModuleDef('健康记录', Icons.favorite_border, HealthPage()),
   '通讯录备份': _scaffold('通讯录备份', Icons.contacts_outlined, '换机不丢, 加密存资源库',
     ['通讯录加密备份到资源库', '换机一键恢复', '增量同步'], note: '数据仅存用户资源库, 云端不可见'),
   '短信备份': _scaffold('短信备份', Icons.sms_outlined, '短信归档+关键词搜索',
     ['短信归档到资源库', '关键词搜索', '验证码自动提取'], note: '数据仅存用户资源库, 云端不可见'),
   // ── 内容消费 ──
-  '播客': _scaffold('播客', Icons.podcasts, 'RSS 播客源, 断点续听',
-    ['RSS 订阅管理', '断点续听', '倍速/睡眠定时', '播客引擎接入(THP m:podcast)']),
+  '播客': const ModuleDef('播客', Icons.podcasts, PodcastPage()),
   '有声书': _scaffold('有声书', Icons.headphones, '分集音频书库',
     ['分集音频书库', '断点续听', '书架管理', '有声书引擎接入(THP m:audiobook)']),
-  '广播': _scaffold('广播', Icons.radio, '网络电台聚合',
-    ['网络电台聚合收听', '收藏频道', '后台播放']),
+  '广播': const ModuleDef('广播', Icons.radio, RadioPage()),
   '短剧': _scaffold('短剧', Icons.movie_outlined, '竖屏短剧/漫剧',
     ['竖屏短剧播放', '选集连播', '观看历史', '短剧引擎接入(THP m:shortplay)']),
-  '壁纸': _scaffold('壁纸', Icons.wallpaper, 'Wallhaven 官方 API, 收藏同步',
-    ['壁纸浏览/搜索', '一键设为壁纸', '收藏多端同步', '每日壁纸']),
-  '资讯': _scaffold('资讯', Icons.newspaper, 'article 模块, 每日 AI 摘要=定时作业',
-    ['资讯流浏览', '每日 AI 摘要(定时作业)', '订阅源管理', '稍后读']),
-  '天气快递': _scaffold('天气快递', Icons.wb_sunny_outlined, '公开 API 天气+快递查询',
-    ['多日天气预报', '快递单号查询', '城市多端同步', '桌面小部件(规划)']),
-  '菜谱': _scaffold('菜谱', Icons.restaurant_menu, '菜谱浏览, 收藏入本地库',
-    ['菜谱搜索/分类', '收藏入本地库', '购物清单生成(联动待办)', 'AI 问答(怎么做)']),
-  '学习工具': _scaffold('学习工具', Icons.school_outlined, '查词卡/背诵清单, 学生场景',
-    ['单词卡片', '背诵清单', 'AI 出题/讲解', '学习计划']),
-  '课程表': _scaffold('课程表', Icons.table_chart_outlined, '课表+上课提醒',
-    ['周课表视图', '上课前提醒', '单双周支持', '导入分享']),
+  '壁纸': const ModuleDef('壁纸', Icons.wallpaper, WallpaperPage()),
+  '资讯': const ModuleDef('资讯', Icons.newspaper, NewsPage()),
+  '天气快递': const ModuleDef('天气快递', Icons.wb_sunny_outlined, WeatherPage()),
+  '菜谱': const ModuleDef('菜谱', Icons.restaurant_menu, RecipePage()),
+  '学习工具': const ModuleDef('学习工具', Icons.school_outlined, StudyPage()),
+  '课程表': const ModuleDef('课程表', Icons.table_chart_outlined, TimetablePage()),
   // ── 工具效率 ──
-  '翻译': _scaffold('翻译', Icons.translate, '文本/截图/文档翻译, 调 AI',
-    ['文本互译(多模型)', '截图翻译(OCR)', '文档翻译', '历史记录']),
+  '翻译': const ModuleDef('翻译', Icons.translate, TranslatePage()),
   '扫描仪': _scaffold('扫描仪', Icons.document_scanner_outlined, 'OCR 转 PDF 入笔记',
     ['拍照扫描', 'OCR 文字识别', '生成 PDF 入笔记/文件', '多页连拍']),
   '二维码': const ModuleDef('二维码', Icons.qr_code_scanner, QrPage()),
-  '悬浮便签': _scaffold('悬浮便签', Icons.note_alt_outlined, '全局悬浮速记(复用悬浮球体系)',
-    ['全局悬浮速记窗', '速记自动落笔记', '透明度/位置自定义']),
+  '悬浮便签': const ModuleDef('悬浮便签', Icons.note_alt_outlined, QuickNotePage()),
   '计算器': const ModuleDef('计算器', Icons.calculate_outlined, CalcPage()),
-  '白板': _scaffold('白板', Icons.draw_outlined, '手写板, 作品入图库',
-    ['自由手绘/多色笔', '图形工具', '保存入相册', '手写公式(规划)']),
+  '白板': const ModuleDef('白板', Icons.draw_outlined, WhiteboardPage()),
   '文本工具箱': const ModuleDef('文本工具箱', Icons.text_snippet_outlined, TextToolsPage()),
-  '传感器': _scaffold('传感器', Icons.sensors, '尺子/水平仪/取色器',
-    ['屏幕尺子', '水平仪', '取色器', '指南针/光线计(按硬件)']),
+  '传感器': const ModuleDef('传感器', Icons.sensors, SensorPage()),
   '文件互传': _scaffold('文件互传', Icons.swap_horiz, '手机↔后端↔电脑秒传(THP blob)',
     ['局域网互传(blob 分块+秒传)', '扫码配对', '传输历史', '大文件断点续传']),
   '远程打印': _scaffold('远程打印', Icons.print_outlined, '后端接打印机',
@@ -2856,6 +2841,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
   ('v4.17.0', '小模块做实第一批: 计算器(四则/乘方/括号+历史) / 文本工具箱(JSON/Base64/URL/时间戳/字数统计) / 二维码(生成+保存PNG+历史) / 待办(分组+滑动删除) / 笔记(Markdown编辑预览+搜索) / 记账(分类+月度收支统计) / 剪贴板(收藏+置顶) — 全部点开即用, 不再是骨架页; 修复 AI 厂商中文名乱码(在线注册表强制 UTF-8 解码)', ''),
   ('v4.16.0', '固定Release签名(从此覆盖安装不再要求卸载) + 应用内下载修复(安装权限/FileProvider/三镜像自动切换/浏览器下载兜底) + 下载中心补网页版1.0 + 模块树状分类管理 + 聚合模块(工具箱/家庭中心) + 长按底栏弹模块抽屉 + 点击正文底栏收起为1/3保持 + 全模块右上角⋯菜单(全屏/切换模块/模块专属项, 不再一刀切播放器设置)', '里程碑'),
   ('v4.15.0', '功能规划v2.0全量模块框架落地(作业中心/笔记/待办/录音机/日历/提醒/日记/记账/剪贴板/书签/代码片段/Markdown/健康/播客/有声书/广播/短剧/壁纸/资讯/天气快递/菜谱/学习工具/课程表/翻译/扫描仪/二维码/悬浮便签/计算器/白板/文本工具箱/传感器/文件互传/远程打印/家庭系列等41个新模块, 在「我的→功能管理」开启) + 「我的」页重构为Kimi式设置(分组卡片/通知设置/帮助中心/退出登录)', '里程碑'),
@@ -2871,8 +2857,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.17.0';
-  static const int currentCode = 50504;
+  static const String currentVersion = '4.18.0';
+  static const int currentCode = 50505;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:timezone/timezone.dart' as tz;
 
 class Notify {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -21,6 +22,19 @@ class Notify {
     await _plugin.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
       channel, channelName, importance: Importance.high, priority: Priority.high)));
   }
+
+  // 定时通知(提醒中心用): 到点弹系统通知, 关屏也响; inexact 模式免精确闹钟权限
+  static Future<void> schedule(int id, String title, DateTime when) async {
+    await init();
+    try {
+      await _plugin.zonedSchedule(id, '提醒: $title', '',
+        tz.TZDateTime.from(when, tz.local),
+        const NotificationDetails(android: AndroidNotificationDetails('reminder', '提醒',
+          importance: Importance.high, priority: Priority.high)),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle);
+    } catch (_) {}
+  }
+  static Future<void> cancel(int id) async { try { await _plugin.cancel(id); } catch (_) {} }
 
   // 公告轮询: 管理后台 ThirdHub-Admin「全局公告」写入 Supabase th_configs(announcement)
   // 客户端启动时检查, 新公告 → 系统通知 + 记住已读; 兼容存储桶 announce.json
