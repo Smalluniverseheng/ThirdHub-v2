@@ -17,8 +17,9 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
       - name: build APK (arm64)
-        working-directory: flutter_app
-        run: flutter build apk --release --target-platform=android-arm64
+        working-directory: flutter_app/android
+        # 直接调 gradlew：flutter build apk 在某些环境找不到产物路径
+        run: ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
       - name: read version
         id: v
         working-directory: flutter_app
@@ -26,7 +27,7 @@ jobs:
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version: ([0-9.]+).*/\1/')
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
       - name: rename artifact
-        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk "ThirdHub-${{ steps.v.outputs.ver }}.apk"
+        run: cp flutter_app/android/app/build/outputs/apk/release/app-release.apk "ThirdHub-${{ steps.v.outputs.ver }}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: ThirdHub-${{ steps.v.outputs.ver }}
