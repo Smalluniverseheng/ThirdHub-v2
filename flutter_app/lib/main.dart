@@ -3216,7 +3216,7 @@ const kChangelog = [
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
   static const String currentVersion = '4.23.0';
-  static const int currentCode = 50510;
+  static const int currentCode = 50512;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
