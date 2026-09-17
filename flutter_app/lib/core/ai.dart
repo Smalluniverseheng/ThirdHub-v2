@@ -65,7 +65,8 @@ class AiRegistry {
     try {
       final r = await http.get(Uri.parse('https://thirdhub.pages.dev/js/ai/ai-models.js')).timeout(const Duration(seconds: 12));
       if (r.statusCode != 200) return false;
-      final list = _parse(r.body);
+      // 服务器不回 charset 时 http 包默认按 latin-1 解码 → 中文厂商名乱码; 强制 UTF-8
+      final list = _parse(utf8.decode(r.bodyBytes));
       if (list.isEmpty) return false;
       providers = list; refreshedAt = DateTime.now();
       final p = await SharedPreferences.getInstance();
