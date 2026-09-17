@@ -2,6 +2,7 @@
 // 协议见 docs/THP.md: /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'discover.dart';
@@ -10,13 +11,54 @@ class EngineDirect {
   static String url = ''; // 选中的直连引擎地址(空=未连接)
   static String name = '';
   static List<String> caps = [];
+  static bool _autoConnecting = false;
 
   static Future<void> init() async {
     final p = await SharedPreferences.getInstance();
     url = p.getString('engine_direct_url') ?? '';
     name = p.getString('engine_direct_name') ?? '';
     caps = p.getStringList('engine_direct_caps') ?? [];
+    // 启动 THP 发现监听(全局常驻, 模块页随时可读设备列表)
+    unawaited(ThpDiscovery.start());
+    if (connected) {
+      // 后台校验上次连接是否还活着(引擎可能重启/换了IP), 死了就自动重连新发现的引擎
+      unawaited(() async {
+        try {
+          await http.get(Uri.parse('$url/thp/meta')).timeout(const Duration(seconds: 5));
+        } catch (_) {
+          url = ''; name = '';
+          await autoConnect();
+        }
+      }());
+    } else {
+      // 未连接: 自动连接局域网里发现的第一个引擎
+      unawaited(autoConnect());
+    }
   }
+
+  // 自动连接: 已有发现设备直接连; 没有则监听广播 15s, 出现引擎即连
+  static Future<void> autoConnect() async {
+    if (connected || _autoConnecting) return;
+    _autoConnecting = true;
+    try {
+      await ThpDiscovery.start();
+      final devs = available();
+      if (devs.isNotEmpty) {
+        try { await connect(devs.first.url); } catch (_) {}
+        return;
+      }
+      late final StreamSubscription sub;
+      sub = ThpDiscovery.onChange.listen((_) async {
+        if (connected) { await sub.cancel(); return; }
+        final ds = available();
+        if (ds.isNotEmpty) {
+          try { await connect(ds.first.url); await sub.cancel(); } catch (_) {}
+        }
+      });
+      Future.delayed(const Duration(seconds: 15), () => sub.cancel());
+    } finally { _autoConnecting = false; }
+  }
+
   static Future<void> connect(String u) async {
     // 校验 /thp/meta
     final r = await http.get(Uri.parse('$u/thp/meta')).timeout(const Duration(seconds: 8));
@@ -36,12 +78,24 @@ class EngineDirect {
   }
   static bool get connected => url.isNotEmpty;
 
-  static Future<Map<String, dynamic>> _get(String path) async {
-    final r = await http.get(Uri.parse('$url$path')).timeout(const Duration(seconds: 15));
-    final j = jsonDecode(utf8.decode(r.bodyBytes));
-    if (j is Map && j['object'] == 'error') throw Exception('${j['data']?['message'] ?? '引擎错误'}');
-    if (j is Map && j['error'] != null) throw Exception('${j['error']}');
-    return (j is Map && j.containsKey('data') ? {'data': j['data'], 'meta': j['meta']} : {'data': j}) as Map<String, dynamic>;
+  // 网络层错误(连接过期/引擎重启换IP) → 自动重连一次再重试
+  static bool _isNetErr(Object e) => e is TimeoutException || e is SocketException || e is http.ClientException;
+
+  static Future<Map<String, dynamic>> _get(String path, [bool retried = false]) async {
+    try {
+      final r = await http.get(Uri.parse('$url$path')).timeout(const Duration(seconds: 15));
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is Map && j['object'] == 'error') throw Exception('${j['data']?['message'] ?? '引擎错误'}');
+      if (j is Map && j['error'] != null) throw Exception('${j['error']}');
+      return (j is Map && j.containsKey('data') ? {'data': j['data'], 'meta': j['meta']} : {'data': j}) as Map<String, dynamic>;
+    } catch (e) {
+      if (retried || !_isNetErr(e)) rethrow;
+      // 连接可能已过期: 清掉旧地址, 从发现列表自动重连, 成功则重试一次
+      final old = url; url = '';
+      await autoConnect();
+      if (!connected || url == old) { url = old; rethrow; }
+      return _get(path, true);
+    }
   }
 
   // 搜索: type= novel/comic/video/music

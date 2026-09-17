@@ -77,9 +77,28 @@ class EngineDiscoverView extends StatefulWidget {
 }
 class _Edv extends State<EngineDiscoverView> {
   List<Map<String, dynamic>> items = []; bool loading = false; String err = ''; final q = TextEditingController();
+  StreamSubscription? _sub;
   static const hotwords = {'novel': ['玄幻', '都市', '仙侠', '科幻'], 'comic': ['热血', '恋爱', '冒险', '搞笑'],
     'video': ['电影', '剧集', '动漫', '综艺'], 'music': ['流行', '民谣', '摇滚', '古风']};
-  @override void initState() { super.initState(); _load(); }
+  @override void initState() { super.initState(); _boot();
+    // 发现到新引擎 / 引擎下线时刷新界面
+    _sub = ThpDiscovery.onChange.listen((_) { if (mounted) setState(() {}); }); }
+  @override void dispose() { _sub?.cancel(); q.dispose(); super.dispose(); }
+  Future<void> _boot() async {
+    if (EngineDirect.connected) { _load(); return; }
+    // 未连接: 自动连接局域网发现的第一个引擎, 连上后立即加载
+    setState(() => loading = true);
+    await EngineDirect.autoConnect();
+    if (!mounted) return;
+    setState(() => loading = false);
+    if (EngineDirect.connected) _load();
+  }
+  Future<void> _connect(ThpDevice d) async {
+    setState(() { loading = true; err = ''; });
+    try { await EngineDirect.connect(d.url); _load(); return; }
+    catch (e) { err = '连接失败: $e'; }
+    if (mounted) setState(() => loading = false);
+  }
   Future<void> _load() async {
     if (!EngineDirect.connected) return;
     setState(() { loading = true; err = ''; items = []; });
@@ -99,13 +118,33 @@ class _Edv extends State<EngineDiscoverView> {
   }
   @override Widget build(BuildContext c) {
     if (!EngineDirect.connected) {
-      return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      final devs = EngineDirect.available();
+      return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.extension_off, size: 44, color: Colors.grey),
         const SizedBox(height: 12),
-        const Text('发现页需要先连接引擎', style: TextStyle(color: Colors.grey)),
+        Text(loading ? '正在自动连接引擎…' : '发现页需要先连接引擎', style: const TextStyle(color: Colors.grey)),
+        if (loading) const Padding(padding: EdgeInsets.only(top: 12),
+          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+        // 已发现但未连上的引擎: 直接一键连接
+        if (!loading && devs.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text('局域网发现的引擎', style: TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(height: 6),
+          for (final d in devs)
+            Card(child: ListTile(dense: true,
+              leading: const Icon(Icons.extension, size: 20, color: Colors.blueAccent),
+              title: Text(d.name.isNotEmpty ? d.name : '${d.host}:${d.port}', style: const TextStyle(fontSize: 13)),
+              subtitle: Text(d.caps.join(' / '), style: const TextStyle(fontSize: 10)),
+              trailing: FilledButton.tonal(onPressed: () => _connect(d), child: const Text('连接', style: TextStyle(fontSize: 12))))),
+        ],
+        if (!loading && devs.isEmpty) ...[
+          const SizedBox(height: 8),
+          const Text('未发现引擎: 请确认引擎已启动并与本机在同一局域网\n(引擎启动后会自动广播 THP UDP 19527)',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
         const SizedBox(height: 12),
         FilledButton.tonal(onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage())),
-          child: const Text('去连接引擎')),
+          child: const Text('引擎直连管理')),
       ])));
     }
     return Column(children: [
