@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:charset/charset.dart' as cs;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,8 +31,53 @@ class LocalLib {
     final items = await list(kind);
     items.removeWhere((e) => e['path'] == path);
     await _save(kind, items);
+    invalidateNovel(path);
     try { await File(path).delete(); } catch (_) {}
   }
+
+  // ── 文本解码: UTF-8/UTF-16(BOM) → 严格UTF-8 → GBK(中文小说常见) → 容错UTF-8 ──
+  // 网上下载的中文 txt 小说大量是 GBK/GB18030 编码, 直接 latin1 兜底会全文乱码("看不了")
+  static String decodeText(List<int> bytes) {
+    if (bytes.isEmpty) return '';
+    // BOM 优先: UTF-8 / UTF-16LE / UTF-16BE
+    if (bytes.length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) {
+      try { return utf8.decode(bytes.sublist(3)); } catch (_) {}
+    }
+    if (bytes.length >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF))) {
+      try { return cs.utf16.decode(bytes); } catch (_) {} // charset 的 utf16 自动剥 BOM
+    }
+    // 严格 UTF-8 能过 → 就是 UTF-8
+    try { return utf8.decode(bytes); } catch (_) {}
+    // 高位字节占比高 → 大概率 GBK/GB18030(每个汉字 2 个高位字节, 中文书通常 >30%)
+    var hi = 0;
+    final probe = bytes.length > 65536 ? bytes.sublist(0, 65536) : bytes;
+    for (final b in probe) { if (b >= 0x80) hi++; }
+    if (hi > probe.length * 0.05) {
+      try {
+        final s = cs.gbk.decode(bytes);
+        //  sanity: 解出 CJK 字符才算成功(否则可能是西欧 latin1 文本被误吞)
+        if (RegExp(r'[一-鿿]').hasMatch(s.substring(0, s.length > 2000 ? 2000 : s.length))) return s;
+      } catch (_) {}
+    }
+    // 最后兜底: 容错 UTF-8(坏字节变 , 至少不乱码) → latin1
+    try { return utf8.decode(bytes, allowMalformed: true); } catch (_) {}
+    return latin1.decode(bytes);
+  }
+
+  // ── 小说章节读取缓存: 翻章不再重复"读全文件+切章"(每章翻页原本要重读 3 次) ──
+  static final Map<String, (int, List<String>)> _chapCache = {}; // path → (mtimeMs, chapters)
+  static Future<List<String>> readNovelChapters(String path) async {
+    final f = File(path);
+    final mt = (await f.stat()).modified.millisecondsSinceEpoch;
+    final hit = _chapCache[path];
+    if (hit != null && hit.$1 == mt) return hit.$2;
+    final text = decodeText(await f.readAsBytes());
+    final chs = splitChapters(text);
+    if (_chapCache.length >= 4) _chapCache.remove(_chapCache.keys.first); // 最多缓存 4 本
+    _chapCache[path] = (mt, chs);
+    return chs;
+  }
+  static void invalidateNovel(String path) => _chapCache.remove(path);
 
   // ── 小说: txt 直接拷贝; epub 解出纯文本章节 ──
   static Future<int> importNovels() async {

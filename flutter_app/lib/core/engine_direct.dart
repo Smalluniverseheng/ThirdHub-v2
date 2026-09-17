@@ -1,5 +1,6 @@
 // 前端直连引擎(THP): 不经过后端, 直接向局域网引擎发起搜索/目录/内容请求
-// 协议见 docs/THP.md: /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover
+// 端点为 THP 旧草稿最小集(引擎 engine-v1.2.0 实际实现): /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover
+// (docs/THP.md 的 /thp/m/{module}/... 规范路径是资源库侧接口; 资源库调引擎时自带"规范→旧草稿"三级回落)
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

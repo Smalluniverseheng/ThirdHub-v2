@@ -1707,10 +1707,18 @@ class _NSR extends State<NovelSearchResults> {
     ])), ]); }
 
 class ShelfPage extends StatefulWidget { final String kind; final Widget Function(Book) builder; const ShelfPage({super.key, required this.kind, required this.builder}); @override State<ShelfPage> createState() => _Sh(); }
-class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
+class _Sh extends State<ShelfPage> { List<Book> items = []; List<Map<String, dynamic>> local = []; bool loading = true;
   @override void initState() { super.initState(); load(); }
   Future<void> load() async {
     items = await Book.shelf(widget.kind);
+    // 本地导入的书直接进书架(点按即读, 不经过后端/引擎)
+    if (widget.kind == 'novel') {
+      try { local = await LocalLib.list('novel'); } catch (_) {}
+      // 清掉文件已不存在的条目
+      final alive = <Map<String, dynamic>>[];
+      for (final b in local) { if (await File('${b['path']}').exists()) alive.add(b); }
+      local = alive;
+    }
     // 云端书架同步读取: 后端资源库已下载的书(shelf_ 前缀)合并进书架, 换设备不丢
     if (widget.kind == 'novel' && Api.base.isNotEmpty) {
       try {
@@ -1731,17 +1739,47 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; bool loading = true;
     await p.setString('shelf_${widget.kind}', jsonEncode(items.map((e) => e.toJson()).toList())); setState(() {}); }
   // 番茄式网格书架: 封面大图 + 书名 + 阅读进度
   @override Widget build(BuildContext c) => loading ? const Center(child: CircularProgressIndicator())
-    : items.isEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    : (items.isEmpty && local.isEmpty) ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
       Icon(Icons.auto_stories_outlined, size: 56, color: Colors.grey.withValues(alpha: 0.5)),
       const SizedBox(height: 10),
       const Text('书架为空', style: TextStyle(color: Colors.grey, fontSize: 14)),
       const SizedBox(height: 4),
-      const Text('搜索后进入详情页, 点书签图标加入', style: TextStyle(color: Colors.grey, fontSize: 11)),
+      Text(widget.kind == 'novel' ? '搜索后进入详情页点书签加入, 或从模块菜单导入本地小说' : '搜索后进入详情页, 点书签图标加入', style: const TextStyle(color: Colors.grey, fontSize: 11)),
     ]))
     : GridView.builder(padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.52, mainAxisSpacing: 12, crossAxisSpacing: 12),
-        itemCount: items.length, itemBuilder: (_, i) {
-        final b = items[i];
+        itemCount: local.length + items.length, itemBuilder: (_, i) {
+        // 前段: 本地导入的书(仅小说模块)
+        if (i < local.length) {
+          final lb = local[i];
+          final prog = AppSettings.p.getInt('progress_local_${lb['path']}') ?? -1;
+          return GestureDetector(
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalNovelReader(book: lb))).then((_) => load()),
+            onLongPress: () async {
+              final del = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
+                title: const Text('删除本地书'), content: Text('《${lb['name']}》\n将同时删除本地文件'),
+                actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+                  FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+              if (del == true) { await LocalLib.remove('novel', '${lb['path']}'); load(); }
+            },
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 8, offset: const Offset(0, 3))]),
+                child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Stack(fit: StackFit.expand, children: [
+                  _coverFallback(Book('${lb['name'] ?? ''}', '', '', '', '', '')),
+                  Positioned(left: 0, right: 0, bottom: 0, child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black54])),
+                    child: Text(prog >= 0 ? '第${prog + 1}章 · 本地' : '本地导入', style: const TextStyle(fontSize: 9, color: Colors.white)))),
+                ])))),
+              const SizedBox(height: 4),
+              Text('${lb['name'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.2)),
+              Text(prog >= 0 ? '读到第${prog + 1}章' : '${lb['format'] ?? 'txt'} · 本地',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ]));
+        }
+        final b = items[i - local.length];
         final prog = AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
         return GestureDetector(
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => load()),
@@ -3371,6 +3409,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.24.1', '本地小说修复: ① 修复本地导入小说看不了——网上下载的 txt 大量是 GBK/GB18030 编码, 旧版误按 latin1 兜底导致全文乱码; 现在自动识别 UTF-8(含BOM)/UTF-16/GBK, 打开即是正常中文 ② 本地书章节加缓存: 翻章不再重复读取整个文件, 大书翻页不卡 ③ 本地导入的书直接进入小说书架(带"本地"角标/阅读进度), 书架点开即读, 不再藏在本地库里 ④ 读取失败给出真实原因', ''),
   ('v4.24.0', 'THP引擎通路+界面瘦身: ① 引擎直连全自动——App启动自动发现并连接局域网引擎, 断线自动重连, 搜索/发现/目录/正文全部走 THP 不再依赖后端(修复搜索报 No host specified、发现页空白、阅读器打不开) ② 各模块"搜索"页签补搜索框(点开即输), 视频模块补搜索页签 ③ 移除全模块冗余顶部标题栏, 模块菜单(全屏/切换/设置/本地库/导入)收进底栏右侧 ⋯(悬浮球长按/折叠条 ⋯ 同效) ④ 修复"点全屏跳回搜索页"(页面结构恒定不再重建) ⑤ 我的页去掉双层顶栏, 点头像进账号设置子页, 相机角标换头像 ⑥ 修复更新清单 versionCode 读取', '里程碑'),
   ('v4.23.0', '阅读器完全体+音乐均衡器: ① 本地小说阅读器升级——txt/epub 本地书全部接入专业阅读器(横屏/长按段落/下拉书签/字体皮肤/翻页动画全继承, 自动记忆进度) ② 自定义皮肤导入: 相册选图做阅读背景+透明度滑杆 ③ 本章搜索: 关键词高亮定位, 翻页模式按字符跳页/滚动模式按比例跳 ④ 自动阅读: 上下模式平滑滚动(速度可调, 到底自动下一章), 翻页模式定时翻页 ⑤ 音乐均衡器: 真硬件级 audiofx 均衡器挂播放会话, 频段滑杆+官方预设(摇滚/流行/古典等)', ''),
   ('v4.22.0', '顶级播放器+浏览器批: ① 系统级"打开方式"——文件管理器/其他App打开 txt·epub·音频·视频·网页链接 或分享文本时, 本App 出现在系统选择列表并直达对应阅读器/播放器/浏览器 ② 小说阅读器: 横屏阅读开关 / 长按段落菜单(复制·朗读本段·从此段听书·加书签) / 顶部下拉加书签 / 书签列表 ③ 浏览器: 搜索引擎切换(必应/百度/谷歌/DDG/搜狗) / 广告拦截(域名拦截清单+页面去广告元素) / 外部链接直达开新标签 ④ 音乐播放器: 睡眠定时(含播完本曲) + 倍速 ⑤ 视频播放器: 双击左右±10s快进退 / 倍速 / 断点续播 / 横屏全屏 ⑥ 底部导航焕新: 浮动圆角胶囊+渐变选中胶囊+弹性图标动画+触感反馈', '里程碑'),
@@ -3394,8 +3433,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.24.0';
-  static const int currentCode = 50513;
+  static const String currentVersion = '4.24.1';
+  static const int currentCode = 50514;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -3612,11 +3651,10 @@ class _Lnr extends State<LocalNovelReader> {
   Future<void> _load() async {
     List<String> raw;
     try {
-      final bytes = await File(widget.book['path']).readAsBytes();
-      String text;
-      try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
-      raw = LocalLib.splitChapters(text);
-    } catch (_) { raw = ['读取失败']; }
+      // 统一走 LocalLib: 自动识别 UTF-8/GBK/UTF-16(带缓存, 翻章不重读)
+      raw = await LocalLib.readNovelChapters(widget.book['path']);
+      if (raw.isEmpty || (raw.length == 1 && raw[0].trim().isEmpty)) raw = ['(空文件)'];
+    } catch (e) { raw = ['读取失败: $e']; }
     chapters = [ for (var i = 0; i < raw.length; i++) _chapMeta(raw[i], i) ];
     // 恢复上次进度
     final p = await SharedPreferences.getInstance();
@@ -3630,10 +3668,8 @@ class _Lnr extends State<LocalNovelReader> {
       bookName: widget.book['name'] ?? '', bookUrl: 'local_${widget.book['path']}',
       fetchContent: (sid, url) async {
         final i = int.tryParse(url) ?? 0;
-        final bytes = await File(widget.book['path']).readAsBytes();
-        String text;
-        try { text = utf8.decode(bytes); } catch (_) { text = latin1.decode(bytes); }
-        final raw = LocalLib.splitChapters(text);
+        // 命中缓存: 不再重复读文件
+        final raw = await LocalLib.readNovelChapters(widget.book['path']);
         return {'text': raw[i.clamp(0, raw.length - 1)], 'images': <String>[]};
       },
       onProgress: (i, name) async {
