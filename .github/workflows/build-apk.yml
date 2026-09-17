@@ -19,7 +19,7 @@ jobs:
       - name: build APK (arm64)
         working-directory: flutter_app/android
         # 直接调 gradlew：flutter build apk 在某些环境找不到产物路径
-        run: ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
+        run: bash ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
       - name: read version
         id: v
         working-directory: flutter_app
