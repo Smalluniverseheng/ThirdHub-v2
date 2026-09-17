@@ -127,13 +127,13 @@ class _Rec extends State<RecorderPage> {
 }
 
 // ═══ 日历: 月视图 + 日程增删 + 今天高亮 ═══
-class CalendarPage extends StatefulWidget { const CalendarPage({super.key}); @override State<CalendarPage> createState() => _Cal(); }
+class CalendarPage extends StatefulWidget { const CalendarPage({super.key, this.storageKey = 'calendar_events'}); final String storageKey; @override State<CalendarPage> createState() => _Cal(); }
 class _Cal extends State<CalendarPage> {
   DateTime view = DateTime.now();
   List<Map<String, dynamic>> events = []; // {date: yyyy-m-d, time: HH:mm, title}
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => events = await _Store2.list('calendar_events'));
+  Future<void> _load() async => setState(() async => events = await _Store2.list(widget.storageKey));
 
   static String _d(DateTime d) => '${d.year}-${d.month}-${d.day}';
 

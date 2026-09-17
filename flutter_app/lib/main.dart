@@ -29,6 +29,7 @@ import 'core/mini_modules7.dart';
 import 'core/mini_modules8.dart';
 import 'core/mini_modules9.dart';
 import 'core/mini_modules10.dart';
+import 'core/mini_modules11.dart';
 import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
@@ -2156,19 +2157,15 @@ final Map<String, ModuleDef> kModules = {
   '远程打印': _scaffold('远程打印', Icons.print_outlined, '后端接打印机',
     ['文档/图片发送到资源库打印', '打印队列', '打印记录'], note: '依赖资源库接打印机'),
   // ── 家庭/多端 ──
-  '共享相册': _scaffold('共享相册', Icons.group_outlined, '多人备份到同一后端, 共享时间轴',
-    ['家庭成员共享时间轴', '多人备份汇聚', '成员权限管理']),
+  '共享相册': ModuleDef('共享相册', Icons.photo_library_outlined, SharedAlbumPage()),
   '共享清单': ModuleDef('共享清单', Icons.checklist_outlined, SharedListPage()),
   '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined, HomeCinemaPage()),
   '家庭音乐库': ModuleDef('家庭音乐库', Icons.library_music_outlined, HomeMusicPage()),
-  '摄像头': _scaffold('摄像头', Icons.videocam_outlined, '局域网 RTSP 实时看',
-    ['RTSP 摄像头实时画面', '多路画面', '录像回放(规划)']),
+  '摄像头': ModuleDef('摄像头', Icons.videocam_outlined, CameraPage()),
   '智能家居': _scaffold('智能家居', Icons.home_outlined, '米家/HA 控制走引擎模式',
     ['设备控制面板', '场景联动', '引擎模式接入(官方零内置)']),
-  '设备互联': _scaffold('设备互联', Icons.devices, '手机遥控后端/第二屏',
-    ['遥控后端播放', '第二屏投送', '设备状态总览']),
-  '家庭日历': _scaffold('家庭日历', Icons.family_restroom, '全家日程共享(区别于个人日历)',
-    ['家庭共享日程', '成员生日提醒', '家庭待办联动']),
+  '设备互联': ModuleDef('设备互联', Icons.devices_outlined, DeviceLinkPage()),
+  '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined, const CalendarPage(storageKey: 'family_calendar_events')),
   // ── 聚合入口(一个模块装一类, 导航栏不再排长队) ──
   '工具箱': const ModuleDef('工具箱', Icons.construction_outlined, ModuleHubPage(name: '工具箱', icon: Icons.construction_outlined,
     desc: '效率工具聚合: 翻译/扫描/二维码/计算器等一处直达',
@@ -2836,7 +2833,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
-  ('v4.19.0', '小模块做实第7-10批(共8个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地连播) / 短剧(竖屏连播) / 文件互传(局域网扫码秒传) / 家庭影院(本地视频库) / 家庭音乐库(本地音乐+随机播放) / 共享清单(多清单+勾选); 短信读取改为自研通道(原 telephony 插件已无人维护且不兼容新构建链)', '里程碑'),
+  ('v4.19.0', '小模块做实第7-11批(共8个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地连播) / 短剧(竖屏连播) / 文件互传(局域网扫码秒传) / 家庭影院(本地视频库) / 家庭音乐库(本地音乐+随机播放) / 共享清单(多清单+勾选) / 家庭日历(独立家庭日程) / 共享相册(本地相册浏览+幻灯片) / 摄像头(网络摄像机实时画面) / 设备互联(局域网设备扫描); 短信读取改为自研通道(原 telephony 插件已无人维护且不兼容新构建链)', '里程碑'),
   ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
   ('v4.17.0', '小模块做实第一批: 计算器(四则/乘方/括号+历史) / 文本工具箱(JSON/Base64/URL/时间戳/字数统计) / 二维码(生成+保存PNG+历史) / 待办(分组+滑动删除) / 笔记(Markdown编辑预览+搜索) / 记账(分类+月度收支统计) / 剪贴板(收藏+置顶) — 全部点开即用, 不再是骨架页; 修复 AI 厂商中文名乱码(在线注册表强制 UTF-8 解码)', ''),
   ('v4.16.0', '固定Release签名(从此覆盖安装不再要求卸载) + 应用内下载修复(安装权限/FileProvider/三镜像自动切换/浏览器下载兜底) + 下载中心补网页版1.0 + 模块树状分类管理 + 聚合模块(工具箱/家庭中心) + 长按底栏弹模块抽屉 + 点击正文底栏收起为1/3保持 + 全模块右上角⋯菜单(全屏/切换模块/模块专属项, 不再一刀切播放器设置)', '里程碑'),
