@@ -40,6 +40,24 @@ class ReaderCfg {
   static double get bright => p.getDouble('reader_brightness') ?? 1.0;
   static Color get bgColor => kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$1;
   static Color get fgColor => textColor != 0 ? Color(textColor) : kReaderBgs[bg.clamp(0, kReaderBgs.length - 1)].$2;
+  static bool get landscape => p.getBool('reader_landscape') ?? false;
+
+  // ── 书签(按书) ──
+  static List<Map<String, dynamic>> bookmarks(String bookUrl) {
+    try {
+      return (jsonDecode(p.getString('bm_$bookUrl') ?? '[]') as List).cast<Map<String, dynamic>>();
+    } catch (_) { return []; }
+  }
+  static Future<void> addBookmark(String bookUrl, int chapter, String name) async {
+    final l = bookmarks(bookUrl);
+    l.removeWhere((e) => e['chapter'] == chapter);
+    l.insert(0, {'chapter': chapter, 'name': name, 'at': DateTime.now().toString().substring(0, 16)});
+    await p.setString('bm_$bookUrl', jsonEncode(l.take(200).toList()));
+  }
+  static Future<void> removeBookmark(String bookUrl, int chapter) async {
+    final l = bookmarks(bookUrl)..removeWhere((e) => e['chapter'] == chapter);
+    await p.setString('bm_$bookUrl', jsonEncode(l));
+  }
 }
 
 /// 专业阅读页(网络书籍): 预加载/进度记忆/番茄式菜单
@@ -66,7 +84,12 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool get hasPrev => idx > 0;
   bool get hasNext => idx < widget.chapters.length - 1;
 
-  @override void initState() { super.initState(); _initTts(); _boot(); }
+  @override void initState() { super.initState(); _initTts(); _applyOrientation(); _boot(); }
+  void _applyOrientation() {
+    SystemChrome.setPreferredOrientations(ReaderCfg.landscape
+      ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+      : [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
+  }
   Future<void> _boot() async {
     await ReaderCfg.init();
     _initVolumeKeys();
@@ -77,7 +100,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   // ── 听书 ──
   StreamSubscription? _ttsSub;
   void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
-  @override void dispose() { _ttsSub?.cancel(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop(); super.dispose(); }
+  @override void dispose() { _ttsSub?.cancel(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values); super.dispose(); }
 
   // 音量键翻页: MainActivity 原生拦截音量键并回传(只在阅读页启用, 不改变系统音量)
   void _initVolumeKeys() {
@@ -203,8 +227,64 @@ class _NovelReaderState extends State<NovelReaderPage> {
   Widget _paragraphs(String t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     for (final para in t.split('\n'))
       Padding(padding: EdgeInsets.only(bottom: ReaderCfg.paraSpace),
-        child: Text(para, style: _textStyle)),
+        child: GestureDetector(
+          onLongPress: para.trim().isEmpty ? null : () => _paraMenu(para),
+          child: Text(para, style: _textStyle))),
   ]);
+
+  // ── 长按段落菜单(番茄式) ──
+  void _paraMenu(String para) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(context: context, builder: (c2) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Container(margin: const EdgeInsets.fromLTRB(16, 12, 16, 4), padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Theme.of(c2).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8)),
+        constraints: const BoxConstraints(maxHeight: 100),
+        child: SingleChildScrollView(child: Text(para.trim(), style: const TextStyle(fontSize: 12, color: Colors.grey)))),
+      ListTile(dense: true, leading: const Icon(Icons.copy, size: 20), title: const Text('复制本段'),
+        onTap: () { Clipboard.setData(ClipboardData(text: para.trim())); Navigator.pop(c2);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制'), duration: Duration(seconds: 1))); }),
+      ListTile(dense: true, leading: const Icon(Icons.headphones, size: 20), title: const Text('朗读本段'),
+        onTap: () { Navigator.pop(c2); TtsManager.speak(para.trim()); }),
+      ListTile(dense: true, leading: const Icon(Icons.play_circle_outline, size: 20), title: const Text('从此段开始听书'),
+        onTap: () { Navigator.pop(c2);
+          final pos = text.indexOf(para);
+          TtsManager.speak(pos >= 0 ? text.substring(pos) : para.trim()); }),
+      ListTile(dense: true, leading: const Icon(Icons.bookmark_add_outlined, size: 20), title: const Text('本章加入书签'),
+        onTap: () { Navigator.pop(c2); _addBookmark(); }),
+      const SizedBox(height: 8),
+    ])));
+  }
+
+  // ── 书签 ──
+  DateTime _lastBmAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _bmCooling() {
+    final now = DateTime.now();
+    if (now.difference(_lastBmAt).inSeconds < 3) return true;
+    _lastBmAt = now;
+    return false;
+  }
+
+  Future<void> _addBookmark() async {
+    await ReaderCfg.addBookmark(widget.bookUrl, idx, chapter['name'] ?? '第${idx + 1}章');
+    HapticFeedback.lightImpact();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已添加书签'), duration: Duration(seconds: 1)));
+  }
+
+  void _bookmarkSheet() {
+    final list = ReaderCfg.bookmarks(widget.bookUrl);
+    showModalBottomSheet(context: context, builder: (c2) => SafeArea(child: SizedBox(height: 380, child: Column(children: [
+      const Padding(padding: EdgeInsets.all(12), child: Text('书签', style: TextStyle(fontWeight: FontWeight.bold))),
+      Expanded(child: list.isEmpty ? const Center(child: Text('暂无书签\n下拉页面顶部或长按段落可添加', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+        : ListView(children: [ for (final b in list) ListTile(dense: true,
+            leading: const Icon(Icons.bookmark, size: 18, color: Colors.amber),
+            title: Text(b['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+            subtitle: Text(b['at'] ?? '', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () async { await ReaderCfg.removeBookmark(widget.bookUrl, b['chapter'] ?? 0); if (c2.mounted) Navigator.pop(c2); }),
+            onTap: () { Navigator.pop(c2); goChapter(b['chapter'] ?? 0); }) ])),
+    ]))));
+  }
 
   // ── 翻页模式渲染 ──
   Widget _body(BoxConstraints box) {
@@ -216,7 +296,16 @@ class _NovelReaderState extends State<NovelReaderPage> {
     }
     final mode = ReaderCfg.flip;
     if (mode == 'vertical') {
-      return SingleChildScrollView(padding: EdgeInsets.all(ReaderCfg.margin), child: _paragraphs(text));
+      return NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          // 下拉过头(在顶部继续下拉) -> 添加书签
+          if (n is OverscrollNotification && n.overscroll < -40 && !_bmCooling()) {
+            _addBookmark();
+          }
+          return false;
+        },
+        child: SingleChildScrollView(physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.all(ReaderCfg.margin), child: _paragraphs(text)));
     }
     final pages = _paginate(text, box);
     return _FlipPager(key: _pagerKey, mode: mode, pages: pages, margin: ReaderCfg.margin,
@@ -298,6 +387,12 @@ class _NovelReaderState extends State<NovelReaderPage> {
           Row(children: [ rowLabel('其他'),
             TextButton(onPressed: () { Navigator.pop(c2); _spacingSheet(); },
               child: const Text('间距设置', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F)))),
+          ]),
+          Row(children: [ rowLabel('屏幕'),
+            const Text('横屏阅读', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
+            const Spacer(),
+            Switch(value: ReaderCfg.landscape, activeColor: const Color(0xFFB59A6C),
+              onChanged: (v) { p.setBool('reader_landscape', v); _applyOrientation(); save(); }),
           ]),
           Row(children: [ rowLabel('按键'),
             const Text('音量键翻页', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
@@ -427,6 +522,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
               _barItem(Icons.list, '目录', _tocSheet),
+              _barItem(Icons.bookmark_border, '书签', _bookmarkSheet),
               _barItem(Icons.headphones, TtsManager.state == TtsState.idle ? '听书' : '听书中', _ttsSheet),
               _barItem(Icons.nightlight_round, '夜间', _toggleNight),
               _barItem(Icons.settings_outlined, '设置', _settingsSheet),

@@ -48,10 +48,133 @@ import 'core/engine_direct_page.dart';
 import 'core/gallery_page.dart';
 import 'core/files_page.dart';
 
+
+// ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
+class IntentRouter {
+  static final navKey = GlobalKey<NavigatorState>();
+  static const _ch = MethodChannel('thirdhub/intent');
+  static bool _inited = false;
+
+  static void init() {
+    if (_inited) return;
+    _inited = true;
+    _ch.setMethodCallHandler((call) async {
+      if (call.method == 'incoming' && call.arguments is Map) {
+        await _route(Map<String, dynamic>.from(call.arguments as Map));
+      }
+    });
+    // 冷启动: 取原生侧暂存的启动意图
+    Future.delayed(const Duration(seconds: 2), () async {
+      try {
+        final p = await _ch.invokeMethod('consume');
+        if (p is Map) await _route(Map<String, dynamic>.from(p));
+      } catch (_) {}
+    });
+  }
+
+  static Future<String?> _resolveFile(String uri) async {
+    try {
+      if (uri.startsWith('file://')) return Uri.parse(uri).toFilePath();
+      final r = await _ch.invokeMethod('readUri', {'uri': uri});
+      if (r is Map) return r['path'] as String?;
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> _route(Map<String, dynamic> p) async {
+    final nav = navKey.currentState;
+    if (nav == null) return;
+    final mime = (p['mime'] as String? ?? '').toLowerCase();
+    final uri = p['uri'] as String?;
+    final text = p['text'] as String?;
+    try {
+      // 纯文本分享 / 链接
+      if (text != null && text.isNotEmpty) {
+        final m = RegExp(r'https?://\S+').firstMatch(text);
+        if (m != null) { _openBrowser(m.group(0)!); return; }
+        await _openTextAsNovel(text, '分享文本');
+        return;
+      }
+      if (uri == null) return;
+      final lu = uri.toLowerCase();
+      if (lu.startsWith('http://') || lu.startsWith('https://')) { _openBrowser(uri); return; }
+      final path = await _resolveFile(uri);
+      if (path == null) return;
+      final lp = path.toLowerCase();
+      final isTxt = mime.startsWith('text/') || lp.endsWith('.txt') || lp.endsWith('.epub') || lp.endsWith('.md') || lp.endsWith('.umd');
+      final isAudio = mime.startsWith('audio/') || RegExp(r'\.(mp3|flac|wav|aac|m4a|ogg|wma|ape)$').hasMatch(lp);
+      final isVideo = mime.startsWith('video/') || RegExp(r'\.(mp4|mkv|avi|mov|flv|wmv|webm|ts)$').hasMatch(lp);
+      if (isTxt) { await _openFileAsNovel(path); return; }
+      if (isAudio) {
+        await _importTo('music', path);
+        nav.push(MaterialPageRoute(builder: (_) => MusicPlayPage(item: {
+          'name': path.split('/').last, 'url': path, 'artist': '本地', 'coverUrl': ''})));
+        return;
+      }
+      if (isVideo) {
+        await _importTo('video', path);
+        nav.push(MaterialPageRoute(builder: (_) => LocalVideoPlayerPage(item: {'name': path.split('/').last, 'path': path})));
+        return;
+      }
+    } catch (_) {}
+  }
+
+  static void _openBrowser(String url) {
+    final nav = navKey.currentState;
+    if (nav == null) return;
+    nav.push(MaterialPageRoute(builder: (_) => BrowserPage(initialUrl: url)));
+  }
+
+  static Future<void> _importTo(String kind, String path) async {
+    try {
+      final items = await LocalLib.list(kind);
+      if (!items.any((e) => e['path'] == path)) {
+        items.insert(0, {'name': path.split('/').last.replaceAll(RegExp(r'^\d+_'), ''), 'path': path});
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('local_$kind', jsonEncode(items));
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _openFileAsNovel(String path) async {
+    final nav = navKey.currentState;
+    if (nav == null) return;
+    final lp = path.toLowerCase();
+    String usePath = path;
+    if (lp.endsWith('.epub')) {
+      // epub → 纯文本缓存
+      try {
+        final bytes = await File(path).readAsBytes();
+        final txt = LocalLib.epubToText(bytes);
+        final out = File('${path}_txt.txt');
+        await out.writeAsString(txt);
+        usePath = out.path;
+      } catch (_) {}
+    }
+    await _importTo('novel', usePath);
+    final name = usePath.split('/').last.replaceAll(RegExp(r'^\d+_'), '').replaceAll(RegExp(r'\.(txt|md|umd|epub)$', caseSensitive: false), '');
+    nav.push(MaterialPageRoute(builder: (_) => LocalNovelReader(book: {'name': name, 'path': usePath, 'format': 'txt'})));
+  }
+
+  static Future<void> _openTextAsNovel(String text, String name) async {
+    final nav = navKey.currentState;
+    if (nav == null) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/local_novel/${DateTime.now().millisecondsSinceEpoch}_$name.txt');
+      await f.create(recursive: true);
+      await f.writeAsString(text);
+      await _importTo('novel', f.path);
+      nav.push(MaterialPageRoute(builder: (_) => LocalNovelReader(book: {'name': name, 'path': f.path, 'format': 'txt'})));
+    } catch (_) {}
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings.init();
   // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
+  IntentRouter.init();
   runApp(SplashApp(anim: AppSettings.splashAnim));
   await Cloud.init();
   unawaited(AiRegistry.init());
@@ -388,7 +511,7 @@ class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
         Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
         Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
         SizedBox(width: 10),
-        Text('v4.21.2', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        Text('v4.22.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
       ]),
       const SizedBox(height: 18),
     ])));
@@ -501,7 +624,7 @@ class _ThAppState extends State<ThApp> {
           TargetPlatform.iOS: _SmoothTransitionsBuilder(),
         }));
     }
-    return MaterialApp(title: 'ThirdHub',
+    return MaterialApp(title: 'ThirdHub', navigatorKey: IntentRouter.navKey,
       theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark),
       themeMode: mode == 'system' ? ThemeMode.system : mode == 'light' ? ThemeMode.light : ThemeMode.dark,
       home: ConsentGate(locked: widget.locked, fresh: widget.fresh)); }
@@ -1934,7 +2057,7 @@ class _MPlay extends State<MusicPlayPage> {
       // 歌词(尽力而为, 支持LRC同步)
       unawaited(_loadLyric(playUrl));
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override void dispose() { _posTimer?.cancel(); _savePos(); _coverPager.dispose(); _lrcScroll.dispose(); player.dispose(); super.dispose(); }
+  @override void dispose() { _posTimer?.cancel(); _sleepTimer?.cancel(); _savePos(); _coverPager.dispose(); _lrcScroll.dispose(); player.dispose(); super.dispose(); }
   String _fmt(Duration d) { final m = d.inMinutes.toString().padLeft(2, '0'); final s = (d.inSeconds % 60).toString().padLeft(2, '0'); return '$m:$s'; }
   IconData get _modeIcon => playMode == 'one' ? Icons.repeat_one : playMode == 'rand' ? Icons.shuffle : Icons.repeat;
   void _cycleMode() { final modes = ['seq', 'one', 'rand']; final n = (modes.indexOf(playMode) + 1) % 3;
@@ -1951,12 +2074,58 @@ class _MPlay extends State<MusicPlayPage> {
               onTap: () { Navigator.pop(c2); _switchTo(i); }))),
       ])));
   }
+  // ── 睡眠定时 ──
+  DateTime? _sleepEnd; Timer? _sleepTimer;
+  void _sleepSheet() {
+    showModalBottomSheet(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Padding(padding: EdgeInsets.all(12), child: Text('睡眠定时', style: TextStyle(fontWeight: FontWeight.bold))),
+      if (_sleepEnd != null) ListTile(dense: true, leading: const Icon(Icons.bedtime, color: Colors.blueAccent),
+        title: Text('将于 ${_sleepEnd!.hour.toString().padLeft(2, '0')}:${_sleepEnd!.minute.toString().padLeft(2, '0')} 停止播放', style: const TextStyle(fontSize: 13)),
+        trailing: TextButton(onPressed: () { _sleepTimer?.cancel(); setState(() => _sleepEnd = null); Navigator.pop(c2); }, child: const Text('取消'))),
+      for (final m in [10, 20, 30, 45, 60, 90])
+        ListTile(dense: true, leading: const Icon(Icons.timer_outlined, size: 20), title: Text('$m 分钟后停止'),
+          onTap: () { _setSleep(m); Navigator.pop(c2); }),
+      ListTile(dense: true, leading: const Icon(Icons.music_off, size: 20), title: const Text('播完本曲停止'),
+        onTap: () { _setSleep(-1); Navigator.pop(c2); }),
+      const Divider(),
+      const Padding(padding: EdgeInsets.all(8), child: Text('倍速', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        for (final s in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
+          ChoiceChip(label: Text('${s}x', style: const TextStyle(fontSize: 12)),
+            selected: (player.speed - s).abs() < 0.01,
+            onSelected: (_) { player.setSpeed(s); setD(() {}); }),
+      ]),
+      const SizedBox(height: 12),
+    ]))));
+  }
+  void _setSleep(int minutes) {
+    _sleepTimer?.cancel();
+    if (minutes < 0) {
+      // 播完本曲: 监听完成事件, 播完不自动下一首
+      _sleepTimer = Timer(player.duration != null ? player.duration! - player.position : const Duration(minutes: 5), () {
+        player.pause(); setState(() => _sleepEnd = null);
+      });
+      setState(() => _sleepEnd = DateTime.now().add(player.duration != null ? player.duration! - player.position : const Duration(minutes: 5)));
+    } else {
+      _sleepEnd = DateTime.now().add(Duration(minutes: minutes));
+      _sleepTimer = Timer(Duration(minutes: minutes), () async {
+        await player.pause(); // 淡出体验: 先降音量再停
+        if (mounted) setState(() => _sleepEnd = null);
+      });
+    }
+    if (mounted) setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(minutes < 0 ? '将在本曲播完后停止' : '$minutes 分钟后停止播放'), duration: const Duration(seconds: 1)));
+  }
+
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(cur['name'] ?? '', style: const TextStyle(fontSize: 15)), actions: [
       IconButton(icon: const Icon(Icons.favorite_border), tooltip: '收藏到歌单架',
         onPressed: () async { await Book.add(Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '', cur['url'] ?? cur['id'] ?? '', curSource), 'music');
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已收藏到音乐架'), duration: Duration(seconds: 1))); }),
       IconButton(icon: Icon(showLyric ? Icons.album : Icons.lyrics_outlined), tooltip: showLyric ? '封面' : '歌词',
         onPressed: () => _coverPager.animateToPage(showLyric ? 0 : 1, duration: const Duration(milliseconds: 240), curve: Curves.easeOut)),
+      IconButton(icon: Icon(Icons.bedtime_outlined, color: _sleepEnd != null ? Theme.of(context).colorScheme.primary : null),
+        tooltip: '睡眠定时', onPressed: _sleepSheet),
       IconButton(icon: const Icon(Icons.queue_music), tooltip: '播放队列', onPressed: _queueSheet)]),
     body: SafeArea(child: Column(children: [
       const SizedBox(height: 12),
@@ -2549,20 +2718,29 @@ class _RootNavState extends State<RootNav> {
     final barH = collapsed ? 34.0 : 60.0;
     Widget item(int i, {double? width}) {
       final k = enabled[i]; final m = kModules[k]!; final on = i == idx;
-      final fg = on ? scheme.primary : scheme.onSurface.withValues(alpha: 0.55);
+      final fg = on ? Colors.white : scheme.onSurface.withValues(alpha: 0.55);
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _go(i),
+        onTap: () { HapticFeedback.selectionClick(); _go(i); },
         child: SizedBox(width: width, height: barH,
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            AnimatedContainer(duration: const Duration(milliseconds: 150), curve: Curves.easeOut,
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: collapsed ? 1 : 3),
-              decoration: on ? BoxDecoration(color: scheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)) : null,
-              child: Icon(m.icon, size: collapsed ? 19 : 21, color: fg)),
+            // 选中项: 渐变胶囊 + 图标微弹
+            TweenAnimationBuilder<double>(tween: Tween(begin: 1, end: on ? 1.12 : 1.0),
+              duration: const Duration(milliseconds: 220), curve: Curves.easeOutBack,
+              builder: (_, s, child) => Transform.scale(scale: s, child: child),
+              child: AnimatedContainer(duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: collapsed ? 1 : 3),
+                decoration: on ? BoxDecoration(
+                  gradient: LinearGradient(colors: [scheme.primary, scheme.tertiary],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: scheme.primary.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2))],
+                ) : null,
+                child: Icon(m.icon, size: collapsed ? 19 : 21, color: fg))),
             if (!collapsed) ...[
               const SizedBox(height: 2),
               Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
+                style: TextStyle(fontSize: 10.5, color: on ? scheme.primary : fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
             ],
           ])));
     }
@@ -2570,8 +2748,16 @@ class _RootNavState extends State<RootNav> {
       // 收起态: 点按细条恢复完整底栏; 任意状态: 长按弹出模块抽屉
       onTap: collapsed ? () => setState(() => _navCollapsed = false) : null,
       onLongPress: () { HapticFeedback.selectionClick(); NavOrb.showModuleGrid(context, enabled, idx, (i) => _go(i, animate: false)); },
-      child: Material(elevation: collapsed ? 2 : 8, color: Theme.of(context).colorScheme.surface,
-      child: SafeArea(top: false, child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
+      child: SafeArea(top: false, child: Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(collapsed ? 17 : 26),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5), width: 0.6),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 16, offset: const Offset(0, 4))],
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(collapsed ? 17 : 26),
+      child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
         final itemW = collapsed ? 52.0 : 76.0;
         final mineW = itemW;
         final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
@@ -2589,7 +2775,7 @@ class _RootNavState extends State<RootNav> {
           if (mineIdx >= 0) Container(decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 0.5))),
             child: SizedBox(width: mineW, child: item(mineIdx))),
         ]);
-      })))));
+      }))))));
   }
 }
 class _KeepAlivePage extends StatefulWidget { const _KeepAlivePage({super.key, required this.child}); final Widget child;
@@ -2946,6 +3132,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.22.0', '顶级播放器+浏览器批: ① 系统级"打开方式"——文件管理器/其他App打开 txt·epub·音频·视频·网页链接 或分享文本时, 本App 出现在系统选择列表并直达对应阅读器/播放器/浏览器 ② 小说阅读器: 横屏阅读开关 / 长按段落菜单(复制·朗读本段·从此段听书·加书签) / 顶部下拉加书签 / 书签列表 ③ 浏览器: 搜索引擎切换(必应/百度/谷歌/DDG/搜狗) / 广告拦截(域名拦截清单+页面去广告元素) / 外部链接直达开新标签 ④ 音乐播放器: 睡眠定时(含播完本曲) + 倍速 ⑤ 视频播放器: 双击左右±10s快进退 / 倍速 / 断点续播 / 横屏全屏 ⑥ 底部导航焕新: 浮动圆角胶囊+渐变选中胶囊+弹性图标动画+触感反馈', '里程碑'),
   ('v4.21.1', 'THP/1.0 协议前端补全: 发现层解析新格式 HELLO(实例ID/角色/名称) + BYE 优雅下线, 兼容旧草稿格式; 配套阅读引擎 engine-v1.2.0(THP 服务层)', ''),
   ('v4.21.0', '体验大修: ① 我的页回归头像大卡(渐变+漂浮光点+头像环+身份码胶囊) ② AI 抽屉带惯性甩动+速度判定+开关震动反馈, 修复切模块后侧边栏误展开(模块切换广播静默收起) ③ AI 右上角新会话快捷按钮 ④ 多语言真生效: 60 个模块名全入字典(英/日), 顶栏/底栏/模块抽屉/导航管理全部随语言切换 ⑤ 悬浮窗/折叠屏适配保持', '里程碑'),
   ('v4.20.0', '云同步落地: 共享清单/家庭日历登录后自动多台设备同步(新建 th_shared 表, 后写赢合并); 书架云端同步读取——后端资源库已下载的书自动合并进书架(换设备不丢), 点开直接读(全书已在库); 修复家庭日历写入个人日历存储的错位 bug; 悬浮便签升级为真全局悬浮窗(SYSTEM_ALERT_WINDOW, 退出App也能看到, 可拖动)', '里程碑'),
@@ -2966,7 +3153,7 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.21.2';
+  static const String currentVersion = '4.22.0';
   static const int currentCode = 50510;
   static bool _checked = false;
 
@@ -3232,20 +3419,82 @@ class _Lv extends State<LocalVideosPage> {
 class LocalVideoPlayerPage extends StatefulWidget { final Map<String, dynamic> item; const LocalVideoPlayerPage({super.key, required this.item}); @override State<LocalVideoPlayerPage> createState() => _Lvp(); }
 class _Lvp extends State<LocalVideoPlayerPage> {
   VideoPlayerController? ctrl; ChewieController? chewie; String? err;
+  String get _posKey => 'vpos_${widget.item['path']}';
+  Timer? _posTimer; bool _fs = false;
+  // 双击快进/快退提示
+  String _seekHint = ''; Timer? _hintTimer;
+
   @override void initState() { super.initState(); _init(); }
   Future<void> _init() async {
     try {
       ctrl = VideoPlayerController.file(File(widget.item['path']));
       await ctrl!.initialize();
-      chewie = ChewieController(videoPlayerController: ctrl!, autoPlay: true, looping: false);
+      // 断点续播
+      final saved = AppSettings.p.getInt(_posKey) ?? 0;
+      if (saved > 5 && saved < ctrl!.value.duration.inSeconds - 10) {
+        await ctrl!.seekTo(Duration(seconds: saved));
+      }
+      chewie = ChewieController(videoPlayerController: ctrl!, autoPlay: true, looping: false,
+        allowPlaybackSpeedChanging: true,
+        playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0],
+        allowFullScreen: true, allowMuting: true,
+        materialProgressColors: ChewieProgressColors(playedColor: Theme.of(context).colorScheme.primary));
+      _posTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (ctrl != null && ctrl!.value.isPlaying) AppSettings.p.setInt(_posKey, ctrl!.value.position.inSeconds);
+      });
       setState(() {});
     } catch (e) { setState(() => err = '$e'); }
   }
-  @override void dispose() { chewie?.dispose(); ctrl?.dispose(); super.dispose(); }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14))),
-    body: Center(child: err != null ? Text('播放失败: $err', style: const TextStyle(color: Colors.red))
-      : chewie != null ? AspectRatio(aspectRatio: ctrl!.value.aspectRatio, child: Chewie(controller: chewie!))
-      : const CircularProgressIndicator()));
+  @override void dispose() { _posTimer?.cancel(); _hintTimer?.cancel();
+    if (ctrl != null && ctrl!.value.isInitialized) {
+      final pos = ctrl!.value.position.inSeconds;
+      final dur = ctrl!.value.duration.inSeconds;
+      if (pos > 5 && pos < dur - 10) AppSettings.p.setInt(_posKey, pos); else AppSettings.p.remove(_posKey);
+    }
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    chewie?.dispose(); ctrl?.dispose(); super.dispose(); }
+
+  void _seekBy(int seconds) {
+    final c = ctrl; if (c == null || !c.value.isInitialized) return;
+    final t = c.value.position + Duration(seconds: seconds);
+    c.seekTo(t < Duration.zero ? Duration.zero : t);
+    HapticFeedback.selectionClick();
+    _hintTimer?.cancel();
+    setState(() => _seekHint = seconds > 0 ? '快进 ${seconds}s ▶▶' : '◀◀ 快退 ${-seconds}s');
+    _hintTimer = Timer(const Duration(milliseconds: 700), () { if (mounted) setState(() => _seekHint = ''); });
+  }
+
+  void _toggleFs() {
+    setState(() => _fs = !_fs);
+    SystemChrome.setPreferredOrientations(_fs
+      ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+      : DeviceOrientation.values);
+  }
+
+  @override Widget build(BuildContext c) {
+    final body = err != null ? Text('播放失败: $err', style: const TextStyle(color: Colors.red))
+      : chewie != null ? GestureDetector(
+          onDoubleTapDown: (d) {
+            final w = MediaQuery.of(c).size.width;
+            _seekBy(d.globalPosition.dx < w / 2 ? -10 : 10);
+          },
+          onDoubleTap: () {},
+          child: Stack(alignment: Alignment.center, children: [
+            AspectRatio(aspectRatio: ctrl!.value.aspectRatio, child: Chewie(controller: chewie!)),
+            if (_seekHint.isNotEmpty) IgnorePointer(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+              child: Text(_seekHint, style: const TextStyle(color: Colors.white, fontSize: 14)))),
+          ]))
+      : const CircularProgressIndicator();
+    if (_fs) return Scaffold(backgroundColor: Colors.black, body: SafeArea(child: Stack(children: [
+      Center(child: body),
+      Positioned(top: 4, left: 4, child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), onPressed: _toggleFs)),
+    ])));
+    return Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14)),
+      actions: [IconButton(icon: const Icon(Icons.fullscreen), tooltip: '横屏全屏', onPressed: _toggleFs)]),
+      body: Center(child: body));
+  }
 }
 
 // ═══ 本地音乐库 ═══

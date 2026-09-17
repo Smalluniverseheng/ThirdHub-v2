@@ -16,7 +16,33 @@ class _Tab {
   _Tab(this.url);
 }
 
-class BrowserPage extends StatefulWidget { const BrowserPage({super.key}); @override State<BrowserPage> createState() => _Bp(); }
+// 搜索引擎预设
+const kSearchEngines = <(String, String, String)>[
+  ('必应', 'https://www.bing.com/search?q=', 'bing'),
+  ('百度', 'https://www.baidu.com/s?wd=', 'baidu'),
+  ('谷歌', 'https://www.google.com/search?q=', 'google'),
+  ('DuckDuckGo', 'https://duckduckgo.com/?q=', 'ddg'),
+  ('搜狗', 'https://www.sogou.com/web?query=', 'sogou'),
+];
+
+// 广告/跟踪域名拦截清单(参照开源广告过滤思路, 域名级拦截)
+const kAdHosts = <String>[
+  'doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'google-analytics.com',
+  'adservice.google.com', 'ads.yahoo.com', 'adnxs.com', 'advertising.com', 'criteo.com',
+  'criteo.net', 'taboola.com', 'outbrain.com', 'moatads.com', 'scorecardresearch.com',
+  'amazon-adsystem.com', 'facebook.net', 'ads.twitter.com', 'analytics.twitter.com',
+  'cpro.baidu.com', 'pos.baidu.com', 'hm.baidu.com', 'eclick.baidu.com', 'baidustatic.com/af',
+  'union.msn.com', 'ads.msn.com', 'adsymptotic.com', '2mdn.net', 'admob.com', 'inmobi.com',
+  'umeng.com', 'cnzz.com', 'admaster.com.cn', 'miaozhen.com', 'monitor.volcvod.com',
+  'vungle.com', 'applovin.com', 'unity3d.com/ads', 'chartboost.com', 'ironsrc.com',
+  'mopub.com', 'flurry.com', 'adjust.com', 'appsflyer.com', 'branch.io',
+];
+
+class BrowserPage extends StatefulWidget {
+  final String? initialUrl;
+  const BrowserPage({super.key, this.initialUrl});
+  @override State<BrowserPage> createState() => _Bp();
+}
 class _Bp extends State<BrowserPage> {
   final List<_Tab> tabs = [_Tab('')];
   int cur = 0;
@@ -26,13 +52,21 @@ class _Bp extends State<BrowserPage> {
   bool fullscreen = false; // 全屏: 连地址栏也隐藏, 点悬浮钮恢复
   List<Map<String, String>> bookmarks = [];
   List<Map<String, String>> history = [];
+  String engine = 'bing';
+  bool adblock = true;
 
-  @override void initState() { super.initState(); _load(); }
+  @override void initState() { super.initState(); _load();
+    if ((widget.initialUrl ?? '').isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _open(widget.initialUrl!, newTab: tabs.first.url.isNotEmpty));
+    }
+  }
   @override void dispose() { addr.dispose(); addrFocus.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     try { bookmarks = [ for (final e in jsonDecode(p.getString('browser_bookmarks') ?? '[]') as List) Map<String, String>.from(e) ]; } catch (_) {}
     try { history = [ for (final e in jsonDecode(p.getString('browser_history') ?? '[]') as List) Map<String, String>.from(e) ]; } catch (_) {}
+    engine = p.getString('browser_engine') ?? 'bing';
+    adblock = p.getBool('browser_adblock') ?? true;
     if (mounted) setState(() {});
   }
   Future<void> _save(String key, List<Map<String, String>> list) async {
@@ -42,13 +76,44 @@ class _Bp extends State<BrowserPage> {
 
   _Tab get t => tabs[cur];
 
+  static bool _isAd(String url) {
+    final u = url.toLowerCase();
+    for (final h in kAdHosts) { if (u.contains(h)) return true; }
+    return false;
+  }
+
+  void _engineSheet() {
+    showModalBottomSheet(context: context, builder: (c2) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Padding(padding: EdgeInsets.all(12), child: Text('搜索引擎', style: TextStyle(fontWeight: FontWeight.bold))),
+      for (final e in kSearchEngines)
+        ListTile(dense: true, title: Text(e.$1), subtitle: Text(e.$2, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          trailing: engine == e.$3 ? const Icon(Icons.check, color: Colors.blueAccent) : null,
+          onTap: () async {
+            setState(() => engine = e.$3);
+            final p = await SharedPreferences.getInstance();
+            await p.setString('browser_engine', e.$3);
+            if (c2.mounted) Navigator.pop(c2);
+          }),
+      const SizedBox(height: 8),
+    ])));
+  }
+
+  Future<void> _toggleAdblock() async {
+    setState(() => adblock = !adblock);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('browser_adblock', adblock);
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(adblock ? '广告拦截已开启' : '广告拦截已关闭'), duration: const Duration(seconds: 1)));
+  }
+
   String _normalize(String input) {
     var s = input.trim();
     if (s.isEmpty) return s;
     final isUrl = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(s) ||
       (RegExp(r'^[\w-]+(\.[\w-]+)+(:\d+)?(/.*)?$').hasMatch(s) && !s.contains(' '));
     if (isUrl) { if (!s.contains('://')) s = 'https://$s'; return s; }
-    return 'https://www.bing.com/search?q=${Uri.encodeComponent(s)}';
+    final tpl = kSearchEngines.firstWhere((e) => e.$3 == engine, orElse: () => kSearchEngines.first).$2;
+    return '$tpl${Uri.encodeComponent(s)}';
   }
 
   WebViewController _ensureCtrl(_Tab tab) {
@@ -56,12 +121,26 @@ class _Bp extends State<BrowserPage> {
     final c = WebViewController();
     c.setJavaScriptMode(JavaScriptMode.unrestricted);
     c.setNavigationDelegate(NavigationDelegate(
+      onNavigationRequest: (req) {
+        if (adblock && _isAd(req.url)) return NavigationDecision.prevent;
+        return NavigationDecision.navigate;
+      },
       onProgress: (p) { if (mounted) setState(() => tab.progress = p); },
       onPageStarted: (u) { if (mounted) setState(() { tab.url = u; }); },
       onPageFinished: (u) async {
         final title = await c.getTitle() ?? '';
         if (mounted) setState(() { tab.url = u; if (title.isNotEmpty) tab.title = title; });
         _recordHistory(title.isNotEmpty ? title : u, u);
+        if (adblock) {
+          c.runJavaScript("""(function(){
+            if (window.__thAdClean) return; window.__thAdClean = true;
+            const s = document.createElement('style');
+            s.textContent = 'iframe[src*="ad"], div[id*="ad-"], div[class*="ad-"], ins.adsbygoogle, [class*="banner-ad"], [id*="banner-ad"] { display: none !important; }';
+            document.head.appendChild(s);
+            const kill = () => document.querySelectorAll('ins.adsbygoogle, .adsbox, [data-ad], [aria-label="Advertisement"]').forEach(e => e.remove());
+            kill(); setInterval(kill, 3000);
+          })();""");
+        }
       },
     ));
     tab.ctrl = c;
@@ -119,6 +198,8 @@ class _Bp extends State<BrowserPage> {
             const PopupMenuItem(value: 'bookmarks', child: ListTile(dense: true, leading: Icon(Icons.bookmark_border, size: 18), title: Text('书签', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'history', child: ListTile(dense: true, leading: Icon(Icons.history, size: 18), title: Text('历史记录', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'home', child: ListTile(dense: true, leading: Icon(Icons.home_outlined, size: 18), title: Text('回到主页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'engine', child: ListTile(dense: true, leading: Icon(Icons.travel_explore, size: 18), title: Text('切换搜索引擎', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'adblock', child: ListTile(dense: true, leading: Icon(Icons.block, size: 18), title: Text('广告拦截 开/关', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'modules', child: ListTile(dense: true, leading: Icon(Icons.apps, size: 18), title: Text('切换模块', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
           ]),
@@ -153,6 +234,8 @@ class _Bp extends State<BrowserPage> {
       case 'home': setState(() { editing = true; }); break;
       case 'newtab': setState(() { tabs.add(_Tab('')); cur = tabs.length - 1; editing = true; }); break;
       case 'modules': BrowserHooks.openModules?.call(context); break;
+      case 'engine': _engineSheet(); break;
+      case 'adblock': _toggleAdblock(); break;
     }
   }
 

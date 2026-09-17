@@ -1,6 +1,5 @@
 package com.thirdhub.app
 
-import android.content.Intent
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -21,53 +20,79 @@ class MainActivity : FlutterActivity() {
                 result.notImplemented()
             }
         }
-        // 悬浮便签全局悬浮窗
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/overlay").setMethodCallHandler { call, result ->
+
+        // 打开方式/分享: 捕获 VIEW / SEND 意图
+        val intentCh = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/intent")
+        pendingIntentPayload = extractIntent(intent)
+        intentCh.setMethodCallHandler { call, result ->
             when (call.method) {
-                "canDraw" -> result.success(android.provider.Settings.canDrawOverlays(this))
-                "requestPermission" -> {
-                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:$packageName")))
-                    result.success(null)
+                "consume" -> {
+                    val p = pendingIntentPayload
+                    pendingIntentPayload = null
+                    result.success(p)
                 }
-                "show" -> {
-                    val text = call.argument<String>("text") ?: ""
-                    startService(Intent(this, OverlayService::class.java).putExtra("text", text))
-                    result.success(null)
-                }
-                "hide" -> {
-                    startService(Intent(this, OverlayService::class.java).setAction("hide"))
-                    result.success(null)
+                "readUri" -> {
+                    // 把 content:// 拷到缓存文件, 返回本地路径与文件名
+                    val uriStr = call.argument<String>("uri") ?: ""
+                    try {
+                        val uri = android.net.Uri.parse(uriStr)
+                        var name = "shared_file"
+                        contentResolver.query(uri, null, null, null, null)?.use { cur ->
+                            val i = cur.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (i >= 0 && cur.moveToFirst()) name = cur.getString(i) ?: name
+                        }
+                        if (uri.scheme == "file") {
+                            result.success(mapOf("path" to uri.path, "name" to name))
+                        } else {
+                            val dir = java.io.File(cacheDir, "open_in").apply { mkdirs() }
+                            val out = java.io.File(dir, "${System.currentTimeMillis()}_$name")
+                            contentResolver.openInputStream(uri)?.use { inp ->
+                                out.outputStream().use { inp.copyTo(it) }
+                            } ?: throw java.io.IOException("无法读取")
+                            result.success(mapOf("path" to out.absolutePath, "name" to name))
+                        }
+                    } catch (e: Exception) {
+                        result.error("READ_ERR", e.message, null)
+                    }
                 }
                 else -> result.notImplemented()
             }
         }
-        // 短信读取(替代无人维护的 telephony 插件)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/sms").setMethodCallHandler { call, result ->
-            if (call.method == "inbox") {
-                val limit = (call.arguments as? Int) ?: 2000
-                val out = ArrayList<Map<String, Any>>()
-                try {
-                    val cur = contentResolver.query(
-                        android.net.Uri.parse("content://sms/inbox"),
-                        arrayOf("address", "body", "date"), null, null, "date DESC")
-                    cur?.use {
-                        var n = 0
-                        while (it.moveToNext() && n < limit) {
-                            out.add(mapOf(
-                                "address" to (it.getString(0) ?: ""),
-                                "body" to (it.getString(1) ?: ""),
-                                "date" to it.getLong(2)))
-                            n++
-                        }
-                    }
-                    result.success(out)
-                } catch (e: Exception) {
-                    result.error("SMS_ERR", e.message, null)
-                }
-            } else {
-                result.notImplemented()
+    }
+
+    private var pendingIntentPayload: Map<String, String?>? = null
+
+    private fun extractIntent(i: Intent?): Map<String, String?>? {
+        i ?: return null
+        return when (i.action) {
+            Intent.ACTION_VIEW -> {
+                val uri = i.data ?: return null
+                mapOf("type" to "view", "uri" to uri.toString(),
+                    "mime" to (i.type ?: contentTypeOf(uri)))
             }
+            Intent.ACTION_SEND -> {
+                val uri = i.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                val text = i.getStringExtra(Intent.EXTRA_TEXT)
+                if (uri != null) mapOf("type" to "send", "uri" to uri.toString(),
+                    "mime" to (i.type ?: contentTypeOf(uri)))
+                else if (text != null) mapOf("type" to "sendText", "text" to text,
+                    "mime" to "text/plain", "uri" to null)
+                else null
+            }
+            else -> null
+        }
+    }
+
+    private fun contentTypeOf(uri: android.net.Uri): String? =
+        try { contentResolver.getType(uri) } catch (e: Exception) { null }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        extractIntent(intent)?.let {
+            pendingIntentPayload = it
+            io.flutter.plugin.common.MethodChannel(
+                flutterEngine!!.dartExecutor.binaryMessenger, "thirdhub/intent"
+            ).invokeMethod("incoming", it)
         }
     }
 

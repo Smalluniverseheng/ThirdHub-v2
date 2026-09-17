@@ -49,7 +49,7 @@ class LocalLib {
       final dst = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$name');
       if (ext == 'epub') {
         try {
-          final text = _epubToText(await src.readAsBytes());
+          final text = epubToText(await src.readAsBytes());
           final out = File('${dst.path}.txt');
           await out.writeAsString(text);
           items.add({'name': name.replaceAll(RegExp(r'\.epub$', caseSensitive: false), ''), 'path': out.path, 'format': 'epub'});
@@ -66,7 +66,7 @@ class LocalLib {
   }
 
   // epub → 纯文本(zip → OPF spine → XHTML 去标签)
-  static String _epubToText(List<int> bytes) {
+  static String epubToText(List<int> bytes) {
     final zip = ZipDecoder().decodeBytes(bytes);
     String? opfPath;
     for (final a in zip.files) {
