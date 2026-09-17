@@ -1,5 +1,6 @@
 package com.thirdhub.app
 
+import android.content.Intent
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,6 +19,27 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             } else {
                 result.notImplemented()
+            }
+        }
+        // 悬浮便签全局悬浮窗
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/overlay").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "canDraw" -> result.success(android.provider.Settings.canDrawOverlays(this))
+                "requestPermission" -> {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")))
+                    result.success(null)
+                }
+                "show" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    startService(Intent(this, OverlayService::class.java).putExtra("text", text))
+                    result.success(null)
+                }
+                "hide" -> {
+                    startService(Intent(this, OverlayService::class.java).setAction("hide"))
+                    result.success(null)
+                }
+                else -> result.notImplemented()
             }
         }
         // 短信读取(替代无人维护的 telephony 插件)

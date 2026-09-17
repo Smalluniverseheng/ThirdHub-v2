@@ -394,6 +394,27 @@ class QuickNotePage extends StatefulWidget { const QuickNotePage({super.key}); @
 class _Qn extends State<QuickNotePage> {
   List<Map<String, dynamic>> items = [];
   final input = TextEditingController();
+  bool _floatOn = false;
+  static const _ovCh = MethodChannel('thirdhub/overlay');
+
+  Future<void> _toggleFloat() async {
+    if (_floatOn) {
+      try { await _ovCh.invokeMethod('hide'); } catch (_) {}
+      setState(() => _floatOn = false);
+      return;
+    }
+    // 权限 + 显示置顶便签(没有置顶则最新一条)
+    final ok = await _ovCh.invokeMethod<bool>('canDraw') ?? false;
+    if (!ok) {
+      await _ovCh.invokeMethod('requestPermission');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请在系统设置里允许悬浮窗权限后回来再点一次')));
+      return;
+    }
+    final pinned = items.firstWhere((e) => e['pin'] == true, orElse: () => items.isNotEmpty ? items.first : {});
+    if (pinned.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('先写一条便签再悬浮'))); return; }
+    await _ovCh.invokeMethod('show', {'text': '📌 ${pinned['text']}'});
+    setState(() => _floatOn = true);
+  }
 
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async => setState(() async => items = await _Store2.list('quick_notes'));
@@ -415,8 +436,13 @@ class _Qn extends State<QuickNotePage> {
       const SizedBox(width: 6),
       IconButton.filled(icon: const Icon(Icons.send, size: 18), onPressed: _add),
     ])),
-    const Padding(padding: EdgeInsets.only(bottom: 6),
-      child: Text('全局悬浮窗形式在规划中(需系统悬浮窗权限), 当前为极速速记', style: TextStyle(fontSize: 10, color: Colors.grey))),
+    Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(_floatOn ? '悬浮窗已开启 · 显示置顶/最新便签' : '开启后即使退出 App 也能看到便签', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      const SizedBox(width: 8),
+      GestureDetector(onTap: _toggleFloat,
+        child: Text(_floatOn ? '关闭悬浮窗' : '开启悬浮窗',
+          style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
+    ])),
     Expanded(child: items.isEmpty
       ? const Center(child: Text('还没有速记', style: TextStyle(color: Colors.grey)))
       : ListView(children: [
