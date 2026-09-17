@@ -2049,7 +2049,7 @@ class _MSR extends State<MusicSearchResults> {
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('music', q);
-        setState(() { groups = [{'ok': true, 'engine': true, 'items': items}] });
+        setState(() { groups = [{'ok': true, 'engine': true, 'items': items}]; });
       } else if (Api.base.isNotEmpty) {
         final r = await Api.get('/v1/music/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); });
       } else {
@@ -2469,7 +2469,7 @@ class _VSR extends State<VideoSearchResults> {
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('video', q);
-        setState(() { groups = [{'ok': true, 'engine': true, 'items': items}] });
+        setState(() { groups = [{'ok': true, 'engine': true, 'items': items}]; });
       } else if (Api.base.isNotEmpty) {
         final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}'); setState(() { groups = List<Map>.from(r['data'] ?? []); });
       } else {
