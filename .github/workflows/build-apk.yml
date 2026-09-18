@@ -47,7 +47,11 @@ jobs:
           CODE=${FULL#*+}
           [ "$CODE" = "$FULL" ] && CODE=1
           sed -i '/^flutter\.versionCode=/d;/^flutter\.versionName=/d' android/local.properties
-          printf 'flutter.versionCode=%s\nflutter.versionName=%s\n' "$CODE" "$NAME" >> android/local.properties
+          # 坑：flutter pub get 生成的 local.properties **没有收尾换行**，
+          # 直接 `>>` 会把新键拼到 flutter.sdk 那一行尾巴上（run #37 实测：
+          # `flutter.sdk=.../flutterflutter.versionCode=50516`），
+          # 导致 gradle includeBuild 路径失效 → "does not exist"。先补一个换行再写。
+          printf '\nflutter.versionCode=%s\nflutter.versionName=%s\n' "$CODE" "$NAME" >> android/local.properties
           echo "--- local.properties ---"
           cat android/local.properties
 
