@@ -34,6 +34,8 @@ import 'core/mini_modules11.dart';
 import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/changelog.dart';
+import 'core/media_formats.dart';
 import 'core/local_import.dart';
 import 'core/discover.dart';
 import 'core/novel_reader.dart';
@@ -264,6 +266,9 @@ class AppSettings {
   // 底部导航栏: 向下滚动自动收起(去文字, 高度缩1/3), 向上滚动展开(网页端 nav-folded 同款)
   static bool get navAutoHide => p.getBool('nav_autohide') ?? true;
   static Future<void> setNavAutoHide(bool v) async { await p.setBool('nav_autohide', v); await sync(); }
+  // 左右滑动切换模块(默认开): 像完全体那样横向翻页换模块; 关掉可避免与模块内横向手势打架
+  static bool get navSwipe => p.getBool('nav_swipe') ?? true;
+  static Future<void> setNavSwipe(bool v) async { await p.setBool('nav_swipe', v); await sync(); }
   static Offset get orbPos {
     final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
     return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
@@ -2878,13 +2883,16 @@ class _RootNavState extends State<RootNav> {
     final hideBar = _noAppBarModules.contains(key);   // 沉浸: 该模块自带页头, 不补状态栏留白
     final hideNav = _noNavModules.contains(key);      // 底栏: 沉浸页不显示
     final kbOpen = MediaQuery.viewInsetsOf(c).bottom > 100; // 键盘弹出时底栏让位(网页端 kb-open 同款)
-    // PageView 防回跳兜底: 任何原因导致页面重建后停在第0页而 idx 不在0时, 帧末拉回当前模块
-    if (_page.hasClients && !_animating && (_page.page?.round() ?? idx) != idx && idx < enabled.length) {
+    // 左右滑动切换模块(默认开, 与完全体一致): 关闭时退回"模块间手势完全隔离"
+    final swipe = AppSettings.navSwipe;
+    // PageView 防回跳兜底: 任何原因导致页面重建后停在第0页而 idx 不在0时, 帧末拉回当前模块。
+    // 只在**禁止滑动**时启用 —— 允许滑动时 `_page.page` 会在手势中途出现 2.5 这种值,
+    // 用 round() 判定会把用户正在拖的这一页硬拽回去, 正是"切换很别扭"的来源之一。
+    if (!swipe && _page.hasClients && !_animating && (_page.page?.round() ?? idx) != idx && idx < enabled.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_page.hasClients && !_animating && idx < enabled.length) _page.jumpToPage(idx);
       });
     }
-    // 模块滑动隔离: 禁止在模块间左右滑动, 各模块内部手势互不干扰
     // 点按正文→底栏收起为 1/3 细条(保持收起, 不再因松手/上滑弹回); 点细条恢复
     final body = GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -2893,7 +2901,7 @@ class _RootNavState extends State<RootNav> {
         setState(() => _navCollapsed = true);
       },
       child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++; },
-        physics: const NeverScrollableScrollPhysics(),
+        physics: swipe ? const PageScrollPhysics() : const NeverScrollableScrollPhysics(),
         children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
     // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进各模块页分段行右侧 ⋯ / 悬浮球长按 (openModuleMenu)
     // body 始终位于 Stack 第 0 位且包裹类型恒定(SafeArea.top 开关), 全屏切换不再重建 PageView —— 修复"点全屏跳回搜索页"
@@ -2948,7 +2956,7 @@ class _RootNavState extends State<RootNav> {
           onTap: () { Navigator.pop(c2); Navigator.push(context, smoothRoute(localLibPage(mod.localKind!))); }),
         ListTile(dense: true, leading: const Icon(Icons.download, size: 20), title: const Text('导入本地文件'),
           onTap: () async { Navigator.pop(c2); final n = await importLocal(mod.localKind!);
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个文件' : '未导入'))); }),
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(importSnack(n, '个文件')); }),
       ],
       if (_settingsModules.contains(key))
         ListTile(dense: true, leading: const Icon(Icons.tune, size: 20), title: Text('${mod.name}设置'),
@@ -2964,88 +2972,92 @@ class _RootNavState extends State<RootNav> {
 
   // 折叠导航: 只显示当前模块细条, 点按弹出模块宫格
   Widget _foldedNavBar() {
-    final scheme = Theme.of(context).colorScheme;
+    final p = NeuPalette.fromTheme(Theme.of(context));
     final mod = kModules[enabled[idx]]!;
     return SafeArea(child: GestureDetector(
       onTap: () { HapticFeedback.selectionClick(); NavOrb.showModuleGrid(context, enabled, idx, (i) => _go(i, animate: false)); },
       child: Container(height: 40, margin: const EdgeInsets.fromLTRB(48, 0, 48, 8),
-        decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(20)),
+        decoration: Neu.raised(p, radius: 20, depth: 3, blur: 7),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(mod.icon, size: 16, color: scheme.primary), const SizedBox(width: 6),
-          Text(tr(mod.name), style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.bold)),
+          Icon(mod.icon, size: 16, color: p.accent), const SizedBox(width: 6),
+          Text(tr(mod.name), style: TextStyle(fontSize: 12, color: p.accent, fontWeight: FontWeight.bold)),
           const SizedBox(width: 4),
-          Icon(Icons.keyboard_arrow_up, size: 16, color: scheme.primary),
+          Icon(Icons.keyboard_arrow_up, size: 16, color: p.accent),
         ]))));
   }
 
-  // 完全体同款底栏: 模块多→横向自由滑动, "我的"永远固定在最右端
-  // collapsed=滚动收起态: 去掉文字只留图标, 高度 60→34 (约省1/3, 网页端 nav-folded 同款动画)
+  // 完全体同款底栏: 整条是一块**微微凸起的面**(顶边高光 + 底边暗影), 选中项"陷进去"。
+  // 模块多→横向自由滑动, "我的"永远固定在最右端。
+  //
+  // 为什么不用渐变胶囊: 换背景色是 Material 的思路(强对比色块), 而全应用其它地方
+  // 都是拟态(同底色 + 双向光影)。选中态用"凹陷"表达, 底栏才和页面是同一块材质;
+  // 渐变胶囊飘在上面, 就会显得脏、切换时视觉重量乱跳 —— 这正是旧版手感差的主因。
+  // collapsed=滚动收起态: 去掉文字只留图标, 高度 62→36。
   Widget _scrollNavBar({bool collapsed = false}) {
+    final p = NeuPalette.fromTheme(Theme.of(context));
     final mineIdx = enabled.indexOf('我的');
     final scrollKeys = [ for (var i = 0; i < enabled.length; i++) if (i != mineIdx) i ];
-    final scheme = Theme.of(context).colorScheme;
-    final barH = collapsed ? 34.0 : 60.0;
+    final barH = collapsed ? 36.0 : 62.0;
     Widget item(int i, {double? width}) {
       final k = enabled[i]; final m = kModules[k]!; final on = i == idx;
-      final fg = on ? Colors.white : scheme.onSurface.withValues(alpha: 0.55);
+      final fg = on ? p.accent : p.sub;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () { HapticFeedback.selectionClick(); _go(i); },
         child: SizedBox(width: width, height: barH,
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            // 选中项: 渐变胶囊 + 图标微弹
-            TweenAnimationBuilder<double>(tween: Tween(begin: 1, end: on ? 1.12 : 1.0),
-              duration: const Duration(milliseconds: 220), curve: Curves.easeOutBack,
-              builder: (_, s, child) => Transform.scale(scale: s, child: child),
-              child: AnimatedContainer(duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: collapsed ? 1 : 3),
-                decoration: on ? BoxDecoration(
-                  gradient: LinearGradient(colors: [scheme.primary, scheme.tertiary],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: scheme.primary.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2))],
-                ) : null,
-                child: Icon(m.icon, size: collapsed ? 19 : 21, color: fg))),
-            if (!collapsed) ...[
-              const SizedBox(height: 2),
-              Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10.5, color: on ? scheme.primary : fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
-            ],
-          ])));
+          child: Padding(padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+            child: AnimatedContainer(duration: const Duration(milliseconds: 150), curve: Curves.easeOut,
+              decoration: on ? Neu.inset(p, radius: 13, depth: 3, blur: 6) : null,
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                // 选中项图标轻微弹一下, 给切换一个"到位"的反馈
+                TweenAnimationBuilder<double>(tween: Tween(begin: 1, end: on ? 1.08 : 1.0),
+                  duration: const Duration(milliseconds: 220), curve: Curves.easeOutBack,
+                  builder: (_, s, child) => Transform.scale(scale: s, child: child),
+                  child: Icon(m.icon, size: collapsed ? 19 : 21, color: fg)),
+                if (!collapsed) ...[
+                  const SizedBox(height: 3),
+                  Text(tr(m.name), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10.5, color: fg, fontWeight: on ? FontWeight.w700 : FontWeight.w400)),
+                ],
+              ])))));
     }
     return GestureDetector(
       // 收起态: 点按细条恢复完整底栏; 任意状态: 长按弹出模块抽屉
       onTap: collapsed ? () => setState(() => _navCollapsed = false) : null,
       onLongPress: () { HapticFeedback.selectionClick(); NavOrb.showModuleGrid(context, enabled, idx, (i) => _go(i, animate: false)); },
-      child: SafeArea(top: false, child: Container(
-      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(collapsed ? 17 : 26),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5), width: 0.6),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 16, offset: const Offset(0, 4))],
-      ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(collapsed ? 17 : 26),
-      child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
-        final itemW = collapsed ? 52.0 : 76.0;
-        final mineW = itemW;
-        // 底栏不再放 ⋯ 模块菜单(已移入各模块页内), 全部宽度留给模块
-        final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
-        // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
-        if (scrollKeys.length * itemW <= avail) {
+      child: DecoratedBox(
+        // 顶边打光、底边压暗: 这一条就"长"在页面底部, 而不是浮在上面
+        decoration: BoxDecoration(color: p.bg, boxShadow: [
+          BoxShadow(color: p.hilite, offset: const Offset(0, -3), blurRadius: 7),
+          BoxShadow(color: p.shadow, offset: const Offset(0, -1), blurRadius: 3),
+        ]),
+        child: SafeArea(top: false, child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
+          const itemW = 78.0;
+          final mineW = collapsed ? 54.0 : itemW;
+          final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
+          if (collapsed) {
+            return Row(children: [
+              Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
+                itemCount: scrollKeys.length,
+                itemBuilder: (_, n) => SizedBox(width: mineW, child: item(scrollKeys[n])))),
+              if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
+            ]);
+          }
+          // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
+          if (scrollKeys.length * itemW <= avail) {
+            return Row(children: [
+              for (final i in scrollKeys) Expanded(child: item(i)),
+              if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
+            ]);
+          }
           return Row(children: [
-            for (final i in scrollKeys) Expanded(child: item(i)),
+            Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
+              itemCount: scrollKeys.length,
+              itemBuilder: (_, n) => SizedBox(width: itemW, child: item(scrollKeys[n])))),
             if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
           ]);
-        }
-        return Row(children: [
-          Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
-            itemCount: scrollKeys.length,
-            itemBuilder: (_, n) => SizedBox(width: itemW, child: item(scrollKeys[n])))),
-          if (mineIdx >= 0) Container(decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 0.5))),
-            child: SizedBox(width: mineW, child: item(mineIdx))),
-        ]);
-      }))))));
+        })))),
+      );
   }
 }
 class _KeepAlivePage extends StatefulWidget { const _KeepAlivePage({super.key, required this.child}); final Widget child;
@@ -3145,6 +3157,21 @@ Future<int> importLocal(String kind) {
     case 'comic': return LocalLib.importComic();
     default: return Future.value(0);
   }
+}
+
+/// 导入结果的统一提示：成功条数 + 每条失败原因。
+///
+/// 为什么不再用一句"未导入"：用户根本没法知道是格式不支持、编码坏了、
+/// 还是压缩包解不开。把原因摆出来，才知道下一步该做什么。
+SnackBar importSnack(int n, String unit) {
+  final errs = LocalLib.lastErrors;
+  final String head = n > 0 ? '已导入 $n $unit' : '没有导入成功';
+  if (errs.isEmpty) return SnackBar(content: Text(head));
+  final int extra = errs.length - 3;
+  return SnackBar(
+    duration: const Duration(seconds: 6),
+    content: Text('$head\n失败 ${errs.length} 项：\n${errs.take(3).join('\n')}${extra > 0 ? '\n…还有 $extra 项' : ''}'),
+  );
 }
 
 // 底部导航自定义(像网站: 勾选哪些模块 + 按住拖动调整顺序)
@@ -3400,35 +3427,13 @@ class ProductDetailPage extends StatelessWidget {
             onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)))));
 }
 
-// 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
-const kChangelog = [
-  ('v4.24.2', '引擎搜索/发现全通(需配套引擎 engine-v1.3.0): ① 修复"连上引擎却搜不到"——引擎侧书源类型是位标志(8/32/64)却按 0/1/2 过滤导致结果恒空, 已归一化; 且前端15s超时小于引擎25s搜索上限, 超时还误清连接形成"超时→重连→再超时"死循环, 现超时分级(搜索/发现35s)+超时不再误清连接 ② 发现页真同步: 引擎新增 /thp/discover + /thp/explore, 前端发现页显示各书源分组+分类标签(如 玄幻/都市/排行榜), 点标签看该分类书籍, 支持翻页加载更多; 旧引擎自动回落热词搜索 ③ 底栏去掉最右"⋯"——模块菜单(全屏/切换/本地库/导入/设置)改放小说/漫画/视频/音乐各自分段按钮行右侧, 悬浮球长按仍可用', ''),
-  ('v4.24.1', '本地小说修复: ① 修复本地导入小说看不了——网上下载的 txt 大量是 GBK/GB18030 编码, 旧版误按 latin1 兜底导致全文乱码; 现在自动识别 UTF-8(含BOM)/UTF-16/GBK, 打开即是正常中文 ② 本地书章节加缓存: 翻章不再重复读取整个文件, 大书翻页不卡 ③ 本地导入的书直接进入小说书架(带"本地"角标/阅读进度), 书架点开即读, 不再藏在本地库里 ④ 读取失败给出真实原因', ''),
-  ('v4.24.0', 'THP引擎通路+界面瘦身: ① 引擎直连全自动——App启动自动发现并连接局域网引擎, 断线自动重连, 搜索/发现/目录/正文全部走 THP 不再依赖后端(修复搜索报 No host specified、发现页空白、阅读器打不开) ② 各模块"搜索"页签补搜索框(点开即输), 视频模块补搜索页签 ③ 移除全模块冗余顶部标题栏, 模块菜单(全屏/切换/设置/本地库/导入)收进底栏右侧 ⋯(悬浮球长按/折叠条 ⋯ 同效) ④ 修复"点全屏跳回搜索页"(页面结构恒定不再重建) ⑤ 我的页去掉双层顶栏, 点头像进账号设置子页, 相机角标换头像 ⑥ 修复更新清单 versionCode 读取', '里程碑'),
-  ('v4.23.0', '阅读器完全体+音乐均衡器: ① 本地小说阅读器升级——txt/epub 本地书全部接入专业阅读器(横屏/长按段落/下拉书签/字体皮肤/翻页动画全继承, 自动记忆进度) ② 自定义皮肤导入: 相册选图做阅读背景+透明度滑杆 ③ 本章搜索: 关键词高亮定位, 翻页模式按字符跳页/滚动模式按比例跳 ④ 自动阅读: 上下模式平滑滚动(速度可调, 到底自动下一章), 翻页模式定时翻页 ⑤ 音乐均衡器: 真硬件级 audiofx 均衡器挂播放会话, 频段滑杆+官方预设(摇滚/流行/古典等)', ''),
-  ('v4.22.0', '顶级播放器+浏览器批: ① 系统级"打开方式"——文件管理器/其他App打开 txt·epub·音频·视频·网页链接 或分享文本时, 本App 出现在系统选择列表并直达对应阅读器/播放器/浏览器 ② 小说阅读器: 横屏阅读开关 / 长按段落菜单(复制·朗读本段·从此段听书·加书签) / 顶部下拉加书签 / 书签列表 ③ 浏览器: 搜索引擎切换(必应/百度/谷歌/DDG/搜狗) / 广告拦截(域名拦截清单+页面去广告元素) / 外部链接直达开新标签 ④ 音乐播放器: 睡眠定时(含播完本曲) + 倍速 ⑤ 视频播放器: 双击左右±10s快进退 / 倍速 / 断点续播 / 横屏全屏 ⑥ 底部导航焕新: 浮动圆角胶囊+渐变选中胶囊+弹性图标动画+触感反馈', '里程碑'),
-  ('v4.21.1', 'THP/1.0 协议前端补全: 发现层解析新格式 HELLO(实例ID/角色/名称) + BYE 优雅下线, 兼容旧草稿格式; 配套阅读引擎 engine-v1.2.0(THP 服务层)', ''),
-  ('v4.21.0', '体验大修: ① 我的页回归头像大卡(渐变+漂浮光点+头像环+身份码胶囊) ② AI 抽屉带惯性甩动+速度判定+开关震动反馈, 修复切模块后侧边栏误展开(模块切换广播静默收起) ③ AI 右上角新会话快捷按钮 ④ 多语言真生效: 60 个模块名全入字典(英/日), 顶栏/底栏/模块抽屉/导航管理全部随语言切换 ⑤ 悬浮窗/折叠屏适配保持', '里程碑'),
-  ('v4.20.0', '云同步落地: 共享清单/家庭日历登录后自动多台设备同步(新建 th_shared 表, 后写赢合并); 书架云端同步读取——后端资源库已下载的书自动合并进书架(换设备不丢), 点开直接读(全书已在库); 修复家庭日历写入个人日历存储的错位 bug; 悬浮便签升级为真全局悬浮窗(SYSTEM_ALERT_WINDOW, 退出App也能看到, 可拖动)', '里程碑'),
-  ('v4.19.0', '小模块做实第7-11批(共8个): 通讯录备份(导出/恢复JSON) / 短信备份(导出+验证码提取) / 扫描仪(拍照灰度增强) / 有声书(本地连播) / 短剧(竖屏连播) / 文件互传(局域网扫码秒传) / 家庭影院(本地视频库) / 家庭音乐库(本地音乐+随机播放) / 共享清单(多清单+勾选) / 家庭日历(独立家庭日程) / 共享相册(本地相册浏览+幻灯片) / 摄像头(网络摄像机实时画面) / 设备互联(局域网设备扫描); 短信读取改为自研通道(原 telephony 插件已无人维护且不兼容新构建链)', '里程碑'),
-  ('v4.18.0', '小模块做实第2-6批(共15个): 录音机(录音/暂停/回放) / 日历(月视图+日程) / 日记(心情+时间轴) / 白板(手绘+保存PNG) / 悬浮便签(速记) / 提醒中心(定时系统通知) / 课程表(7天网格) / 天气快递(wttr.in实时天气+快递查询) / 壁纸(Wallhaven) / 广播(全球电台在线听) / 播客(RSS订阅) / 书签 / 代码片段 / Markdown编辑器 / 学习工具(背诵卡) / 菜谱 / 翻译(多语言互译) / 健康记录(趋势图) / 资讯(RSS) — 全部点开即用', '里程碑'),
-  ('v4.17.0', '小模块做实第一批: 计算器(四则/乘方/括号+历史) / 文本工具箱(JSON/Base64/URL/时间戳/字数统计) / 二维码(生成+保存PNG+历史) / 待办(分组+滑动删除) / 笔记(Markdown编辑预览+搜索) / 记账(分类+月度收支统计) / 剪贴板(收藏+置顶) — 全部点开即用, 不再是骨架页; 修复 AI 厂商中文名乱码(在线注册表强制 UTF-8 解码)', ''),
-  ('v4.16.0', '固定Release签名(从此覆盖安装不再要求卸载) + 应用内下载修复(安装权限/FileProvider/三镜像自动切换/浏览器下载兜底) + 下载中心补网页版1.0 + 模块树状分类管理 + 聚合模块(工具箱/家庭中心) + 长按底栏弹模块抽屉 + 点击正文底栏收起为1/3保持 + 全模块右上角⋯菜单(全屏/切换模块/模块专属项, 不再一刀切播放器设置)', '里程碑'),
-  ('v4.15.0', '功能规划v2.0全量模块框架落地(作业中心/笔记/待办/录音机/日历/提醒/日记/记账/剪贴板/书签/代码片段/Markdown/健康/播客/有声书/广播/短剧/壁纸/资讯/天气快递/菜谱/学习工具/课程表/翻译/扫描仪/二维码/悬浮便签/计算器/白板/文本工具箱/传感器/文件互传/远程打印/家庭系列等41个新模块, 在「我的→功能管理」开启) + 「我的」页重构为Kimi式设置(分组卡片/通知设置/帮助中心/退出登录)', '里程碑'),
-  ('v4.14.1', 'THP/1.0协议漏洞修复(blob乱序写入/sha256校验/Range校验/content:batch NDJSON/关停BYE广播/双栈IPv6) + 模块介绍页 + 历史版本下载', '重构'),
-  ('v4.14.0', 'THP/1.0正式协议全量落地(发现/搜索/目录/内容/订阅/大文件/作业 25项全通过) + 后端模块化重构 + 首启协议弹窗(隐私政策/服务条款) + 加载式开屏可关动画 + 开屏IPv6标识', '里程碑'),
-  ('v4.13.0', '相册权限修复(真正能打开系统相册) + 音乐通知栏服务补全 + LRC同步歌词左右滑动 + 底部导航拖动排序 + 滚动自动收起导航栏(省1/3空间) + 浏览器/相册沉浸布局 + 浏览器全屏模式', ''),
-  ('v4.12.0', '更新误判修复 + 后台下载/安装包回收站 + 下载中心详情与历史 + 底部导航栏/折叠/悬浮球 + 语言即时生效 + AI抽屉防误滑/快捷模型/空会话清理 + 音量键翻页 + 通知栏音乐控制 + 公告系统通知', ''),
-  ('v4.11.0', 'venera漫画引擎App + 引擎漫画阅读器(条漫/翻页) + 音乐/视频断点续播 + 音乐收藏 + 后端依赖随包修复', ''),
-  ('v4.10.0', '引擎直连漫画阅读器 + 下载中心4件套 + server依赖内置', ''),
-  ('v4.9.0', 'AI思考链 + 消息排队 + TH-Harness本机工具 + 技能注入 + 上下文管理 + 相册/文件/浏览器模块 + 引擎直连 + THP v1.1', '里程碑'),
-  ('v4.8.0', 'AI模型六分类 + 排行榜 + 中转站/Key自动识别 + 统一密钥管理 + 联网搜索 + MCP + 导航即时生效', ''),
-];
-
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
+// 更新历史**不再打进安装包**：点开「更新历史」时才从云端按需拉取
+// （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
+// RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.24.2';
-  static const int currentCode = 50515;
+  static const String currentVersion = '4.25.0';
+  static const int currentCode = 50516;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -3621,7 +3626,7 @@ class _Ln extends State<LocalNovelsPage> {
   Future<void> _load() async { items = await LocalLib.list('novel'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地小说'), actions: [
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importNovels();
-      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 本' : '未导入'))); _load(); })]),
+      ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '本')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地小说\n点右上角 + 导入 txt / epub', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final b = items[i];
@@ -3681,7 +3686,7 @@ class _Lv extends State<LocalVideosPage> {
   Future<void> _load() async { items = await LocalLib.list('video'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地视频'), actions: [
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importVideos();
-      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 个' : '未导入'))); _load(); })]),
+      ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '个')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地视频\n点右上角 + 导入 mp4 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final v = items[i];
@@ -3699,6 +3704,12 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   Timer? _posTimer; bool _fs = false;
   // 双击快进/快退提示
   String _seekHint = ''; Timer? _hintTimer;
+  // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
+  List<String> _subs = <String>[];
+  List<Cue> _cues = <Cue>[];
+  int _subIdx = -1;            // -1 = 关闭字幕; 否则为 _subs 的下标
+  String _cueText = '';
+  Timer? _cueTimer;
 
   @override void initState() { super.initState(); _init(); }
   Future<void> _init() async {
@@ -3718,10 +3729,70 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       _posTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         if (ctrl != null && ctrl!.value.isPlaying) AppSettings.p.setInt(_posKey, ctrl!.value.position.inSeconds);
       });
+      // 字幕: 落盘时和视频同前缀, 这里按前缀把同目录的字幕都找出来
+      _subs = await LocalLib.findSubtitles('${widget.item['path']}');
+      if (_subs.isNotEmpty) await _pickSub(0);
       setState(() {});
     } catch (e) { setState(() => err = '$e'); }
   }
-  @override void dispose() { _posTimer?.cancel(); _hintTimer?.cancel();
+
+  /// 装载第 [i] 条字幕并开始跟随播放进度。
+  /// 解析失败时清空字幕并保持视频照常播放——字幕不该拖垮播放。
+  Future<void> _pickSub(int i) async {
+    _cueTimer?.cancel();
+    _cues = <Cue>[];
+    _cueText = '';
+    if (i < 0 || i >= _subs.length) { if (mounted) setState(() => _subIdx = -1); return; }
+    try {
+      final raw = await File(_subs[i]).readAsBytes();
+      final text = LocalLib.decodeText(raw);
+      final ext = _subs[i].split('.').last;
+      _cues = MediaFormats.parseSubtitle(text, ext);
+    } catch (_) {
+      _cues = <Cue>[];
+    }
+    if (!mounted) return;
+    setState(() => _subIdx = _cues.isEmpty ? -1 : i);
+    if (_cues.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('这条字幕没解析出内容: ${_subs[i].split('/').last}')));
+      return;
+    }
+    // 200ms 一次足够跟手, 又不会像监听器那样每帧都重建
+    _cueTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      final vc = ctrl;
+      if (vc == null || !vc.value.isInitialized) return;
+      final pos = vc.value.position;
+      String t = '';
+      for (final c in _cues) { if (c.covers(pos)) { t = c.text; break; } }
+      if (t != _cueText && mounted) setState(() => _cueText = t);
+    });
+  }
+
+  /// 切换字幕的弹层: 关 / 自动找到的每一条。
+  void _pickSubSheet() {
+    if (_subs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('没找到外挂字幕。把 srt/vtt/ass 放在视频同目录、与视频同名即可自动识别')));
+      return;
+    }
+    showModalBottomSheet(context: context, showDragHandle: true, builder: (c2) => SafeArea(child: Column(
+      mainAxisSize: MainAxisSize.min, children: [
+        const Padding(padding: EdgeInsets.only(bottom: 4),
+          child: Text('字幕', style: TextStyle(fontWeight: FontWeight.bold))),
+        ListTile(dense: true, leading: const Icon(Icons.subtitles_off, size: 20), title: const Text('关闭字幕'),
+          trailing: _subIdx < 0 ? const Icon(Icons.check, size: 18) : null,
+          onTap: () { Navigator.pop(c2); _pickSub(-1); }),
+        for (var i = 0; i < _subs.length; i++)
+          ListTile(dense: true, leading: const Icon(Icons.subtitles, size: 20),
+            title: Text(_subs[i].split('/').last, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: _subIdx == i ? const Icon(Icons.check, size: 18) : null,
+            onTap: () { Navigator.pop(c2); _pickSub(i); }),
+        const SizedBox(height: 6),
+      ])));
+  }
+
+  @override void dispose() { _posTimer?.cancel(); _hintTimer?.cancel(); _cueTimer?.cancel();
     if (ctrl != null && ctrl!.value.isInitialized) {
       final pos = ctrl!.value.position.inSeconds;
       final dur = ctrl!.value.duration.inSeconds;
@@ -3748,7 +3819,21 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   }
 
   @override Widget build(BuildContext c) {
-    final body = err != null ? Text('播放失败: $err', style: const TextStyle(color: Colors.red))
+    // 系统解码器解不了的封装(部分 rmvb/wmv/老 avi 等): 不吞错, 给一条真正的出路
+    final Widget body = err != null
+      ? Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 40),
+          const SizedBox(height: 10),
+          const Text('这个文件系统解码器打不开', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('$err', style: const TextStyle(fontSize: 11, color: Colors.grey), textAlign: TextAlign.center),
+          const SizedBox(height: 14),
+          Wrap(spacing: 10, children: [
+            FilledButton.icon(icon: const Icon(Icons.open_in_new, size: 18), label: const Text('用系统播放器打开'),
+              onPressed: () => OpenFilex.open('${widget.item['path']}')),
+            OutlinedButton(onPressed: () { setState(() => err = null); _init(); }, child: const Text('重试')),
+          ]),
+        ]))
       : chewie != null ? GestureDetector(
           onDoubleTapDown: (d) {
             final w = MediaQuery.of(c).size.width;
@@ -3757,6 +3842,13 @@ class _Lvp extends State<LocalVideoPlayerPage> {
           onDoubleTap: () {},
           child: Stack(alignment: Alignment.center, children: [
             AspectRatio(aspectRatio: ctrl!.value.aspectRatio, child: Chewie(controller: chewie!)),
+            if (_cueText.trim().isNotEmpty) Positioned(left: 12, right: 12, bottom: 56, child: IgnorePointer(
+              child: Align(alignment: Alignment.bottomCenter, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(6)),
+                child: Text(_cueText, textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.35)))))),
             if (_seekHint.isNotEmpty) IgnorePointer(child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
@@ -3768,7 +3860,11 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       Positioned(top: 4, left: 4, child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), onPressed: _toggleFs)),
     ])));
     return Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14)),
-      actions: [IconButton(icon: const Icon(Icons.fullscreen), tooltip: '横屏全屏', onPressed: _toggleFs)]),
+      actions: [
+        IconButton(icon: Icon(_subIdx >= 0 ? Icons.subtitles : Icons.subtitles_off),
+          tooltip: _subs.isEmpty ? '没有外挂字幕' : '字幕 (${_subs.length})', onPressed: _pickSubSheet),
+        IconButton(icon: const Icon(Icons.fullscreen), tooltip: '横屏全屏', onPressed: _toggleFs),
+      ]),
       body: Center(child: body));
   }
 }
@@ -3781,7 +3877,7 @@ class _Lm extends State<LocalMusicsPage> {
   Future<void> _load() async { items = await LocalLib.list('music'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地音乐'), actions: [
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importAudios();
-      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 首' : '未导入'))); _load(); })]),
+      ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '首')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地音乐\n点右上角 + 导入 mp3 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final m = items[i];
@@ -3800,7 +3896,7 @@ class _Lc extends State<LocalComicsPage> {
   Future<void> _load() async { items = await LocalLib.list('comic'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地漫画'), actions: [
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importComic();
-      ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(n > 0 ? '已导入 $n 部' : '未导入'))); _load(); })]),
+      ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '部')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地漫画\n点右上角 + 导入图片或 zip/cbz', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final m = items[i];
@@ -3896,7 +3992,13 @@ class _Da extends State<DownloadAppsPage> {
     setState(() => apks = alive.reversed.toList());
   }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('下载 App')),
-    body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+    // 下拉刷新: 更新历史是按需拉的, 给它一个顺手的手动重载入口
+    body: RefreshIndicator(onRefresh: () async {
+      final h = ChangelogPanel.refreshHook;
+      if (h != null) await h();
+    }, child: ListView(padding: EdgeInsets.all(ScreenFit.pad),
+      // 内容不足一屏时也要能下拉, 否则刷不了更新历史
+      physics: const AlwaysScrollableScrollPhysics(), children: [
       const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
         child: Text('ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
       const Card(child: DownloadCenterTile()),
@@ -3938,38 +4040,170 @@ class _Da extends State<DownloadAppsPage> {
       ],
       const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
         child: Text('历史版本更新记录', style: TextStyle(fontSize: 12, color: Colors.grey))),
-      FutureBuilder<Map<String, dynamic>?>(future: Cloud.latestManifest('app'),
-        builder: (c2, snap) {
-          final m = snap.data;
-          final latestVer = (m?['version'] as String?) ?? '';
-          final latestUrl = (m?['url'] as String?) ?? '';
-          return Card(child: Column(children: [
-            for (var i = 0; i < kChangelog.length; i++) ...[
-              if (i > 0) const Divider(height: 1, indent: 56),
-              Builder(builder: (c3) {
-                final v = kChangelog[i];
-                final isCurrent = v.$1 == 'v${Updater.currentVersion}';
-                final isLatestAvail = latestVer.isNotEmpty && v.$1 == 'v$latestVer'
-                    && Updater._verCmp(latestVer, Updater.currentVersion) > 0;
-                return ListTile(dense: true, leading: const Icon(Icons.history, size: 18),
-                  title: Row(children: [
-                    Text(v.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    if (i == 0) _tag('最新', Colors.blueAccent),
-                    if (isCurrent) _tag('当前版本', Colors.green),
-                    if (v.$3.isNotEmpty) _tag(v.$3, v.$3 == '重构' ? Colors.deepOrange : Colors.purple),
-                  ]),
-                  subtitle: Text(v.$2, style: const TextStyle(fontSize: 11)),
-                  trailing: isLatestAvail
-                    ? FilledButton.tonal(style: FilledButton.styleFrom(visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10)),
-                        onPressed: () => Updater.downloadProduct(c3, latestUrl, 'ThirdHub-$latestVer.apk'),
-                        child: const Text('下载此版本', style: TextStyle(fontSize: 11)))
-                    : null);
-              }),
+      // 更新历史不随包下发: 点开这一页时才去云端拉, 折叠展开
+      const ChangelogPanel(),
+    ])));
+}
+
+/// 更新历史面板。
+///
+/// 设计取舍：
+///  * **按需拉取** —— 四代累计的记录有数千行，塞进安装包只会让包体变大、启动变慢；
+///    这里点开才拉一次，之后走本地缓存（离线也能看）。
+///  * **分级可见** —— 普通账号看 4.0 之后；管理员多一个「全部历史」档看到更早的记录。
+///    权限由服务端 RLS 强制，这一层只管要不要显示入口。
+///  * **逐版本折叠** —— 默认全收起，副标题给两行摘要，需要时再展开看全。
+class ChangelogPanel extends StatefulWidget {
+  const ChangelogPanel({super.key});
+
+  /// 面板把自己刷新函数挂出来，供页面级下拉刷新调用（面板本身不是滚动容器）。
+  static Future<void> Function()? refreshHook;
+
+  @override State<ChangelogPanel> createState() => _ChangelogPanelState();
+}
+
+class _ChangelogPanelState extends State<ChangelogPanel> {
+  bool _full = false;          // false=近期(4.0 之后)  true=全部历史(仅管理员)
+  bool _loading = true;
+  bool _refreshing = false;
+  bool _fromCache = false;
+  String _err = '';
+  String _latestVer = '';
+  String _latestUrl = '';
+  ClogDoc? _doc;
+
+  @override void initState() {
+    super.initState();
+    ChangelogPanel.refreshHook = () => _load(force: true);
+    _load();
+  }
+
+  @override void dispose() {
+    if (ChangelogPanel.refreshHook != null) ChangelogPanel.refreshHook = null;
+    super.dispose();
+  }
+
+  Future<void> _load({bool force = false}) async {
+    if (mounted) setState(() { _loading = _doc == null; _refreshing = _doc != null; });
+    // 顺带拿一次最新清单，用来标记"可下载的版本"
+    try {
+      final m = await Cloud.latestManifest('app');
+      if (m != null) { _latestVer = (m['version'] as String?) ?? ''; _latestUrl = (m['url'] as String?) ?? ''; }
+    } catch (_) {}
+    final r = await ChangelogStore.load(admin: _full, force: force);
+    if (!mounted) return;
+    setState(() {
+      _loading = false; _refreshing = false;
+      if (r.doc != null) _doc = r.doc;
+      _fromCache = r.fromCache;
+      _err = r.error;
+    });
+  }
+
+  Future<void> _switch(bool full) async {
+    if (_full == full) return;
+    setState(() { _full = full; _doc = null; _err = ''; _loading = true; });
+    await _load(force: true);
+  }
+
+  @override Widget build(BuildContext context) {
+    final p = NeuPalette.of(context);
+    final ClogDoc? doc = _doc;
+    final bool isAdmin = ChangelogStore.isAdmin;
+    final String cur = 'v${Updater.currentVersion}';
+
+    return Card(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // ── 头部: 范围切换 + 刷新 ──
+      Padding(padding: const EdgeInsets.fromLTRB(12, 10, 6, 4), child: Row(children: [
+        Text('更新历史', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: p.text)),
+        const SizedBox(width: 8),
+        if (isAdmin)
+          Expanded(child: SegmentedButton<bool>(showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const <ButtonSegment<bool>>[
+              ButtonSegment<bool>(value: false, label: Text('近期', style: TextStyle(fontSize: 10))),
+              ButtonSegment<bool>(value: true, label: Text('全部历史', style: TextStyle(fontSize: 10))),
             ],
-          ]));
-        }),
+            selected: <bool>{_full},
+            onSelectionChanged: (Set<bool> s) => _switch(s.first)))
+        else
+          const Spacer(),
+        IconButton(visualDensity: VisualDensity.compact, tooltip: '刷新',
+          icon: _refreshing
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.refresh, size: 18),
+          onPressed: _refreshing ? null : () => _load(force: true)),
+      ])),
+      Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 8), child: Text(
+        _subtitleText(doc, isAdmin, cur),
+        style: TextStyle(fontSize: 10.5, color: p.sub))),
+
+      if (_loading)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 22),
+          child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))))
+      else if (doc == null || doc.entries.isEmpty)
+        Padding(padding: const EdgeInsets.fromLTRB(14, 6, 14, 18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_err.isEmpty ? '暂时拿不到更新记录' : _err, style: const TextStyle(fontSize: 12, color: Colors.orange)),
+          const SizedBox(height: 6),
+          const Text('下拉此页即可重试；更新记录不随安装包下发，需要联网获取。',
+            style: TextStyle(fontSize: 10.5, color: Colors.grey)),
+        ]))
+      else ...[
+        for (final ClogEntry e in doc.entries)
+          _entryTile(e, cur),
+        const SizedBox(height: 6),
+      ],
     ]));
+  }
+
+  String _subtitleText(ClogDoc? doc, bool isAdmin, String cur) {
+    if (doc == null) return isAdmin ? '可切换查看全部历史' : '仅显示 4.0 之后的记录';
+    final String scope = _full ? '全部历史（含 4.0 之前，仅管理员可见）' : '4.0 之后的记录';
+    final String src = _fromCache ? '本地缓存' : '已同步';
+    final String upd = doc.updated.isEmpty ? '' : ' · ${doc.updated}';
+    return '$scope · 共 ${doc.entries.length} 个版本 · $src$upd'
+        '${_err.isNotEmpty ? ' · ${_err}' : ''}';
+  }
+
+  Widget _entryTile(ClogEntry e, String cur) {
+    final bool isCur = e.v == cur;
+    final bool canDown = _latestUrl.isNotEmpty && e.v == 'v$_latestVer' &&
+        Updater._verCmp(_latestVer, Updater.currentVersion) > 0;
+    return Theme(
+      // 去掉 ExpansionTile 展开时的分隔线，保持卡片干净
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        leading: const Icon(Icons.history, size: 18),
+        title: Row(children: [
+          Text(e.v, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          if (isCur) _tag('当前版本', Colors.green),
+          if (e.v == 'v$_latestVer' && !isCur) _tag('最新', Colors.blueAccent),
+          if (e.tag.isNotEmpty) _tag(e.tag, e.tag == '重构' ? Colors.deepOrange : Colors.purple),
+        ]),
+        // 收起时的两行摘要，不展开也能知道这版干了什么
+        subtitle: Text(e.items.isEmpty ? '' : e.items.first,
+          maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+        children: <Widget>[
+          for (final String it in e.items)
+            Padding(padding: const EdgeInsets.only(bottom: 6),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Padding(padding: EdgeInsets.only(top: 6, right: 6),
+                  child: SizedBox(width: 4, height: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.grey, shape: BoxShape.circle)))),
+                Expanded(child: Text(it, style: const TextStyle(fontSize: 11.5, height: 1.5))),
+              ])),
+          if (canDown)
+            Align(alignment: Alignment.centerLeft, child: FilledButton.tonal(
+              style: FilledButton.styleFrom(visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10)),
+              onPressed: () => Updater.downloadProduct(context, _latestUrl, 'ThirdHub-$_latestVer.apk'),
+              child: const Text('下载此版本', style: TextStyle(fontSize: 11)))),
+        ],
+      ),
+    );
+  }
 }
 
 Widget _tag(String t, Color c) => Container(margin: const EdgeInsets.only(left: 6),
@@ -4057,6 +4291,12 @@ class _Ns extends State<NavSettingsPage> {
           subtitle: const Text('点一下正文收起为 1/3 细条并保持, 点细条恢复; 长按底栏弹出模块抽屉', style: TextStyle(fontSize: 11)),
           value: AppSettings.navAutoHide,
           onChanged: (v) => AppSettings.setNavAutoHide(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
+        const Divider(height: 1, indent: 56),
+        SwitchListTile(secondary: const Icon(Icons.swipe_right_alt, size: 20),
+          title: const Text('左右滑动切换模块', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('在正文区横向滑动即可换模块; 关掉可避免与模块内部的横向手势互相干扰', style: TextStyle(fontSize: 11)),
+          value: AppSettings.navSwipe,
+          onChanged: (v) => AppSettings.setNavSwipe(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: const TextStyle(fontSize: 14)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -4155,7 +4395,7 @@ class AboutPage extends StatelessWidget { const AboutPage({super.key});
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const LegalDocPage(title: '用户服务协议', asset: 'assets/legal/terms.md')))),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.favorite_border, size: 20), title: Text(tr('开源致谢'), style: const TextStyle(fontSize: 14)),
-          subtitle: const Text('Legado/dr_py/Venera/MusicFree/Cloudreve 及全体开源社区', style: TextStyle(fontSize: 11))),
+          subtitle: const Text('各开源阅读、漫画与聚合方案的作者，以及全体开源社区', style: TextStyle(fontSize: 11))),
       ])),
       const SizedBox(height: 12),
       Center(child: Text('ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6', style: const TextStyle(fontSize: 11, color: Colors.grey))),

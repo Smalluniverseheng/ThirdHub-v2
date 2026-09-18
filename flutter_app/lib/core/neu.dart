@@ -62,6 +62,27 @@ class NeuPalette {
   /// 按当前主题亮度取用
   static NeuPalette of(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark ? dark : light;
+
+  /// 按**当前主题自己的底色**生成一套拟态取色。
+  ///
+  /// 为什么不直接用 [light]/[dark]：拟态的全部效果建立在"光影与底色同源"上，
+  /// 底色一旦和页面底色不同，那块面就会像贴上去的异色板。本 App 的主题底色
+  /// 是另一套值（`#F6F7FB` / `#0F1115`），所以这里从主题现场推导高光与暗影：
+  /// 高光 = 底色混白、暗影 = 底色混黑，明暗两侧都仍然相对底色一亮一暗。
+  static NeuPalette fromTheme(ThemeData t) {
+    final bool isDark = t.brightness == Brightness.dark;
+    final Color bg = t.scaffoldBackgroundColor;
+    return NeuPalette(
+      bg: bg,
+      hilite: Color.alphaBlend(
+          Colors.white.withValues(alpha: isDark ? 0.10 : 0.85), bg),
+      shadow: Color.alphaBlend(
+          Colors.black.withValues(alpha: isDark ? 0.55 : 0.15), bg),
+      text: t.colorScheme.onSurface,
+      sub: t.colorScheme.onSurface.withValues(alpha: 0.55),
+      accent: t.colorScheme.primary,
+    );
+  }
 }
 
 /// 拟态几何：凸起 / 凹陷的 `BoxDecoration` 工厂。

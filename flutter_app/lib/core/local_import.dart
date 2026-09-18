@@ -8,7 +8,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'media_formats.dart';
+
 class LocalLib {
+  /// 上一次导入的逐文件失败原因（UI 直接展示，不再用"未导入"一句糊过去）。
+  static final List<String> lastErrors = <String>[];
+
   static Future<Directory> _dir(String kind) async {
     final doc = await getApplicationDocumentsDirectory();
     final d = Directory('${doc.path}/local_$kind');
@@ -79,10 +84,15 @@ class LocalLib {
   }
   static void invalidateNovel(String path) => _chapCache.remove(path);
 
-  // ── 小说: txt 直接拷贝; epub 解出纯文本章节 ──
+  // ── 小说: txt/md/umd 直接拷贝; epub 解出纯文本章节; fb2/html/xhtml/rtf 抽正文 ──
+  //
+  // 保真取舍：epub/fb2/html/rtf 一律**转成纯文本落盘**（同名 .txt），这样后续
+  // 章节切分、阅读器、听书全部走同一条 txt 通路，不用为每种格式各写一套渲染。
+  // 代价是丢原书排版——纯阅读场景可接受，也符合"本地导入即读书"的定位。
   static Future<int> importNovels() async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.custom,
-      allowedExtensions: ['txt', 'epub', 'umd', 'md'], allowMultiple: true);
+    lastErrors.clear();
+    final r = await FilePicker.platform.pickFiles(
+        type: FileType.custom, allowedExtensions: MediaFormats.novelExts, allowMultiple: true);
     if (r == null) return 0;
     final dir = await _dir('novel');
     final items = await list('novel');
@@ -93,18 +103,32 @@ class LocalLib {
       final name = f.name;
       final ext = name.split('.').last.toLowerCase();
       final dst = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$name');
-      if (ext == 'epub') {
+      final stem = name.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+      // 需要解析的格式 → 统一产出 .txt
+      final needParse = const {'epub', 'fb2', 'html', 'htm', 'xhtml', 'rtf'}.contains(ext);
+      if (needParse) {
         try {
-          final text = epubToText(await src.readAsBytes());
+          final bytes = await src.readAsBytes();
+          final text = ext == 'epub' ? epubToText(bytes) : MediaFormats.bookToText(bytes, ext);
+          if (text == null || text.trim().isEmpty) {
+            lastErrors.add('$name: 没能解析出正文(文件可能损坏或加密)');
+            continue;
+          }
           final out = File('${dst.path}.txt');
           await out.writeAsString(text);
-          items.add({'name': name.replaceAll(RegExp(r'\.epub$', caseSensitive: false), ''), 'path': out.path, 'format': 'epub'});
+          items.add({'name': stem, 'path': out.path, 'format': ext, 'size': text.length});
           n++;
-        } catch (_) {}
+        } catch (e) {
+          lastErrors.add('$name: 解析失败($e)');
+        }
       } else {
-        await src.copy(dst.path);
-        items.add({'name': name.replaceAll(RegExp(r'\.(txt|umd|md)$', caseSensitive: false), ''), 'path': dst.path, 'format': ext});
-        n++;
+        try {
+          await src.copy(dst.path);
+          items.add({'name': stem, 'path': dst.path, 'format': ext});
+          n++;
+        } catch (e) {
+          lastErrors.add('$name: $e');
+        }
       }
     }
     await _save('novel', items);
@@ -168,35 +192,116 @@ class LocalLib {
     return chapters;
   }
 
-  // ── 视频 / 音乐: 直接拷贝 ──
-  static Future<int> importMedia(String kind, List<String> exts) async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: exts, allowMultiple: true);
+  // ── 视频 / 音乐: 直接拷贝; 视频额外把同目录同名的外挂字幕一起收进来 ──
+  static Future<int> importMedia(String kind, List<String> exts, {bool withSubs = false}) async {
+    lastErrors.clear();
+    final r = await FilePicker.platform.pickFiles(
+        type: FileType.custom, allowedExtensions: exts, allowMultiple: true);
     if (r == null) return 0;
     final dir = await _dir(kind);
     final items = await list(kind);
     var n = 0;
     for (final f in r.files) {
       if (f.path == null) continue;
-      final dst = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${f.name}');
-      await File(f.path!).copy(dst.path);
-      items.add({'name': f.name, 'path': dst.path});
-      n++;
+      try {
+        final src = File(f.path!);
+        final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
+        final dst = File('${dir.path}/${stamp}_${f.name}');
+        await src.copy(dst.path);
+        final Map<String, dynamic> item = {'name': f.name, 'path': dst.path};
+        if (withSubs) {
+          // 常见的"片子和字幕同目录同名"：顺手把 srt/vtt/ass 一起搬过来，
+          // 落到和视频同一前缀，播放时按前缀找字幕即可。
+          final subs = await _siblings(src, dst, stamp);
+          if (subs.isNotEmpty) item['subs'] = subs;
+        }
+        items.add(item);
+        n++;
+      } catch (e) {
+        lastErrors.add('${f.name}: $e');
+      }
     }
     await _save(kind, items);
     return n;
   }
 
-  static Future<int> importVideos() => importMedia('video', ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'webm', 'ts', 'm3u8']);
-  static Future<int> importAudios() => importMedia('music', ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'wma', 'ape']);
+  /// 把 [src] 同目录、同主文件名的字幕文件拷到 [dst] 旁边（同名前缀）。
+  static Future<List<String>> _siblings(File src, File dst, String stamp) async {
+    final out = <String>[];
+    try {
+      final parent = src.parent;
+      final stem = src.path.split(RegExp(r'[/\\]')).last.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+      final lower = stem.toLowerCase();
+      final outDir = dst.parent.path;
+      await for (final e in parent.list()) {
+        if (e is! File) continue;
+        final fn = e.path.split(RegExp(r'[/\\]')).last;
+        final dot = fn.lastIndexOf('.');
+        if (dot <= 0) continue;
+        final base = fn.substring(0, dot);
+        final ext = fn.substring(dot + 1).toLowerCase();
+        if (base.toLowerCase() != lower) continue;
+        if (!MediaFormats.subExts.contains(ext)) continue;
+        final target = '$outDir/${stamp}_$stem.$ext';
+        await e.copy(target);
+        out.add(target);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /// 播放前找字幕：同目录、同前缀、扩展名在 [MediaFormats.subExts] 里。
+  ///
+  /// 用前缀匹配而不是精确同名，是为了兼容导入时加了时间戳前缀的落盘命名。
+  static Future<List<String>> findSubtitles(String videoPath) async {
+    final out = <String>[];
+    try {
+      final f = File(videoPath);
+      final fn = f.path.split(RegExp(r'[/\\]')).last;
+      final dot = fn.lastIndexOf('.');
+      final prefix = dot > 0 ? fn.substring(0, dot) : fn;
+      await for (final e in f.parent.list()) {
+        if (e is! File || e.path == videoPath) continue;
+        final name = e.path.split(RegExp(r'[/\\]')).last;
+        final d2 = name.lastIndexOf('.');
+        if (d2 <= 0) continue;
+        if (name.substring(0, d2) != prefix) continue;
+        if (!MediaFormats.subExts.contains(name.substring(d2 + 1).toLowerCase())) continue;
+        out.add(e.path);
+      }
+    } catch (_) {}
+    // srt > ass > vtt > 其他，第一个作为默认字幕
+    out.sort((a, b) => _subRank(a).compareTo(_subRank(b)));
+    return out;
+  }
+
+  static int _subRank(String p) {
+    switch (p.split('.').last.toLowerCase()) {
+      case 'srt': return 0;
+      case 'ass':
+      case 'ssa': return 1;
+      case 'vtt': return 2;
+      default: return 3;
+    }
+  }
+
+  static Future<int> importVideos() =>
+      importMedia('video', MediaFormats.videoExts, withSubs: true);
+  static Future<int> importAudios() => importMedia('music', MediaFormats.audioExts);
 
   // ── 漫画: 多选图片 或 zip/cbz 解包为图片序列 ──
   static Future<int> importComic() async {
+    lastErrors.clear();
     final r = await FilePicker.platform.pickFiles(type: FileType.custom,
-      allowedExtensions: ['zip', 'cbz', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'], allowMultiple: true);
+      allowedExtensions: MediaFormats.comicExts, allowMultiple: true);
     if (r == null) return 0;
     final items = await list('comic');
     var n = 0;
-    final zips = r.files.where((f) => f.path != null && (f.name.toLowerCase().endsWith('.zip') || f.name.toLowerCase().endsWith('.cbz'))).toList();
+    bool isZip(String p) {
+      final e = p.split('.').last.toLowerCase();
+      return e == 'zip' || e == 'cbz';
+    }
+    final zips = r.files.where((f) => f.path != null && isZip(f.path!)).toList();
     final imgs = r.files.where((f) => f.path != null && !zips.contains(f)).toList();
     for (final z in zips) {
       try {
@@ -209,15 +314,24 @@ class LocalLib {
         for (final a in zip.files) {
           if (!a.isFile) continue;
           final ln = a.name.toLowerCase();
-          if (ln.endsWith('.jpg') || ln.endsWith('.jpeg') || ln.endsWith('.png') || ln.endsWith('.webp') || ln.endsWith('.gif')) {
+          if (ln.endsWith('.jpg') || ln.endsWith('.jpeg') || ln.endsWith('.png') || ln.endsWith('.webp') ||
+              ln.endsWith('.gif') || ln.endsWith('.bmp') || ln.endsWith('.avif')) {
             final fn = '${out.path}/${pages.length.toString().padLeft(4, '0')}_${a.name.split('/').last}';
             await File(fn).writeAsBytes(a.content as List<int>);
             pages.add(fn);
           }
         }
         pages.sort();
-        if (pages.isNotEmpty) { items.add({'name': name, 'path': out.path, 'pages': pages}); n++; }
-      } catch (_) {}
+        if (pages.isNotEmpty) {
+          items.add({'name': name, 'path': out.path, 'pages': pages});
+          n++;
+        } else {
+          lastErrors.add('${z.name}: 压缩包里没有图片');
+          await out.delete(recursive: true);
+        }
+      } catch (e) {
+        lastErrors.add('${z.name}: 解包失败($e)');
+      }
     }
     if (imgs.isNotEmpty) {
       final dir = await _dir('comic');
@@ -225,14 +339,26 @@ class LocalLib {
       await out.create(recursive: true);
       final pages = <String>[];
       for (final f in imgs) {
-        final fn = '${out.path}/${pages.length.toString().padLeft(4, '0')}_${f.name}';
-        await File(f.path!).copy(fn);
-        pages.add(fn);
+        try {
+          final fn = '${out.path}/${pages.length.toString().padLeft(4, '0')}_${f.name}';
+          await File(f.path!).copy(fn);
+          pages.add(fn);
+        } catch (e) {
+          lastErrors.add('${f.name}: $e');
+        }
       }
-      items.add({'name': '导入图片 ${DateTime.now().toString().substring(0, 16)}', 'path': out.path, 'pages': pages});
-      n++;
+      if (pages.isNotEmpty) {
+        items.add({'name': '导入图片 ${DateTime.now().toString().substring(0, 16)}', 'path': out.path, 'pages': pages});
+        n++;
+      } else {
+        await out.delete(recursive: true);
+      }
     }
     await _save('comic', items);
     return n;
   }
+
+  /// RAR/7z 这类本机解不了的漫画包：给出明确指引，而不是静默失败。
+  static String unpackHint() =>
+      'RAR / 7z 压缩包无法直接解包，请先解压成图片（或转存为 zip/cbz）再导入';
 }
