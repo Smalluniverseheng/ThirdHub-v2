@@ -32,12 +32,24 @@ jobs:
           [ -s "$RUNNER_TEMP/thirdhub-release.jks" ] || { echo "keystore 解码为空"; exit 1; }
           ls -l "$RUNNER_TEMP/thirdhub-release.jks"
 
-      # 只为生成 android/local.properties（flutter.sdk）——settings.gradle.kts 强依赖
+      # ① 生成 android/local.properties（flutter.sdk）——settings.gradle.kts 强依赖
+      # ② 补写 flutter.versionCode / flutter.versionName —— 这一项必须手工补：
+      #    直接跑 gradlew 时 flutter 工具不会写这两个键，而 FlutterPlugin.kt:132 是
+      #    `rootProjectLocalProperties.getProperty("flutter.versionCode", "1")`，
+      #    取不到就静默回落到 versionCode=1 / versionName=1.0（run #36 出包实测如此）。
       - name: pub get
         working-directory: flutter_app
         run: |
           flutter pub get
           grep -q '^flutter.sdk=' android/local.properties && echo "local.properties OK"
+          FULL=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | tr -d '\r')
+          NAME=${FULL%%+*}
+          CODE=${FULL#*+}
+          [ "$CODE" = "$FULL" ] && CODE=1
+          sed -i '/^flutter\.versionCode=/d;/^flutter\.versionName=/d' android/local.properties
+          printf 'flutter.versionCode=%s\nflutter.versionName=%s\n' "$CODE" "$NAME" >> android/local.properties
+          echo "--- local.properties ---"
+          cat android/local.properties
 
       - name: build APK (arm64)
         working-directory: flutter_app/android
@@ -71,7 +83,7 @@ jobs:
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
           echo "version = $VER"
 
-      - name: verify signing (防止静默回落到 debug 签名)
+      - name: verify signing & versionName (防止静默回落到 debug 签名 / versionCode=1)
         run: |
           BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -1)
           echo "build-tools: $BT"
@@ -81,6 +93,10 @@ jobs:
             echo "::error::APK 用了 debug 签名 —— 无法覆盖安装正式版，检查 TH_KEYSTORE_BASE64"
             exit 1
           fi
+          echo "--- badging ---"
+          "$BT/aapt2" dump badging "$APK" | head -1
+          "$BT/aapt2" dump badging "$APK" | grep -q "versionName='${{ steps.v.outputs.ver }}'" \
+            || { echo "::error::APK versionName 与 pubspec 的 ${{ steps.v.outputs.ver }} 不一致（versionCode 回落了？）"; exit 1; }
 
       - name: rename artifact
         run: cp "$APK" "ThirdHub-${{ steps.v.outputs.ver }}.apk"
