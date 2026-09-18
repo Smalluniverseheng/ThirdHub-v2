@@ -1,9 +1,12 @@
 name: build-apk
 
-# 为什么用 flutter build 而不是直接 gradlew：
-#   android/settings.gradle.kts 里 `require(sdk != null) { "flutter.sdk not set in local.properties" }`
-#   —— local.properties 不进版本库，直接调 gradlew 一定在这里炸。
-#   flutter build 会自己生成它，产物路径也固定。
+# 为什么直接调 gradlew 而不是 `flutter build apk`：
+#   实测（run #35）`flutter build apk --release` 在 runner 上会报
+#   "Gradle build failed to produce an .apk file ..." —— gradle 其实跑完了 479s，
+#   是 flutter 工具自己没在预期路径找到产物（日志里还有 "Already watching path" 异常）。
+#   直接 gradlew 出 `app/build/outputs/apk/release/app-release.apk` 是稳定路径。
+#   注意：必须先 `flutter pub get` ——它会生成 android/local.properties，
+#   而 settings.gradle.kts 里有 `require(sdk != null) { "flutter.sdk not set in local.properties" }`。
 permissions:
   contents: write
 
@@ -29,17 +32,36 @@ jobs:
           [ -s "$RUNNER_TEMP/thirdhub-release.jks" ] || { echo "keystore 解码为空"; exit 1; }
           ls -l "$RUNNER_TEMP/thirdhub-release.jks"
 
+      # 只为生成 android/local.properties（flutter.sdk）——settings.gradle.kts 强依赖
       - name: pub get
         working-directory: flutter_app
-        run: flutter pub get
+        run: |
+          flutter pub get
+          grep -q '^flutter.sdk=' android/local.properties && echo "local.properties OK"
 
       - name: build APK (arm64)
-        working-directory: flutter_app
+        working-directory: flutter_app/android
         env:
           TH_STORE_FILE: ${{ runner.temp }}/thirdhub-release.jks
           TH_STORE_PASSWORD: ${{ secrets.TH_STORE_PASSWORD }}
           TH_KEY_PASSWORD: ${{ secrets.TH_KEY_PASSWORD }}
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
+          echo "--- release 目录 ---"
+          ls -l app/build/outputs/apk/release/ || true
+
+      - name: locate apk
+        run: |
+          SRC=flutter_app/android/app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$SRC" ]; then
+            echo "预期路径没有产物，全盘找一下："
+            find flutter_app -name '*.apk' -exec ls -l {} \; || true
+            SRC=$(find flutter_app -name 'app-release*.apk' | head -1)
+          fi
+          if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then echo "没有任何 APK 产物"; exit 1; fi
+          echo "APK=$SRC" >> "$GITHUB_ENV"
+          ls -l "$SRC"
 
       - name: read version
         id: v
@@ -49,8 +71,19 @@ jobs:
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
           echo "version = $VER"
 
+      - name: verify signing (防止静默回落到 debug 签名)
+        run: |
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "$BT/apksigner" verify --print-certs "$APK" > /tmp/certs.txt 2>&1 || true
+          cat /tmp/certs.txt
+          if grep -qi 'Android Debug' /tmp/certs.txt; then
+            echo "::error::APK 用了 debug 签名 —— 无法覆盖安装正式版，检查 TH_KEYSTORE_BASE64"
+            exit 1
+          fi
+
       - name: rename artifact
-        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk "ThirdHub-${{ steps.v.outputs.ver }}.apk"
+        run: cp "$APK" "ThirdHub-${{ steps.v.outputs.ver }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
