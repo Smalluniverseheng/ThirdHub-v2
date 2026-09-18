@@ -1625,12 +1625,17 @@ class _Home extends State<SearchSection> {
     }
   }
 
+// 模块菜单入口: 底栏已取消 ⋯, 改放各模块页分段按钮行右侧(需要菜单的模块才有)
+Widget modMenuBtn(BuildContext c) => IconButton(icon: const Icon(Icons.more_vert, size: 20), tooltip: '模块菜单',
+  visualDensity: VisualDensity.compact,
+  onPressed: () { HapticFeedback.selectionClick(); c.findAncestorStateOfType<_RootNavState>()?.openModuleMenu(); });
+
 // ═══ 板块一: 小说阅读器(功能完整) ═══
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
-      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)),
       HistoryPage(kind: 'novel', builder: (b) => TocPage(book: b)),
       EngineDiscoverView(type: 'novel', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'novel', item: it)))),
@@ -1891,8 +1896,8 @@ class NovelReadPage extends StatelessWidget {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
-      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
       HistoryPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
       EngineDiscoverView(type: 'comic', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'comic', item: it)))),
@@ -2034,8 +2039,8 @@ class _Cr extends State<ComicReaderPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
-      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [const _MusicPlaylist(),
       HistoryPage(kind: 'music', builder: (b) => MusicPlayPage(item: {'name': b.name, 'url': b.bookUrl, 'artist': b.author, 'coverUrl': b.coverUrl}, sourceId: b.sourceId)),
       EngineDiscoverView(type: 'music', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'music', item: it)))),
@@ -2452,8 +2457,8 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('片库'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
-      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)),
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('片库'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+      selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail),
       HistoryPage(kind: 'video', builder: _videoDetail),
       EngineDiscoverView(type: 'video', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'video', item: it)))),
@@ -2890,7 +2895,7 @@ class _RootNavState extends State<RootNav> {
       child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++; },
         physics: const NeverScrollableScrollPhysics(),
         children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
-    // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进底栏 ⋯ / 悬浮球长按 / 折叠条 ⋯ (openModuleMenu)
+    // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进各模块页分段行右侧 ⋯ / 悬浮球长按 (openModuleMenu)
     // body 始终位于 Stack 第 0 位且包裹类型恒定(SafeArea.top 开关), 全屏切换不再重建 PageView —— 修复"点全屏跳回搜索页"
     final bodyStack = Stack(children: [
       SafeArea(top: !hideBar && !fs, bottom: false, child: body),
@@ -2927,6 +2932,7 @@ class _RootNavState extends State<RootNav> {
   }
 
   // 模块菜单(底部弹层, 替代原顶栏 ⋯): 新会话(AI)/本地库/导入/模块设置/全屏/切换模块
+  // 入口: 各模块页分段按钮行右侧 ⋯(modMenuBtn) / 悬浮球长按; 底部导航栏不再放 ⋯
   static const _settingsModules = {'小说', '漫画', '视频', '音乐', '直播'};
   void openModuleMenu() {
     final key = enabled[idx]; final mod = kModules[key]!;
@@ -2969,11 +2975,6 @@ class _RootNavState extends State<RootNav> {
           Text(tr(mod.name), style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.bold)),
           const SizedBox(width: 4),
           Icon(Icons.keyboard_arrow_up, size: 16, color: scheme.primary),
-          // 模块菜单(替代原顶栏 ⋯): 独立点击区, 不触发外层宫格
-          GestureDetector(behavior: HitTestBehavior.opaque,
-            onTap: () { HapticFeedback.selectionClick(); openModuleMenu(); },
-            child: Padding(padding: const EdgeInsets.only(left: 10),
-              child: Icon(Icons.more_vert, size: 16, color: scheme.primary.withValues(alpha: 0.7)))),
         ]))));
   }
 
@@ -3028,20 +3029,13 @@ class _RootNavState extends State<RootNav> {
       child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
         final itemW = collapsed ? 52.0 : 76.0;
         final mineW = itemW;
-        final menuW = collapsed ? 38.0 : 44.0;
-        final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0) - menuW;
-        // 模块菜单按钮(替代原顶栏 ⋯): 固定最右端
-        final menuBtn = Container(
-          decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5), width: 0.5))),
-          child: SizedBox(width: menuW, height: barH, child: IconButton(padding: EdgeInsets.zero,
-            icon: Icon(Icons.more_vert, size: collapsed ? 17 : 19, color: scheme.onSurface.withValues(alpha: 0.6)),
-            tooltip: '模块菜单', onPressed: () { HapticFeedback.selectionClick(); openModuleMenu(); })));
+        // 底栏不再放 ⋯ 模块菜单(已移入各模块页内), 全部宽度留给模块
+        final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
         // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
         if (scrollKeys.length * itemW <= avail) {
           return Row(children: [
             for (final i in scrollKeys) Expanded(child: item(i)),
             if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
-            menuBtn,
           ]);
         }
         return Row(children: [
@@ -3050,7 +3044,6 @@ class _RootNavState extends State<RootNav> {
             itemBuilder: (_, n) => SizedBox(width: itemW, child: item(scrollKeys[n])))),
           if (mineIdx >= 0) Container(decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 0.5))),
             child: SizedBox(width: mineW, child: item(mineIdx))),
-          menuBtn,
         ]);
       }))))));
   }
@@ -3409,6 +3402,7 @@ class ProductDetailPage extends StatelessWidget {
 
 // 历史版本更新记录(与 FEATURES.md 同步): (版本, 描述, 标记)
 const kChangelog = [
+  ('v4.24.2', '引擎搜索/发现全通(需配套引擎 engine-v1.3.0): ① 修复"连上引擎却搜不到"——引擎侧书源类型是位标志(8/32/64)却按 0/1/2 过滤导致结果恒空, 已归一化; 且前端15s超时小于引擎25s搜索上限, 超时还误清连接形成"超时→重连→再超时"死循环, 现超时分级(搜索/发现35s)+超时不再误清连接 ② 发现页真同步: 引擎新增 /thp/discover + /thp/explore, 前端发现页显示各书源分组+分类标签(如 玄幻/都市/排行榜), 点标签看该分类书籍, 支持翻页加载更多; 旧引擎自动回落热词搜索 ③ 底栏去掉最右"⋯"——模块菜单(全屏/切换/本地库/导入/设置)改放小说/漫画/视频/音乐各自分段按钮行右侧, 悬浮球长按仍可用', ''),
   ('v4.24.1', '本地小说修复: ① 修复本地导入小说看不了——网上下载的 txt 大量是 GBK/GB18030 编码, 旧版误按 latin1 兜底导致全文乱码; 现在自动识别 UTF-8(含BOM)/UTF-16/GBK, 打开即是正常中文 ② 本地书章节加缓存: 翻章不再重复读取整个文件, 大书翻页不卡 ③ 本地导入的书直接进入小说书架(带"本地"角标/阅读进度), 书架点开即读, 不再藏在本地库里 ④ 读取失败给出真实原因', ''),
   ('v4.24.0', 'THP引擎通路+界面瘦身: ① 引擎直连全自动——App启动自动发现并连接局域网引擎, 断线自动重连, 搜索/发现/目录/正文全部走 THP 不再依赖后端(修复搜索报 No host specified、发现页空白、阅读器打不开) ② 各模块"搜索"页签补搜索框(点开即输), 视频模块补搜索页签 ③ 移除全模块冗余顶部标题栏, 模块菜单(全屏/切换/设置/本地库/导入)收进底栏右侧 ⋯(悬浮球长按/折叠条 ⋯ 同效) ④ 修复"点全屏跳回搜索页"(页面结构恒定不再重建) ⑤ 我的页去掉双层顶栏, 点头像进账号设置子页, 相机角标换头像 ⑥ 修复更新清单 versionCode 读取', '里程碑'),
   ('v4.23.0', '阅读器完全体+音乐均衡器: ① 本地小说阅读器升级——txt/epub 本地书全部接入专业阅读器(横屏/长按段落/下拉书签/字体皮肤/翻页动画全继承, 自动记忆进度) ② 自定义皮肤导入: 相册选图做阅读背景+透明度滑杆 ③ 本章搜索: 关键词高亮定位, 翻页模式按字符跳页/滚动模式按比例跳 ④ 自动阅读: 上下模式平滑滚动(速度可调, 到底自动下一章), 翻页模式定时翻页 ⑤ 音乐均衡器: 真硬件级 audiofx 均衡器挂播放会话, 频段滑杆+官方预设(摇滚/流行/古典等)', ''),
@@ -3433,8 +3427,8 @@ const kChangelog = [
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
 class Updater {
-  static const String currentVersion = '4.24.1';
-  static const int currentCode = 50514;
+  static const String currentVersion = '4.24.2';
+  static const int currentCode = 50515;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

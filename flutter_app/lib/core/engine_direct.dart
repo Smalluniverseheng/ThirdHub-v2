@@ -1,5 +1,5 @@
-// 前端直连引擎(THP): 不经过后端, 直接向局域网引擎发起搜索/目录/内容请求
-// 端点为 THP 旧草稿最小集(引擎 engine-v1.2.0 实际实现): /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover
+// 前端直连引擎(THP): 不经过后端, 直接向局域网引擎发起搜索/目录/内容/发现请求
+// 端点(引擎 engine-v1.3.0 实际实现): /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover · /thp/explore
 // (docs/THP.md 的 /thp/m/{module}/... 规范路径是资源库侧接口; 资源库调引擎时自带"规范→旧草稿"三级回落)
 import 'dart:async';
 import 'dart:convert';
@@ -80,11 +80,13 @@ class EngineDirect {
   static bool get connected => url.isNotEmpty;
 
   // 网络层错误(连接过期/引擎重启换IP) → 自动重连一次再重试
-  static bool _isNetErr(Object e) => e is TimeoutException || e is SocketException || e is http.ClientException;
+  // 注意: TimeoutException 不算连接死亡! 引擎搜索最长等25s, 超时只是"这次慢", 清连接会形成"超时→重连→再超时"死循环
+  static bool _isNetErr(Object e) => e is SocketException || e is http.ClientException;
 
-  static Future<Map<String, dynamic>> _get(String path, [bool retried = false]) async {
+  // 超时分级: 引擎搜索/发现内部最长等25s(全书源并发), 前端必须等更久; 目录/正文也可能触发在线取详情
+  static Future<Map<String, dynamic>> _get(String path, [bool retried = false, int timeoutSec = 30]) async {
     try {
-      final r = await http.get(Uri.parse('$url$path')).timeout(const Duration(seconds: 15));
+      final r = await http.get(Uri.parse('$url$path')).timeout(Duration(seconds: timeoutSec));
       final j = jsonDecode(utf8.decode(r.bodyBytes));
       if (j is Map && j['object'] == 'error') throw Exception('${j['data']?['message'] ?? '引擎错误'}');
       if (j is Map && j['error'] != null) throw Exception('${j['error']}');
@@ -95,30 +97,37 @@ class EngineDirect {
       final old = url; url = '';
       await autoConnect();
       if (!connected || url == old) { url = old; rethrow; }
-      return _get(path, true);
+      return _get(path, true, timeoutSec);
     }
   }
 
-  // 搜索: type= novel/comic/video/music
+  // 搜索: type= novel/comic/video/music (引擎侧全书源并发, 最长约25s)
   static Future<List<Map<String, dynamic>>> search(String type, String q) async {
-    final r = await _get('/thp/search?type=$type&q=${Uri.encodeComponent(q)}');
+    final r = await _get('/thp/search?type=$type&q=${Uri.encodeComponent(q)}', false, 35);
     final items = r['data'] is Map ? (r['data']['items'] as List? ?? []) : (r['data'] as List? ?? []);
     return [ for (final e in items) Map<String, dynamic>.from(e) ];
   }
   // 目录/选集
   static Future<List<Map<String, dynamic>>> chapters(String type, String id) async {
-    final r = await _get('/thp/chapters?type=$type&id=${Uri.encodeComponent(id)}');
+    final r = await _get('/thp/chapters?type=$type&id=${Uri.encodeComponent(id)}', false, 30);
     final items = r['data'] is Map ? (r['data']['items'] as List? ?? []) : (r['data'] as List? ?? []);
     return [ for (final e in items) Map<String, dynamic>.from(e) ];
   }
   // 正文/图片/播放地址
   static Future<Map<String, dynamic>> content(String type, String id, String chapter) async {
-    final r = await _get('/thp/content?type=$type&id=${Uri.encodeComponent(id)}&chapter=${Uri.encodeComponent(chapter)}');
+    final r = await _get('/thp/content?type=$type&id=${Uri.encodeComponent(id)}&chapter=${Uri.encodeComponent(chapter)}', false, 30);
     return Map<String, dynamic>.from(r['data'] is Map ? r['data'] as Map : {'text': '${r['data']}'});
   }
-  // 发现页(引擎推荐/榜单, THP v1.1; 引擎不支持时抛错, 前端回落到搜索热词)
+  // 发现页结构(engine-v1.3.0+): 各书源的分类标签 [{source, sourceName, tags:[{name,url}]}]
+  // 旧引擎(engine-v1.2.0)返回404 → 抛错, 前端回落热词搜索
   static Future<List<Map<String, dynamic>>> discover(String type) async {
-    final r = await _get('/thp/discover?type=$type');
+    final r = await _get('/thp/discover?type=$type', false, 35);
+    final items = r['data'] is Map ? (r['data']['items'] as List? ?? []) : (r['data'] as List? ?? []);
+    return [ for (final e in items) Map<String, dynamic>.from(e) ];
+  }
+  // 发现列表(engine-v1.3.0+): 按 源+分类URL+页码 取书籍条目, 字段与 search 一致
+  static Future<List<Map<String, dynamic>>> explore(String type, String source, String tagUrl, [int page = 1]) async {
+    final r = await _get('/thp/explore?type=$type&source=${Uri.encodeComponent(source)}&url=${Uri.encodeComponent(tagUrl)}&page=$page', false, 35);
     final items = r['data'] is Map ? (r['data']['items'] as List? ?? []) : (r['data'] as List? ?? []);
     return [ for (final e in items) Map<String, dynamic>.from(e) ];
   }

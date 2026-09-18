@@ -67,7 +67,7 @@ class _Ed extends State<EngineDirectPage> {
     ]));
 }
 
-// ═══ 模块发现页: 连接引擎的发现(不支持时回落到热词搜索) ═══
+// ═══ 模块发现页: 同步引擎的发现页(书源分组+分类标签), 点标签加载该分类的书籍列表 ═══
 // onOpen: 打开条目(模块自己决定进阅读器/播放器)
 class EngineDiscoverView extends StatefulWidget {
   final String type; // novel/comic/video/music
@@ -78,6 +78,9 @@ class EngineDiscoverView extends StatefulWidget {
 class _Edv extends State<EngineDiscoverView> {
   List<Map<String, dynamic>> items = []; bool loading = false; String err = ''; final q = TextEditingController();
   StreamSubscription? _sub;
+  // 发现结构: 引擎各书源的分类标签(engine-v1.3.0+); 空=旧引擎不支持, 回落热词搜索
+  List<Map<String, dynamic>> sources = [];
+  String selSource = ''; String selTag = ''; int page = 1; bool hasMore = false; bool searching = false;
   static const hotwords = {'novel': ['玄幻', '都市', '仙侠', '科幻'], 'comic': ['热血', '恋爱', '冒险', '搞笑'],
     'video': ['电影', '剧集', '动漫', '综艺'], 'music': ['流行', '民谣', '摇滚', '古风']};
   @override void initState() { super.initState(); _boot();
@@ -99,19 +102,43 @@ class _Edv extends State<EngineDiscoverView> {
     catch (e) { err = '连接失败: $e'; }
     if (mounted) setState(() => loading = false);
   }
+  // 加载发现结构(书源+标签); 旧引擎不支持 → 热词搜索回落
   Future<void> _load() async {
     if (!EngineDirect.connected) return;
-    setState(() { loading = true; err = ''; items = []; });
-    try { items = await EngineDirect.discover(widget.type); }
-    catch (_) { // 引擎不支持发现 → 热词搜索回落
-      try { items = await EngineDirect.search(widget.type, (hotwords[widget.type] ?? ['热门']).first); }
-      catch (e) { err = '$e'; }
-    }
+    setState(() { loading = true; err = ''; items = []; sources = []; selSource = ''; selTag = ''; searching = false; });
+    try {
+      sources = await EngineDirect.discover(widget.type);
+      if (sources.isNotEmpty) {
+        // 默认选中第一个源的第一个标签
+        final s0 = sources.first;
+        final tags = (s0['tags'] as List? ?? []);
+        selSource = '${s0['source'] ?? ''}';
+        if (tags.isNotEmpty) { selTag = '${tags.first['url'] ?? ''}'; }
+        if (mounted) setState(() => loading = false);
+        if (selTag.isNotEmpty) { _explore(reset: true); return; }
+      }
+    } catch (_) { sources = []; }
+    // 引擎不支持发现/没有可用源 → 热词搜索回落
+    try { items = await EngineDirect.search(widget.type, (hotwords[widget.type] ?? ['热门']).first); searching = true; }
+    catch (e) { err = '$e'; }
+    if (mounted) setState(() => loading = false);
+  }
+  // 加载选中标签的书籍列表(reset=true 换标签/换源; false=加载下一页)
+  Future<void> _explore({bool reset = false}) async {
+    if (!EngineDirect.connected || selSource.isEmpty || selTag.isEmpty) return;
+    if (reset) { page = 1; items = []; }
+    setState(() { loading = true; err = ''; searching = false; });
+    try {
+      final list = await EngineDirect.explore(widget.type, selSource, selTag, page);
+      if (reset) { items = list; } else { items = [...items, ...list]; }
+      hasMore = list.isNotEmpty;
+      page++;
+    } catch (e) { err = '$e'; }
     if (mounted) setState(() => loading = false);
   }
   Future<void> _search(String k) async {
     if (!EngineDirect.connected || k.trim().isEmpty) return;
-    setState(() { loading = true; err = ''; items = []; });
+    setState(() { loading = true; err = ''; items = []; searching = true; hasMore = false; });
     try { items = await EngineDirect.search(widget.type, k.trim()); }
     catch (e) { err = '$e'; }
     if (mounted) setState(() => loading = false);
@@ -147,6 +174,7 @@ class _Edv extends State<EngineDiscoverView> {
           child: const Text('引擎直连管理')),
       ])));
     }
+    final curTags = sources.isEmpty ? const [] : ((sources.firstWhere((s) => '${s['source']}' == selSource, orElse: () => sources.first)['tags'] as List? ?? const []));
     return Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(10, 8, 10, 4), child: Row(children: [
         Expanded(child: TextField(controller: q, decoration: const InputDecoration(hintText: '在引擎中搜索…', isDense: true,
@@ -158,17 +186,44 @@ class _Edv extends State<EngineDiscoverView> {
         Icon(Icons.circle, size: 8, color: Colors.green), const SizedBox(width: 4),
         Text(EngineDirect.name, style: const TextStyle(fontSize: 10, color: Colors.grey)),
         const SizedBox(width: 10),
-        for (final w in (hotwords[widget.type] ?? []))
-          Padding(padding: const EdgeInsets.only(right: 6), child: ActionChip(label: Text(w, style: const TextStyle(fontSize: 11)),
-            visualDensity: VisualDensity.compact, onPressed: () { q.text = w; _search(w); })),
+        if (searching || sources.isEmpty)
+          for (final w in (hotwords[widget.type] ?? []))
+            Padding(padding: const EdgeInsets.only(right: 6), child: ActionChip(label: Text(w, style: const TextStyle(fontSize: 11)),
+              visualDensity: VisualDensity.compact, onPressed: () { q.text = w; _search(w); })),
+        if (searching && sources.isNotEmpty)
+          ActionChip(label: const Text('返回发现', style: TextStyle(fontSize: 11)), visualDensity: VisualDensity.compact,
+            onPressed: () { _explore(reset: true); }),
       ])),
+      // 书源分组(横滑) + 分类标签(换行)
+      if (sources.isNotEmpty) ...[
+        SizedBox(height: 38, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10),
+          children: [ for (final s in sources)
+            Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(
+              label: Text('${s['sourceName'] ?? ''}', style: const TextStyle(fontSize: 11)),
+              selected: selSource == '${s['source']}', visualDensity: VisualDensity.compact,
+              onSelected: (_) {
+                final tags = (s['tags'] as List? ?? []);
+                setState(() { selSource = '${s['source'] ?? ''}'; selTag = tags.isNotEmpty ? '${tags.first['url'] ?? ''}' : ''; });
+                if (selTag.isNotEmpty) _explore(reset: true);
+              })) ])),
+        Padding(padding: const EdgeInsets.fromLTRB(10, 4, 10, 2), child: Align(alignment: Alignment.centerLeft,
+          child: Wrap(spacing: 6, runSpacing: 4, children: [ for (final t in curTags)
+            ChoiceChip(label: Text('${t['name'] ?? ''}', style: const TextStyle(fontSize: 11)),
+              selected: selTag == '${t['url']}', visualDensity: VisualDensity.compact,
+              onSelected: (_) { setState(() => selTag = '${t['url'] ?? ''}'); _explore(reset: true); }) ]))),
+      ],
       if (loading) const LinearProgressIndicator(minHeight: 2),
       Expanded(child: err.isNotEmpty
         ? Center(child: Text('出错: $err', style: const TextStyle(color: Colors.redAccent, fontSize: 12)))
         : items.isEmpty ? Center(child: Text(loading ? '加载中…' : '暂无内容', style: const TextStyle(color: Colors.grey)))
         : GridView.builder(padding: const EdgeInsets.all(10),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.62, crossAxisSpacing: 8, mainAxisSpacing: 8),
-          itemCount: items.length, itemBuilder: (_, i) {
+          // 发现模式: 末尾多一格"加载更多"
+          itemCount: items.length + (!searching && hasMore ? 1 : 0), itemBuilder: (_, i) {
+            if (i >= items.length) {
+              return GestureDetector(onTap: loading ? null : () => _explore(), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.expand_more, color: Colors.grey), Text('加载更多', style: TextStyle(fontSize: 11, color: Colors.grey)) ])));
+            }
             final it = items[i];
             return GestureDetector(onTap: () => widget.onOpen(it), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8),
