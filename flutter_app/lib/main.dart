@@ -4165,10 +4165,20 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
         '${_err.isNotEmpty ? ' · ${_err}' : ''}';
   }
 
+  /// 版本串归一：`v4.25.0` / `4.25.0` / 带空格 都归一成 `4.25.0`。
+  ///
+  /// 云端记录里 `v` 字段不带 `v` 前缀，而界面别处带前缀；直接比字符串会让
+  /// 「当前版本」标签与「可下载」按钮永远不出现——这种静默不匹配最难发现。
+  static String _normVer(String v) => v.trim().replaceFirst(RegExp(r'^[vV]'), '');
+
   Widget _entryTile(ClogEntry e, String cur) {
-    final bool isCur = e.v == cur;
-    final bool canDown = _latestUrl.isNotEmpty && e.v == 'v$_latestVer' &&
-        Updater._verCmp(_latestVer, Updater.currentVersion) > 0;
+    final String ev = _normVer(e.v);
+    final String cv = _normVer(cur);
+    final String lv = _normVer(_latestVer);
+    final bool isCur = ev.isNotEmpty && ev == cv;
+    final bool isLatest = ev.isNotEmpty && ev == lv;
+    final bool canDown = _latestUrl.isNotEmpty && isLatest && !isCur &&
+        Updater._verCmp(lv, cv) > 0;
     return Theme(
       // 去掉 ExpansionTile 展开时的分隔线，保持卡片干净
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -4178,9 +4188,9 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         leading: const Icon(Icons.history, size: 18),
         title: Row(children: [
-          Text(e.v, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          Text(ev.isEmpty ? e.v : ev, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           if (isCur) _tag('当前版本', Colors.green),
-          if (e.v == 'v$_latestVer' && !isCur) _tag('最新', Colors.blueAccent),
+          if (isLatest && !isCur) _tag('最新', Colors.blueAccent),
           if (e.tag.isNotEmpty) _tag(e.tag, e.tag == '重构' ? Colors.deepOrange : Colors.purple),
         ]),
         // 收起时的两行摘要，不展开也能知道这版干了什么
