@@ -212,10 +212,22 @@ class EngineDirect {
     Object? err;
     for (var i = 0; i < 2; i++) {
       try {
-        await _probeMeta(u, _probeTimeout);
+        // ★必须把 meta 的 name/caps/**version** 一起读回来。
+        //   只标 connected 会让 version 一直是空串 → supportsPaging 判假 →
+        //   新引擎也被当成老引擎走逐类搜索（"重启后搜索又变慢/丢类型"就是这么来的）。
+        final j = await _probeMeta(u, _probeTimeout);
+        final m = (j['data'] is Map ? j['data'] : j) as Map;
+        final nm = '${m['name'] ?? ''}';
+        final cp = m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : c;
+        final ver = '${m['version'] ?? ''}';
+        final p = await SharedPreferences.getInstance();
+        await p.setString('engine_direct_name', nm.isEmpty ? n : nm);
+        await p.setStringList('engine_direct_caps', cp);
+        await p.setString('engine_direct_version', ver);
         state.value = EngineState(
           status: EngineStatus.connected, url: u,
-          name: n.isEmpty ? 'THP 引擎' : n, caps: c, message: '');
+          name: nm.isEmpty ? (n.isEmpty ? 'THP 引擎' : n) : nm, caps: cp,
+          version: ver, message: '');
         return;
       } catch (e) {
         err = e;
