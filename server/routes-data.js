@@ -126,6 +126,129 @@ async function handle(req, res, body, u, p, send, ctx) {
     fs.writeFileSync(manifest, JSON.stringify(list));
     return send(200, { object:'meta', data: { deleted: id }});
   }
+  // ── 听书 TTS 合成（D-04）：前端发文本 → 后端用本机引擎合成 → 返回音频 ──
+  // 引擎检测（按优先级）：
+  //   1. vendor/piper/piper(.exe) + vendor/piper/*.onnx 模型 → 纯离线开源 TTS
+  //   2. 系统 PATH 里的 edge-tts（pip install edge-tts）→ 微软在线朗读，免费
+  // 都没有则 503 并给出安装指引。结果按 内容哈希 落盘缓存 data/tts_cache/。
+  if (p === '/v1/tts' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const text = String(d.text || '').slice(0, 5000).trim();
+    if (!text) return send(400, { object:'error', data:{ type:'invalid_request', message:'text 不能为空' }});
+    const engine = String(d.engine || 'auto');
+    const voice = String(d.voice || 'zh-CN-XiaoxiaoNeural');
+    const rate = String(d.rate || '+0%');
+    const cacheDir = path.join(DATA, 'tts_cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const key = crypto.createHash('md5').update(engine + '|' + voice + '|' + rate + '|' + text).digest('hex');
+    const mp3 = path.join(cacheDir, key + '.mp3');
+    const wav = path.join(cacheDir, key + '.wav');
+    const hit = [mp3, wav].find(fs.existsSync);
+    if (hit) {
+      res.writeHead(200, { 'Content-Type': hit.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg', 'X-TH-TTS-Cache': 'hit' });
+      return res.end(fs.readFileSync(hit));
+    }
+    const { spawn } = require('child_process');
+    const piperBin = ['piper.exe', 'piper'].map(n => path.join(__dirname, 'vendor', 'piper', n)).find(fs.existsSync);
+    let piperModel = null;
+    try {
+      piperModel = fs.readdirSync(path.join(__dirname, 'vendor', 'piper')).find(f => f.endsWith('.onnx'));
+      if (piperModel) piperModel = path.join(__dirname, 'vendor', 'piper', piperModel);
+    } catch (e) {}
+    const usePiper = (engine === 'piper' || engine === 'auto') && piperBin && piperModel;
+
+    if (usePiper) {
+      // piper: 文本走 stdin，输出 wav
+      const child = spawn(piperBin, ['-m', piperModel, '-f', wav, '-q'], { stdio: ['pipe', 'ignore', 'pipe'] });
+      let err = '';
+      child.stderr.on('data', c => err += c);
+      child.on('close', (code) => {
+        if (code === 0 && fs.existsSync(wav)) {
+          res.writeHead(200, { 'Content-Type': 'audio/wav', 'X-TH-TTS-Engine': 'piper' });
+          return res.end(fs.readFileSync(wav));
+        }
+        return send(502, { object:'error', data:{ type:'server_error', message:'piper 合成失败: ' + (err || code) }});
+      });
+      child.stdin.write(text); child.stdin.end();
+      return;
+    }
+    // edge-tts 在线（需本机装有 edge-tts）
+    if (engine === 'piper') {
+      return send(503, { object:'error', data:{ type:'server_error',
+        message:'未找到 piper。把 piper.exe 和 *.onnx 模型放进 server/vendor/piper/ 即可启用离线 TTS' }});
+    }
+    const child = spawn('edge-tts', ['--voice', voice, '--rate', rate, '--text', text, '--write-media', mp3], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.on('error', () => send(503, { object:'error', data:{ type:'server_error',
+      message:'后端未装 edge-tts。安装: pip install edge-tts（在线微软朗读，免费）；或把 piper 离线引擎放进 server/vendor/piper/' }}));
+    child.stderr.on('data', c => err += c);
+    child.on('close', (code) => {
+      if (code === 0 && fs.existsSync(mp3)) {
+        res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'X-TH-TTS-Engine': 'edge' });
+        return res.end(fs.readFileSync(mp3));
+      }
+      return send(502, { object:'error', data:{ type:'server_error', message:'edge-tts 合成失败: ' + (err || code) }});
+    });
+    return;
+  }
+  // TTS 能力探测：前端据此决定要不要显示"后端合成"选项
+  if (p === '/v1/tts/cap') {
+    let piper = false, edge = false, voices = [];
+    try {
+      const dir = path.join(__dirname, 'vendor', 'piper');
+      const bin = ['piper.exe', 'piper'].map(n => path.join(dir, n)).find(fs.existsSync);
+      const model = fs.readdirSync(dir).find(f => f.endsWith('.onnx'));
+      piper = !!(bin && model);
+    } catch (e) {}
+    try { require('child_process').execSync('edge-tts --version', { stdio: 'pipe', timeout: 5000 }); edge = true; } catch (e) {}
+    if (edge) voices = ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural', 'zh-CN-YunjianNeural', 'zh-CN-XiaoyiNeural', 'zh-CN-YunyangNeural'];
+    return send(200, { object:'meta', data: { piper, edge, voices }});
+  }
+  // ── 反馈中心(应用内反馈, 不再跳 GitHub): 文字+图片 → 落盘 data/feedback/ ──
+  if (p === '/v1/feedback' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const text = String(d.text || '').trim();
+    if (!text) return send(400, { object:'error', data:{ type:'invalid_request', message:'反馈内容不能为空' }});
+    if (text.length > 8000) return send(413, { object:'error', data:{ type:'invalid_request', message:'内容过长(≤8000字)' }});
+    const imgs = Array.isArray(d.images) ? d.images.slice(0, 6) : [];
+    const dir = path.join(DATA, 'feedback');
+    fs.mkdirSync(dir, { recursive: true });
+    const id = 'fb_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+    const savedImgs = [];
+    for (let i = 0; i < imgs.length; i++) {
+      try {
+        const buf = Buffer.from(String(imgs[i]), 'base64');
+        if (buf.length > 5 * 1048576) continue; // 单图≤5MB
+        const fn = id + '_' + i + '.jpg';
+        fs.writeFileSync(path.join(dir, fn), buf);
+        savedImgs.push(fn);
+      } catch (e) {}
+    }
+    const rec = { id, text, contact: String(d.contact || ''), at: Date.now(),
+      device: String(d.device || ''), version: String(d.version || ''), images: savedImgs };
+    fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(rec, null, 2));
+    return send(200, { object:'meta', data: { id, saved: true, images: savedImgs.length }});
+  }
+  // 管理后台拉取反馈列表(需密钥)
+  if (p === '/v1/feedback' && req.method === 'GET') {
+    const dir = path.join(DATA, 'feedback');
+    let list = [];
+    try {
+      list = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
+        try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (e) { return null; }
+      }).filter(Boolean);
+    } catch (e) {}
+    list.sort((a, b) => b.at - a.at);
+    return send(200, { object:'list', data: list.slice(0, 500), meta: { total: list.length }});
+  }
+  // 反馈图片
+  if (p.startsWith('/v1/feedback/img')) {
+    const fn = path.basename(String(u.searchParams.get('f') || ''));
+    const fp = path.join(DATA, 'feedback', fn);
+    if (!fn || !fs.existsSync(fp)) return send(404, { object:'error', data:{ type:'not_found', message:'图片不存在' }});
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
+    return res.end(fs.readFileSync(fp));
+  }
   return false; // 未命中, 交回主路由
 }
 

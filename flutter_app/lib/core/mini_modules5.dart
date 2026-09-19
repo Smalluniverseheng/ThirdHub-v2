@@ -1,4 +1,4 @@
-// 小模块做实第五批: Markdown编辑器 / 学习工具(卡片) / 菜谱 / 翻译 / 传感器(尺子)
+// 小模块做实第五批: Markdown编辑器 / 记忆卡(卡片) / 菜谱 / 翻译 / 传感器(尺子)
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -148,7 +148,7 @@ Widget _mdLine(String ln) {
   return styled(ln, const TextStyle(fontSize: 14, height: 1.6));
 }
 
-// ═══ 学习工具: 单词卡/背诵卡(自建卡组) ═══
+// ═══ 记忆卡: 单词卡/背诵卡(自建卡组) ═══
 class StudyPage extends StatefulWidget { const StudyPage({super.key}); @override State<StudyPage> createState() => _Study(); }
 class _Study extends State<StudyPage> {
   List<Map<String, dynamic>> cards = []; // {front, back, known}

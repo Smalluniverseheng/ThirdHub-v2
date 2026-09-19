@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
 import 'tts.dart';
+import 'tts_presets.dart';
 import 'ai.dart';
 
 // ── 背景预设(背景色, 默认字色) ──
@@ -90,15 +91,26 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool get hasPrev => idx > 0;
   bool get hasNext => idx < widget.chapters.length - 1;
 
-  @override void initState() { super.initState(); _initTts(); _applyOrientation(); _boot();
+  @override void initState() { super.initState(); _initTts(); _boot();
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoRead()); }
   void _applyOrientation() {
     SystemChrome.setPreferredOrientations(ReaderCfg.landscape
       ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
       : [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
   }
+  // ★ P0 根因修复(2026-09-19): ReaderCfg._p 是 `_p!`，只有 _boot() 里的
+  //   `await ReaderCfg.init()` 完成后才不为空。旧代码在 initState 里**同步**调
+  //   `_applyOrientation()`(读 ReaderCfg.landscape)、在 build() 里读
+  //   ReaderCfg.bgColor/bgImage —— 两者都跑在 init 完成之前 → Null check 抛错。
+  //   initState 抛错在 release 模式下 = **整页灰屏、无任何提示**，这正是"导入
+  //   本地小说后点进去灰蒙蒙一片"的根因。
+  //   修法: init 完成前 build 只画加载态(不碰 ReaderCfg)；方向设置挪到 init 之后。
+  bool _cfgReady = false;
   Future<void> _boot() async {
     await ReaderCfg.init();
+    _applyOrientation();
+    if (!mounted) return;
+    _cfgReady = true;
     _initVolumeKeys();
     fontFamily = await FontManager.currentFamily();
     await load();
@@ -173,13 +185,35 @@ class _NovelReaderState extends State<NovelReaderPage> {
           return Wrap(spacing: 8, runSpacing: 8, children: [
             ChoiceChip(label: const Text('系统离线朗读'), selected: cur == 'system',
               onSelected: (_) { TtsManager.setEngine('system'); setD(() {}); }),
+            if (TtsBackend.available)
+              ChoiceChip(label: const Text('后端合成'), avatar: const Icon(Icons.dns_outlined, size: 16), selected: cur == 'backend',
+                onSelected: (_) { TtsManager.setEngine('backend'); setD(() {}); }),
             for (final p in ttsProviders)
               ChoiceChip(label: Text(p.name), selected: cur == p.id,
                 onSelected: (_) { TtsManager.setEngine(p.id); setD(() {}); }),
           ]);
         }),
+        if (TtsManager.backendError.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 6),
+            child: Text('后端合成失败已降级系统朗读: ${TtsManager.backendError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
         const SizedBox(height: 6),
-        const Text('系统朗读离线免费; 在线引擎需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
+        GestureDetector(onTap: () => showModalBottomSheet(context: context, builder: (c3) => SafeArea(child: ListView(shrinkWrap: true, children: [
+          const Padding(padding: EdgeInsets.all(12), child: Text('在线 TTS 厂商预设', style: TextStyle(fontWeight: FontWeight.bold))),
+          for (final tp in kTtsPresets)
+            ListTile(dense: true, leading: const Icon(Icons.record_voice_over_outlined, size: 20),
+              title: Text(tp.name, style: const TextStyle(fontSize: 13)),
+              subtitle: Text('${tp.base}\n${tp.note}', style: const TextStyle(fontSize: 10)),
+              trailing: const Icon(Icons.chevron_right, size: 16),
+              onTap: () { Navigator.pop(c3);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('到 AI 模块配置 ${tp.name} 的 API Key 后即可选用'))); }),
+          for (final n in kTtsNotes) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Text(n, style: const TextStyle(fontSize: 11, color: Colors.grey))),
+          const SizedBox(height: 12),
+        ]))),
+          child: const Row(children: [ Icon(Icons.hub_outlined, size: 14, color: Colors.grey), SizedBox(width: 4),
+            Text('查看 TTS 厂商预设 / 开源引擎接入指引', style: TextStyle(fontSize: 11, color: Colors.grey)) ])),
+        const SizedBox(height: 6),
+        const Text('系统朗读离线免费; 后端合成走自己的后端(piper离线/edge-tts在线); 在线引擎需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
       ])));
     }));
   }
@@ -596,6 +630,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   }
 
   @override Widget build(BuildContext c) {
+    // init 未完成前绝不碰 ReaderCfg（_p! 会抛 → release 下整页灰屏）
+    if (!_cfgReady) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final bg = ReaderCfg.bgColor;
     final hasBgImg = ReaderCfg.bgImage.isNotEmpty && File(ReaderCfg.bgImage).existsSync();
     final content = Scaffold(

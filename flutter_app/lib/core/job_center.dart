@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// 作业中心 (Work 模式) —— 真任务运行时
+// 自动化任务 (Work 模式) —— 真任务运行时
+// ★原名「作业中心」极易被误读成"学生写作业"，实际是本地任务调度运行时，故改名。
 //
 // 此前这个模块是一张"规划功能清单"骨架页(ModuleScaffoldPage), 十项能力一项没落地。
 // 这里把能在**纯前端**范围内做实的部分全部落实:
@@ -574,7 +575,7 @@ class _JobCenterPageState extends State<JobCenterPage> {
           child: Icon(Icons.assignment_turned_in_outlined, color: accent, size: 22)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('作业中心', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          const Text('自动化任务', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 3),
           Text('长任务交给它跑: 排队执行 · 步骤可回放 · 危险步骤先确认 · 定时自动补跑',
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
@@ -666,7 +667,7 @@ class _JobCenterPageState extends State<JobCenterPage> {
       const SizedBox(height: 6),
       Text('批量 URL 替换 / 索引重建 / 规则批量测试 / 生成修复代码 这四项需要读取并改写**源引擎**的内部数据, '
         '前端是纯播放器、不含源与引擎, 所以它们必须由引擎侧 (ThirdHub-Engine) 暴露接口后才能跑。'
-        '当前作业中心已把前端能独立完成的部分(缓存/统计/巡检/备份/调度/审批/续跑)全部落实。',
+        '当前自动化任务已把前端能独立完成的部分(缓存/统计/巡检/备份/调度/审批/续跑)全部落实。',
         style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.6)),
     ])));
 

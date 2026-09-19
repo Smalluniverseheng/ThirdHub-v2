@@ -10,12 +10,27 @@ import 'ai_agent.dart';
 class AiProvider {
   final String id, name, base, type;
   final List<String> models, image, video, deprecated;
-  AiProvider(this.id, this.name, this.base, this.type, this.models, this.image, this.video, [this.deprecated = const []]);
+  /// 模型附加元数据：模型 id → {name, tags, privacyLevel, privacyNote, …}。
+  /// ★来自 ai-models.js 里 `models` 数组内的**对象**（典型是各家"免费模型"，
+  ///   带 tags:['free'] 与 privacyLevel:'risk' + 说明）。生成器把它们的 id 平铺进
+  ///   [models]（因为这里必须是 List<String>），其余字段原样收在这里 ——
+  ///   删掉它 = "免费/隐私风险"标记永久丢失，用户会在不知情下把内容发给会训练数据的端点。
+  final Map<String, dynamic> modelMeta;
+  AiProvider(this.id, this.name, this.base, this.type, this.models, this.image, this.video,
+      [this.deprecated = const [], this.modelMeta = const {}]);
   factory AiProvider.from(Map<String, dynamic> j) => AiProvider(
     j['id'] ?? '', j['name'] ?? j['id'] ?? '', j['base'] ?? '', j['type'] ?? 'openai',
     List<String>.from(j['models'] ?? []), List<String>.from(j['image'] ?? []), List<String>.from(j['video'] ?? []),
-    List<String>.from(j['deprecated'] ?? []));
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'base': base, 'type': type, 'models': models, 'image': image, 'video': video, 'deprecated': deprecated};
+    List<String>.from(j['deprecated'] ?? []),
+    (j['modelMeta'] is Map) ? Map<String, dynamic>.from(j['modelMeta'] as Map) : const {});
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'base': base, 'type': type, 'models': models, 'image': image, 'video': video, 'deprecated': deprecated,
+    if (modelMeta.isNotEmpty) 'modelMeta': modelMeta};
+
+  /// 该模型的免费/隐私标记（无则返回空）。
+  Map<String, dynamic> metaOf(String model) {
+    final m = modelMeta[model];
+    return m is Map ? Map<String, dynamic>.from(m) : const {};
+  }
 }
 
 class AiRegistry {

@@ -23,6 +23,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -149,6 +150,24 @@ class SearchPage {
   }
 }
 
+/// 自检（[EngineDirect.diagnose]）的一行结果。
+/// ★为什么要做成"逐项可判定"的结构：用户反馈的「连不上 / 搜不到」在旧版只能看到
+///   一句「未发现引擎」，无法区分是**网络层**（明文被拦、网段不通）、**服务层**
+///   （引擎没跑、端口被占）、还是**数据层**（引擎装好了但书源为 0 → 能搜但永远 0 条）。
+///   拆成独立条目后，失败的那一条直接告诉用户该修什么。
+class DiagItem {
+  /// 检查项名称，如「本机回环引擎 127.0.0.1:1234」
+  final String label;
+
+  /// 是否通过
+  final bool ok;
+
+  /// 人话说明（成功后是现状描述，失败后是修复指引）
+  final String detail;
+
+  const DiagItem(this.label, this.ok, this.detail);
+}
+
 class EngineDirect {
   /// ★ 唯一的连接状态来源。UI 必须订阅它，不要直接读静态字段后再也不刷新。
   static final ValueNotifier<EngineState> state =
@@ -267,7 +286,10 @@ class EngineDirect {
       await ThpDiscovery.start();
       var devs = available();
       if (devs.isEmpty) {
-        // 等广播：期间一旦发现设备就立刻连，别等满 15s
+        // ① 先等 UDP 广播：期间一旦发现设备就立刻连，别等满。
+        //   ★2026-09-19 从 15s 压到 4s —— 广播在 IPv6-only / AP 隔离网络里
+        //   永远不会到，等 15s 只是让用户干等；4s 足够覆盖正常广播周期(30s)的
+        //   一个"恰好错过"窗口，剩下的靠下面的主动扫描兜。
         final completer = Completer<void>();
         late final StreamSubscription sub;
         sub = ThpDiscovery.onChange.listen((_) {
@@ -275,19 +297,42 @@ class EngineDirect {
         });
         await Future.any([
           completer.future,
-          Future.delayed(const Duration(seconds: 15)),
+          Future.delayed(const Duration(seconds: 4)),
         ]);
         await sub.cancel();
         devs = available();
       }
       if (devs.isEmpty) {
+        // ② ★广播没来 → 主动扫描兜底（IPv6 单栈 / AP 隔离 / 引擎就在本机 /
+        //   引擎侧广播被 Doze 挂起 —— 这四种情况下广播一定收不到，但 TCP 是通的）。
+        if (!connected) {
+          state.value = state.value.copyWith(
+            status: EngineStatus.connecting,
+            message: '广播未收到引擎，正在主动扫描本机与局域网…');
+        }
+        final hits = await ThpDiscovery.scan(
+          subnetSweep: true,
+          extra: [if (state.value.url.isNotEmpty) state.value.url],
+          onProgress: (d, t) {
+            // 进度回填（扫描可能 2–4s，界面要动，否则像卡死）
+            if (!connected && d % 24 == 0) {
+              state.value = state.value.copyWith(
+                status: EngineStatus.connecting,
+                message: '正在扫描本机与局域网…（$d/$t）');
+            }
+          },
+        );
+        devs = hits.isNotEmpty ? hits : available();
+      }
+      if (devs.isEmpty) {
         if (!connected) {
           state.value = state.value.copyWith(
             status: EngineStatus.failed,
-            message: '未发现引擎。请确认：\n'
-                '① 引擎 App 已打开并显示在运行\n'
+            message: '未发现引擎（已尝试广播 + 主动扫描）。请确认：\n'
+                '① 引擎 App 已打开并显示在运行（同机引擎也可）\n'
                 '② 两台设备在同一局域网(WiFi)\n'
-                '③ 路由器未开启「AP 隔离」');
+                '③ 路由器未开启「AP 隔离」\n'
+                '④ 已知地址可直接到「我的 → 引擎直连 → 手动填写地址」');
         }
         return false;
       }
@@ -381,13 +426,66 @@ class EngineDirect {
   static bool _isNetErr(Object e) =>
       e is SocketException || e is http.ClientException || e is TimeoutException;
 
+  /// ★响应体硬上限（4MB）。为什么必须有：
+  ///   旧实现 `jsonDecode(utf8.decode(r.bodyBytes))` 会把**整个响应**一次性读进内存。
+  ///   引擎对 /thp/search 有服务端 limit 截断，正常响应 < 200KB；但一旦
+  ///   ①装了老引擎(<1.5.5，不认 limit)、或 ②单字符搜索(如"人")命中上千书源
+  ///   导致引擎返回未截断的全量 JSON，bodyBytes 可达数 MB —— 在低端机上直接 OOM，
+  ///   而 Dart 网络层崩掉时抛的正是 "Connection closed before full header"，
+  ///   被误读成"引擎连不上"。这里改成**流式读 + 超限即断**，把 OOM 变成一句可读提示。
+  static const _maxRespBytes = 4 * 1024 * 1024;
+
+  /// 带上限地读流：完整读完返回字节，超过 [cap] 返回 null（并立即取消订阅停止下载）。
+  static Future<List<int>?> _readCapped(Stream<List<int>> s, int cap) async {
+    final b = BytesBuilder(copy: false);
+    final done = Completer<bool>();
+    late StreamSubscription sub;
+    sub = s.listen((c) {
+      if (done.isCompleted) return;
+      b.add(c);
+      if (b.length > cap) done.complete(false);
+    },
+      onDone: () { if (!done.isCompleted) done.complete(true); },
+      onError: (Object e) { if (!done.isCompleted) done.completeError(e); },
+      cancelOnError: true);
+    bool ok;
+    try { ok = await done.future; } finally { await sub.cancel(); }
+    return ok ? b.takeBytes() : null;
+  }
+
   static Future<Map<String, dynamic>> _get(
     String path, [bool retried = false, int timeoutSec = 30]) async {
     if (url.isEmpty) throw Exception('未连接引擎');
     final cli = _client();
     try {
-      final r = await cli.get(Uri.parse('$url$path')).timeout(Duration(seconds: timeoutSec));
-      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final req = http.Request('GET', Uri.parse('$url$path'));
+      final res = await cli.send(req).timeout(Duration(seconds: timeoutSec));
+      // ① 有 Content-Length 时先拒（连下载都不下载）
+      final cl = res.contentLength;
+      if (cl != null && cl > _maxRespBytes) {
+        try { await res.stream.drain<void>(); } catch (_) {}
+        throw Exception('引擎响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > 4MB），'
+            '已中止以免内存溢出。请缩小关键词或加类型过滤');
+      }
+      // ② 流式读 + 上限
+      final bytes = await _readCapped(res.stream, _maxRespBytes)
+          .timeout(Duration(seconds: timeoutSec));
+      if (bytes == null) {
+        throw Exception('引擎响应超过 4MB 上限，已中止以免内存溢出。'
+            '请缩小关键词（单字搜索通常命中源最多）或加类型过滤');
+      }
+      if (res.statusCode != 200) {
+        // 引擎的错误响应是 JSON（{object:'error'} / {ok:false}），尽力取 message
+        String detail = 'HTTP ${res.statusCode}';
+        try {
+          final ej = jsonDecode(utf8.decode(bytes));
+          if (ej is Map) {
+            detail = '${ej['data']?['message'] ?? (ej['error'] is Map ? ej['error']['message'] ?? ej['error']['code'] : ej['error']) ?? detail}';
+          }
+        } catch (_) {}
+        throw HttpException('$detail（HTTP ${res.statusCode}）');
+      }
+      final j = jsonDecode(utf8.decode(bytes));
       // 旧草稿错误信封: {object:'error', data:{message}}
       if (j is Map && j['object'] == 'error') {
         throw Exception('${j['data']?['message'] ?? '引擎错误'}');
@@ -402,7 +500,7 @@ class EngineDirect {
       }
       return {'data': j, 'raw': j};
     } catch (e) {
-      // ★只有「网络层」错误才尝试重连换地址；业务错误(400/ok:false)直接抛，别吞掉原因。
+      // ★只有「网络层」错误才尝试重连换地址；业务错误(400/ok:false/超限)直接抛，别吞掉原因。
       if (retried || !_isNetErr(e)) rethrow;
       final old = url;
       // 不再先把 url 清空再 autoConnect（那会让 UI 闪一下「未连接」）；
@@ -413,6 +511,105 @@ class EngineDirect {
     } finally {
       cli.close();
     }
+  }
+
+  /// 手动连接用户填的地址。接受 `192.168.1.5`、`192.168.1.5:1234`、
+  /// `http://[fe80::1]:1234`、`[240e::x]:1234` 等写法；缺端口默认 1234。
+  /// 返回 null 表示成功，否则返回失败原因（给界面直接显示）。
+  static Future<String?> connectManual(String input) async {
+    var t = input.trim();
+    if (t.isEmpty) return '请输入引擎地址';
+    if (!t.startsWith('http://') && !t.startsWith('https://')) t = 'http://$t';
+    // 补默认端口
+    try {
+      final u0 = Uri.parse(t);
+      if (!u0.hasPort) t = '${u0.scheme}://${u0.host}:${ThpDiscovery.kEnginePort}${u0.path}';
+    } catch (_) { return '地址格式无法解析'; }
+    try {
+      await connect(t.replaceAll(RegExp(r'/+$'), ''));
+      return null;
+    } catch (e) { return _describe(e); }
+  }
+
+  /// 逐项自检（诊断页用）。返回一组 (名称, 通过?, 说明) 结果。
+  /// ★这是把"搜不到"从玄学变成可读结论的关键：每一步独立可判定，
+  ///   失败的那一步直接指出该修什么（网络/明文/服务/源/预算）。
+  static Future<List<DiagItem>> diagnose({String? probeHost}) async {
+    final out = <DiagItem>[];
+    // ① 回环引擎（同机引擎 App）
+    final loopOk = await ThpDiscovery.probeTcp('127.0.0.1', ThpDiscovery.kEnginePort, 500);
+    out.add(DiagItem('本机回环引擎 127.0.0.1:${ThpDiscovery.kEnginePort}',
+        loopOk, loopOk ? '通（本机跑着引擎 App）' : '未监听（本机没跑引擎，属正常）'));
+    // ② UDP 发现端口能否绑定（被占用 → 广播永远收不到）
+    var udpOk = false; String udpMsg = '';
+    try {
+      final s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 19527, reuseAddress: true);
+      s.close(); udpOk = true; udpMsg = '可监听 19527';
+    } catch (e) { udpMsg = '无法监听 19527：$e'; }
+    out.add(DiagItem('UDP 发现端口 19527', udpOk, udpMsg));
+    // ③ 广播/扫描已知设备
+    final known = available();
+    out.add(DiagItem('已知引擎设备', known.isNotEmpty,
+        known.isEmpty ? '暂无（可点「主动扫描」）' : known.map((d) => d.url).join('、')));
+    // ④ 主动扫描
+    final hits = await ThpDiscovery.scan(
+        subnetSweep: probeHost == null, extra: [if (probeHost != null) probeHost]);
+    out.add(DiagItem('主动扫描', hits.isNotEmpty,
+        hits.isEmpty
+            ? '扫了 ${ThpDiscovery.lastScanProbed} 项、${ThpDiscovery.lastScanMs}ms，未发现 THP 服务'
+            : '发现 ${hits.length} 个：${hits.map((d) => '${d.url}(${d.name})').join('、')}'));
+    // ⑤ 握手 /thp/meta
+    if (url.isNotEmpty) {
+      try {
+        final j = await _probeMeta(url, Duration(seconds: _metaTimeoutSec));
+        final m = (j['data'] is Map ? j['data'] : j) as Map;
+        out.add(DiagItem('/thp/meta 握手', true,
+            'v${m['version'] ?? '?'} · caps=${(m['caps'] as List? ?? []).join(',')}'));
+      } catch (e) {
+        out.add(DiagItem('/thp/meta 握手', false, _describe(e)));
+      }
+      // ⑥ 试搜：用"斗破"这种常见的双字词，避开单字（单字最吃内存）
+      try {
+        final sw = Stopwatch()..start();
+        final p = await searchPage('all', '测试', page: 1, limit: 5, budgetSec: 8);
+        sw.stop();
+        out.add(DiagItem('试搜 /thp/search', true,
+            '${p.items.length} 条 / 共 ${p.total} · ${sw.elapsedMilliseconds}ms'
+            '${p.truncated ? ' · 被预算截断(引擎源较多)' : ''}'));
+        // ⑦ 源数量（引擎没装源 = 搜得到但永远 0 结果）
+        final cnt = await sourceCount();
+        out.add(DiagItem('引擎书源数量', cnt > 0,
+            cnt > 0 ? '$cnt 个源已就绪' : '0 个源！请到引擎 App 导入书源（这是"能搜但没结果"的头号原因）'));
+      } catch (e) {
+        out.add(DiagItem('试搜 /thp/search', false, _describe(e)));
+      }
+    } else {
+      out.add(DiagItem('/thp/meta 握手', false, '尚未连接任何引擎'));
+    }
+    return out;
+  }
+
+  /// 引擎内已就绪的书源数量。引擎未提供该端点时返回 -1（不报错）。
+  /// ★"能连上、能搜、但一条结果都没有"最常见的根因就是源为 0。
+  static Future<int> sourceCount() async {
+    for (final p in const ['/thp/sources?count=1', '/thp/meta']) {
+      try {
+        final r = await _get(p, true, _metaTimeoutSec);
+        final d = r['data'];
+        if (d is Map) {
+          for (final k in const ['count', 'total', 'sourceCount', 'sources']) {
+            final v = d[k];
+            if (v is int) return v;
+            if (v is List) return v.length;
+            final n = int.tryParse('${v ?? ''}');
+            if (n != null) return n;
+          }
+        } else if (d is List) {
+          return d.length;
+        }
+      } catch (_) {}
+    }
+    return -1;
   }
 
   // ─────────────────────────── 业务端点 ───────────────────────────

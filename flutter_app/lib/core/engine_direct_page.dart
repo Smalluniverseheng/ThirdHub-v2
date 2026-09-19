@@ -43,6 +43,113 @@ class _Ed extends State<EngineDirectPage> {
     if (mounted) setState(() { busy = false; msg = EngineDirect.connected ? '✓ 已重新连接' : ''; });
   }
 
+  /// 主动扫描（不依赖广播）。★覆盖广播必失效的四种环境：
+  /// IPv6 单栈 / AP 隔离 / 引擎被 Doze 挂起 / 引擎就在本机。
+  Future<void> _scan() async {
+    setState(() { busy = true; msg = '正在扫描本机与局域网…'; });
+    try {
+      final hits = await ThpDiscovery.scan(subnetSweep: true, onProgress: (d, t) {
+        if (mounted && d % 32 == 0) setState(() => msg = '正在扫描…（$d/$t）');
+      });
+      if (!mounted) return;
+      setState(() { busy = false;
+        msg = hits.isEmpty
+          ? '扫描完成：${ThpDiscovery.lastScanProbed} 个探针 / ${ThpDiscovery.lastScanMs}ms，未发现 THP 服务'
+          : '✓ 发现 ${hits.length} 个：${hits.map((d) => '${d.host}:${d.port}').join('、')}'; });
+    } catch (e) {
+      if (mounted) setState(() { busy = false; msg = '扫描失败：$e'; });
+    }
+  }
+
+  /// 手动填地址。★为什么必须有：IPv6-only 网络、AP 隔离、引擎被 Doze 挂起广播时，
+  /// 自动发现全线失效，但**用户知道地址**就能直连 —— 这是最后的兜底通路。
+  Future<void> _manual() async {
+    final ctl = TextEditingController(text: EngineDirect.url.isNotEmpty
+        ? EngineDirect.url.replaceFirst(RegExp(r'^https?://'), '')
+        : '');
+    final input = await showDialog<String>(context: context, builder: (c) => AlertDialog(
+      title: const Text('手动填写引擎地址', style: TextStyle(fontSize: 16)),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextField(controller: ctl, autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            hintText: '例：192.168.1.5  或  [240e::1]:1234',
+            helperText: '省略端口默认 1234（引擎）',
+            helperStyle: TextStyle(fontSize: 11),
+            isDense: true)),
+        const SizedBox(height: 8),
+        const Text('引擎 App 的「关于」页会显示本机地址；也可在路由器 DHCP 列表里找。',
+          style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.4)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c, ctl.text), child: const Text('连接')),
+      ]));
+    if (input == null || input.trim().isEmpty) return;
+    setState(() { busy = true; msg = ''; });
+    final err = await EngineDirect.connectManual(input);
+    if (!mounted) return;
+    setState(() { busy = false;
+      msg = err == null ? '✓ 已连接「${EngineDirect.name}」' : '连接失败：$err'; });
+  }
+
+  /// 一键自检：把「连不上/搜不到」从玄学变成可读结论。
+  /// 逐项判定 网络→服务→数据(源)，失败项直接给出修复指引。
+  Future<void> _diag() async {
+    setState(() { busy = true; msg = ''; });
+    List<DiagItem> items;
+    try {
+      items = await EngineDirect.diagnose();
+    } catch (e) {
+      items = [DiagItem('自检异常', false, '$e')];
+    }
+    if (!mounted) return;
+    setState(() => busy = false);
+    await showModalBottomSheet(context: context, isScrollControlled: true,
+      showDragHandle: true,
+      builder: (c) => DraggableScrollableSheet(expand: false,
+        initialChildSize: 0.62, maxChildSize: 0.92, minChildSize: 0.35,
+        builder: (c, sc) => ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          controller: sc, children: [
+            Row(children: [
+              const Text('连接自检', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Spacer(),
+              Text('${items.where((i) => i.ok).length}/${items.length} 通过',
+                style: TextStyle(fontSize: 12,
+                  color: items.every((i) => i.ok) ? Colors.green : Colors.orangeAccent)),
+            ]),
+            const SizedBox(height: 4),
+            const Text('从网络层到数据层逐项检查；标红的那一项就是该修的地方。',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
+            const SizedBox(height: 12),
+            for (final it in items) Card(margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(padding: const EdgeInsets.all(12),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(it.ok ? Icons.check_circle_outline : Icons.error_outline,
+                    size: 18, color: it.ok ? Colors.green : Colors.redAccent),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(it.label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 3),
+                    Text(it.detail, style: TextStyle(fontSize: 11, height: 1.5,
+                      color: it.ok ? Colors.grey : Colors.redAccent)),
+                  ])),
+                ]))),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: OutlinedButton.icon(
+                onPressed: () { Navigator.pop(c); _manual(); },
+                icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                label: const Text('手动填地址', style: TextStyle(fontSize: 12)))),
+              const SizedBox(width: 8),
+              Expanded(child: FilledButton.icon(
+                onPressed: () { Navigator.pop(c); _retry(); },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重新连接', style: TextStyle(fontSize: 12)))),
+            ]),
+          ])));
+  }
+
   Color _c(EngineStatus st) => switch (st) {
     EngineStatus.connected => Colors.green,
     EngineStatus.connecting => Colors.orangeAccent,
@@ -118,15 +225,37 @@ class _Ed extends State<EngineDirectPage> {
                   color: msg.startsWith('✓') ? Colors.green : Colors.redAccent))),
             ]))),
           const SizedBox(height: 10),
-          Row(children: [ const Text('局域网发现的引擎', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              onPressed: busy ? null : _manual,
+              icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+              label: const Text('手动填地址', style: TextStyle(fontSize: 12)))),
+            const SizedBox(width: 8),
+            Expanded(child: FilledButton.tonalIcon(
+              onPressed: busy ? null : _diag,
+              icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+              label: const Text('一键自检', style: TextStyle(fontSize: 12)))),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [ const Text('发现的引擎（广播 + 主动扫描）', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const Spacer(),
             if (busy) const SizedBox(width: 14, height: 14,
               child: CircularProgressIndicator(strokeWidth: 2)) ]),
           const SizedBox(height: 6),
           if (EngineDirect.available().isEmpty)
-            const Padding(padding: EdgeInsets.all(24), child: Text(
-              '暂未发现引擎\n阅读引擎 / venera 引擎启动后会自动广播(THP UDP 19527)',
-              textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)))
+            Padding(padding: const EdgeInsets.all(24), child: Column(children: [
+              const Text('暂未发现引擎',
+                textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              const Text('引擎 App 启动后会广播(THP UDP 19527)；\n'
+                  '若广播被网络环境屏蔽，点下面「主动扫描」直连探测：',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.5)),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(onPressed: busy ? null : _scan,
+                icon: const Icon(Icons.radar, size: 16),
+                label: const Text('主动扫描本机与局域网', style: TextStyle(fontSize: 12))),
+            ]))
           else
             for (final d in EngineDirect.available())
               Card(child: ListTile(

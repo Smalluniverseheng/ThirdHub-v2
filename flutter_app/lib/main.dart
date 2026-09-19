@@ -3,6 +3,7 @@
 // 每个板块右上角: [搜索] [设置→连接资源库]
 import 'dart:async'; import 'dart:convert';
 import 'dart:math'; import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -57,6 +58,11 @@ import 'core/engine_direct.dart';
 import 'core/engine_direct_page.dart';
 import 'core/gallery_page.dart';
 import 'core/files_page.dart';
+import 'core/feedback_page.dart';
+import 'core/app_log.dart';
+import 'core/log_page.dart';
+import 'core/auto_scan_page.dart';
+import 'core/tts_presets.dart';
 
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
@@ -185,6 +191,9 @@ Future<void> main() async {
   // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
   installAiStorePrefs();
   await AppSettings.init();
+  // 报错中心: 全局捕获 Flutter 框架异常 → 日志中心（release 下灰屏类崩溃也能回看）
+  FlutterError.onError = (d) { AppLog.error('Flutter 框架异常', err: d.exception, st: d.stack); FlutterError.presentError(d); };
+  PlatformDispatcher.instance.onError = (e, st) { AppLog.error('未捕获异常', err: e, st: st); return true; };
   // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
   IntentRouter.init();
   runApp(SplashApp(anim: AppSettings.splashAnim));
@@ -276,6 +285,16 @@ class AppSettings {
   // 底部导航栏: 向下滚动自动收起(去文字, 高度缩1/3), 向上滚动展开(网页端 nav-folded 同款)
   static bool get navAutoHide => p.getBool('nav_autohide') ?? true;
   static Future<void> setNavAutoHide(bool v) async { await p.setBool('nav_autohide', v); await sync(); }
+  // ── 自动全屏（D-11）：进入模块后 N 秒没有切换模块操作 → 隐藏底部导航进入全屏 ──
+  // autoFsSec: 0=关闭；默认 3 秒（用户拍板值）。范围 2-10s。
+  static int get autoFsSec => p.getInt('auto_fs_sec') ?? 3;
+  static Future<void> setAutoFsSec(int v) async { await p.setInt('auto_fs_sec', v.clamp(0, 10)); await sync(); }
+  // 逐模块开关：默认全开，少数"操作型"模块默认关（我的/设置类页面进全屏没意义）
+  static const fsOffByDefault = {'我的'};
+  static bool fsEnabledFor(String modKey) =>
+      p.getBool('fs_mod_$modKey') ?? !fsOffByDefault.contains(modKey);
+  static Future<void> setFsEnabledFor(String modKey, bool v) async {
+    await p.setBool('fs_mod_$modKey', v); await sync(); }
   // 左右滑动切换模块（★2026-09-19 默认改为 **关**）。
   // 旧版默认开: 模块间横滑 = PageView 翻页，会**沿途构建中间的每个模块**并触发它们的加载，
   // 用户感受是「从一个模块穿过好几个才到目标」，AI 模块尤其会在这过程中被带动、把左上角的
@@ -623,6 +642,8 @@ class _ThAppState extends State<ThApp> {
   void _onLang() { if (mounted) setState(() {}); }
   @override void dispose() { I18n.instance.removeListener(_onLang); super.dispose(); }
   @override Widget build(BuildContext c) { Api.base = widget.base; Api.token = widget.token;
+    // 同步给 TTS 后端合成通道（core/tts_presets.dart 为避免循环 import 不直接读 Api）
+    TtsBackend.base = Api.base; TtsBackend.token = Api.token;
     final accent = Color(AppSettings.accentColor);
     final mode = AppSettings.themeModeStr;
     ThemeData buildTheme(Brightness b) {
@@ -817,6 +838,7 @@ class _Conn extends State<ConnectLibraryPage> {
         actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
+        TtsBackend.base = Api.base; TtsBackend.token = Api.token;
         runApp(ThApp(ready: true, base: baseC.text.trim(), token: tokenC.text.trim())); }
     } catch (e) { setState(() { busy = false; err = '连接失败: $e'; }); } }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
@@ -1078,6 +1100,8 @@ class _Pf extends State<ProfilePage> {
         _sep(),
         entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
         _sep(),
+        entry(Icons.receipt_long_outlined, '日志中心', value: '运行透明 · 含报错中心', page: const LogCenterPage()),
+        _sep(),
         entry(Icons.download_outlined, '下载 App', page: const DownloadAppsPage()),
       ]),
       _section('服务', [
@@ -1092,7 +1116,7 @@ class _Pf extends State<ProfilePage> {
       _section('帮助中心', [
         entry(Icons.help_outline, '帮助中心', page: const HelpPage()),
         _sep(),
-        entry(Icons.mail_outline, '反馈问题', onTap: () => launchUrl(Uri.parse('https://github.com/Smalluniverseheng/ThirdHub-v2/issues'), mode: LaunchMode.externalApplication)),
+        entry(Icons.mail_outline, '反馈中心', value: '文字+截图，直达管理后台', page: const FeedbackPage()),
         _sep(),
         entry(Icons.info_outline, '关于 ThirdHub', page: const AboutPage()),
         _sep(),
@@ -1302,10 +1326,16 @@ class _Eng extends State<EnginesPage> {
       meta = Map<String, int>.from(r['meta'] ?? {}); loading = false; }); } catch (_) { setState(() => loading = false); } }
   Color statusColor(String s) => s == 'online' ? Colors.blue : s == 'standby' ? Colors.orange : Colors.red;
   String statusText(String s) => s == 'online' ? tr('在线') : s == 'standby' ? tr('待机') : s == 'error' ? tr('故障') : tr('离线');
+  // 图标键 → 矢量图标（总纲: UI 一律矢量图标, 不用 emoji）
+  static IconData _engineIcon(String k) => switch (k) {
+    'book' => Icons.menu_book, 'movie' => Icons.movie_outlined, 'palette' => Icons.palette_outlined,
+    'music' => Icons.music_note, 'cloud' => Icons.cloud_outlined, 'plug' => Icons.power,
+    _ => Icons.memory };
   Widget engineCard(Map e) => Card(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), child: Padding(
     padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [
-      Text('${e['icon'] ?? '🔧'}', style: const TextStyle(fontSize: 20)),
+      // 引擎图标: 后端发的是图标键(book/movie/palette/music/cloud/plug), 本地映射成矢量图标
+      Icon(_engineIcon('${e['icon'] ?? ''}'), size: 22, color: Colors.blueAccent),
       const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(e['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -1379,7 +1409,7 @@ class _Tools extends State<ToolsSection> {
       Text(tr('存储服务'), style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
       if (st != null) ...[
-        statusRow('☁️ 网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212, () => Navigator.push(c, MaterialPageRoute(builder: (_) => NetDiskPage(baseUrl: Api.base)))),
+        statusRow('网盘 Cloudreve', st!['cloudreve'] ?? '?', 5212, () => Navigator.push(c, MaterialPageRoute(builder: (_) => NetDiskPage(baseUrl: Api.base)))),
         const SizedBox(height: 4),
         statusRow('⬇️ 下载引擎 aria2', st!['aria2'] ?? '?', 6800),
         const SizedBox(height: 4),
@@ -1666,9 +1696,11 @@ class _Home extends State<SearchSection> {
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
     if (mounted) setState(() => loading = false); }
-  Widget group(String title, List items, Widget Function(Map) tile) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget group(String title, List items, Widget Function(Map) tile, [IconData? ic]) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))),
+      child: Row(children: [
+        if (ic != null) ...[ Icon(ic, size: 16, color: Colors.blueAccent), const SizedBox(width: 6) ],
+        Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))])),
     for (final it in items) tile(it),
   ]);
   String _typeLabel(String t) =>
@@ -1691,14 +1723,16 @@ class _Home extends State<SearchSection> {
   }
   // THP 引擎结果分组渲染: 点条目 → 引擎直连详情页(目录→内容全程走引擎)
   List<Widget> _engGroup(BuildContext c, String t) {
-    const labels = {'novel': '📖 小说', 'comic': '🎨 漫画', 'video': '🎬 视频', 'music': '🎵 音乐'};
+    const labels = {'novel': '小说', 'comic': '漫画', 'video': '视频', 'music': '音乐'};
+    const labelIcons = {'novel': Icons.menu_book, 'comic': Icons.palette_outlined, 'video': Icons.movie_outlined, 'music': Icons.music_note};
     final all = engItems!.where((e) => e['_type'] == t).toList();
     if (all.isEmpty) return const [];
     // ★客户端分页: 首屏每类最多画 _shown 条, 触底/点按钮再追加
     final its = all.take(_shown).toList();
     return [
       Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-        child: Text('${labels[t]} (${its.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))),
+        child: Row(children: [ Icon(labelIcons[t] ?? Icons.menu_book, size: 16, color: Colors.blueAccent), const SizedBox(width: 6),
+          Text('${labels[t]} (${its.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)) ])),
       for (final it in its) ListTile(dense: true,
         leading: ('${it['coverUrl'] ?? ''}') != '' ? ClipRRect(borderRadius: BorderRadius.circular(4),
           child: Image.network('${it['coverUrl']}', width: 40, height: 56, fit: BoxFit.cover,
@@ -1733,17 +1767,19 @@ class _Home extends State<SearchSection> {
       child: Builder(builder: (ctx) {
         final st = EngineDirect.state.value;
         final (String txt, Color col) = switch (st.status) {
-          EngineStatus.connected => ('⚡ THP 引擎直连: ${st.name}', Colors.green),
-          EngineStatus.connecting => ('◌ 正在连接引擎…', Colors.orangeAccent),
+          EngineStatus.connected => ('THP 引擎直连: ${st.name}', Colors.green),
+          EngineStatus.connecting => ('正在连接引擎…', Colors.orangeAccent),
           EngineStatus.failed => (Api.base.isNotEmpty
-              ? '☁ 资源库模式 · 引擎离线' : '● 引擎不可达 — 点此查看原因/重试', Colors.redAccent),
+              ? '资源库模式 · 引擎离线' : '引擎不可达 — 点此查看原因/重试', Colors.redAccent),
           EngineStatus.idle => (Api.base.isNotEmpty
-              ? '☁ 资源库模式' : '● 未连接引擎 — 点此连接', Colors.redAccent),
+              ? '资源库模式' : '未连接引擎 — 点此连接', Colors.redAccent),
         };
         return GestureDetector(
           onTap: st.connected ? null : () => Navigator.push(ctx,
             MaterialPageRoute(builder: (_) => const EngineDirectPage())),
-          child: Text(txt, style: TextStyle(fontSize: 10, color: col)));
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.circle, size: 8, color: col), const SizedBox(width: 5),
+            Text(txt, style: TextStyle(fontSize: 10, color: col)) ]));
       }))),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: ListView(controller: _scroll, children: [
@@ -1792,19 +1828,19 @@ class _Home extends State<SearchSection> {
         ],
       ] else if (agg != null) ...[
         for (final g in (agg!['books'] as List? ?? []))
-          group('📖 小说', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('小说', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b))))))),
         for (final g in (agg!['comics'] as List? ?? []))
-          group('🎨 漫画', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('漫画', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['title'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? ''))))),
         for (final g in (agg!['videos'] as List? ?? []))
-          group('🎬 视频', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('视频', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['type'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? ''))))),
         for (final g in (agg!['musics'] as List? ?? []))
-          group('🎵 音乐', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
+          group('音乐', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, leading: const Icon(Icons.music_note, size: 20),
             title: Text(b['name'] ?? ''), subtitle: Text(b['artist'] ?? ''),
             onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(b), sourceId: g['sourceId'] ?? ''))))),
@@ -2857,7 +2893,9 @@ final Map<String, ModuleDef> kModules = {
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
   // ═══ 规划文档 v2.0 全量模块框架(骨架页, 功能按版本逐步落地) ═══
   // ── Work 模式 ──
-  '作业中心': ModuleDef('作业中心', Icons.assignment_turned_in_outlined, const JobCenterPage()),
+  // ★原名「作业中心」极易被理解成"学生写作业"，实际是本地**任务调度运行时**
+  //   (作业队列/步骤回放/定时调度/模板/归档/待确认审批)，故改名。
+  '自动化任务': ModuleDef('自动化任务', Icons.auto_mode_outlined, const JobCenterPage()),
   // ── 私有数据 ──
   '笔记': const ModuleDef('笔记', Icons.edit_note, NotesPage()),
   '待办': const ModuleDef('待办', Icons.check_circle_outline, TodoPage()),
@@ -2880,9 +2918,10 @@ final Map<String, ModuleDef> kModules = {
   '短剧': ModuleDef('短剧', Icons.movie_outlined, ShortPlayPage()),
   '壁纸': const ModuleDef('壁纸', Icons.wallpaper, WallpaperPage()),
   '资讯': const ModuleDef('资讯', Icons.newspaper, NewsPage()),
-  '天气快递': const ModuleDef('天气快递', Icons.wb_sunny_outlined, WeatherPage()),
+  '天气与快递': const ModuleDef('天气与快递', Icons.wb_sunny_outlined, WeatherPage()),
   '菜谱': const ModuleDef('菜谱', Icons.restaurant_menu, RecipePage()),
-  '学习工具': const ModuleDef('学习工具', Icons.school_outlined, StudyPage()),
+  // ★原名「学习工具」名不副实：页面里只有"单词卡/背诵卡"一种功能，故改名。
+  '记忆卡': const ModuleDef('记忆卡', Icons.style_outlined, StudyPage()),
   '课程表': const ModuleDef('课程表', Icons.table_chart_outlined, TimetablePage()),
   // ── 工具效率 ──
   '翻译': const ModuleDef('翻译', Icons.translate, TranslatePage()),
@@ -2911,6 +2950,30 @@ final Map<String, ModuleDef> kModules = {
   '家庭中心': const ModuleDef('家庭中心', Icons.home_work_outlined, ModuleHubPage(name: '家庭中心', icon: Icons.home_work_outlined,
     desc: '家庭/多端聚合: 共享相册/影院/智能家居等一处直达',
     children: ['共享相册', '共享清单', '家庭影院', '家庭音乐库', '摄像头', '智能家居', '设备互联', '家庭日历'])),
+  // ★2026-09-19 用户反馈"功能全拆开了、找的时候非常麻烦"→ 按**同一使用场景**合并：
+  //   只有"同一件事的不同步骤/同类物"才合进一个入口，避免又造出一堆平级模块。
+  '学习中心': const ModuleDef('学习中心', Icons.school_outlined, ModuleHubPage(name: '学习中心', icon: Icons.school_outlined,
+    desc: '学习聚合: 记忆卡(背单词/问答卡) + 课程表',
+    children: ['记忆卡', '课程表'])),
+  '音频中心': const ModuleDef('音频中心', Icons.headphones, ModuleHubPage(name: '音频中心', icon: Icons.headphones,
+    desc: '「听」的聚合: 播客/有声书/广播电台一处直达（音乐播放器仍在「音乐」）',
+    children: ['播客', '有声书', '广播'])),
+  '记录中心': const ModuleDef('记录中心', Icons.edit_note, ModuleHubPage(name: '记录中心', icon: Icons.edit_note,
+    desc: '随手写与临时存: 笔记/日记/便签/Markdown/代码片段/书签/剪贴板',
+    children: ['笔记', '日记', '悬浮便签', 'Markdown', '代码片段', '书签', '剪贴板'])),
+  '备份迁移': const ModuleDef('备份迁移', Icons.settings_backup_restore, ModuleHubPage(name: '备份迁移', icon: Icons.settings_backup_restore,
+    desc: '换机/存档: 通讯录与短信备份一处直达',
+    children: ['通讯录备份', '短信备份'])),
+};
+
+// ═══ 模块改名映射(旧键 → 新键) ═══
+// ★为什么必须有这张表：nav_modules 里存的是**模块键**。直接改键会让老用户
+//   底部导航里那个模块被 `where(kModules.containsKey)` 过滤掉 —— 表现为
+//   "升级后模块凭空消失"。所有键改名都必须在这里登记，读取时先迁移再校验。
+const Map<String, String> kModuleRenames = {
+  '作业中心': '自动化任务',
+  '学习工具': '记忆卡',
+  '天气快递': '天气与快递',
 };
 
 // ═══ 模块分类(导航栏管理树状分组用) ═══
@@ -2921,14 +2984,26 @@ const Map<String, String> kModuleCats = {
   '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容',
   '笔记': '生活', '待办': '生活', '录音机': '生活', '日历': '生活', '提醒中心': '生活', '日记': '生活', '记账': '生活',
   '剪贴板': '生活', '书签': '生活', '代码片段': '生活', 'Markdown': '生活', '健康记录': '生活',
-  '通讯录备份': '生活', '短信备份': '生活', '天气快递': '生活', '菜谱': '生活', '学习工具': '生活', '课程表': '生活',
-  '作业中心': '效率', '工具箱': '效率', '翻译': '效率', '扫描仪': '效率', '二维码': '效率', '计算器': '效率',
+  '通讯录备份': '生活', '短信备份': '生活', '天气与快递': '生活', '菜谱': '生活', '记忆卡': '生活', '课程表': '生活',
+  '自动化任务': '效率', '工具箱': '效率', '翻译': '效率', '扫描仪': '效率', '二维码': '效率', '计算器': '效率',
   '白板': '效率', '文本工具箱': '效率', '传感器': '效率', '文件互传': '效率', '远程打印': '效率', '悬浮便签': '效率',
   '家庭中心': '家庭', '共享相册': '家庭', '共享清单': '家庭', '家庭影院': '家庭', '家庭音乐库': '家庭',
   '摄像头': '家庭', '智能家居': '家庭', '设备互联': '家庭', '家庭日历': '家庭',
+  // 聚合入口自身也归到它收纳内容所属的分类
+  '音频中心': '内容', '学习中心': '生活', '记录中心': '生活', '备份迁移': '生活',
   '聊天': '实验室', '社区': '实验室', '论坛': '实验室', '游戏': '实验室',
 };
 String moduleCat(String k) => kModuleCats[k] ?? '其他';
+
+/// 把持久化的模块键列表迁到当前键名（改过名的模块不会丢）。
+List<String> migrateModuleKeys(Iterable<String> raw) {
+  final out = <String>[];
+  for (final k in raw) {
+    final n = kModuleRenames[k] ?? k;
+    if (!out.contains(n)) out.add(n);
+  }
+  return out;
+}
 
 // ═══ 聚合模块页: 一个入口装一类子模块, 点进子模块单独开页 ═══
 class ModuleHubPage extends StatelessWidget {
@@ -2959,7 +3034,7 @@ class ModuleHubPage extends StatelessWidget {
 }
 
 // ★2026-09-19 「敬请期待」占位页与模块骨架页(ModuleScaffoldPage)已全部退役:
-//   聊天/游戏/社区/论坛 四个实验室模块与 作业中心/远程打印/智能家居 三个骨架模块
+//   聊天/游戏/社区/论坛 四个实验室模块与 自动化任务/远程打印/智能家居 三个骨架模块
 //   都换成了真页面(见 core/lab_social.dart, core/lab_games.dart, core/job_center.dart, core/home_io.dart),
 //   这里不再保留任何"框架已就位"式的空壳页面。
 
@@ -2999,17 +3074,47 @@ class _RootNavState extends State<RootNav> {
     else { SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); }
     if (mounted) setState(() {});
   }
-  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); RootNav.fullscreen.removeListener(_onFs); BrowserHooks.openModules = null; _page.dispose(); _navScroll.dispose(); super.dispose(); }
+  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); RootNav.fullscreen.removeListener(_onFs); BrowserHooks.openModules = null; _fsTimer?.cancel(); _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
-    setState(() {
-      enabled = (saved == null || saved.isEmpty) ? ['我的'] : saved.where((k) => kModules.containsKey(k)).toList();
-      if (!enabled.contains('我的')) enabled.add('我的');
-      if (idx >= enabled.length) idx = 0;
-    });
+    if (saved == null || saved.isEmpty) {
+      setState(() { enabled = ['我的']; if (idx >= enabled.length) idx = 0; });
+      return;
+    }
+    // ★先迁移旧键再校验：改过名的模块若被 containsKey 过滤掉，用户会以为"模块升级后没了"
+    final migrated = migrateModuleKeys(saved).where((k) => kModules.containsKey(k)).toList();
+    if (!migrated.contains('我的')) migrated.add('我的');
+    setState(() { enabled = migrated; if (idx >= enabled.length) idx = 0; });
+    // 迁移结果回写，避免每次启动都重算（也避免旧键一直在盘里）
+    if (migrated.join('\u0001') != saved.join('\u0001')) {
+      try { await p.setStringList('nav_modules', migrated); } catch (_) {}
+    }
   }
   bool _animating = false;
+  // ── 自动全屏（D-11）：切换模块后计时，N 秒无切换操作则收起底部导航进入全屏 ──
+  Timer? _fsTimer;
+  bool _fsSuppressed = false; // 用户手动退出全屏后，本次驻留该模块期间不再自动进入
+  void _armAutoFs() {
+    _fsTimer?.cancel();
+    final sec = AppSettings.autoFsSec;
+    if (sec <= 0 || !mounted) return;
+    final key = enabled.isEmpty ? '' : enabled[idx.clamp(0, enabled.length - 1)];
+    if (key.isEmpty || _fsSuppressed || RootNav.fullscreen.value) return;
+    if (_noNavModules.contains(key)) return;          // 本来就无导航栏的模块
+    if (!AppSettings.fsEnabledFor(key)) return;       // 用户关掉了这个模块的全屏
+    _fsTimer = Timer(Duration(seconds: sec), () {
+      if (!mounted || _fsSuppressed || RootNav.fullscreen.value) return;
+      final nowKey = enabled.isEmpty ? '' : enabled[idx.clamp(0, enabled.length - 1)];
+      if (nowKey != key || !AppSettings.fsEnabledFor(nowKey)) return;
+      RootNav.fullscreen.value = true;
+      AppLog.module('进入全屏', d: {'module': nowKey, 'auto': true, 'sec': sec});
+    });
+  }
+  void _exitFs() {
+    _fsSuppressed = true; // 这次手动退出后，留在本模块不再自动进入；切走再回来才会重新计时
+    RootNav.fullscreen.value = false;
+  }
   /// 切换模块。
   ///
   /// ★2026-09-19：默认改为**直接跳**（`jumpToPage`），不再 `animateToPage` 沿路滑过。
@@ -3022,6 +3127,9 @@ class _RootNavState extends State<RootNav> {
     HapticFeedback.selectionClick(); // 切换模块轻微震动
     if (i == idx) return;
     setState(() { idx = i; RootNav.currentModuleKey = enabled[i]; });
+    _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
+    AppLog.module('打开模块', d: {'module': enabled[i]});
+    _armAutoFs();
     if (!_page.hasClients) return;
     if (animate) {
       _animating = true;
@@ -3052,9 +3160,11 @@ class _RootNavState extends State<RootNav> {
       behavior: HitTestBehavior.translucent,
       onTap: () {
         if (fs || !AppSettings.navAutoHide || hideNav || _navCollapsed) return;
+        _fsTimer?.cancel(); // 点按正文 = 一次操作，本轮不再自动进入全屏
         setState(() => _navCollapsed = true);
       },
-      child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++; },
+      child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++;
+        _fsSuppressed = false; AppLog.module('滑动切到模块', d: {'module': enabled[i]}); _armAutoFs(); },
         physics: swipe ? const PageScrollPhysics() : const NeverScrollableScrollPhysics(),
         children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
     // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进各模块页分段行右侧 ⋯ / 悬浮球长按 (openModuleMenu)
@@ -3063,7 +3173,7 @@ class _RootNavState extends State<RootNav> {
       SafeArea(top: !hideBar && !fs, bottom: false, child: body),
       if (fs) Positioned(top: 0, right: 8, child: SafeArea(child: Material(color: Colors.black45, shape: const CircleBorder(),
         child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), tooltip: '退出全屏',
-          onPressed: () => RootNav.fullscreen.value = false)))),
+          onPressed: _exitFs)))),
     ]);
     // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
     if (ScreenFit.isWide) {
@@ -3337,7 +3447,7 @@ SnackBar importSnack(int n, String unit) {
 // 底部导航自定义(像网站: 勾选哪些模块 + 按住拖动调整顺序)
 Future<void> showNavSettings(BuildContext c) async {
   final p = await SharedPreferences.getInstance();
-  final saved = p.getStringList('nav_modules') ?? ['我的'];
+  final saved = migrateModuleKeys(p.getStringList('nav_modules') ?? ['我的']);
   final order = <String>[ ...saved.where((k) => kModules.containsKey(k)) ]; // 已启用(可拖动排序)
   final sel = order.toSet();
   // 未启用模块按分类树状分组
@@ -3474,6 +3584,7 @@ class _At extends State<AccountTile> {
         final p = await SharedPreferences.getInstance();
         await p.setString('base', winner.value); await p.setString('token', secret);
         Api.base = winner.value; Api.token = secret;
+        TtsBackend.base = Api.base; TtsBackend.token = Api.token;
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已通过${winner.key}自动连接后端')));
       }
     } catch (_) {}
@@ -3592,8 +3703,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.27.0';
-  static const int currentCode = 50518;
+  static const String currentVersion = '4.28.0';
+  static const int currentCode = 50519;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -3785,7 +3896,7 @@ class _Ln extends State<LocalNovelsPage> {
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async { items = await LocalLib.list('novel'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地小说'), actions: [
-    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importNovels();
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await importWithChoice(c, 'novel') ?? 0;
       ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '本')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地小说\n点右上角 + 导入 txt / epub', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
@@ -3845,7 +3956,7 @@ class _Lv extends State<LocalVideosPage> {
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async { items = await LocalLib.list('video'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地视频'), actions: [
-    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importVideos();
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await importWithChoice(c, 'video') ?? 0;
       ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '个')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地视频\n点右上角 + 导入 mp4 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
@@ -4036,7 +4147,7 @@ class _Lm extends State<LocalMusicsPage> {
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async { items = await LocalLib.list('music'); setState(() => loading = false); }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地音乐'), actions: [
-    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await LocalLib.importAudios();
+    IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await importWithChoice(c, 'music') ?? 0;
       ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '首')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地音乐\n点右上角 + 导入 mp3 等', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
@@ -4434,6 +4545,27 @@ class _Ape extends State<AppearancePage> {
 // ── 子页面: 导航 ──
 class NavSettingsPage extends StatefulWidget { const NavSettingsPage({super.key}); @override State<NavSettingsPage> createState() => _Ns(); }
 class _Ns extends State<NavSettingsPage> {
+  // 逐模块全屏开关（D-11）：列出全部已启用模块，每个可独立开关
+  void _fsModuleSheet(BuildContext c) {
+    showModalBottomSheet(context: c, isScrollControlled: true, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+      final mods = kModules.keys.toList();
+      return SafeArea(child: SizedBox(height: 460, child: Column(children: [
+        const Padding(padding: EdgeInsets.all(12),
+          child: Text('逐模块全屏开关', style: TextStyle(fontWeight: FontWeight.bold))),
+        const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text('进入模块后 N 秒无切换操作则收起底部导航进入全屏。在此关掉不需要全屏的模块。',
+            style: TextStyle(fontSize: 11, color: Colors.grey))),
+        Expanded(child: ListView(children: [
+          for (final k in mods)
+            SwitchListTile(dense: true,
+              secondary: Icon(kModules[k]!.icon, size: 20),
+              title: Text(tr(kModules[k]!.name), style: const TextStyle(fontSize: 13)),
+              value: AppSettings.fsEnabledFor(k),
+              onChanged: (v) { AppSettings.setFsEnabledFor(k, v).then((_) { setD(() {}); setState(() {}); }); }),
+        ])),
+      ])));
+    }));
+  }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(tr('导航'))),
     body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
       Card(child: Column(children: [
@@ -4467,6 +4599,27 @@ class _Ns extends State<NavSettingsPage> {
           subtitle: const Text('在正文区横向滑动即可换模块; 关掉可避免与模块内部的横向手势互相干扰', style: TextStyle(fontSize: 11)),
           value: AppSettings.navSwipe,
           onChanged: (v) => AppSettings.setNavSwipe(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
+        const Divider(height: 1, indent: 56),
+        // ── 自动全屏（D-11）──
+        SwitchListTile(secondary: const Icon(Icons.fullscreen, size: 20),
+          title: const Text('自动全屏', style: TextStyle(fontSize: 14)),
+          subtitle: Text(AppSettings.autoFsSec > 0
+            ? '进入模块 ${AppSettings.autoFsSec} 秒没有切换操作 → 收起底部导航进入全屏; 右上角可退出'
+            : '已关闭', style: const TextStyle(fontSize: 11)),
+          value: AppSettings.autoFsSec > 0,
+          onChanged: (v) => AppSettings.setAutoFsSec(v ? 3 : 0).then((_) { RootNav.navTick.value++; setState(() {}); })),
+        if (AppSettings.autoFsSec > 0) Padding(padding: const EdgeInsets.fromLTRB(56, 0, 16, 6), child: Row(children: [
+          const Text('触发秒数', style: TextStyle(fontSize: 12)),
+          Expanded(child: Slider(value: AppSettings.autoFsSec.toDouble(), min: 2, max: 10, divisions: 8,
+            label: '${AppSettings.autoFsSec} 秒',
+            onChanged: (v) => AppSettings.setAutoFsSec(v.round()).then((_) { RootNav.navTick.value++; setState(() {}); }))),
+          Text('${AppSettings.autoFsSec} 秒', style: const TextStyle(fontSize: 12)),
+        ])),
+        if (AppSettings.autoFsSec > 0) ListTile(leading: const Icon(Icons.tune, size: 20),
+          title: const Text('逐模块全屏开关', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('关闭后该模块不再自动进入全屏', style: TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => _fsModuleSheet(c)),
         const Divider(height: 1, indent: 56),
         ListTile(leading: const Icon(Icons.swipe_outlined, size: 20), title: Text(tr('悬浮球默认位置'), style: const TextStyle(fontSize: 14)),
           trailing: SegmentedButton<String>(showSelectedIcon: false, style: const ButtonStyle(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -4803,8 +4956,59 @@ class _ModulePanelState extends State<_ModulePanel> {
   late List<String> order = [...widget.enabled];
   int? _dragging;   // 正在拖的格位
   int? _hover;      // 当前悬停到的格位（用于高亮落点）
+  /// 左侧分类栏当前选中项。
+  ///   '已启用' = 我的底部导航（保留长按拖动排序）；
+  ///   其它 = 分类名 → 右侧列出该分类**全部**模块（含未启用的），可一键加入导航。
+  String _rail = '已启用';
 
   @override void initState() { super.initState(); order = [...widget.enabled]; }
+
+  /// 实际存在的分类（按 kCatOrder 排序，末尾补"其他"）
+  List<String> get _cats {
+    final seen = <String>{ for (final k in kModules.keys) moduleCat(k) };
+    return [...kCatOrder.where(seen.contains), if (seen.contains('其他')) '其他'];
+  }
+
+  List<String> _modulesOf(String cat) =>
+      [for (final e in kModules.entries) if (moduleCat(e.key) == cat) e.key];
+
+  static IconData _catIcon(String cat) => switch (cat) {
+    '已启用' => Icons.apps,
+    '核心' => Icons.star_outline,
+    '内容' => Icons.play_circle_outline,
+    '生活' => Icons.coffee_outlined,
+    '效率' => Icons.bolt_outlined,
+    '家庭' => Icons.home_outlined,
+    '实验室' => Icons.science_outlined,
+    _ => Icons.folder_outlined,
+  };
+
+  Future<void> _persistNav(List<String> list) async {
+    final out = [...list];
+    if (!out.contains('我的')) out.add('我的');
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setStringList('nav_modules', out);
+      RootNav.navTick.value++;   // 根导航即时重载
+    } catch (_) {}
+  }
+
+  /// 分类视图里把模块加入/移出底部导航（→ 用户不用再翻设置页）
+  Future<void> _toggleNav(String k, bool add) async {
+    if (k == '我的') return;
+    final list = [...order];
+    if (add) {
+      if (!list.contains(k)) {
+        final at = list.contains('我的') ? list.indexOf('我的') : list.length;
+        list.insert(at, k);
+      }
+    } else {
+      list.remove(k);
+    }
+    setState(() => order = list);
+    HapticFeedback.selectionClick();
+    await _persistNav(list);
+  }
 
   /// 落位：把 _dragging 移到 _hover。立刻写盘并通知根导航重载（与设置页共用 nav_modules）。
   Future<void> _drop(int to) async {
@@ -4864,11 +5068,75 @@ class _ModulePanelState extends State<_ModulePanel> {
           child: body)));
   }
 
+  /// 左侧分类栏的一格（图标 + 名称 + 数量）
+  Widget _railItem(String cat) {
+    final on = _rail == cat;
+    final scheme = Theme.of(context).colorScheme;
+    final n = cat == '已启用' ? order.length : _modulesOf(cat).length;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () { HapticFeedback.selectionClick(); setState(() => _rail = cat); },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+        decoration: BoxDecoration(
+          color: on ? scheme.primaryContainer : null,
+          borderRadius: BorderRadius.circular(10)),
+        child: Column(children: [
+          Icon(_catIcon(cat), size: 18, color: on ? scheme.primary : Colors.grey),
+          const SizedBox(height: 3),
+          Text(cat, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5,
+            fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+            color: on ? scheme.primary : null)),
+          Text('$n', style: const TextStyle(fontSize: 9, color: Colors.grey)),
+        ])));
+  }
+
+  /// 分类视图里的一格：点开模块；右上角小按钮 = 加入/移出底部导航
+  Widget _catTile(String k) {
+    final m = kModules[k];
+    if (m == null) return const SizedBox.shrink();
+    final inNav = order.contains(k);
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        // ★先取 Navigator 再 pop：pop 之后本 sheet 的 context 已失效
+        final nav = Navigator.of(context);
+        final i = widget.enabled.indexOf(k);
+        nav.pop();
+        if (i >= 0) { widget.onGo(i); return; }
+        nav.push(smoothRoute(Scaffold(
+          appBar: AppBar(title: Text(tr(m.name))), body: m.page)));
+      },
+      child: Stack(children: [
+        Container(width: double.infinity, height: double.infinity,
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer.withValues(alpha: inNav ? 0.55 : 0.12),
+            borderRadius: BorderRadius.circular(14)),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(m.icon, size: 24, color: inNav ? scheme.primary : null),
+            const SizedBox(height: 4),
+            Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+        Positioned(right: 0, top: 0, child: IconButton(
+          tooltip: inNav ? '从底部导航移除' : '加入底部导航',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          icon: Icon(inNav ? Icons.check_circle : Icons.add_circle_outline,
+            size: 16, color: inNav ? Colors.green : Colors.grey),
+          onPressed: () => _toggleNav(k, !inNav))),
+      ]));
+  }
+
   @override Widget build(BuildContext c) {
     final w = MediaQuery.of(c).size.width;
-    final cols = (w / 88).floor().clamp(3, 8);
+    const railW = 76.0;
     final gap = 8.0;
-    final tileW = (w - 32 - gap * (cols - 1)) / cols;
+    final contentW = w - 16 - railW - 8 - 16;          // 左内边距 + 栏宽 + 间隔 + 右内边距
+    final cols = (contentW / 88).floor().clamp(2, 8);
+    final tileW = (contentW - gap * (cols - 1)) / cols;
+    final list = _rail == '已启用' ? order : _modulesOf(_rail);
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(c).colorScheme.surface,
@@ -4882,7 +5150,10 @@ class _ModulePanelState extends State<_ModulePanel> {
           child: Row(children: [
             const Text('切换模块', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Expanded(child: Text('长按某格可拖动排序 · 共 ${order.length} 个',
+            Expanded(child: Text(
+              _rail == '已启用'
+                ? '长按某格可拖动排序 · 共 ${order.length} 个'
+                : '$_rail · ${list.length} 个模块 · 点右上角 ⊕ 加入导航',
               style: const TextStyle(fontSize: 10.5, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis)),
             IconButton(icon: const Icon(Icons.tune, size: 18), tooltip: '启用/停用模块',
               // 先取 Navigator 再 pop：pop 会把本 sheet 的 context 销毁，
@@ -4890,11 +5161,27 @@ class _ModulePanelState extends State<_ModulePanel> {
               onPressed: () { final nav = Navigator.of(context); nav.pop(); showNavSettings(nav.context); }),
           ])),
         const SizedBox(height: 4),
-        Expanded(child: SingleChildScrollView(
-          controller: widget.scroll,                       // ★吃 sheet 的控制器 → 能上拉、能滚动
-          padding: EdgeInsets.fromLTRB(16, 4, 16, 16 + MediaQuery.of(c).viewPadding.bottom),
-          child: Wrap(spacing: gap, runSpacing: gap,
-            children: [ for (var i = 0; i < order.length; i++) SizedBox(width: tileW, height: 84, child: _tile(i)) ]))),
+        Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // ── 左侧：竖向分类栏 ──
+          SizedBox(width: railW, child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 2, 6, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _railItem('已启用'),
+              const Divider(height: 14, indent: 4, endIndent: 4),
+              for (final cat in _cats) _railItem(cat),
+            ]))),
+          const VerticalDivider(width: 1, thickness: 1),
+          // ── 右侧：模块格 ──
+          Expanded(child: SingleChildScrollView(
+            controller: widget.scroll,     // ★吃 sheet 的控制器 → 面板仍能上拉、能滚动
+            padding: EdgeInsets.fromLTRB(8, 4, 16, 16 + MediaQuery.of(c).viewPadding.bottom),
+            child: Wrap(spacing: gap, runSpacing: gap, children: [
+              if (_rail == '已启用')
+                for (var i = 0; i < order.length; i++) SizedBox(width: tileW, height: 84, child: _tile(i))
+              else
+                for (final k in list) SizedBox(width: tileW, height: 84, child: _catTile(k)),
+            ]))),
+        ])),
       ]));
   }
 }

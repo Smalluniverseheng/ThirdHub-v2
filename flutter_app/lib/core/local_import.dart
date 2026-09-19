@@ -361,4 +361,166 @@ class LocalLib {
   /// RAR/7z 这类本机解不了的漫画包：给出明确指引，而不是静默失败。
   static String unpackHint() =>
       'RAR / 7z 压缩包无法直接解包，请先解压成图片（或转存为 zip/cbz）再导入';
+
+  // ══ 自动识别导入（D-05）：扫描常见目录，按扩展名归类 ══
+  //
+  // 合规与可靠性取舍：Android 11+ 全盘扫描需要 MANAGE_EXTERNAL_STORAGE（受限权限），
+  // 所以默认只扫**应用可见的公共目录**（Download/Documents/Movies/Music/DCIM +
+  // 应用私有目录），用户也可以**自己选一个目录**（SAF 授权）作为扫描根。
+  // 扫描有深度/数量上限 + 进度回调，不会卡死。
+
+  /// 自动识别的扫描根目录。返回 [(显示名, 路径)]。
+  static Future<List<(String, String)>> scanRoots() async {
+    final out = <(String, String)>[];
+    void add(String n, String? p) {
+      if (p != null && p.isNotEmpty && Directory(p).existsSync()) out.add((n, p));
+    }
+    try {
+      final exts = await getExternalStorageDirectories();
+      // getExternalStorageDirectories()[i].path ≈ /storage/emulated/0/Android/data/<pkg>/files
+      // 公共根 = 往上四级
+      if (exts != null && exts.isNotEmpty) {
+        final base = exts.first.path.split('/Android/').first; // /storage/emulated/0
+        add('下载', '$base/Download');
+        add('文档', '$base/Documents');
+        add('视频', '$base/Movies');
+        add('音乐', '$base/Music');
+        add('图片', '$base/DCIM');
+        add('存储根目录', base);
+      }
+    } catch (_) {}
+    try {
+      final doc = await getApplicationDocumentsDirectory();
+      add('应用目录', doc.path);
+    } catch (_) {}
+    return out;
+  }
+
+  /// 递归扫描 [root] 下扩展名属于 [exts] 的文件。
+  /// [onProgress] 每发现一个就回调一次（已发现总数）。
+  /// 上限：最深 6 层、最多 [maxFound] 个文件、最多访问 20000 个目录项 —— 防卡死。
+  static Future<List<String>> scan(String root, List<String> exts,
+      {void Function(int found)? onProgress, int maxFound = 2000}) async {
+    final found = <String>[];
+    final lower = exts.map((e) => e.toLowerCase()).toSet();
+    var visited = 0;
+    Future<void> walk(Directory d, int depth) async {
+      if (depth > 6 || found.length >= maxFound || visited > 20000) return;
+      List<FileSystemEntity> kids;
+      try {
+        kids = await d.list().toList();
+      } catch (_) {
+        return;
+      }
+      for (final e in kids) {
+        visited++;
+        if (found.length >= maxFound || visited > 20000) return;
+        try {
+          if (e is File) {
+            final name = e.path.split(RegExp(r'[/\\]')).last;
+            final dot = name.lastIndexOf('.');
+            if (dot <= 0) continue;
+            if (lower.contains(name.substring(dot + 1).toLowerCase())) {
+              found.add(e.path);
+              onProgress?.call(found.length);
+            }
+          } else if (e is Directory) {
+            final dn = e.path.split(RegExp(r'[/\\]')).last;
+            if (dn.startsWith('.')) continue; // 跳过隐藏目录
+            await walk(e, depth + 1);
+          }
+        } catch (_) {}
+      }
+    }
+    await walk(Directory(root), 0);
+    found.sort();
+    return found;
+  }
+
+  /// 按类型自动识别：kind = novel / video / music / comic。
+  /// 返回 {扩展名: [路径…]} 的分组结果，供 UI 分组展示。
+  static Future<Map<String, List<String>>> autoScan(String kind, String root,
+      {void Function(int found)? onProgress}) async {
+    final exts = switch (kind) {
+      'novel' => MediaFormats.novelExts,
+      'video' => MediaFormats.videoExts,
+      'music' => MediaFormats.audioExts,
+      'comic' => MediaFormats.comicExts,
+      _ => MediaFormats.novelExts,
+    };
+    final paths = await scan(root, exts, onProgress: onProgress);
+    final groups = <String, List<String>>{};
+    for (final p in paths) {
+      final ext = p.split('.').last.toLowerCase();
+      (groups[ext] ??= []).add(p);
+    }
+    return groups;
+  }
+
+  /// 从给定路径导入小说（自动识别的结果走这里，与手动选择共用解析逻辑）。
+  static Future<int> importNovelPaths(List<String> paths) async {
+    lastErrors.clear();
+    final dir = await _dir('novel');
+    final items = await list('novel');
+    var n = 0;
+    for (final pth in paths) {
+      final src = File(pth);
+      if (!src.existsSync()) continue;
+      final name = pth.split(RegExp(r'[/\\]')).last;
+      final ext = name.split('.').last.toLowerCase();
+      final stem = name.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+      final dst = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$name');
+      if (const {'epub', 'fb2', 'html', 'htm', 'xhtml', 'rtf'}.contains(ext)) {
+        try {
+          final bytes = await src.readAsBytes();
+          final text = ext == 'epub' ? epubToText(bytes) : MediaFormats.bookToText(bytes, ext);
+          if (text == null || text.trim().isEmpty) {
+            lastErrors.add('$name: 没能解析出正文(文件可能损坏或加密)');
+            continue;
+          }
+          final out = File('${dst.path}.txt');
+          await out.writeAsString(text);
+          items.add({'name': stem, 'path': out.path, 'format': ext, 'size': text.length});
+          n++;
+        } catch (e) {
+          lastErrors.add('$name: 解析失败($e)');
+        }
+      } else {
+        try {
+          await src.copy(dst.path);
+          items.add({'name': stem, 'path': dst.path, 'format': ext});
+          n++;
+        } catch (e) {
+          lastErrors.add('$name: $e');
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 1)); // 让出事件循环，别卡 UI
+    }
+    await _save('novel', items);
+    return n;
+  }
+
+  /// 从给定路径导入媒体（视频/音乐），与手动选择共用拷贝逻辑。
+  static Future<int> importMediaPaths(String kind, List<String> paths) async {
+    lastErrors.clear();
+    final dir = await _dir(kind);
+    final items = await list(kind);
+    var n = 0;
+    for (final pth in paths) {
+      try {
+        final src = File(pth);
+        if (!src.existsSync()) continue;
+        final name = pth.split(RegExp(r'[/\\]')).last;
+        final dst = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$name');
+        await src.copy(dst.path);
+        items.add({'name': name, 'path': dst.path});
+        n++;
+      } catch (e) {
+        lastErrors.add('$pth: $e');
+      }
+      await Future.delayed(const Duration(milliseconds: 1));
+    }
+    await _save(kind, items);
+    return n;
+  }
 }

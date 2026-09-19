@@ -1,5 +1,52 @@
 // ThirdHub v4 M1 家庭后端入口 :9527
 // TLS 一层(自签+TOFU指纹) + 共享密钥鉴权(二层信封二期) + mDNS广播 + 书源API
+//
+// ══════════════════════════════════════════════════════════════════════════
+// ★ 依赖前置检查 —— 必须放在**任何业务 require 之前**
+// ══════════════════════════════════════════════════════════════════════════
+// 背景（2026-09-19 排障）：`node_modules` 因体积被 .gitignore 排除，于是
+// 「克隆 / 解压 / 打包带走」后直接跑，会在顶层 `require('cheerio')` 处抛
+// `Cannot find module` —— 双击启动就是**窗口一闪而过**，用户看不出任何原因，
+// 只会觉得「后端根本跑不起来 / 一点就闪退」。
+// 这里把失败翻译成人话，并直接把修复命令印出来。
+(function preflightDeps() {
+  const REQUIRED = [
+    ['cheerio', '解析书源返回的 HTML'],
+    ['bonjour-service', 'mDNS 局域网发现'],
+  ];
+  const missing = [];
+  for (const [mod, why] of REQUIRED) {
+    try { require.resolve(mod); } catch (e) { missing.push([mod, why]); }
+  }
+  // selfsigned 只在**首次生成证书**时需要；已有证书时缺它不影响启动
+  let missingSelfsigned = false;
+  try { require.resolve('selfsigned'); } catch (e) { missingSelfsigned = true; }
+  const certDir = require('path').join(__dirname, 'data');
+  const hasCert = require('fs').existsSync(require('path').join(certDir, 'cert.pem')) &&
+    require('fs').existsSync(require('path').join(certDir, 'key.pem'));
+  if (missingSelfsigned && !hasCert) {
+    missing.push(['selfsigned', '首次启动生成自签 TLS 证书']);
+  }
+  if (!missing.length) return;
+  const L = (s) => console.error(s);
+  L('');
+  L('══════════════════════════════════════════════════════');
+  L(' ThirdHub 后端启动失败：缺少运行依赖');
+  L('══════════════════════════════════════════════════════');
+  for (const [mod, why] of missing) L('   ✗ ' + mod.padEnd(18) + ' 用途：' + why);
+  L('');
+  L(' 原因：node_modules 体积大、不入代码库，所以取到源码后');
+  L('       必须在 server/ 目录先装一次依赖。');
+  L('');
+  L(' 修复（在本目录执行）：');
+  L('     npm install');
+  L('   国内网络慢就换镜像：');
+  L('     npm install --registry=https://registry.npmmirror.com');
+  L('══════════════════════════════════════════════════════');
+  L('');
+  process.exit(2);
+})();
+
 const https = require('https');
 const http = require('http');
 const fs = require('fs'); const path = require('path');
@@ -32,10 +79,38 @@ const fingerprint = crypto.createHash('sha256')
 // ─── THP 通用引擎协议: UDP 19527 心跳发现(引擎匿名, 广播即连接) ───
 // THP/1.0: HELLO <port> <instanceId> <role> <caps> [name] + BYE；兼容旧草稿 HELLO <port> <caps>
 const dgram = require('dgram');
+const os = require('os');
 const THP_PORT = 19527;
 const thp1 = require('./thp1');
 const THP_CAPS_CSV = thp1.CAPS.join(','); // 与 thp1 声明的能力集保持唯一事实来源
 let thpBcSock = null; // 广播 socket, 关停时发 BYE
+
+// ─── THP 广播目标解析（★ 局域网发现可靠性的根因修复）───
+// 只发受限广播 255.255.255.255 是错的：它由内核按**默认路由**挑出口网卡。
+// 机器同时有 有线/无线/热点/VPN/虚拟机 多张网卡时，出口经常选错（选到 VPN 或
+// 未连线的虚拟网卡），包根本到不了目标子网；部分 AP 也会直接丢弃受限广播。
+// 正确做法 = 对每张已启用、非回环的 IPv4 网卡，按 其IP|~掩码 算出**定向子网广播地址**，
+// 逐个发送，并保留 255.255.255.255 兜底。
+// 注：引擎侧（EngineBeacon.kt）此前是同一个缺陷，已同步修复。
+function thpBroadcastTargets() {
+  const out = new Set(['255.255.255.255']);
+  try {
+    for (const addrs of Object.values(os.networkInterfaces())) {
+      for (const a of addrs || []) {
+        if (!a || a.family !== 'IPv4' || a.internal || !a.netmask || !a.address) continue;
+        const ip = a.address.split('.').map(Number);
+        const mask = a.netmask.split('.').map(Number);
+        if (ip.length !== 4 || mask.length !== 4 || ip.some(isNaN) || mask.some(isNaN)) continue;
+        out.add(ip.map((v, i) => String((v & mask[i]) | (~mask[i] & 255))).join('.'));
+      }
+    }
+  } catch (e) {}
+  return [...out];
+}
+function thpSendAll(sock, buf) {
+  if (!sock) return;
+  for (const t of thpBroadcastTargets()) { try { sock.send(buf, THP_PORT, t, () => {}); } catch (e) {} }
+}
 try {
   const udp = dgram.createSocket('udp4');
   udp.on('message', (msg, rinfo) => {
@@ -50,6 +125,10 @@ try {
     // 新格式
     let m = s.match(/^THP\/1 HELLO (\d+) ([\w\-]+) (engine|library) ([\w:,\-]+)(?:\s+(.*))?$/);
     if (m) {
+      // ★ 忽略自身回环广播：向 255.255.255.255 广播时，本机监听同端口的 socket
+      //   也会收到自己发出的包。不过滤的话后端会把自己列为"局域网网络引擎"，
+      //   前端就会出现一个点不动的幽灵引擎（`/v1/engines` 的 network 列表）。
+      if (m[2] === thp1.INSTANCE_ID) return;
       const url = 'http://' + rinfo.address + ':' + m[1];
       const caps = m[4].split(',');
       const existing = devices.find(x => x.instanceId === m[2]);
@@ -78,10 +157,9 @@ try {
       bc.setBroadcast(true);
       const hello = Buffer.from('THP/1 HELLO 9527 ' + thp1.INSTANCE_ID + ' library ' +
         THP_CAPS_CSV + ' ThirdHub资源库');
-      setInterval(() => {
-        bc.send(hello, THP_PORT, '255.255.255.255', () => {});
-      }, 30000);
-      bc.send(hello, THP_PORT, '255.255.255.255', () => {});
+      console.log('[thp] 广播目标(定向子网+兜底): ' + thpBroadcastTargets().join(', '));
+      setInterval(() => thpSendAll(bc, hello), 30000);
+      thpSendAll(bc, hello);
     });
   } catch (e) { console.log('[thp] 广播失败', e.message); }
 } catch (e) { console.log('[thp] UDP 绑定失败', e.message); }
@@ -163,6 +241,16 @@ const DEVICES_FILE = path.join(DATA, 'devices.json');
 function loadDevices() { try { return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8')); } catch (e) { return []; } }
 function saveDevices(d) { fs.writeFileSync(DEVICES_FILE, JSON.stringify(d, null, 2)); }
 let devices = loadDevices();
+// ★ 清理历史遗留的"自己"条目：早期版本没过滤自身回环广播，把自己的 instanceId
+//   写进了 devices.json。存量不清掉的话，前端引擎列表会长期挂一个点不动的幽灵引擎。
+(function purgeSelfDevice() {
+  const before = devices.length;
+  devices = devices.filter(d => !(d.instanceId && d.instanceId === thp1.INSTANCE_ID));
+  if (devices.length !== before) {
+    saveDevices(devices);
+    console.log(`[thp] 清理自身幽灵设备条目 ${before - devices.length} 条`);
+  }
+})();
 
 // ─── 书源存储 ───
 const SOURCES_FILE = path.join(DATA, 'sources.json');
@@ -273,11 +361,12 @@ async function handle(req, res, body) {
     encrypted: true, time: Date.now()
   }});
 
-  // 其余全需鉴权
-  if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
-
+  // ── 设备自注册（★ 必须放在鉴权闸门之前）──
+  // 历史缺陷：这里注释一直写"免鉴权"，但代码块被排在 `x-th-token` 闸门之后，
+  // 于是任何还没拿到密钥的局域网设备/引擎自注册都直接被 401 挡死 ——
+  // 「前端发现引擎」和「我的-扫一扫绑定后端」两条链路都会表现为"连不上/没反应"。
+  // 安全性由"调用设备 API 时再校验设备 token"兜住；注册本身不回传任何秘密。
   if (p === '/v1/pair' && req.method === 'POST') {
-    // 设备自注册(免鉴权, 凭设备token校验在调用设备API时进行)
     try {
       const d = JSON.parse(body || '{}');
       if (!d.device_url || !d.device_type) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺device_url/type' }});
@@ -289,6 +378,9 @@ async function handle(req, res, body) {
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
   }
+
+  // 其余全需鉴权
+  if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
   // ── 媒体路由(音乐/漫画/影视): server/routes-media.js ──
   if (await media.handle(req, res, body, u, p, send, mediaCtx)) return;
   // ── 管理台(引擎总览/存储/下载任务): server/routes-admin.js ──
@@ -364,11 +456,37 @@ function startStorage() {
   const arBin = ['aria2c', 'aria2c.exe'].map(n => path.join(arDir, n)).find(fs.existsSync);
   if (arBin) {
     try { fs.chmodSync(arBin, 0o755);
-      storageProcs.aria2 = spawn(arBin, ['--enable-rpc', '--rpc-listen-port=6800', '--rpc-allow-origin-all',
-        '--dir=' + path.join(DATA, 'downloads'), '--seed-time=0', '--max-connection-per-server=16', '--split=16'],
-        { cwd: arDir });
+      const DL_DIR = path.join(DATA, 'downloads'); fs.mkdirSync(DL_DIR, { recursive: true });
+      // 会话文件：重启后自动续传未完成任务（C6）
+      const AR_SESSION = path.join(DATA, 'aria2.session');
+      if (!fs.existsSync(AR_SESSION)) fs.writeFileSync(AR_SESSION, '');
+      // RPC 密钥：从共享密钥派生，只在本机 127.0.0.1 上开 RPC（--rpc-listen-all 默认 false）
+      storageState.rpcSecret = crypto.createHash('sha256').update('aria2:' + SECRET).digest('hex').slice(0, 32);
+      const AR_ARGS = [
+        '--enable-rpc', '--rpc-listen-port=6800', '--rpc-allow-origin-all',
+        '--rpc-secret=' + storageState.rpcSecret,
+        '--dir=' + DL_DIR,
+        '--continue=true', '--max-connection-per-server=16', '--split=16', '--min-split-size=1M',
+        // ── P2P：让后端成为标准 BitTorrent/DHT 网络里**可被其他节点发现的一员**（U5）──
+        '--enable-dht=true',            // 主线 DHT（无 Tracker 也能找 peer）
+        '--dht-listen-port=6881',
+        '--listen-port=6881-6999',      // BT 数据端口范围（可被外部/局域网入站连接）
+        '--bt-enable-lpd=true',         // 本地节点发现（局域网内互相找 peer）
+        '--enable-peer-exchange=true',  // PEX：从已连 peer 交换更多 peer
+        '--bt-max-peers=128',
+        '--bt-request-peer-speed-limit=10M',
+        '--follow-torrent=mem',         // 下种子里的多文件
+        '--bt-save-metadata=true',      // 磁力链接的元数据落盘 → 下次可直接续传
+        '--bt-tracker-connect-timeout=10', '--bt-tracker-timeout=10',
+        '--seed-time=0',                // 完成后不做种（前端可改成继续做种）
+        '--save-session=' + AR_SESSION, '--save-session-interval=30',
+        '--input-file=' + AR_SESSION, '--auto-save-interval=30',
+      ];
+      storageProcs.aria2 = spawn(arBin, AR_ARGS, { cwd: arDir });
       storageState.aria2 = 'running';
+      storageState.aria2Args = AR_ARGS;
       storageProcs.aria2.on('exit', () => storageState.aria2 = 'exited');
+      console.log('[storage] aria2 已启动 (BT/DHT/LPD/PEX + :6800 RPC + 会话续传)');
     } catch (e) { storageState.aria2 = 'error: ' + e.message; }
   }
   if (storageState.cloudreve === 'absent') console.log('[storage] cloudreve 未安装(放二进制到 vendor/cloudreve/, 官网 release 下载)');
@@ -398,7 +516,7 @@ function thpShutdown() {
   try {
     if (thpBcSock) {
       const bye = Buffer.from('THP/1 BYE ' + thp1.INSTANCE_ID);
-      thpBcSock.send(bye, THP_PORT, '255.255.255.255', () => {});
+      thpSendAll(thpBcSock, bye);
       console.log('[thp] BYE 已广播');
     }
   } catch {}

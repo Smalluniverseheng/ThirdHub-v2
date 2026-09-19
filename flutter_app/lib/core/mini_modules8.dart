@@ -222,13 +222,36 @@ class _Fs extends State<FileSharePage> {
 
   @override void dispose() { server?.close(force: true); super.dispose(); }
 
+  /// 挑一个对方真能连上来的本机地址，用于拼分享链接/二维码。
+  ///
+  /// ★旧实现只枚举 IPv4、失败就回退 127.0.0.1 —— 在 **IPv6 单栈网络**
+  ///   （运营商 IPv6-only、部分 5G / 校园网 / 部分企业 WiFi）上，服务明明起来了，
+  ///   二维码里却写着 127.0.0.1，对方**永远连不上而且界面不报任何错**。
+  ///   现在：优先私有 IPv4（同局域网最稳）→ 次选全局 IPv6（带回方括号）→ 最后才回环。
   Future<String> _localIp() async {
-    for (final ni in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
-      for (final a in ni.addresses) {
-        if (!a.isLoopback && !a.address.startsWith('169.254')) return a.address;
+    String? v4, v6;
+    try {
+      final ifaces = await NetworkInterface.list(
+          includeLoopback: false, includeLinkLocal: false, type: InternetAddressType.any);
+      for (final ni in ifaces) {
+        for (final a in ni.addresses) {
+          final s = a.address;
+          if (a.type == InternetAddressType.IPv4) {
+            if (s.startsWith('169.254')) continue;          // 链路本地，跨设备不可路由
+            final p = s.split('.');
+            final a0 = int.tryParse(p.isNotEmpty ? p[0] : '') ?? -1;
+            final a1 = int.tryParse(p.length > 1 ? p[1] : '') ?? -1;
+            final priv = a0 == 10 || (a0 == 192 && a1 == 168) || (a0 == 172 && a1 >= 16 && a1 <= 31);
+            if (priv) { v4 = s; }                            // 私网地址优先，找到即可定
+            v4 ??= s;
+          } else if (a.type == InternetAddressType.IPv6) {
+            if (s.startsWith('fe80')) continue;              // 链路本地，跨设备不可达
+            v6 ??= '[$s]';                                    // URL 中的 IPv6 必须带方括号
+          }
+        }
       }
-    }
-    return '127.0.0.1';
+    } catch (_) {}
+    return v4 ?? v6 ?? '127.0.0.1';
   }
 
   Future<void> _share() async {
@@ -237,7 +260,13 @@ class _Fs extends State<FileSharePage> {
     final file = File(res.files.first.path!);
     await server?.close(force: true);
     final ip = await _localIp();
-    server = await HttpServer.bind(InternetAddress.anyIPv4, 18777);
+    // ★双栈绑定：IPv6 socket 开 v6Only:false 时也收 IPv4 映射连接，
+    //   IPv4-only 与 IPv6-only 两种对方都能连；平台不支持双栈时退回纯 IPv4。
+    try {
+      server = await HttpServer.bind(InternetAddress.anyIPv6, 18777, v6Only: false);
+    } catch (_) {
+      server = await HttpServer.bind(InternetAddress.anyIPv4, 18777);
+    }
     setState(() { fileName = res.files.first.name; downloads = 0; shareUrl = 'http://$ip:18777/$fileName'; });
     server!.listen((req) async {
       if (req.uri.path == '/' || req.uri.path == '/$fileName') {

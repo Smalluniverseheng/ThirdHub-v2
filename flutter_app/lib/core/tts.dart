@@ -1,4 +1,4 @@
-// 听书: 系统离线TTS(flutter_tts) + 在线AI TTS(OpenAI兼容 /audio/speech)
+// 听书: 系统离线TTS(flutter_tts) + 在线AI TTS(OpenAI兼容 /audio/speech) + 后端合成(/v1/tts)
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai.dart';
+import 'tts_presets.dart';
 
 enum TtsState { idle, playing, paused }
 
@@ -58,7 +59,35 @@ class TtsManager {
     _set(TtsState.playing);
     _session++;
     final eng = await engine();
-    if (eng == 'system') { _speakSystem(_session); } else { _speakOnline(eng, _session); }
+    if (eng == 'system') { _speakSystem(_session); }
+    else if (eng == 'backend') { _speakBackend(_session); }
+    else { _speakOnline(eng, _session); }
+  }
+
+  // 后端合成（D-C2）：文本发给用户自己的家庭后端，piper(离线)/edge-tts(在线) 合成后返回音频。
+  // 失败时逐段降级提示，最后统一回退系统 TTS，绝不让"听书点了没反应"。
+  static String backendError = '';
+  static Future<void> _speakBackend(int sess) async {
+    backendError = '';
+    while (!_stop && sess == _session && chunkIdx < _chunks.length) {
+      try {
+        final f = await TtsBackend.synthesize(_chunks[chunkIdx]);
+        await _player.setFilePath(f);
+        await _player.play();
+        await _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed)
+            .timeout(const Duration(minutes: 3), onTimeout: () => _player.playerState);
+      } catch (e) {
+        backendError = '$e';
+        // 后端合成失败 → 从当前段降级到系统 TTS，保证"点了就有声音"
+        await setEngine('system');
+        _speakSystem(sess);
+        return;
+      }
+      if (state == TtsState.paused) return;
+      chunkIdx++;
+      _stateC.add(state);
+    }
+    if (!_stop) _set(TtsState.idle);
   }
 
   static Future<void> _speakSystem(int sess) async {

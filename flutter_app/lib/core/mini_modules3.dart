@@ -1,4 +1,4 @@
-// 小模块做实第三批: 提醒中心(系统通知定时) / 课程表 / 天气快递
+// 小模块做实第三批: 提醒中心(系统通知定时) / 课程表 / 天气与快递
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -189,7 +189,7 @@ class _Ttb extends State<TimetablePage> {
   ]);
 }
 
-// ═══ 天气快递: wttr.in 公开接口 + 快递跳转查询 ═══
+// ═══ 天气与快递: wttr.in 公开接口 + 快递跳转查询 ═══
 class WeatherPage extends StatefulWidget { const WeatherPage({super.key}); @override State<WeatherPage> createState() => _Wea(); }
 class _Wea extends State<WeatherPage> {
   List<String> cities = [];

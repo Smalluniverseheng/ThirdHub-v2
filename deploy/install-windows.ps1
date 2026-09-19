@@ -19,7 +19,17 @@ if (-not (Test-Path "server")) {
   Expand-Archive main.zip -Force; Move-Item "ThirdHub-v2-main\server" .; Remove-Item main.zip -Recurse -Force
 }
 Set-Location server
-npm install --production
+# ★ 用 npmmirror：官方源在国内常超时；且仓库自带的 package-lock.json 可能把 tarball
+#   地址锁在某个不可达的内网镜像上（resolved 字段优先级高于 --registry），
+#   所以先删 lock 再装，否则会一直 ENOTFOUND / 卡几分钟后 exit handler 报错。
+Remove-Item "package-lock.json" -Force -ErrorAction SilentlyContinue
+npm install --omit=dev --registry=https://registry.npmmirror.com
+
+# 2b. P2P 内核：本仓已内置 Windows 版 aria2c；若被裁剪掉则提示补齐
+if (-not (Test-Path "vendor\aria2\aria2c.exe")) {
+  Write-Host "[!] 缺少 vendor\aria2\aria2c.exe —— 种子/磁力下载不可用" -ForegroundColor Yellow
+  Write-Host "    下载 aria2 win-64 后把 aria2c.exe 放进 server\vendor\aria2\"
+}
 
 # 3. 开机自启(计划任务)
 $action = New-ScheduledTaskAction -Execute "node.exe" -Argument "index.js" -WorkingDirectory "$dest\server"
