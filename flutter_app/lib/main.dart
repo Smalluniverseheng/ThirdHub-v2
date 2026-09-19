@@ -266,8 +266,12 @@ class AppSettings {
   // 底部导航栏: 向下滚动自动收起(去文字, 高度缩1/3), 向上滚动展开(网页端 nav-folded 同款)
   static bool get navAutoHide => p.getBool('nav_autohide') ?? true;
   static Future<void> setNavAutoHide(bool v) async { await p.setBool('nav_autohide', v); await sync(); }
-  // 左右滑动切换模块(默认开): 像完全体那样横向翻页换模块; 关掉可避免与模块内横向手势打架
-  static bool get navSwipe => p.getBool('nav_swipe') ?? true;
+  // 左右滑动切换模块（★2026-09-19 默认改为 **关**）。
+  // 旧版默认开: 模块间横滑 = PageView 翻页，会**沿途构建中间的每个模块**并触发它们的加载，
+  // 用户感受是「从一个模块穿过好几个才到目标」，AI 模块尤其会在这过程中被带动、把左上角的
+  // 东西呼出来。默认关掉即"模块间手势完全隔离"，切模块只走直接跳转；
+  // 想保留横滑的人可在「我的 → 导航」自行打开。
+  static bool get navSwipe => p.getBool('nav_swipe') ?? false;
   static Future<void> setNavSwipe(bool v) async { await p.setBool('nav_swipe', v); await sync(); }
   static Offset get orbPos {
     final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
@@ -1475,7 +1479,92 @@ class _Home extends State<SearchSection> {
   List<Map<String, dynamic>>? engItems; // THP 引擎直连搜索结果(已连引擎时替代后端结果)
   int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
   List<String> history = [];
-  @override void initState() { super.initState(); _loadHistory(); }
+  // ★2026-09-19 逐类上屏 + 客户端分页（引擎一次已返回全部结果，首屏不必一次画上千条）
+  static const _pageSize = 40;
+  /// 首屏扫描预算(秒)：小值让结果尽快出现（这是"瀑布流"的起点）
+  static const _firstBudget = 8;
+  /// 「加载更多」时的扫描预算(秒)：更大 → 引擎扫得更深、返回更多
+  static const _moreBudget = 25;
+  int _shown = _pageSize;
+  int _seq = 0;                            // 搜索代次：旧请求回来直接丢弃
+  final Set<String> _done = {};            // 已返回的类型（老引擎逐类模式用）
+  final Map<String, String> _failed = {};  // 类型 → 失败原因
+  final Set<String> _ids = {};             // 已收条目 id：翻页会与首批重叠，靠它去重
+  // ── 引擎分页状态（引擎 1.5.5+）──
+  int _engPage = 0;                        // 已取到第几页
+  int _engTotal = 0;                       // 引擎这轮扫描的总条数（网络侧，不是已加载的）
+  bool _engHasMore = false;
+  bool _engTruncated = false;
+  bool _more = false;                      // 正在取下一页
+  String _engType = 'all';                 // 当前搜索的引擎类型（all / novel / …）
+  String _engQuery = '';
+  final ScrollController _scroll = ScrollController();
+  @override void initState() {
+    super.initState();
+    _loadHistory();
+    // ★订阅连接状态：旧版只在 build 时读一次静态字段 →「连上了还显示未连接 / 变化特别慢」
+    EngineDirect.state.addListener(_onConn);
+    _scroll.addListener(_maybeMore);
+  }
+  @override void dispose() {
+    EngineDirect.state.removeListener(_onConn);
+    _scroll.dispose();
+    ctrl.dispose();
+    super.dispose();
+  }
+  void _onConn() { if (mounted) setState(() {}); }
+  /// 触底：先把**已经拿到本地**的条目多画一屏（零网络、零风险），
+  /// 画完了才向引擎要下一页 —— 这样"瀑布流"既有即时感，又不会一次渲染上千个 ListTile。
+  void _maybeMore() {
+    if (!_scroll.hasClients || engItems == null) return;
+    if (_scroll.position.pixels < _scroll.position.maxScrollExtent - 400) return;
+    if (_shown < engItems!.length) {
+      setState(() => _shown += _pageSize);
+    } else if (_engHasMore && !_more && !loading) {
+      _loadMore();
+    }
+  }
+  /// 向引擎取下一页（引擎侧翻页不重扫，秒回）
+  Future<void> _loadMore() async {
+    if (_more || !EngineDirect.connected) return;
+    final mySeq = _seq;
+    setState(() => _more = true);
+    try {
+      final p = await EngineDirect.searchPage(_engType, _engQuery,
+        page: _engPage + 1, limit: _pageSize,
+        budgetSec: _engTruncated ? _moreBudget : _firstBudget);
+      if (!mounted || mySeq != _seq) return;
+      setState(() {
+        _appendEng(p.items);
+        _engPage = p.page;
+        _engHasMore = p.hasMore;
+        _engTotal = p.total;
+        _engTruncated = p.truncated;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _engHasMore = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载更多失败：${EngineDirect.lastError.isNotEmpty ? EngineDirect.lastError : e}')));
+      }
+    } finally { if (mounted) setState(() => _more = false); }
+  }
+  /// 追加并把每类标上 _type（type=all 的响应里带 type 字段；没有则归到当前类型）
+  void _appendEng(List<Map<String, dynamic>> items) {
+    for (final it in items) {
+      final id = '${it['id'] ?? it['bookUrl'] ?? it['name']}';
+      if (!_ids.add(id)) continue;   // 深度重扫后翻页会与首批重叠 → 必须去重
+      // 引擎给的是数字 type(0小说/1听书/2漫画/4视频)；按它映射成模块键，
+      // 不能直接用引擎的 typeName（那是 text/audio/image/video，与模块名不同）
+      var t = _typeKeyFromInt(it['type']);
+      if (t.isEmpty) t = _engType == 'all' ? 'novel' : _engType;
+      engItems = [...?engItems, {...it, '_type': t}];
+    }
+  }
+  static String _typeKeyFromInt(Object? v) {
+    final n = v is int ? v : int.tryParse('${v ?? ''}');
+    return const {0: 'novel', 1: 'music', 2: 'comic', 4: 'video'}[n] ?? '';
+  }
   Future<void> _loadHistory() async { final p = await SharedPreferences.getInstance();
     history = p.getStringList('search_history') ?? []; if (mounted) setState(() {}); }
   Future<void> _record(String q) async { final p = await SharedPreferences.getInstance();
@@ -1485,22 +1574,48 @@ class _Home extends State<SearchSection> {
   static const typeKeys = ['', 'novel', 'comic', 'video', 'music'];
   Future<void> go() async { final q = ctrl.text.trim(); if (q.isEmpty) return;
     _record(q);
-    setState(() { loading = true; agg = null; engItems = null; });
+    final mySeq = ++_seq;
+    setState(() { loading = true; agg = null; engItems = []; _shown = _pageSize;
+      _done.clear(); _failed.clear(); _ids.clear();
+      _engPage = 0; _engTotal = 0; _engHasMore = false; _engTruncated = false;
+      _engQuery = q; _engType = typeFilter == 0 ? 'all' : typeKeys[typeFilter]; });
     try {
       if (EngineDirect.connected) {
-        // THP 引擎直连: 不经过后端, 直接问局域网引擎
-        if (typeFilter == 0) {
-          const types = ['novel', 'comic', 'video', 'music'];
-          final rs = await Future.wait(types.map((t) async {
-            try { return await EngineDirect.search(t, q); } catch (_) { return <Map<String, dynamic>>[]; }
-          }));
-          final out = <Map<String, dynamic>>[];
-          for (var i = 0; i < types.length; i++) { for (final it in rs[i]) { out.add({...it, '_type': types[i]}); } }
-          if (mounted) setState(() => engItems = out);
+        // ★2026-09-19 引擎直连搜索
+        // 引擎 1.5.5+：一次请求(type=all)拿全部类型 + 8s 预算快速出首屏，
+        //   之后「加载更多」按 page 翻页（引擎侧有结果缓存，翻页不重扫，秒回）。
+        // 老引擎(<=1.5.4)：不认 page/budget/type=all → 退回"逐类并发、谁先回来谁先上屏"，
+        //   否则 type=all 在老引擎上会被当成 novel，漫画/视频/音乐全丢。
+        if (EngineDirect.supportsPaging) {
+          final p = await EngineDirect.searchPage(_engType, q,
+            page: 1, limit: _pageSize, budgetSec: _firstBudget);
+          if (!mounted || mySeq != _seq) return;
+          setState(() {
+            _ids.clear();
+            _appendEng(p.items);
+            _engPage = p.page; _engTotal = p.total;
+            _engHasMore = p.hasMore; _engTruncated = p.truncated;
+          });
         } else {
-          final t = typeKeys[typeFilter];
-          final rs = await EngineDirect.search(t, q);
-          if (mounted) setState(() => engItems = [for (final it in rs) {...it, '_type': t}]);
+          final types = typeFilter == 0
+              ? const ['novel', 'comic', 'video', 'music']
+              : [typeKeys[typeFilter]];
+          await Future.wait(types.map((t) async {
+            try {
+              final rs = await EngineDirect.search(t, q);
+              if (!mounted || mySeq != _seq) return;
+              setState(() {
+                _done.add(t);
+                engItems = [...?engItems, ...rs.map((it) => {...it, '_type': t})];
+              });
+            } catch (e) {
+              if (!mounted || mySeq != _seq) return;
+              setState(() {
+                _done.add(t);
+                _failed[t] = EngineDirect.lastError.isNotEmpty ? EngineDirect.lastError : '$e';
+              });
+            }
+          }));
         }
       } else if (Api.base.isNotEmpty) {
         if (typeFilter == 0) { final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}'); setState(() { agg = r['data']; }); }
@@ -1513,7 +1628,8 @@ class _Home extends State<SearchSection> {
         // 既没连引擎也没连资源库: 尝试自动连一次, 连不上再提示
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) { await go(); return; }
-        throw Exception('未连接引擎或资源库\n引擎启动后会自动发现, 或在「我的 → 引擎直连」手动连接');
+        throw Exception('未连接引擎或资源库\n引擎启动后会自动发现；'
+          '若长时间未发现，请到「我的 → 引擎直连」查看具体原因');
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
     if (mounted) setState(() => loading = false); }
@@ -1522,11 +1638,31 @@ class _Home extends State<SearchSection> {
       child: Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))),
     for (final it in items) tile(it),
   ]);
+  String _typeLabel(String t) =>
+    const {'novel': '小说', 'comic': '漫画', 'video': '视频', 'music': '音乐'}[t] ?? t;
+  int get _typeTotal => typeFilter == 0 ? 4 : 1;
+  // 顶部汇总: 逐类上屏过程中也能看出「已回几类 / 还在搜 / 引擎一共多少条」
+  String _engSummary() {
+    final loaded = engItems?.length ?? 0;
+    final sb = StringBuffer('来自引擎「${EngineDirect.name}」');
+    if (EngineDirect.version.isNotEmpty) sb.write(' v${EngineDirect.version}');
+    sb.write(' · THP 直连 · 已返回 $loaded 条');
+    if (EngineDirect.supportsPaging && _engTotal > loaded) sb.write(' / 引擎共 $_engTotal 条');
+    if (!EngineDirect.supportsPaging) {
+      final done = _done.length;
+      if (done < _typeTotal && loading) sb.write('（$done/$_typeTotal 类已回，其余搜索中…）');
+    } else if (_engTruncated) {
+      sb.write('（引擎扫描被时间预算截断，加载更多可扫得更深）');
+    }
+    return sb.toString();
+  }
   // THP 引擎结果分组渲染: 点条目 → 引擎直连详情页(目录→内容全程走引擎)
   List<Widget> _engGroup(BuildContext c, String t) {
     const labels = {'novel': '📖 小说', 'comic': '🎨 漫画', 'video': '🎬 视频', 'music': '🎵 音乐'};
-    final its = engItems!.where((e) => e['_type'] == t).toList();
-    if (its.isEmpty) return const [];
+    final all = engItems!.where((e) => e['_type'] == t).toList();
+    if (all.isEmpty) return const [];
+    // ★客户端分页: 首屏每类最多画 _shown 条, 触底/点按钮再追加
+    final its = all.take(_shown).toList();
     return [
       Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
         child: Text('${labels[t]} (${its.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))),
@@ -1558,21 +1694,51 @@ class _Home extends State<SearchSection> {
           label: Text(typeNames[i], style: const TextStyle(fontSize: 12)), selected: typeFilter == i,
           onSelected: (_) { setState(() => typeFilter = i); if (ctrl.text.trim().isNotEmpty) go(); }),
       ]))),
-    // 数据来源状态行: 引擎直连(绿) / 资源库(灰) / 未连接(红)
+    // 数据来源状态行: 引擎直连(绿) / 连接中(橙) / 资源库(灰) / 不可达(红)
+    // ★已订阅 EngineDirect.state（见 initState），连接成功会立刻变绿，不再"变化特别慢"
     Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 2), child: Align(alignment: Alignment.centerLeft,
-      child: Text(EngineDirect.connected ? '⚡ THP 引擎直连: ${EngineDirect.name}'
-          : (Api.base.isNotEmpty ? '☁ 资源库模式' : '● 未连接引擎/资源库 — 请先连接'),
-        style: TextStyle(fontSize: 10, color: EngineDirect.connected ? Colors.green
-          : (Api.base.isNotEmpty ? Colors.grey : Colors.redAccent))))),
+      child: Builder(builder: (ctx) {
+        final st = EngineDirect.state.value;
+        final (String txt, Color col) = switch (st.status) {
+          EngineStatus.connected => ('⚡ THP 引擎直连: ${st.name}', Colors.green),
+          EngineStatus.connecting => ('◌ 正在连接引擎…', Colors.orangeAccent),
+          EngineStatus.failed => (Api.base.isNotEmpty
+              ? '☁ 资源库模式 · 引擎离线' : '● 引擎不可达 — 点此查看原因/重试', Colors.redAccent),
+          EngineStatus.idle => (Api.base.isNotEmpty
+              ? '☁ 资源库模式' : '● 未连接引擎 — 点此连接', Colors.redAccent),
+        };
+        return GestureDetector(
+          onTap: st.connected ? null : () => Navigator.push(ctx,
+            MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+          child: Text(txt, style: TextStyle(fontSize: 10, color: col)));
+      }))),
     if (loading) const LinearProgressIndicator(),
-    Expanded(child: ListView(children: [
+    Expanded(child: ListView(controller: _scroll, children: [
       if (engItems != null) ...[
         Padding(padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
-          child: Text('来自引擎「${EngineDirect.name}」 · THP 直连 · ${engItems!.length} 条结果',
-            style: const TextStyle(fontSize: 11, color: Colors.grey))),
-        if (engItems!.isEmpty) const Padding(padding: EdgeInsets.all(32),
+          child: Text(_engSummary(), style: const TextStyle(fontSize: 11, color: Colors.grey))),
+        if (_failed.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+            child: Text(
+              [for (final e in _failed.entries) '${_typeLabel(e.key)}：${e.value}'].join('\n'),
+              style: const TextStyle(fontSize: 10, color: Colors.redAccent, height: 1.5))),
+        if (engItems!.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32),
           child: Center(child: Text('没有找到相关内容', style: TextStyle(color: Colors.grey)))),
         for (final t in const ['novel', 'comic', 'video', 'music']) ..._engGroup(c, t),
+        // 加载更多: 先画本地已拿到的(零网络)，本地画完了才向引擎翻页(引擎侧有缓存，秒回)
+        if (engItems!.length > _shown)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Center(child: TextButton(
+              onPressed: () => setState(() => _shown += _pageSize),
+              child: Text('显示更多（已显示 $_shown / 已加载 ${engItems!.length} 条）',
+                style: const TextStyle(fontSize: 12))))),
+        if (_engHasMore && engItems!.length <= _shown)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Center(child: _more
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : TextButton(onPressed: _loadMore,
+                  child: Text('向引擎加载更多${_engTotal > 0 ? '（已 $_shown/${_engTotal} 条）' : ''}',
+                    style: const TextStyle(fontSize: 12))))),
       ],
       if (agg == null && engItems == null && history.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2864,10 +3030,18 @@ class _RootNavState extends State<RootNav> {
     });
   }
   bool _animating = false;
-  void _go(int i, {bool animate = true}) {
+  /// 切换模块。
+  ///
+  /// ★2026-09-19：默认改为**直接跳**（`jumpToPage`），不再 `animateToPage` 沿路滑过。
+  /// 原因：`animateToPage` 会让 PageView 在 240ms 内**依次构建中间那些模块**，
+  /// 每个模块的 initState/网络请求都会被触发 —— 用户看到的"从好几个模块之间切过去"、
+  /// "造成很多不必要的加载"（AI 模块切走时把左上角的东西呼出来）都来自这里。
+  /// 只有调用方明确要动画时（目前没有）才走动画分支。
+  void _go(int i, {bool animate = false}) {
     if (i < 0 || i >= enabled.length) return;
     HapticFeedback.selectionClick(); // 切换模块轻微震动
-    setState(() => idx = i);
+    if (i == idx) return;
+    setState(() { idx = i; RootNav.currentModuleKey = enabled[i]; });
     if (!_page.hasClients) return;
     if (animate) {
       _animating = true;
@@ -3432,8 +3606,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.25.0';
-  static const int currentCode = 50516;
+  static const String currentVersion = '4.26.0';
+  static const int currentCode = 50517;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -4604,36 +4778,139 @@ class _Ecr extends State<EngineComicReader> {
 class NavOrb extends StatefulWidget {
   const NavOrb({super.key});
   // 模块宫格: 悬浮球与折叠导航共用
+  //
+  // ★2026-09-19 三处修正（用户反馈：面板"不完全"/"不能再往上拉"/"长按应像桌面一样自由拖动"）：
+  //   ① 旧实现 `showModalBottomSheet` 没开 `isScrollControlled` → 面板最高只有半屏，
+  //      内容超出就被裁掉（后加的模块因此"里面都没有显示"），而且**根本拉不上去**。
+  //      改为 isScrollControlled + DraggableScrollableSheet（可拖到 92% 高）。★
+  //   ② 内容改为可滚动容器（吃 sheet 的 scrollController），模块再多也能看全。
+  //   ③ 每格支持**长按拖动排序**（LongPressDraggable + DragTarget），松手即落位并持久化，
+  //      与「我的 → 导航 → 底部导航栏」里的排序共用同一份 nav_modules。
   static void showModuleGrid(BuildContext c, List<String> enabled, int cur, void Function(int) onGo) {
-    showModalBottomSheet(context: c, builder: (c2) {
-      final w = MediaQuery.of(c2).size.width;
-      final cols = (w / 88).floor().clamp(3, 8);
-      return SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('切换模块', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        GridView.count(shrinkWrap: true, crossAxisCount: cols, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.1,
-          children: [ for (var i = 0; i < enabled.length; i++) () {
-            final m = kModules[enabled[i]]!; final on = i == cur;
-            // 网页端 vb-pop 同款: 逐格上移+缩放入场
-            return TweenAnimationBuilder<double>(tween: Tween(begin: 0, end: 1),
-              duration: Duration(milliseconds: 180 + i * 30), curve: Curves.easeOutCubic,
-              builder: (_, v, child) => Opacity(opacity: v,
-                child: Transform.translate(offset: Offset(0, 10 * (1 - v)),
-                  child: Transform.scale(scale: 0.97 + 0.03 * v, child: child))),
-              child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () { Navigator.pop(c2); onGo(i); },
-              child: Container(decoration: BoxDecoration(
-                  color: on ? Theme.of(c2).colorScheme.primaryContainer : null,
-                  borderRadius: BorderRadius.circular(14)),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(m.icon, size: 24, color: on ? Theme.of(c2).colorScheme.primary : null),
-                  const SizedBox(height: 4),
-                  Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ]))));
-          }() ]),
-      ])));
-    });
+    showModalBottomSheet(
+      context: c,
+      isScrollControlled: true,      // ★缺了它 = 拉不上去 + 内容被裁
+      backgroundColor: Colors.transparent,
+      builder: (c2) => DraggableScrollableSheet(
+        initialChildSize: 0.58, minChildSize: 0.3, maxChildSize: 0.92, expand: false,
+        builder: (_, sc) => _ModulePanel(scroll: sc, enabled: enabled, cur: cur, onGo: onGo)));
   }
   @override State<NavOrb> createState() => _NavOrbState();
+}
+
+/// 模块切换面板（可上拉 / 可滚动 / 长按拖动排序）。
+///
+/// 交互（照用户要求"像应用商店、像桌面布局"）：
+///   · 点一下 → 直接跳到该模块（不经过中间的其它模块，不触发它们的加载）
+///   · 长按 → 拿起（震动反馈）→ 拖到另一格上松手 → 落位，顺序立刻保存
+///   · 整张面板可往上拖到 92% 高，内容可滚动，模块再多也不会被裁掉
+class _ModulePanel extends StatefulWidget {
+  final ScrollController scroll;
+  final List<String> enabled;
+  final int cur;
+  final void Function(int) onGo;
+  const _ModulePanel({required this.scroll, required this.enabled, required this.cur, required this.onGo});
+  @override State<_ModulePanel> createState() => _ModulePanelState();
+}
+
+class _ModulePanelState extends State<_ModulePanel> {
+  late List<String> order = [...widget.enabled];
+  int? _dragging;   // 正在拖的格位
+  int? _hover;      // 当前悬停到的格位（用于高亮落点）
+
+  @override void initState() { super.initState(); order = [...widget.enabled]; }
+
+  /// 落位：把 _dragging 移到 _hover。立刻写盘并通知根导航重载（与设置页共用 nav_modules）。
+  Future<void> _drop(int to) async {
+    final from = _dragging;
+    setState(() { _dragging = null; _hover = null; });
+    if (from == null || from == to) return;
+    setState(() { final it = order.removeAt(from); order.insert(to, it); });
+    HapticFeedback.mediumImpact();
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setStringList('nav_modules', order);
+      RootNav.navTick.value++;
+    } catch (_) {}
+  }
+
+  Widget _tile(int i) {
+    final k = order[i];
+    final m = kModules[k];
+    if (m == null) return const SizedBox.shrink();
+    final on = i == widget.cur;
+    final isHover = _hover == i && _dragging != null && _dragging != i;
+    final scheme = Theme.of(context).colorScheme;
+    final body = Container(
+      decoration: BoxDecoration(
+        color: on ? scheme.primaryContainer : null,
+        borderRadius: BorderRadius.circular(14),
+        border: isHover ? Border.all(color: scheme.primary, width: 2) : null),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(m.icon, size: 24, color: on ? scheme.primary : null),
+        const SizedBox(height: 4),
+        Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+      ]));
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (d) { if (_hover != i) setState(() => _hover = i); return d.data != i; },
+      onLeave: (_) { if (_hover == i) setState(() => _hover = null); },
+      onAcceptWithDetails: (d) => _drop(i),
+      builder: (_, __, ___) => LongPressDraggable<int>(
+        data: i,
+        delay: const Duration(milliseconds: 220),
+        onDragStarted: () { HapticFeedback.selectionClick(); setState(() { _dragging = i; _hover = null; }); },
+        onDraggableCanceled: (_, __) => setState(() { _dragging = null; _hover = null; }),
+        onDragEnd: (_) => setState(() { _dragging = null; _hover = null; }),
+        feedback: Material(color: Colors.transparent,
+          child: SizedBox(width: 76, height: 84,
+            child: Opacity(opacity: 0.9, child: Container(
+              decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 12)]),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(m.icon, size: 24, color: scheme.primary),
+                const SizedBox(height: 4),
+                Text(tr(m.name), style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ]))))),
+        childWhenDragging: Opacity(opacity: 0.25, child: body),
+        child: InkWell(borderRadius: BorderRadius.circular(14),
+          // 长按被拖动接管，所以点按只负责"直接跳过去"
+          onTap: () { Navigator.pop(context); widget.onGo(i); },
+          child: body)));
+  }
+
+  @override Widget build(BuildContext c) {
+    final w = MediaQuery.of(c).size.width;
+    final cols = (w / 88).floor().clamp(3, 8);
+    final gap = 8.0;
+    final tileW = (w - 32 - gap * (cols - 1)) / cols;
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(c).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18))),
+      child: Column(children: [
+        // 拖动条（提示可上拉）
+        Padding(padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Container(width: 36, height: 4, decoration: BoxDecoration(
+            color: Theme.of(c).dividerColor, borderRadius: BorderRadius.circular(2)))),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Row(children: [
+            const Text('切换模块', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('长按某格可拖动排序 · 共 ${order.length} 个',
+              style: const TextStyle(fontSize: 10.5, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            IconButton(icon: const Icon(Icons.tune, size: 18), tooltip: '启用/停用模块',
+              // 先取 Navigator 再 pop：pop 会把本 sheet 的 context 销毁，
+              // 在销毁后的 context 上开对话框会抛 "Looking up a deactivated widget's ancestor"
+              onPressed: () { final nav = Navigator.of(context); nav.pop(); showNavSettings(nav.context); }),
+          ])),
+        const SizedBox(height: 4),
+        Expanded(child: SingleChildScrollView(
+          controller: widget.scroll,                       // ★吃 sheet 的控制器 → 能上拉、能滚动
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 16 + MediaQuery.of(c).viewPadding.bottom),
+          child: Wrap(spacing: gap, runSpacing: gap,
+            children: [ for (var i = 0; i < order.length; i++) SizedBox(width: tileW, height: 84, child: _tile(i)) ]))),
+      ]));
+  }
 }
 class _NavOrbState extends State<NavOrb> {
   Offset pos = const Offset(-1, -1);

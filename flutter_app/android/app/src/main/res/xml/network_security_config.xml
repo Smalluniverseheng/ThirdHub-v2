@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ThirdHub 网络安全配置
+  ────────────────────────────────────────────────────────────────
+  为什么必须放行明文 HTTP：
+  本 App 的核心链路是「前端直连局域网引擎」。引擎是用户自己设备上跑的
+  THP 服务（阅读引擎 :1234 / 资源库 :9527），地址是运行时才发现的
+  局域网 IP（192.168.x.x / 10.x.x.x / 172.16-31.x.x），**无法提前枚举域名**，
+  且引擎侧出于「纯本地、零依赖」的设计只提供 http（不做自签 TLS）。
+
+  Android 从 API 28(targetSdk>=28) 起 usesCleartextTraffic 默认为 false，
+  会把所有明文请求拦在系统层，报：
+    UnknownServiceException: CLEARTEXT communication to <ip> not permitted
+  在 Dart/http 里表现为 http.ClientException —— 与「连接被拒」长得一样，
+  极易被误判成「引擎没连上」，从而出现「连上了却一直显示未连接引擎」。
+
+  因此这里显式允许明文。风险边界：本 App 面向局域网自建服务，
+  不承载公网敏感凭据；仍保留对 https 的完整校验（不对 TLS 做降级）。
+-->
+<network-security-config>
+    <!-- 默认：允许明文（引擎/资源库都在局域网，IP 不固定） -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- 用户自签 CA：资源库 :9527 用自签证书，需信任用户安装的根证书 -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
