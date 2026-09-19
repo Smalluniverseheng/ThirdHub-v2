@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_snapshot.dart';
+import 'ai_agent.dart';
 
 class AiProvider {
   final String id, name, base, type;
@@ -136,55 +137,71 @@ typedef AiToolExecutor = Future<String> Function(String serverId, String name, M
 
 // OpenAI 兼容流式对话(anthropic 类型走 /messages 非流式)
 // TH-Harness v1: 统一工具循环(MCP+本机工具), 多轮 plan-act-observe, 思考链(reasoning_content)解析
+// TH-Harness v2: 轮数上限由智能体授权决定 + 不支持原生 function-calling 的厂商走文本工具协议兜底
 class AiChat {
   // onDelta: 正文增量; onReasoning: 思考链增量; mcpTools: 统一工具表(MCP+本机); toolExecutor: 统一工具执行
+  // maxRounds: 工具循环轮数上限(来自智能体); textToolFallback: 原生 tools 不可用时退化到 <tool_call> 文本协议
   static Future<String> chat({required AiProvider provider, required String model,
       required List<Map<String, String>> messages, required void Function(String delta) onDelta,
       List<Map<String, dynamic>>? mcpTools, void Function(String toolName)? onToolCall,
-      void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor, Map<String, dynamic>? extraBody}) async {
+      void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor, Map<String, dynamic>? extraBody,
+      int maxRounds = 8, bool textToolFallback = false,
+      void Function()? onToolsUnsupported}) async {
     final key = await AiRegistry.keyOf(provider.id);
     if (key.isEmpty) throw Exception('请先填写 ${provider.name} 的 API Key');
-    // Harness 工具循环: 非流式带 tools → 有 tool_calls 就执行并追问(最多8轮) → 最终走流式回答
+    // Harness 工具循环: 非流式带 tools → 有 tool_calls 就执行并追问(最多 maxRounds 轮) → 最终走流式回答
     if (mcpTools != null && mcpTools.isNotEmpty && provider.type != 'anthropic') {
       final msgs = messages.map((m) => Map<String, dynamic>.from(m)).toList();
       final tools = [ for (final t in mcpTools) {'type': 'function', 'function': {
         'name': t['name'], 'description': t['description'] ?? '',
         'parameters': t['inputSchema'] ?? {'type': 'object', 'properties': {}}}} ];
-      for (var round = 0; round < 8; round++) {
+      var native = true; // 厂商是否支持原生 function-calling
+      var round = 0;
+      while (round < maxRounds) {
+        round++;
         http.Response r;
         try {
           r = await http.post(Uri.parse('${provider.base}/chat/completions'),
             headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
-            body: jsonEncode({'model': model, 'messages': msgs, 'tools': tools, 'stream': false, ...?extraBody}))
+            body: jsonEncode({'model': model, 'messages': msgs,
+              if (native) 'tools': tools, 'stream': false, ...?extraBody}))
             .timeout(const Duration(seconds: 90));
         } catch (_) { break; }
-        if (r.statusCode != 200) break; // 不支持 tools 的厂商: 直接放弃工具, 走普通流式
+        if (r.statusCode != 200) {
+          // 该厂商不认 tools 参数 → 降到文本工具协议重来一轮(工具清单已由上层注入 system)
+          if (native && textToolFallback) { native = false; round--; onToolsUnsupported?.call(); continue; }
+          break;
+        }
         final j = jsonDecode(utf8.decode(r.bodyBytes));
         final msg = j['choices']?[0]?['message'];
         if (msg == null) break;
         final thinking = '${msg['reasoning_content'] ?? ''}';
         if (thinking.isNotEmpty) onReasoning?.call(thinking);
         final calls = (msg['tool_calls'] as List? ?? []);
-        if (calls.isEmpty) break; // 模型不需要工具
+        if (calls.isEmpty) {
+          // 原生路径没有工具调用 → 若是文本协议模式, 尝试从正文里解出 <tool_call>
+          if (!textToolFallback) break;
+          final txt = '${msg['content'] ?? ''}';
+          final tc = AiTools.parseTextCalls(txt);
+          if (tc.isEmpty) break;
+          msgs.add({'role': 'assistant', 'content': AiTools.stripTextCalls(txt)});
+          for (final c in tc) {
+            final name = '${c['name']}';
+            final args = Map<String, dynamic>.from(c['arguments'] as Map? ?? {});
+            onToolCall?.call(name);
+            final out = await _exec(toolExecutor, mcpTools, name, args);
+            msgs.add({'role': 'user', 'content': AiTools.toolResult(name, out)});
+          }
+          continue;
+        }
         msgs.add({'role': 'assistant', 'content': msg['content'] ?? '', 'tool_calls': calls});
         for (final call in calls) {
           final fn = call['function'] ?? {};
           final name = '${fn['name'] ?? ''}';
           onToolCall?.call(name);
-          final tool = mcpTools.firstWhere((t) => t['name'] == name, orElse: () => {});
-          String out;
-          try {
-            Map<String, dynamic> args = {};
-            try { args = Map<String, dynamic>.from(jsonDecode('${fn['arguments'] ?? '{}'}')); } catch (_) {}
-            if (toolExecutor != null) { out = await toolExecutor('${tool['serverId'] ?? ''}', name, args); }
-            else {
-              final result = await Mcp.callTool('${tool['serverId']}', name, args);
-              out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
-              if (out.isEmpty) out = jsonEncode(result);
-            }
-            // 单条工具结果截断, 防爆上下文
-            if (out.length > 12000) out = '${out.substring(0, 12000)}\n…(结果截断)';
-          } catch (e) { out = '工具调用失败: $e'; }
+          Map<String, dynamic> args = {};
+          try { args = Map<String, dynamic>.from(jsonDecode('${fn['arguments'] ?? '{}'}')); } catch (_) {}
+          final out = await _exec(toolExecutor, mcpTools, name, args);
           msgs.add({'role': 'tool', 'tool_call_id': '${call['id'] ?? ''}', 'content': out});
         }
       }
@@ -233,6 +250,25 @@ class AiChat {
     // 流式没吐出任何内容(部分厂商不支持 stream) → 自动回退非流式
     if (buf.isEmpty) return _nonStream(provider, key, model, messages, onDelta, onReasoning);
     return buf.toString();
+  }
+
+  // 统一执行一次工具调用(原生 function-calling 与 <tool_call> 文本协议共用一条路径)
+  static Future<String> _exec(AiToolExecutor? toolExecutor, List<Map<String, dynamic>> tools,
+      String name, Map<String, dynamic> args) async {
+    String out;
+    try {
+      final tool = tools.firstWhere((t) => t['name'] == name, orElse: () => <String, dynamic>{});
+      if (toolExecutor != null) {
+        out = await toolExecutor('${tool['serverId'] ?? ''}', name, args);
+      } else {
+        final result = await Mcp.callTool('${tool['serverId']}', name, args);
+        out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
+        if (out.isEmpty) out = jsonEncode(result);
+      }
+      // 单条工具结果截断, 防爆上下文
+      if (out.length > 12000) out = '${out.substring(0, 12000)}\n…(结果截断)';
+    } catch (e) { out = '工具调用失败: $e'; }
+    return out;
   }
 
   static Future<String> _nonStream(AiProvider provider, String key, String model,

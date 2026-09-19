@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'ai.dart';
+import 'ai_agent.dart';
+import 'ai_agent_page.dart';
 import 'ai_agents_snapshot.dart';
 import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
@@ -117,6 +119,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   // 抽屉状态
   double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; String _historyQuery = '';
   String _rankCat = 'overall'; bool _webSearchOn = false; bool _mcpOn = true;
+  // TH-Agent v1: 文本工具协议兜底(不支持原生 function-calling 的厂商也能用工具) / MCP 工具是否需确认
+  bool _toolFallback = true; bool _confirmMcp = false;
   StreamSubscription? _regSub;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
@@ -147,11 +151,16 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   Future<void> _boot() async {
     await AiStore.load();
     await Mcp.init();
+    await AiAgents.load();
+    await AiInstruct.load();
+    await AiMemory.load();
     final prefs = await SharedPreferences.getInstance();
     _webSearchOn = prefs.getBool('ai_websearch_on') ?? false;
     _mcpOn = prefs.getBool('ai_mcp_on') ?? true;
     _skillId = prefs.getString('ai_skill') ?? '';
     _ctxTurns = prefs.getInt('ai_ctx_turns') ?? 0;
+    _toolFallback = prefs.getBool('ai_tool_fallback') ?? true;
+    _confirmMcp = prefs.getBool('ai_confirm_mcp') ?? false;
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
@@ -265,9 +274,52 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     _closeDrawer();
   }
 
+  // ── 厂商能力自适应: 记住"这家不吃原生 tools 参数", 之后直接把工具清单写进 system 走文本协议 ──
+  static const _kNoNative = 'ai_no_native_tools';
+  Future<bool> _noNativeTools(String provId) async {
+    final p = await SharedPreferences.getInstance();
+    return (p.getStringList(_kNoNative) ?? const []).contains(provId);
+  }
+  Future<void> _markNoNativeTools(String provId) async {
+    final p = await SharedPreferences.getInstance();
+    final l = p.getStringList(_kNoNative) ?? <String>[];
+    if (l.contains(provId)) return;
+    l.add(provId);
+    await p.setStringList(_kNoNative, l);
+  }
+
+  // 工具审批闸门: confirm 级工具(改文件/删文件/写剪贴板/打开链接/分享/朗读)默认要用户点一下
+  Future<bool> _approveTool(String name, Map<String, dynamic> args) async {
+    if (!mounted) return false;
+    var pretty = '';
+    try { pretty = const JsonEncoder.withIndent('  ').convert(args); } catch (_) { pretty = '$args'; }
+    if (pretty.length > 900) pretty = '${pretty.substring(0, 900)}…';
+    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: Row(children: [const Icon(Icons.gpp_maybe_outlined, size: 20), const SizedBox(width: 8),
+        const Expanded(child: Text('AI 想执行一个操作', style: TextStyle(fontSize: 15)))]),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+        const SizedBox(height: 8),
+        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(
+          color: Theme.of(c).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8)),
+          child: SelectableText(pretty.isEmpty ? '(无参数)' : pretty, style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
+      ])),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('拒绝')),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('允许执行')),
+      ]));
+    return ok == true;
+  }
+
   // 统一工具执行: 本机工具(local_*)走 LocalTools, 其余走 MCP
   Future<String> _runTool(String serverId, String name, Map<String, dynamic> args) async {
-    if (serverId == 'local') return LocalTools.call(name, args);
+    final agent = AiAgents.byId(session?.agentId);
+    final isLocal = serverId == 'local';
+    final needConfirm = !(agent?.autoApprove ?? false) &&
+      (AiTools.risk(name) == ToolRisk.confirm || (!isLocal && _confirmMcp));
+    if (needConfirm && !await _approveTool(name, args)) return '用户拒绝了本次工具调用「$name」, 请改用其他方式或直接说明你无法完成。';
+    if (isLocal) return LocalTools.call(name, args);
     final result = await Mcp.callTool(serverId, name, args);
     final out = [ for (final c in (result['content'] as List? ?? [])) '${c['text'] ?? c}' ].join('\n');
     return out.isEmpty ? jsonEncode(result) : out;
@@ -301,14 +353,24 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       final keep = rest.length > _ctxTurns ? rest.sublist(rest.length - _ctxTurns) : rest;
       msgs = [...sys, ...keep];
     }
+    // ── TH-Agent v1 上下文装配 ──
+    // 顺序(由弱到强): 全局指令/人格 → 智能体人格 → 技能 → 长期记忆 → 会话钉注 → 工具清单
+    final agent = AiAgents.byId(session!.agentId);
+    final pins = await AiPins.get(session!.id);
+    var skillSys = '';
     if (_skillId.isNotEmpty) {
-      Map<String, String>? skill;
-      for (final s in kAiSkills) { if (s['id'] == _skillId) { skill = Map<String, String>.from(s); break; } }
-      if (skill != null) {
-        msgs = [{'role': 'system', 'content': '${skill['system']}'},
-          ...msgs.where((m) => m['role'] != 'system')];
-      }
+      for (final s in kAiSkills) { if (s['id'] == _skillId) { skillSys = '${s['system']}'; break; } }
     }
+    // 工具表: MCP + 本机, 并受当前智能体的授权(allow/deny)约束
+    final toolTable = AiTools.filter(
+      _mcpOn ? [...Mcp.allTools(), ...LocalTools.schemas()] : <Map<String, dynamic>>[], agent);
+    // 工具清单只在"该厂商确实不吃原生 tools 参数"(前几轮探测出来的)时才注入 system —— 否则平白多烧 token
+    final noNative = await _noNativeTools(prov.id);
+    final stack = await AiContext.systemStack(agent: agent, skillSystem: skillSys, pins: pins,
+      toolManifest: _toolFallback && noNative && toolTable.isNotEmpty, tools: toolTable);
+    msgs = [...stack, ...msgs.where((m) => m['role'] != 'system')];
+    // 上下文预算压缩: 超预算时把早期消息折叠成摘要, 保留最近若干轮原文
+    msgs = AiCompress.compress(msgs);
     // 联网搜索: 先检索再把结果注入上下文(会话里只保留用户原文)
     if (_webSearchOn) {
       try {
@@ -336,8 +398,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         if (lv != '标准') extra = {'reasoning_effort': lv == '低' ? 'low' : 'high'};
       }
       final full = await AiChat.chat(provider: prov, model: session!.model, messages: msgs,
-        mcpTools: _mcpOn ? [...Mcp.allTools(), ...LocalTools.schemas()] : null,
+        mcpTools: toolTable.isEmpty ? null : toolTable,
         toolExecutor: _runTool, extraBody: extra,
+        // 智能体决定这轮最多能"想-做-看"几轮; 不支持原生 function-calling 的厂商走文本协议
+        maxRounds: agent?.maxRounds ?? 8, textToolFallback: _toolFallback,
+        onToolsUnsupported: () => _markNoNativeTools(prov.id),
         onReasoning: (r) { setState(() { _reasoning += r; }); if (!pinned) _jumpBottom(); },
         onToolCall: (name) { setState(() {
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
@@ -805,15 +870,40 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   }() ]);
 
   Widget _agentsList(BuildContext c) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-    GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, padding: const EdgeInsets.all(10), childAspectRatio: 1.5, children: [
-      for (final a in kAiAgents)
-        Card(child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a['id'], system: a['system']),
-          child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(a['name'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+    // 智能体 = 人格 + 工具授权 + 轮数上限(不再只是"换一段提示词")
+    GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2,
+      padding: const EdgeInsets.all(10), childAspectRatio: 1.2, children: [
+      for (final a in AiAgents.all)
+        Card(
+          color: session?.agentId == a.id ? Theme.of(c).colorScheme.primaryContainer : null,
+          child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a.id, system: a.system),
+          child: Padding(padding: const EdgeInsets.all(9), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(a.icon, style: const TextStyle(fontSize: 15)),
+              const SizedBox(width: 5),
+              Expanded(child: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold))),
+            ]),
             const SizedBox(height: 4),
-            Text(a['desc'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            Expanded(child: Text(a.desc, maxLines: 3, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: Colors.grey))),
+            Text('${a.grant} · ≤${a.maxRounds}轮', maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 9, color: Theme.of(c).colorScheme.primary)),
           ])))),
     ]),
+    // 管理入口: 自定义智能体 / 全局指令人格 / 长期记忆 / 会话钉注 / 工具授权与审批
+    ListTile(dense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+      leading: const Icon(Icons.tune, size: 20),
+      title: const Text('智能体 · 指令 · 记忆', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+      subtitle: Text('人格与全局指令 / 长期记忆 / 工具授权审批'
+        '${AiInstruct.active ? " · 已启用全局指令" : ""}${AiMemory.entries.isEmpty ? "" : " · ${AiMemory.entries.length} 条记忆"}',
+        style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: () {
+        final nav = Navigator.of(context);
+        _closeDrawer();
+        nav.push(MaterialPageRoute(builder: (_) => const AiAgentPage())).then((_) { if (mounted) setState(() {}); });
+      }),
     // 技能(注入对话上下文, 单选, 再点取消)
     const Padding(padding: EdgeInsets.fromLTRB(14, 4, 14, 4),
       child: Text('技能(注入上下文)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey))),

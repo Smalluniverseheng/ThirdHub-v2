@@ -43,6 +43,14 @@ import 'core/reader_fonts.dart';
 import 'core/i18n.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
+import 'core/ai_agent.dart';
+import 'core/ai_agent_page.dart';
+import 'core/ai_store_prefs.dart';
+import 'core/job_center.dart';
+import 'core/lab_games.dart';
+import 'core/lab_social.dart';
+import 'core/home_io.dart';
+import 'core/sensor_page.dart';
 import 'core/browser_page.dart';
 import 'core/notify.dart';
 import 'core/engine_direct.dart';
@@ -174,6 +182,8 @@ class IntentRouter {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
+  installAiStorePrefs();
   await AppSettings.init();
   // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
   IntentRouter.init();
@@ -935,7 +945,9 @@ class _ParticlesPainter extends CustomPainter {
 
 class ProfilePage extends StatefulWidget { const ProfilePage({super.key}); @override State<ProfilePage> createState() => _Pf(); }
 class _Pf extends State<ProfilePage> {
-  @override void initState() { super.initState(); AppSettings.loadFromBackend().then((_) { if (mounted) setState(() {}); }); }
+  @override void initState() { super.initState(); AppSettings.loadFromBackend().then((_) { if (mounted) setState(() {}); });
+    // TH-Agent v1: 「AI 智能体与指令」入口要按已配置状态显示, 所以进页面时把配置读回来
+    Future.wait([AiAgents.load(), AiInstruct.load(), AiMemory.load()]).then((_) { if (mounted) setState(() {}); }); }
 
 
   // ── 顶部个人大卡: 渐变底 + 漂浮光点 + 头像环(卡片式头像框回归) ──
@@ -952,11 +964,16 @@ class _Pf extends State<ProfilePage> {
           scheme.tertiary.withValues(alpha: 0.75),
           scheme.primaryContainer,
         ])),
-      child: Stack(children: [
+      // ★2026-09-19 修「我的」页头像/昵称/身份码整体左贴:
+      //   Stack 默认 alignment 是 topStart, 非定位子节点会被摆到左上角;
+      //   而 Column 在松约束下宽度只等于"最宽的那个孩子", 于是整块内容左贴而不是居中。
+      //   显式给 Stack 加 center + Column 收紧 mainAxisSize 才是真正居中的写法。
+      child: Stack(alignment: Alignment.center, children: [
         const Positioned.fill(child: ClipRRect(
           borderRadius: BorderRadius.all(Radius.circular(24)),
           child: _Particles())),
-        Padding(padding: const EdgeInsets.symmetric(vertical: 26), child: Column(children: [
+        Padding(padding: const EdgeInsets.symmetric(vertical: 26),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
           // 点头像 → 账号与设置子页; 点右下角相机角标 → 换头像
           GestureDetector(onTap: () => Navigator.push(context, smoothRoute(const ProfileSubPage())).then((_) { if (mounted) setState(() {}); }),
             child: Stack(clipBehavior: Clip.none, children: [
@@ -1066,6 +1083,10 @@ class _Pf extends State<ProfilePage> {
       _section('服务', [
         entry(Icons.extension_outlined, '引擎直连', value: EngineDirect.connected ? '已连接' : '', page: const EngineDirectPage()),
         _sep(),
+        entry(Icons.smart_toy_outlined, 'AI 智能体与指令',
+          value: AiInstruct.active || AiMemory.entries.isNotEmpty ? '已配置' : '',
+          page: const AiAgentPage()),
+        _sep(),
         entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
       ]),
       _section('帮助中心', [
@@ -1148,12 +1169,20 @@ class HelpPage extends StatelessWidget { const HelpPage({super.key});
 // ── 个人资料子页(网页版同款): 大头像带相机角标 + 可编辑资料行 + 退出登录 ──
 class ProfileSubPage extends StatefulWidget { const ProfileSubPage({super.key}); @override State<ProfileSubPage> createState() => _Psub(); }
 class _Psub extends State<ProfileSubPage> {
+  // 复制到剪贴板(邮箱/身份码这种"只能看不能改"的字段, 点一下就该能拿走)
+  Future<void> _copy(String label, String v) async {
+    if (v.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: v));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label 已复制')));
+  }
+
   Future<void> _editField(String key, String name, String cur) async {
     final ctrl = TextEditingController(text: cur);
     final v = await showDialog<String>(context: context, builder: (c2) => AlertDialog(title: Text(name),
       content: TextField(controller: ctrl, autofocus: true, decoration: InputDecoration(hintText: name, isDense: true)),
       actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
         FilledButton(onPressed: () => Navigator.pop(c2, ctrl.text.trim()), child: const Text('保存'))]));
+    ctrl.dispose(); // 不 dispose 会随每次编辑泄漏一个 controller
     if (v == null) return;
     final p = await SharedPreferences.getInstance();
     if (key == 'nickname') { await p.setString('nickname', v);
@@ -1193,13 +1222,16 @@ class _Psub extends State<ProfileSubPage> {
     final nick = AppSettings.nickname;
     final logged = Cloud.loggedIn;
     final accent = Theme.of(c).colorScheme.primary;
-    Widget row(String name, String val, VoidCallback onTap) => InkWell(onTap: onTap,
+    // ★2026-09-19 修「假交互」: 原来邮箱/身份码挂了空回调却还画 chevron,
+    //   用户点了没反应(看着能点)。现在箭头只在真有动作时才出现, 并且点一下即复制。
+    Widget row(String name, String val, VoidCallback? onTap) => InkWell(onTap: onTap,
       child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), child: Row(children: [
         Text(name, style: const TextStyle(fontSize: 14)),
         const Spacer(),
         Flexible(child: Text(val, style: const TextStyle(fontSize: 13, color: Colors.grey), overflow: TextOverflow.ellipsis)),
         const SizedBox(width: 6),
-        const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+        Icon(onTap == null ? Icons.lock_outline : Icons.chevron_right, size: onTap == null ? 14 : 18,
+          color: Colors.grey.withValues(alpha: onTap == null ? 0.5 : 1)),
       ])));
     return Scaffold(appBar: AppBar(title: const Text('个人资料')), body: ListView(padding: const EdgeInsets.all(14), children: [
       // hero: 大头像+相机角标+昵称+邮箱+等级牌
@@ -1226,8 +1258,9 @@ class _Psub extends State<ProfileSubPage> {
       Card(margin: EdgeInsets.zero, child: Column(children: [
         row('昵称', nick.isEmpty ? '未设置' : nick, () => _editField('nickname', '昵称', nick)),
         const Divider(height: 1, indent: 16),
-        if (logged) ...[ row('邮箱', Cloud.email, () {}), const Divider(height: 1, indent: 16) ],
-        row('身份码', logged ? AppSettings.identityCode : '登录后生成', () {}),
+        if (logged) ...[ row('邮箱', Cloud.email, () => _copy('邮箱', Cloud.email)), const Divider(height: 1, indent: 16) ],
+        row('身份码', logged ? AppSettings.identityCode : '登录后生成',
+          logged && AppSettings.identityCode.isNotEmpty ? () => _copy('身份码', AppSettings.identityCode) : null),
         const Divider(height: 1, indent: 16),
         row('简介', AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio, () => _editField('bio', '简介', AppSettings.bio)),
       ])),
@@ -2813,10 +2846,10 @@ final Map<String, ModuleDef> kModules = {
   '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
   '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
   'AI': const ModuleDef('AI', Icons.smart_toy_outlined, AiSection()),
-  '聊天': const ModuleDef('聊天', Icons.forum_outlined, _ComingSoonPage(name: '聊天')),
-  '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, _ComingSoonPage(name: '游戏')),
-  '社区': const ModuleDef('社区', Icons.groups_outlined, _ComingSoonPage(name: '社区')),
-  '论坛': const ModuleDef('论坛', Icons.article_outlined, _ComingSoonPage(name: '论坛')),
+  '聊天': const ModuleDef('聊天', Icons.forum_outlined, ChatPage()),
+  '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, GamesPage()),
+  '社区': const ModuleDef('社区', Icons.groups_outlined, CommunityPage()),
+  '论坛': const ModuleDef('论坛', Icons.article_outlined, ForumPage()),
   '直播': const ModuleDef('直播', Icons.live_tv, LivePage()),
   '浏览器': const ModuleDef('浏览器', Icons.language, BrowserPage()),
   '相册': const ModuleDef('相册', Icons.photo_library_outlined, GalleryPage()),
@@ -2824,9 +2857,7 @@ final Map<String, ModuleDef> kModules = {
   '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
   // ═══ 规划文档 v2.0 全量模块框架(骨架页, 功能按版本逐步落地) ═══
   // ── Work 模式 ──
-  '作业中心': _scaffold('作业中心', Icons.assignment_turned_in_outlined, 'Work 模式: 放着不管的长任务在这里跑, 前端被杀作业继续',
-    ['作业列表(运行中/排队/待确认/已完成/失败)', '作业详情+步骤回放(复用工具卡片)', 'T3 确认队列集中审批', '定时调度(每天摘要/每周整理)', '结果自动归档到笔记/待办/相册', '作业模板: 缓存全书/相册去重/失效源巡检', '完成通知(webhook/ntfy 自配)', '作业权限范围(模块/工具白名单/时长上限)', '断点续跑: 后端重启自动恢复', '维护/开发类作业: 批量URL替换/索引重建/规则批量测试/生成修复代码'],
-    note: '依赖资源库 Agent 运行时(P6), 骨架先行'),
+  '作业中心': ModuleDef('作业中心', Icons.assignment_turned_in_outlined, const JobCenterPage()),
   // ── 私有数据 ──
   '笔记': const ModuleDef('笔记', Icons.edit_note, NotesPage()),
   '待办': const ModuleDef('待办', Icons.check_circle_outline, TodoPage()),
@@ -2863,16 +2894,14 @@ final Map<String, ModuleDef> kModules = {
   '文本工具箱': const ModuleDef('文本工具箱', Icons.text_snippet_outlined, TextToolsPage()),
   '传感器': const ModuleDef('传感器', Icons.sensors, SensorPage()),
   '文件互传': ModuleDef('文件互传', Icons.send_to_mobile_outlined, FileSharePage()),
-  '远程打印': _scaffold('远程打印', Icons.print_outlined, '后端接打印机',
-    ['文档/图片发送到资源库打印', '打印队列', '打印记录'], note: '依赖资源库接打印机'),
+  '远程打印': ModuleDef('远程打印', Icons.print_outlined, const RemotePrintPage()),
   // ── 家庭/多端 ──
   '共享相册': ModuleDef('共享相册', Icons.photo_library_outlined, SharedAlbumPage()),
   '共享清单': ModuleDef('共享清单', Icons.checklist_outlined, SharedListPage()),
   '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined, HomeCinemaPage()),
   '家庭音乐库': ModuleDef('家庭音乐库', Icons.library_music_outlined, HomeMusicPage()),
   '摄像头': ModuleDef('摄像头', Icons.videocam_outlined, CameraPage()),
-  '智能家居': _scaffold('智能家居', Icons.home_outlined, '米家/HA 控制走引擎模式',
-    ['设备控制面板', '场景联动', '引擎模式接入(官方零内置)']),
+  '智能家居': ModuleDef('智能家居', Icons.home_outlined, const SmartHomePage()),
   '设备互联': ModuleDef('设备互联', Icons.devices_outlined, DeviceLinkPage()),
   '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined, const CalendarPage(storageKey: 'family_calendar_events')),
   // ── 聚合入口(一个模块装一类, 导航栏不再排长队) ──
@@ -2889,7 +2918,7 @@ const kCatOrder = ['核心', '内容', '生活', '效率', '家庭', '实验室'
 const Map<String, String> kModuleCats = {
   '搜索': '核心', 'AI': '核心', '浏览器': '核心', '文件': '核心', '相册': '核心', '我的': '核心',
   '小说': '内容', '漫画': '内容', '视频': '内容', '音乐': '内容', '直播': '内容',
-  '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容', '游戏': '内容',
+  '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容',
   '笔记': '生活', '待办': '生活', '录音机': '生活', '日历': '生活', '提醒中心': '生活', '日记': '生活', '记账': '生活',
   '剪贴板': '生活', '书签': '生活', '代码片段': '生活', 'Markdown': '生活', '健康记录': '生活',
   '通讯录备份': '生活', '短信备份': '生活', '天气快递': '生活', '菜谱': '生活', '学习工具': '生活', '课程表': '生活',
@@ -2897,7 +2926,7 @@ const Map<String, String> kModuleCats = {
   '白板': '效率', '文本工具箱': '效率', '传感器': '效率', '文件互传': '效率', '远程打印': '效率', '悬浮便签': '效率',
   '家庭中心': '家庭', '共享相册': '家庭', '共享清单': '家庭', '家庭影院': '家庭', '家庭音乐库': '家庭',
   '摄像头': '家庭', '智能家居': '家庭', '设备互联': '家庭', '家庭日历': '家庭',
-  '聊天': '实验室', '社区': '实验室', '论坛': '实验室',
+  '聊天': '实验室', '社区': '实验室', '论坛': '实验室', '游戏': '实验室',
 };
 String moduleCat(String k) => kModuleCats[k] ?? '其他';
 
@@ -2929,61 +2958,12 @@ class ModuleHubPage extends StatelessWidget {
   }
 }
 
-class _ComingSoonPage extends StatelessWidget {
-  final String name; const _ComingSoonPage({required this.name});
-  @override Widget build(BuildContext c) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.rocket_launch_outlined, size: 64, color: Colors.grey),
-    const SizedBox(height: 12),
-    Text('$name模块准备开放', style: const TextStyle(color: Colors.grey)),
-    const SizedBox(height: 4),
-    const Text('敬请期待', style: TextStyle(color: Colors.grey, fontSize: 11)),
-  ]));
-}
+// ★2026-09-19 「敬请期待」占位页与模块骨架页(ModuleScaffoldPage)已全部退役:
+//   聊天/游戏/社区/论坛 四个实验室模块与 作业中心/远程打印/智能家居 三个骨架模块
+//   都换成了真页面(见 core/lab_social.dart, core/lab_games.dart, core/job_center.dart, core/home_io.dart),
+//   这里不再保留任何"框架已就位"式的空壳页面。
 
-// ═══ 模块骨架页: 规划文档全量模块先立框架, 功能按版本逐步落地 ═══
-class ModuleScaffoldPage extends StatelessWidget {
-  final String name; final IconData icon; final String desc; final List<String> features; final String note;
-  const ModuleScaffoldPage({super.key, required this.name, required this.icon, required this.desc, required this.features, this.note = ''});
-  @override Widget build(BuildContext c) {
-    final accent = Theme.of(c).colorScheme.primary;
-    return ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
-      Card(child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
-        Container(width: 52, height: 52, decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
-          child: Icon(icon, size: 26, color: accent)),
-        const SizedBox(width: 14),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Flexible(child: Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-            const SizedBox(width: 8),
-            Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-              child: const Text('框架已就位', style: TextStyle(fontSize: 9, color: Colors.orange))),
-          ]),
-          const SizedBox(height: 4),
-          Text(desc, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        ])),
-      ]))),
-      const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
-        child: Text('规划功能(按版本逐步落地)', style: TextStyle(fontSize: 12, color: Colors.grey))),
-      Card(child: Column(children: [
-        for (var i = 0; i < features.length; i++) ...[
-          if (i > 0) const Divider(height: 1, indent: 44),
-          ListTile(dense: true,
-            leading: Icon(Icons.check_circle_outline, size: 18, color: Colors.grey.withValues(alpha: 0.6)),
-            title: Text(features[i], style: const TextStyle(fontSize: 13))),
-        ],
-      ])),
-      if (note.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
-        child: Text(note, style: const TextStyle(fontSize: 11, color: Colors.grey))),
-      Padding(padding: const EdgeInsets.only(top: 10),
-        child: Text('已在「我的 → 底部导航栏」中可开关/排序此模块', style: TextStyle(fontSize: 10, color: Colors.grey.withValues(alpha: 0.7))),
-      ),
-    ]);
-  }
-}
-ModuleDef _scaffold(String name, IconData icon, String desc, List<String> feats, {String note = '', String? localKind}) =>
-  ModuleDef(name, icon, ModuleScaffoldPage(name: name, icon: icon, desc: desc, features: feats, note: note), localKind: localKind);
+// ═══ 模块骨架页 Template 已删除(所有模块都有真页面了) ═══
 
 // 底部导航壳(完全体同款): PageView 左右滑动切模块 + 底部"我的"固定最右, 其它模块横向自由滑动
 class RootNav extends StatefulWidget {
@@ -3107,10 +3087,12 @@ class _RootNavState extends State<RootNav> {
         bottomNavigationBar: (hideNav || fs) ? null : _foldedNavBar());
     }
     return Scaffold(body: bodyStack,
+      // ★2026-09-19 去掉外层 AnimatedSize：它给底栏套了一层"按当前尺寸裁剪"的容器，
+      //   实测在模拟器上会出现**底栏肉眼可见、点却点不动**（hit test 落在被裁剪区域之外），
+      //   用户表现为"卡在某个模块里出不来"。底栏内部每格已有 AnimatedContainer 做选中态过渡，
+      //   高度切换（展开/收起）不需要再包一层动画容器。
       bottomNavigationBar: (hideNav || fs || kbOpen) ? null
-        : AnimatedSize(duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: _scrollNavBar(collapsed: _navCollapsed && AppSettings.navAutoHide)));
+        : _scrollNavBar(collapsed: _navCollapsed && AppSettings.navAutoHide));
   }
 
   // 模块菜单(底部弹层, 替代原顶栏 ⋯): 新会话(AI)/本地库/导入/模块设置/全屏/切换模块
@@ -3206,29 +3188,33 @@ class _RootNavState extends State<RootNav> {
           BoxShadow(color: p.shadow, offset: const Offset(0, -1), blurRadius: 3),
         ]),
         child: SafeArea(top: false, child: SizedBox(height: barH, child: LayoutBuilder(builder: (ctx, box) {
-          const itemW = 78.0;
-          final mineW = collapsed ? 54.0 : itemW;
-          final avail = box.maxWidth - (mineIdx >= 0 ? mineW : 0);
-          if (collapsed) {
+          // ★2026-09-19 底栏槽宽统一（用户反馈：模块图标与"我的"对不齐、像没居中）。
+          //   旧实现有两处宽度基准不一致：
+          //     ① "模块少"时滚动项用 Expanded 等分、而"我的"固定 78px —— 只要
+          //        (屏宽-78)/n ≠ 78 就必然错位，且 n 越小错得越多；
+          //     ② "模块多"时把固定 78px 的项硬塞进剩余宽度，320px 窄屏下末项被压成
+          //        8px 的细条（实测 Videos 的可见宽度正好是 8px），看着就像"图标没居中"。
+          //   现在改为：**所有槽位（含"我的"）一律等宽**，且槽宽 = 屏宽 ÷ 能放下的整数个，
+          //   任意屏宽下都不会出现残项，"我的"与相邻项严格对齐、每格图标居中。
+          final ideal = collapsed ? 54.0 : 78.0;
+          final cap = (box.maxWidth / ideal).floor().clamp(2, 8);   // 一屏最多放几个槽
+          final total = enabled.length;
+          if (total <= cap) {
+            // 模块少：全部等分铺满（含"我的"），每项严格等宽
+            final w = box.maxWidth / (total == 0 ? 1 : total);
             return Row(children: [
-              Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
-                itemCount: scrollKeys.length,
-                itemBuilder: (_, n) => SizedBox(width: mineW, child: item(scrollKeys[n])))),
-              if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
+              for (final i in scrollKeys) SizedBox(width: w, child: item(i)),
+              if (mineIdx >= 0) SizedBox(width: w, child: item(mineIdx)),
             ]);
           }
-          // 模块少→等分铺满; 模块多→横向滑动, 我的固定右侧
-          if (scrollKeys.length * itemW <= avail) {
-            return Row(children: [
-              for (final i in scrollKeys) Expanded(child: item(i)),
-              if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
-            ]);
-          }
+          // 模块多：左区横向滑动（每项恒等于槽宽，末项不再被压扁），"我的"固定最右且同宽
+          final w = box.maxWidth / cap;
+          final slots = mineIdx >= 0 ? cap - 1 : cap;
           return Row(children: [
-            Expanded(child: ListView.builder(controller: _navScroll, scrollDirection: Axis.horizontal,
-              itemCount: scrollKeys.length,
-              itemBuilder: (_, n) => SizedBox(width: itemW, child: item(scrollKeys[n])))),
-            if (mineIdx >= 0) SizedBox(width: mineW, child: item(mineIdx)),
+            SizedBox(width: slots * w, child: ListView.builder(controller: _navScroll,
+              scrollDirection: Axis.horizontal, itemCount: scrollKeys.length,
+              itemBuilder: (_, n) => SizedBox(width: w, child: item(scrollKeys[n])))),
+            if (mineIdx >= 0) SizedBox(width: w, child: item(mineIdx)),
           ]);
         })))),
       );
@@ -3606,8 +3592,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.26.0';
-  static const int currentCode = 50517;
+  static const String currentVersion = '4.27.0';
+  static const int currentCode = 50518;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.26.0+50517
+version: 4.27.0+50518
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -35,6 +35,7 @@ dependencies:
   qr_flutter: ^4.1.0
   record: ^6.0.0
   flutter_contacts: ^1.1.9
+  sensors_plus: ^7.1.0
 
 dev_dependencies:
   flutter_test:
