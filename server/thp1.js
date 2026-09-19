@@ -103,6 +103,27 @@ function init(deps) { DEPS = deps; } // { thpOnline, thpCallV1, library, saveLib
 
 class UpstreamErr extends Error {} // 上游业务错误：不回落, 直接抛给调用方
 
+const LEGACY_PATH = { search: '/thp/search', toc: '/thp/chapters', content: '/thp/content' };
+
+/**
+ * 归一化旧草稿端点的列表载荷。
+ *
+ * 旧端点历史上出现过三种形状：
+ *   {object:'list', items:[…]}            ← 现行
+ *   {object:'list', data:{items:[…]}}     ← 早期（顶层没有 items）
+ *   {object:'list', data:[…]}             ← 更早
+ * 旧实现写的是 `j.items || j.data || []`：当只有 data:{items} 时会把**对象**当数组交给调用方，
+ * 下游 .map/.length 直接抛错，表现为「接口成功但返回 0 结果」——正是引擎 1.5.4 之前
+ * 与 v2/v4 后端之间那次「搜索 0 结果」事故的形状。这里统一取数组。
+ */
+function normalizeLegacyList(j) {
+  if (!j) return [];
+  if (Array.isArray(j.items)) return j.items;
+  if (Array.isArray(j.data)) return j.data;
+  if (Array.isArray(j.data?.items)) return j.data.items;
+  return [];
+}
+
 // 调引擎（§7.3 降级链：POST → 404/UNSUPPORTED 回落 GET 新版 → 再回落旧草稿）
 async function engineCall(dev, module, op, params) {
   const t0 = Date.now();
@@ -112,28 +133,47 @@ async function engineCall(dev, module, op, params) {
   for (const attempt of ['post', 'get']) {
     try {
       const r = attempt === 'post'
-        ? await fetch(dev.device_url + p1, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // ★ 必须显式声明 charset=utf-8。JSON 按 RFC 8259 恒为 UTF-8，但引擎侧 HTTP 服务器
+        //   (NanoHTTPD) 在 Content-Type 不带 charset 时按 **US-ASCII** 解码请求体，
+        //   多字节字符被替换成 U+FFFD（有损），实测中文搜索词「测试」到引擎后变成 "������"，
+        //   即中文搜索整体失效。引擎 1.5.4 起已强制按 UTF-8 解码请求体；
+        //   这里再声明一次，让尚未升级的引擎也能收到正确的中文。
+        ? await fetch(dev.device_url + p1, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify(params), signal: AbortSignal.timeout(8000) })
         : await fetch(dev.device_url + p1 + '?' + qs, { signal: AbortSignal.timeout(8000) });
-      if (r.status === 404) continue; // 该形态不存在, 试下一形态
-      const j = await r.json();
+      // 先尝试解析 THP 信封，再按状态码决定是否回落 ——
+      // 引擎的 UPSTREAM_FAIL 是 HTTP 502 + 合法信封，绝不能因为 5xx 就当成「形态不存在」而回落，
+      // 否则上游业务错误会被降级链吃掉，调用方看到的是空结果而不是错误。
+      let j = null;
+      try { j = await r.json(); } catch { j = null; }
       if (j && j.ok === true) return { data: j.data, meta: { ...(j.meta || {}), latency: Date.now() - t0 } };
       if (j && j.ok === false) {
-        if (j.error && (j.error.code === 'UNSUPPORTED' || j.error.code === 'NOT_FOUND')) continue;
-        throw new UpstreamErr(j.error.message || j.error.code || 'upstream error'); // 业务错误不回落
+        const code = j.error && j.error.code;
+        if (code === 'UNSUPPORTED' || code === 'NOT_FOUND') continue; // 该形态/该能力不存在, 试下一形态
+        throw new UpstreamErr((j.error && j.error.message) || code || 'upstream error'); // 业务错误不回落
       }
+      // 没有 THP 信封（404、5xx、非 JSON 的网关页）→ 试下一形态
+      if (r.status === 404 || r.status >= 500) continue;
     } catch (e) { if (e instanceof UpstreamErr) throw e; /* 网络/解析错误: 回落下一形态 */ }
   }
   // 旧草稿端点（兼容期）
-  const legacyPath = { search: '/thp/search', toc: '/thp/chapters', content: '/thp/content' }[op];
-  const lqs = new URLSearchParams({ type: module, ...params }).toString();
-  const r = await fetch(dev.device_url + legacyPath + '?' + lqs, { signal: AbortSignal.timeout(8000) });
-  const j = await r.json();
-  if (j && j.object === 'error') throw new Error(j.data?.message || 'upstream error');
-  // 旧格式归一：{items:[...]} / {object:list,data} / 裸 content
-  if (op === 'search') return { data: j.items || j.data || [], meta: { latency: Date.now() - t0 } };
-  if (op === 'toc') return { data: (j.items || j.data || []).map((c, i) => ({ id: c.url || c.id || String(i), name: c.name || c.title, index: c.index ?? i })), meta: { latency: Date.now() - t0 } };
-  return { data: j.data || j, meta: { latency: Date.now() - t0 } };
+  const legacyPath = LEGACY_PATH[op];
+  if (!legacyPath) throw new Error('不支持的 op: ' + op);
+  let j;
+  try {
+    const lqs = new URLSearchParams({ type: module, ...params }).toString();
+    const r = await fetch(dev.device_url + legacyPath + '?' + lqs, { signal: AbortSignal.timeout(8000) });
+    // 400 是旧端点的「缺参」用法，仍需读 body 里的 object:error；其余非 2xx 视为不可用
+    if (!r.ok && r.status !== 400) throw new Error('HTTP ' + r.status);
+    j = await r.json();
+  } catch (e) {
+    throw new Error('引擎不可达或响应非法: ' + ((e && e.message) || e));
+  }
+  if (j && j.object === 'error') throw new Error((j.data && j.data.message) || 'upstream error');
+  // 旧格式归一：{items:[…]} / {object:list,data:{items:[…]}} / {object:list,data:[…]}
+  if (op === 'search') return { data: normalizeLegacyList(j), meta: { latency: Date.now() - t0 } };
+  if (op === 'toc') return { data: normalizeLegacyList(j).map((c, i) => ({ id: c.url || c.id || String(i), name: c.name || c.title, index: c.index ?? i })), meta: { latency: Date.now() - t0 } };
+  return { data: (j && j.data) || j, meta: { latency: Date.now() - t0 } };
 }
 
 // ─── 主路由 ───
