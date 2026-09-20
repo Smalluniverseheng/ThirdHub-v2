@@ -3668,24 +3668,53 @@ class DownloadCenterTile extends StatefulWidget {
 class _Dct extends State<DownloadCenterTile> {
   // 引擎下载条目仅管理员可见(与更新历史同一套账号体系判定, 权限在服务端 RLS)
   Map<String, dynamic>? _engine, _venera;
+  // 前端/后端版本化清单(所有用户可见)
+  Map<String, dynamic>? _app, _backend;
   @override void initState() {
     super.initState();
-    if (ChangelogStore.isAdmin) _loadEngines();
+    _loadManifests();
   }
-  Future<void> _loadEngines() async {
-    // 版本化清单: 永远指向最新引擎包(服务端发版时同步推进)
-    try { _engine = await Cloud.latestManifest('engine'); } catch (_) {}
-    try { _venera = await Cloud.latestManifest('venera'); } catch (_) {}
+  Future<void> _loadManifests() async {
+    try { _app = await Cloud.latestManifest('app'); } catch (_) {}
+    try { _backend = await Cloud.latestManifest('backend'); } catch (_) {}
+    if (ChangelogStore.isAdmin) {
+      // 引擎条目额外拉版本化清单: 永远指向最新引擎包(服务端发版时同步推进)
+      try { _engine = await Cloud.latestManifest('engine'); } catch (_) {}
+      try { _venera = await Cloud.latestManifest('venera'); } catch (_) {}
+    }
     if (mounted) setState(() {});
   }
   @override Widget build(BuildContext c) {
     final admin = ChangelogStore.isAdmin;
+    final av = '${_app?['version'] ?? ''}';
+    final bv = '${_backend?['version'] ?? ''}';
+    final appUrl = '${_app?['url'] ?? '${DownloadCenterTile._base}/thirdhub-app.apk'}';
+    final backendUrl = '${_backend?['url'] ?? '${DownloadCenterTile._base}/thirdhub-backend.apk'}';
     final ev = '${_engine?['version'] ?? ''}';
     final vv = '${_venera?['version'] ?? ''}';
     final engineUrl = '${_engine?['url'] ?? '${DownloadCenterTile._base}/thirdhub-engine.apk'}';
     final veneraUrl = '${_venera?['url'] ?? '${DownloadCenterTile._base}/thirdhub-venera.apk'}';
+    // 前端/后端条目按清单实时显示版本号(其余条目保持静态)
+    final items = [
+      ('第三方聚合', 'Flutter 纯播放器前端(本应用) · 最新 ${av.isEmpty ? '读取中…' : 'v$av'}', appUrl, Icons.phone_android,
+        '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'),
+      ('第三方后端', '手机内嵌 Node.js 后端 · 最新 ${bv.isEmpty ? '读取中…' : 'v$bv'}', backendUrl, Icons.dns,
+        '在手机上运行的资源库后端: 内容源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。登录同一账号后, 后端设备跟随账号云端找回。'),
+      ...DownloadCenterTile.products.skip(2),
+    ];
     return Column(children: [
-      for (final p in DownloadCenterTile.products)
+      // 账号体系状态条: 前后端共用「第三方聚合」Supabase 账号
+      Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 8), child: Row(children: [
+        Icon(Cloud.loggedIn ? Icons.cloud_done_outlined : Icons.cloud_off_outlined, size: 14,
+          color: Cloud.loggedIn ? Colors.green : Colors.grey),
+        const SizedBox(width: 6),
+        Expanded(child: Text(
+          Cloud.loggedIn
+            ? '已登录 ${Cloud.email} · 前后端同一账号体系, 数据互通'
+            : '未登录 · 登录「第三方聚合」账号后, 后端设备绑定与数据自动云端同步',
+          style: const TextStyle(fontSize: 10, color: Colors.grey))),
+      ])),
+      for (final p in items)
         ListTile(dense: true, leading: Icon(p.$4, size: 20),
           title: Text(p.$1, style: const TextStyle(fontSize: 13)),
           subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
@@ -3741,8 +3770,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.31.0';
-  static const int currentCode = 50523;
+  static const String currentVersion = '4.31.1';
+  static const int currentCode = 50524;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
