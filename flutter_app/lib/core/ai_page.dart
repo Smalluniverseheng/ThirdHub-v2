@@ -13,6 +13,7 @@ import 'ai.dart';
 import 'ai_agent.dart';
 import 'ai_agent_page.dart';
 import 'ai_agents_snapshot.dart';
+import 'ai_intros.dart';
 import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
 import 'ai_skills.dart';
@@ -525,14 +526,28 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       ]));
   }
 
-  Widget _emptyHint(BuildContext c) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.smart_toy_outlined, size: 56, color: Colors.grey),
-    const SizedBox(height: 10),
-    Text('${AiRegistry.providers.length} 家厂商 · ${AiRegistry.providers.fold<int>(0, (a, b) => a + b.models.length)} 个模型',
-      style: const TextStyle(color: Colors.grey, fontSize: 12)),
-    const SizedBox(height: 4),
-    const Text('左滑边缘或点菜单打开抽屉: 历史/模型/智能体/灵感', style: TextStyle(color: Colors.grey, fontSize: 11)),
-  ]));
+  Widget _emptyHint(BuildContext c) {
+    // 欢迎页问候(与网站一致): 「你好，我是 X」+ 该模型简介
+    final s = session;
+    final prov = s == null ? null : AiRegistry.byId(s.providerId);
+    final hasModel = s != null && s.model.isNotEmpty;
+    return Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 28), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.smart_toy_outlined, size: 56, color: Colors.grey),
+      const SizedBox(height: 10),
+      if (hasModel) ...[
+        Text('你好，我是 ${s.model}', textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Text(modelIntro(s.providerId, s.model, prov?.name ?? ''), textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.grey, fontSize: 12, height: 1.5)),
+        const SizedBox(height: 10),
+      ],
+      Text('${AiRegistry.providers.length} 家厂商 · ${AiRegistry.providers.fold<int>(0, (a, b) => a + b.models.length)} 个模型',
+        style: const TextStyle(color: Colors.grey, fontSize: 12)),
+      const SizedBox(height: 4),
+      const Text('左滑边缘或点菜单打开抽屉: 历史/模型/智能体/灵感', style: TextStyle(color: Colors.grey, fontSize: 11)),
+    ])));
+  }
 
   // 思考链卡片(Kimi 同款: 思考已完成/思考中…, 可展开)
   Widget _thinkingCard(BuildContext c, String reasoning, bool done) {
@@ -771,8 +786,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   // ── 抽屉(与网站一致: 头部 / AI模型入口 / Work·Chat / 四页签 / 底部搜索+新建) ──
   Widget _drawer(BuildContext c, bool dark) {
     final bg = dark ? const Color(0xFF181B22) : Colors.white;
-    // 整个左侧抽屉一列到底, 可上下滑动
-    return Material(color: bg, elevation: 8, child: SafeArea(child: ListView(children: [
+    // 与网站一致: 头部 + 页签 + 内容滚动区 + 吸底栏(搜索历史对话 + 新对话)
+    // 历史页签的搜索/新建固定在抽屉底部, 不再跟着列表一起滚走
+    return Material(color: bg, elevation: 8, child: SafeArea(child: Column(children: [
       // 头部: 头像+名称+设置
       ListTile(dense: true, leading: const CircleAvatar(radius: 16, child: Icon(Icons.smart_toy, size: 16)),
         title: const Text('ThirdHub AI', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
@@ -782,44 +798,41 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         trailing: const Icon(Icons.chevron_right, size: 18),
         onTap: () => setState(() => _drawerTab = 'models')),
       const SizedBox(height: 4),
-      ..._chatBox(c),
+      // 四页签(顶部, 固定不滚)
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
+        for (final t in [('history', '历史会话'), ('models', 'AI模型'), ('agents', '智能体'), ('inspire', '灵感'), ('rank', '排行榜')])
+          Expanded(child: GestureDetector(onTap: () => setState(() => _drawerTab = t.$1),
+            child: Container(padding: const EdgeInsets.symmetric(vertical: 7),
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(width: 2,
+                color: _drawerTab == t.$1 ? Theme.of(c).colorScheme.primary : Colors.transparent))),
+              child: Text(t.$2, textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: _drawerTab == t.$1 ? Theme.of(c).colorScheme.primary : Colors.grey))))),
+      ])),
+      if (_drawerTab == 'models') Padding(padding: const EdgeInsets.only(top: 6), child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        for (final f in [('all', '全部'), ('chat', '聊天'), ('image', '图片'), ('video', '视频'), ('audio', '音频'), ('recog', '识别')])
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ChoiceChip(
+            label: Text(f.$2, style: const TextStyle(fontSize: 11)), selected: _drawerFilter == f.$1,
+            onSelected: (_) => setState(() => _drawerFilter = f.$1), visualDensity: VisualDensity.compact)),
+      ]))),
+      const SizedBox(height: 4),
+      // 内容滚动区
+      Expanded(child: ListView(children: [
+        _drawerTab == 'history' ? _historyList(c)
+          : _drawerTab == 'models' ? _modelsList(c)
+          : _drawerTab == 'agents' ? _agentsList(c)
+          : _drawerTab == 'rank' ? _rankList(c) : _inspireList(c),
+      ])),
+      // 吸底栏(仅历史页签): 搜索历史对话 + 新对话 —— 与网站 ai-drawer-bottom 一致
+      if (_drawerTab == 'history') Padding(padding: const EdgeInsets.all(10), child: Row(children: [
+        Expanded(child: TextField(decoration: const InputDecoration(hintText: '搜索历史对话', isDense: true,
+          prefixIcon: Icon(Icons.search, size: 18),
+          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
+          filled: true), onChanged: (v) => setState(() => _historyQuery = v))),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(icon: const Icon(Icons.add, size: 20), tooltip: '新对话', onPressed: () => _newChat()),
+      ])),
     ])));
   }
-
-
-  List<Widget> _chatBox(BuildContext c) => [
-    ListTile(dense: true, leading: const Icon(Icons.add, size: 20), title: const Text('新对话', style: TextStyle(fontSize: 14)),
-      onTap: () => _newChat()),
-    // 四页签
-    Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
-      for (final t in [('history', '历史会话'), ('models', 'AI模型'), ('agents', '智能体'), ('inspire', '灵感'), ('rank', '排行榜')])
-        Expanded(child: GestureDetector(onTap: () => setState(() => _drawerTab = t.$1),
-          child: Container(padding: const EdgeInsets.symmetric(vertical: 7),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(width: 2,
-              color: _drawerTab == t.$1 ? Theme.of(c).colorScheme.primary : Colors.transparent))),
-            child: Text(t.$2, textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: _drawerTab == t.$1 ? Theme.of(c).colorScheme.primary : Colors.grey))))),
-    ])),
-    if (_drawerTab == 'models') Padding(padding: const EdgeInsets.only(top: 6), child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      for (final f in [('all', '全部'), ('chat', '聊天'), ('image', '图片'), ('video', '视频'), ('audio', '音频'), ('recog', '识别')])
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ChoiceChip(
-          label: Text(f.$2, style: const TextStyle(fontSize: 11)), selected: _drawerFilter == f.$1,
-          onSelected: (_) => setState(() => _drawerFilter = f.$1), visualDensity: VisualDensity.compact)),
-    ]))),
-    const SizedBox(height: 4),
-    _drawerTab == 'history' ? _historyList(c)
-      : _drawerTab == 'models' ? _modelsList(c)
-      : _drawerTab == 'agents' ? _agentsList(c)
-      : _drawerTab == 'rank' ? _rankList(c) : _inspireList(c),
-    if (_drawerTab == 'history') Padding(padding: const EdgeInsets.all(10), child: Row(children: [
-      Expanded(child: TextField(decoration: const InputDecoration(hintText: '搜索历史会话', isDense: true,
-        prefixIcon: Icon(Icons.search, size: 18),
-        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
-        filled: true), onChanged: (v) => setState(() => _historyQuery = v))),
-      const SizedBox(width: 8),
-      IconButton.filledTonal(icon: const Icon(Icons.add, size: 20), onPressed: () => _newChat()),
-    ])),
-  ];
 
   Widget _historyList(BuildContext c) {
     var list = AiStore.sessions;
@@ -850,7 +863,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       subtitle: Text('${models.length} 个模型', style: const TextStyle(fontSize: 10)),
       children: [ for (final m in models)
         ListTile(dense: true, title: Text(m, style: const TextStyle(fontSize: 12)),
-          subtitle: _thinkRe.hasMatch(m) ? const Text('支持思考等级', style: TextStyle(fontSize: 9, color: Colors.teal)) : null,
+          subtitle: Text(modelIntro(p.id, m, p.name) + (_thinkRe.hasMatch(m) ? ' · 支持思考等级' : ''),
+            maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey, height: 1.35)),
           trailing: session?.providerId == p.id && session?.model == m ? const Icon(Icons.check, size: 16, color: Colors.blueAccent) : null,
           onLongPress: () async { await _toggleQuick(p.id, m); setState(() {});
             ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已更新常用模型(顶栏模型名下拉里可快速切换)'), duration: Duration(seconds: 1))); },

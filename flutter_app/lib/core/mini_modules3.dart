@@ -199,8 +199,12 @@ class _Wea extends State<WeatherPage> {
   String err = '';
   final cityC = TextEditingController();
   final expressC = TextEditingController();
+  // 地震速报(Wolfx 公共接口, 中国地震台网数据)
+  List<Map<String, dynamic>> quakes = [];
+  bool qLoading = false;
+  String qErr = '';
 
-  @override void initState() { super.initState(); _load(); }
+  @override void initState() { super.initState(); _load(); _fetchQuakes(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     cities = p.getStringList('weather_cities') ?? ['北京'];
@@ -223,6 +227,28 @@ class _Wea extends State<WeatherPage> {
     } catch (e) { err = '$e'; }
     if (mounted) setState(() => loading = false);
   }
+
+  // 地震速报: api.wolfx.jp/cenc_eqlist.json(免费公共接口, 无需密钥, 台网速报数据)
+  Future<void> _fetchQuakes() async {
+    setState(() { qLoading = true; qErr = ''; });
+    try {
+      final r = await http.get(Uri.parse('https://api.wolfx.jp/cenc_eqlist.json'))
+        .timeout(const Duration(seconds: 12));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final m = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      final list = <Map<String, dynamic>>[];
+      for (final k in m.keys) {
+        final e = m[k];
+        if (e is Map) list.add(Map<String, dynamic>.from(e));
+      }
+      // 按发震时间倒序(接口本身已按时间排, 这里兜底再排一次)
+      list.sort((a, b) => '${b['time']}'.compareTo('${a['time']}'));
+      quakes = list.take(10).toList();
+    } catch (e) { qErr = '$e'; }
+    if (mounted) setState(() => qLoading = false);
+  }
+
+  Color _magColor(double m) => m >= 6 ? Colors.red : m >= 4.5 ? Colors.deepOrange : m >= 3 ? Colors.orange : Colors.green;
 
   @override Widget build(BuildContext c) {
     final cur = data?['current_condition']?[0];
@@ -277,6 +303,33 @@ class _Wea extends State<WeatherPage> {
             launchUrl(Uri.parse('https://www.kuaidi100.com/chaxun?nu=$no'), mode: LaunchMode.externalApplication);
           }),
       ]))),
+      // ── 地震速报(公共 API) ──
+      Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Row(children: [
+        const Text('地震速报 · 中国地震台网', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const Spacer(),
+        InkWell(onTap: qLoading ? null : _fetchQuakes,
+          child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.refresh, size: 16, color: Colors.grey))),
+      ])),
+      if (qLoading) const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
+      if (qErr.isNotEmpty) Card(child: Padding(padding: const EdgeInsets.all(12),
+        child: Text('地震速报获取失败: $qErr', style: const TextStyle(fontSize: 12)))),
+      if (!qLoading && quakes.isNotEmpty)
+        Card(child: Column(children: [
+          for (final q in quakes) () {
+            final mag = double.tryParse('${q['magnitude']}') ?? 0;
+            return ListTile(dense: true,
+              leading: Container(width: 34, height: 34, alignment: Alignment.center,
+                decoration: BoxDecoration(color: _magColor(mag).withValues(alpha: 0.14), shape: BoxShape.circle,
+                  border: Border.all(color: _magColor(mag).withValues(alpha: 0.5))),
+                child: Text(mag.toStringAsFixed(1), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _magColor(mag)))),
+              title: Text('${q['location'] ?? q['placeName'] ?? '未知地点'}', style: const TextStyle(fontSize: 13),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${q['time'] ?? ''} · 震源深度 ${q['depth'] ?? '?'}km · 烈度 ${q['intensity'] ?? '-'}',
+                style: const TextStyle(fontSize: 10, color: Colors.grey)));
+          }(),
+          const Padding(padding: EdgeInsets.only(bottom: 8),
+            child: Text('数据源: Wolfx 公共接口 · 免费无需密钥', style: TextStyle(fontSize: 9, color: Colors.grey))),
+        ])),
     ]);
   }
 }
