@@ -9,8 +9,8 @@ android {
         // 变体打包: gradle -PappId=... -PappLabel=... -PverName=... -PverCode=...
         applicationId = (findProperty("appId") as String?) ?: "com.thirdhub.backend"
         minSdk = 24; targetSdk = 34
-        versionCode = ((findProperty("verCode") as String?) ?: "41001").toInt()
-        versionName = (findProperty("verName") as String?) ?: "4.1.1"
+        versionCode = ((findProperty("verCode") as String?) ?: "42000").toInt()
+        versionName = (findProperty("verName") as String?) ?: "4.2.0"
         manifestPlaceholders["appLabel"] = (findProperty("appLabel") as String?) ?: "第三方后端"
     }
     signingConfigs {

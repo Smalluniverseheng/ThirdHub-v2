@@ -33,7 +33,9 @@ class MainActivity : AppCompatActivity() {
             cm.setPrimaryClip(android.content.ClipData.newPlainText("diag", diagText()))
             toast("已复制, 发给开发者即可")
         } }
-        root.addView(btnAccount); root.addView(tv); root.addView(btn); root.addView(btnStop); root.addView(btnDiag)
+        // 管理台入口: 后端不只是服务插件, 要能进去浏览/操作(Web 控制台内嵌 WebView)
+        val btnConsole = Button(this).apply { text = "打开管理台(浏览器界面)"; setOnClickListener { openConsole() } }
+        root.addView(btnAccount); root.addView(tv); root.addView(btn); root.addView(btnStop); root.addView(btnConsole); root.addView(btnDiag)
         setContentView(root)
         val crash = CrashGuard.lastCrash(applicationContext)
         if (crash != null) tv.text = "上次崩溃日志:\n$crash\n"
@@ -113,6 +115,32 @@ class MainActivity : AppCompatActivity() {
             appendLine()
             appendLine("保活提示: 若通知栏服务被杀, 请对本应用关闭电池优化")
         }
+    }
+
+    // 内嵌 WebView 打开后端 Web 管理台(https://127.0.0.1:9527 自签证书 → WebViewClient 放行本机)
+    private var consoleWeb: android.webkit.WebView? = null
+    private fun openConsole() {
+        val wv = android.webkit.WebView(this)
+        wv.settings.javaScriptEnabled = true
+        wv.settings.domStorageEnabled = true
+        wv.webViewClient = object : android.webkit.WebViewClient() {
+            // 本机自签证书: 只对 127.0.0.1 放行, 别的域名照常拦
+            override fun onReceivedSslError(view: android.webkit.WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
+                if (error?.url?.startsWith("https://127.0.0.1") == true) handler?.proceed() else handler?.cancel()
+            }
+        }
+        wv.loadUrl("https://127.0.0.1:9527/")
+        consoleWeb = wv
+        setContentView(wv)
+        toast("按返回键回到状态页")
+    }
+
+    override fun onBackPressed() {
+        val wv = consoleWeb
+        if (wv != null) {
+            if (wv.canGoBack()) wv.goBack()
+            else { consoleWeb = null; recreate() }  // 回状态页
+        } else super.onBackPressed()
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()

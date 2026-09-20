@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'core/mini_modules.dart';
+import 'core/backend_admin_page.dart';
 import 'core/mini_modules2.dart';
 import 'core/mini_modules3.dart';
 import 'core/mini_modules4.dart';
@@ -1029,6 +1030,15 @@ class _Pf extends State<ProfilePage> {
                 borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues(alpha: 0.35))),
               child: Text('身份码 ${AppSettings.identityCode}', style: const TextStyle(fontSize: 11, color: Colors.white, letterSpacing: 0.5))),
           ],
+          // ★未登录给一颗醒目的登录按钮——登录入口不能再藏在三级页面里
+          if (!logged) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: scheme.primary),
+              icon: const Icon(Icons.login, size: 17),
+              label: const Text('登录 / 注册', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              onPressed: () => Navigator.push(context, smoothRoute(const ProfileSubPage())).then((_) { if (mounted) setState(() {}); })),
+          ],
         ])),
       ]));
   }
@@ -1098,6 +1108,8 @@ class _Pf extends State<ProfilePage> {
       ]),
       _section('数据', [
         entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
+        _sep(),
+        entry(Icons.dns_outlined, '后端管理', value: Api.base.isEmpty ? '未连接' : '已连接', page: const BackendAdminPage()),
         _sep(),
         entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
         _sep(),
@@ -1259,6 +1271,12 @@ class _Psub extends State<ProfileSubPage> {
           color: Colors.grey.withValues(alpha: onTap == null ? 0.5 : 1)),
       ])));
     return Scaffold(appBar: AppBar(title: const Text('个人资料')), body: ListView(padding: const EdgeInsets.all(14), children: [
+      // ★未登录时把登录/注册卡片放在最顶上——此前登录入口只有首启引导里那一处,
+      //   跳过引导后全 App 找不到登录(用户原话: 前端根本不知道去哪里登录)
+      if (!logged) ...[
+        Card(margin: EdgeInsets.zero, child: const AccountTile()),
+        const SizedBox(height: 12),
+      ],
       // hero: 大头像+相机角标+昵称+邮箱+等级牌
       Center(child: Column(children: [
         const SizedBox(height: 14),
@@ -3560,6 +3578,11 @@ class _At extends State<AccountTile> {
         if (r.statusCode == 200) await AppSettings.setAvatar(base64Encode(r.bodyBytes));
       } catch (_) {}
     }
+    // ★头像字段对齐: 本端上传写的是 avatar_b64(见 _pickAvatar), 此前这里只读 avatar_url
+    //   → 头像永远同步不下来。两个字段都认, avatar_b64 优先。
+    if (prof['avatar_b64'] != null && '${prof['avatar_b64']}'.isNotEmpty) {
+      try { await AppSettings.setAvatar('${prof['avatar_b64']}'); } catch (_) {}
+    }
     await AppSettings.sync();
   }
 
@@ -3657,6 +3680,10 @@ class DownloadCenterTile extends StatefulWidget {
       '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'),
     ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns,
       '在手机上运行的资源库后端: 内容源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。'),
+    ('电脑版后端 · Windows', '一键安装脚本 · 把电脑变成资源库服务器', '$_base/install-windows.ps1', Icons.computer,
+      '在 Windows 电脑上跑后端: 下载脚本后用管理员 PowerShell 执行即可(自动装 Node、部署、注册开机自启)。与手机后端同一账号体系。'),
+    ('电脑版后端 · Linux', '一键安装脚本 · systemd 常驻', '$_base/install-linux.sh', Icons.terminal,
+      '在 Linux 服务器/电脑上跑后端: 下载脚本后 bash 执行(自动装 Node、部署、systemd 常驻)。适合长期挂机当家庭服务器。'),
     ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language,
       '浏览器打开即用, 可安装为 PWA。与客户端同一账号体系, 数据全端互通。'),
     ('网页版 1.0(经典旧版)', '最初网页版存档 · 怀旧/老设备', 'https://0d57a5ba.thirdhub.pages.dev', Icons.history,
@@ -3761,7 +3788,8 @@ class ProductDetailPage extends StatelessWidget {
       child: url.toLowerCase().endsWith('.apk')
         ? FilledButton.icon(icon: const Icon(Icons.download), label: const Text('下载软件'),
             onPressed: () => Updater.downloadProduct(c, url, name))
-        : FilledButton.icon(icon: const Icon(Icons.open_in_new), label: const Text('打开网页版'),
+        : FilledButton.icon(icon: const Icon(Icons.open_in_new),
+            label: Text(url.contains('pages.dev') ? '打开网页版' : '获取(浏览器打开/下载)'),
             onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)))));
 }
 
@@ -3770,8 +3798,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.31.1';
-  static const int currentCode = 50524;
+  static const String currentVersion = '4.32.0';
+  static const int currentCode = 50525;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
