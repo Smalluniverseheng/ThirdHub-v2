@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
+import 'play_tag.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,7 +75,7 @@ class _Rec extends State<RecorderPage> {
 
   Future<void> _play(String path) async {
     if (playingPath == path) { await _player.stop(); setState(() => playingPath = null); return; }
-    await _player.setFilePath(path);
+    await _player.setAudioSource(tagFile(path, title: path.split('/').last, album: 'ThirdHub 录音'));
     setState(() => playingPath = path);
     await _player.play();
     _player.playerStateStream.firstWhere((s) => s.playing == false).then((_) {

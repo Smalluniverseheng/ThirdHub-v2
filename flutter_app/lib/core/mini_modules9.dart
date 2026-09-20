@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'play_tag.dart';
 import 'package:video_player/video_player.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -132,7 +133,7 @@ class _Hm extends State<HomeMusicPage> {
     if (i < 0 || i >= songs.length) return;
     playIdx = i;
     final path = songs[i].path;
-    await _player.setFilePath(path);
+    await _player.setAudioSource(tagFile(path, title: path.split('/').last.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), ''), album: 'ThirdHub 音乐'));
     dur = await _player.durationFuture ?? Duration.zero;
     setState(() => playing = path);
     _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });

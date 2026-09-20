@@ -17,6 +17,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
@@ -3703,8 +3704,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.28.0';
-  static const int currentCode = 50519;
+  static const String currentVersion = '4.28.1';
+  static const int currentCode = 50520;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -3732,17 +3733,29 @@ class Updater {
     final url = m['url'] as String? ?? '';
     final notes = m['notes'] as String? ?? '';
     final ver = m['version'] as String? ?? '';
-    final go = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
-      title: Text('发现新版本 v$ver'),
-      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (notes.isNotEmpty) Text(notes, style: const TextStyle(fontSize: 13)),
-        const SizedBox(height: 8),
-        const Text('覆盖安装, 数据自动保留', style: TextStyle(fontSize: 11, color: Colors.grey)),
-      ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('稍后')),
-        TextButton(onPressed: () { Navigator.pop(c2, false); launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }, child: const Text('浏览器下载')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('立即更新'))]));
-    if (go == true && url.isNotEmpty && c.mounted) { newVer = ver; _downloadAndInstall(c, url); }
+    // 已有该版本安装包 → 按钮变「立即安装」, 不重复下载
+    final localApk = await _findLocalApk(ver);
+    if (!c.mounted) return;
+    final go = await showDialog<bool>(context: c, builder: (c2) {
+      // 小屏适配: 内容限高可滚动, 按钮区永远可见不被挤出
+      final maxH = MediaQuery.sizeOf(c2).height * 0.5;
+      return AlertDialog(
+        title: Text('发现新版本 v$ver'),
+        content: ConstrainedBox(constraints: BoxConstraints(maxHeight: maxH),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (notes.isNotEmpty) Text(notes, style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 8),
+            Text(localApk != null ? '已下载过该版本安装包, 可直接安装(覆盖安装数据保留)' : '覆盖安装, 数据自动保留',
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          ]))),
+        actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('稍后')),
+          TextButton(onPressed: () { Navigator.pop(c2, false); launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }, child: const Text('浏览器下载')),
+          FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(localApk != null ? '立即安装' : '立即更新'))]);
+    });
+    if (go == true) {
+      if (localApk != null) { unawaited(OpenFilex.open(localApk)); return; }
+      if (url.isNotEmpty && c.mounted) { newVer = ver; _downloadAndInstall(c, url); }
+    }
   }
   static String newVer = '';
 
@@ -3756,28 +3769,94 @@ class Updater {
     return list.toSet().toList();
   }
 
-  // 单镜像下载到文件(非200视为失败抛异常), 供两个下载入口共用
+  // 在「已下载安装包」留档里找指定版本的现存文件, 找到返回路径(否则 null)
+  static Future<String?> _findLocalApk(String ver) async {
+    if (ver.isEmpty) return null;
+    final p = await SharedPreferences.getInstance();
+    final list = p.getStringList('update_apks') ?? [];
+    for (final e in list) {
+      final parts = e.split('|');
+      if (parts.length < 2) continue;
+      if (parts[1].contains(ver) && await File(parts.first).exists()) return parts.first;
+    }
+    return null;
+  }
+
+  // 单镜像下载到文件, 支持断点续传: .part 临时文件 + .meta 记录 url/总长。
+  // 同 URL 中断重下 → 发 Range: bytes=pos- 续传; 服务器不认 Range(200) → 从头重写;
+  // 换镜像(URL 变了) → 旧进度作废从零开始。progress = 0..1。
   static Future<void> _fetchTo(String url, File f, ValueNotifier<double> progress) async {
+    final part = File('${f.path}.part');
+    final meta = File('${f.path}.part.meta');
     final client = HttpClient();
     try {
-      final req = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 20));
-      final resp = await req.close().timeout(const Duration(seconds: 30));
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        throw Exception('HTTP ${resp.statusCode}');
+      var pos = 0;
+      var total = 0;
+      if (await part.exists() && await meta.exists()) {
+        final m = (await meta.readAsString()).split('\n');
+        if (m.isNotEmpty && m[0] == url) {
+          pos = await part.length();
+          if (m.length > 1) total = int.tryParse(m[1]) ?? 0;
+        } else {
+          try { await part.delete(); } catch (_) {}
+        }
       }
-      final total = resp.contentLength;
-      final sink = f.openWrite();
+      if (pos > 0 && total > 0) progress.value = pos / total;
+      final req = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (pos > 0) req.headers.add('Range', 'bytes=$pos-');
+      final resp = await req.close().timeout(const Duration(seconds: 30));
+      final status = resp.statusCode;
+      if (status != 200 && status != 206) throw Exception('HTTP $status');
+      if (status == 206 && pos == 0) throw Exception('服务器 Range 响应异常');
+      final append = status == 206;
+      if (!append) pos = 0; // 200 = 全量重发
+      final contentLen = resp.contentLength; // 206 时是剩余字节数, 200 时是全长
+      if (contentLen > 0) total = append ? pos + contentLen : contentLen;
+      try { await meta.writeAsString('$url\n$total'); } catch (_) {}
+      final sink = part.openWrite(mode: append ? FileMode.append : FileMode.write);
       var got = 0;
-      await for (final chunk in resp) { sink.add(chunk); got += chunk.length; if (total > 0) progress.value = got / total; }
+      await for (final chunk in resp) {
+        sink.add(chunk); got += chunk.length;
+        if (total > 0) progress.value = (pos + got) / total;
+      }
       await sink.close();
-      final len = await f.length();
-      if (total > 0 && len != total) { await f.delete(); throw Exception('文件不完整($len/$total)'); }
-      if (len < 1024 * 1024) { await f.delete(); throw Exception('文件过小($len字节), 疑似错误页'); }
+      final len = await part.length();
+      if (total > 0 && len != total) throw Exception('文件不完整($len/$total)');
+      if (len < 1024 * 1024) { try { await part.delete(); } catch (_) {} throw Exception('文件过小($len字节), 疑似错误页'); }
+      await part.rename(f.path);
+      try { await meta.delete(); } catch (_) {}
     } finally { client.close(); }
+  }
+
+  // 后台下载时把进度同步到通知栏(800ms 节流); 返回清理函数(完成后调用撤掉进度条)
+  static void Function() _bgProgressNotify(ValueNotifier<double> progress, int notifId, String title) {
+    var lastPush = 0;
+    void push() {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastPush < 800) return;
+      lastPush = now;
+      final v = progress.value;
+      unawaited(Notify.progress(notifId, title, v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : '连接中…',
+        value: (v * 100).round(), indeterminate: v <= 0));
+    }
+    progress.addListener(push);
+    return () { progress.removeListener(push); unawaited(Notify.cancelProgress(notifId)); };
   }
 
   // 通用产品下载(下载中心用): 进度弹窗 + 后台下载 + 完成通知 + 留档
   static Future<void> downloadProduct(BuildContext c, String url, String name) async {
+    // 去重: 已有同版本安装包 → 直接安装, 不重复下载
+    final vm0 = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(name);
+    final exist = await _findLocalApk(vm0?.group(1) ?? '');
+    if (exist != null && c.mounted) {
+      final r0 = await showDialog<String>(context: c, builder: (c2) => AlertDialog(
+        title: const Text('已下载过该版本'),
+        content: const Text('检测到本地已存在该版本的安装包, 可直接安装(覆盖安装数据保留)'),
+        actions: [TextButton(onPressed: () => Navigator.pop(c2, 'redl'), child: const Text('重新下载')),
+          FilledButton(onPressed: () => Navigator.pop(c2, 'install'), child: const Text('直接安装'))]));
+      if (r0 == 'install') { unawaited(OpenFilex.open(exist)); return; }
+      if (r0 == null) return;
+    }
     final progress = ValueNotifier<double>(0);
     var background = false;
     showDialog(context: c, barrierDismissible: false, builder: (c2) => AlertDialog(
@@ -3799,14 +3878,17 @@ class Updater {
       final mirrors = _mirrorUrls(url, vm?.group(1) ?? '');
       Exception? lastErr;
       var ok = false;
-      for (var i = 0; i < mirrors.length && !ok; i++) {
-        try {
-          if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
-          progress.value = 0;
-          await _fetchTo(mirrors[i], f, progress);
-          ok = true;
-        } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
-      }
+      final stopNotify = _bgProgressNotify(progress, 88003, '正在下载 $name');
+      try {
+        for (var i = 0; i < mirrors.length && !ok; i++) {
+          try {
+            if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+            progress.value = 0;
+            await _fetchTo(mirrors[i], f, progress);
+            ok = true;
+          } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
+        }
+      } finally { stopNotify(); }
       if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
@@ -3855,14 +3937,17 @@ class Updater {
       final mirrors = _mirrorUrls(url, newVer);
       Exception? lastErr;
       var ok = false;
-      for (var i = 0; i < mirrors.length && !ok; i++) {
-        try {
-          if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
-          progress.value = 0;
-          await _fetchTo(mirrors[i], f, progress);
-          ok = true;
-        } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
-      }
+      final stopNotify = _bgProgressNotify(progress, 88002, '正在下载更新 v$newVer');
+      try {
+        for (var i = 0; i < mirrors.length && !ok; i++) {
+          try {
+            if (i > 0 && c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+            progress.value = 0;
+            await _fetchTo(mirrors[i], f, progress);
+            ok = true;
+          } catch (e) { lastErr = e is Exception ? e : Exception('$e'); }
+        }
+      } finally { stopNotify(); }
       if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
       // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
       final p = await SharedPreferences.getInstance();
@@ -3895,17 +3980,72 @@ class _Ln extends State<LocalNovelsPage> {
   List<Map<String, dynamic>> items = []; bool loading = true;
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async { items = await LocalLib.list('novel'); setState(() => loading = false); }
+
+  // 编辑书籍(学开源阅读): 书名/作者/封面, 封面从相册选并复制到书籍同目录持久保存
+  Future<void> _editBook(Map<String, dynamic> b) async {
+    final nameC = TextEditingController(text: '${b['name'] ?? ''}');
+    final authorC = TextEditingController(text: '${b['author'] ?? ''}');
+    String? cover = (b['cover'] ?? '').toString().isEmpty ? null : b['cover'].toString();
+    final ok = await showDialog<bool>(context: context, builder: (c2) => StatefulBuilder(builder: (c3, setD) => AlertDialog(
+      title: const Text('编辑书籍'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          GestureDetector(onTap: () async {
+              final r = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 85);
+              if (r != null) {
+                try {
+                  final dst = File('${File(b['path']).parent.path}/cover_${DateTime.now().millisecondsSinceEpoch}.jpg');
+                  await File(r.path).copy(dst.path);
+                  cover = dst.path;
+                } catch (_) { cover = r.path; }
+                setD(() {});
+              }
+            }, child: Container(width: 56, height: 76, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+              clipBehavior: Clip.antiAlias, child: cover != null ? Image.file(File(cover!), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.add_photo_alternate_outlined, size: 26, color: Colors.grey))
+                : const Icon(Icons.add_photo_alternate_outlined, size: 26, color: Colors.grey))),
+          const SizedBox(width: 12),
+          Expanded(child: Column(children: [
+            TextField(controller: nameC, decoration: const InputDecoration(labelText: '书名', isDense: true)),
+            const SizedBox(height: 8),
+            TextField(controller: authorC, decoration: const InputDecoration(labelText: '作者(可空)', isDense: true)),
+          ])),
+        ]),
+        if (cover != null) Align(alignment: Alignment.centerRight,
+          child: TextButton(onPressed: () { cover = null; setD(() {}); }, child: const Text('清除封面'))),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c3, true), child: const Text('保存'))])));
+    if (ok == true) {
+      final name = nameC.text.trim();
+      await LocalLib.updateMeta('novel', b['path'], {
+        if (name.isNotEmpty) 'name': name,
+        'author': authorC.text.trim(),
+        'cover': cover,
+      });
+      _load();
+    }
+    nameC.dispose(); authorC.dispose();
+  }
+
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地小说'), actions: [
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await importWithChoice(c, 'novel') ?? 0;
       ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '本')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : items.isEmpty ? const Center(child: Text('还没有本地小说\n点右上角 + 导入 txt / epub', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final b = items[i];
-        return ListTile(leading: const Icon(Icons.menu_book),
-          title: Text(b['name'] ?? ''), subtitle: Text('${b['format'] ?? 'txt'} · 本地', style: const TextStyle(fontSize: 11)),
+        final cov = (b['cover'] ?? '').toString();
+        final author = (b['author'] ?? '').toString();
+        return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4),
+            child: cov.isNotEmpty && File(cov).existsSync()
+              ? Image.file(File(cov), width: 38, height: 52, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.menu_book, size: 30))
+              : const Icon(Icons.menu_book, size: 30)),
+          title: Text(b['name'] ?? ''), subtitle: Text('${author.isNotEmpty ? '$author · ' : ''}${b['format'] ?? 'txt'} · 本地', style: const TextStyle(fontSize: 11)),
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalNovelReader(book: b))),
-          trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18),
-            onPressed: () async { await LocalLib.remove('novel', b['path']); _load(); })); }));
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: () => _editBook(b)),
+            IconButton(icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () async { await LocalLib.remove('novel', b['path']); _load(); })])); }));
 }
 
 class LocalNovelReader extends StatefulWidget { final Map<String, dynamic> book; const LocalNovelReader({super.key, required this.book}); @override State<LocalNovelReader> createState() => _Lnr(); }

@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai.dart';
 import 'tts_presets.dart';
+import 'play_tag.dart';
 
 enum TtsState { idle, playing, paused }
 
@@ -72,7 +73,7 @@ class TtsManager {
     while (!_stop && sess == _session && chunkIdx < _chunks.length) {
       try {
         final f = await TtsBackend.synthesize(_chunks[chunkIdx]);
-        await _player.setFilePath(f);
+        await _player.setAudioSource(tagFile(f, title: '听书 · 第 ${chunkIdx + 1}/$chunkTotal 段', album: 'ThirdHub 听书'));
         await _player.play();
         await _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed)
             .timeout(const Duration(minutes: 3), onTimeout: () => _player.playerState);
@@ -120,7 +121,7 @@ class TtsManager {
         if (r.statusCode != 200) { chunkIdx++; continue; }
         final f = File('${dir.path}/tts_$chunkIdx.mp3');
         await f.writeAsBytes(r.bodyBytes);
-        await _player.setFilePath(f.path);
+        await _player.setAudioSource(tagFile(f.path, title: '听书 · 第 ${chunkIdx + 1}/$chunkTotal 段', album: 'ThirdHub 听书'));
         await _player.play();
         await _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed)
             .timeout(const Duration(minutes: 3), onTimeout: () => _player.playerState);

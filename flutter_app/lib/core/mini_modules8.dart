@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
+import 'play_tag.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:video_player/video_player.dart';
@@ -97,7 +98,7 @@ class _Ab extends State<AudiobookPage> {
 
   Future<void> _play(String path) async {
     if (playing == path) { await _player.stop(); setState(() => playing = null); return; }
-    await _player.setFilePath(path);
+    await _player.setAudioSource(tagFile(path, title: path.split('/').last, album: 'ThirdHub 音乐'));
     dur = await _player.durationFuture ?? Duration.zero;
     setState(() => playing = path);
     _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });

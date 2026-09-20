@@ -23,6 +23,17 @@ class Notify {
       channel, channelName, importance: Importance.high, priority: Priority.high)));
   }
 
+  // 进度条通知(后台下载用): onlyAlertOnce 不反复响铃; 完成/失败务必 cancelProgress
+  static Future<void> progress(int id, String title, String body, {int max = 100, int value = 0, bool indeterminate = false}) async {
+    await init();
+    await _plugin.show(id, title, body, NotificationDetails(android: AndroidNotificationDetails(
+      'download', '下载进度', importance: Importance.low, priority: Priority.low,
+      showProgress: true, maxProgress: max, progress: indeterminate ? 0 : value,
+      indeterminate: indeterminate, onlyAlertOnce: true, ongoing: true, autoCancel: false,
+      channelShowBadge: false)));
+  }
+  static Future<void> cancelProgress(int id) async { await cancel(id); }
+
   // 定时通知(提醒中心用): 到点弹系统通知, 关屏也响; inexact 模式免精确闹钟权限
   static Future<void> schedule(int id, String title, DateTime when) async {
     await init();

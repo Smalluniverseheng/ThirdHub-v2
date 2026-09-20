@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'play_tag.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -152,7 +153,7 @@ class _Radio extends State<RadioPage> {
     if (url.isEmpty) return;
     if (playingUrl == url) { await _player.stop(); setState(() { playingUrl = null; playingName = ''; }); return; }
     try {
-      await _player.setUrl(url);
+      await _player.setAudioSource(tagUrl(url, title: '${s['name'] ?? '网络电台'}', album: 'ThirdHub 电台'));
       setState(() { playingUrl = url; playingName = s['name'] ?? ''; });
       await _player.play();
     } catch (e) {
@@ -283,7 +284,7 @@ class _Pod extends State<PodcastPage> {
     final url = ep['audio']!;
     if (playingUrl == url) { await _player.stop(); setState(() { playingUrl = null; playingTitle = ''; }); return; }
     try {
-      await _player.setUrl(url);
+      await _player.setAudioSource(tagUrl(url, title: ep['title'] ?? '播客节目', album: 'ThirdHub 播客'));
       setState(() { playingUrl = url; playingTitle = ep['title'] ?? ''; });
       await _player.play();
     } catch (e) {

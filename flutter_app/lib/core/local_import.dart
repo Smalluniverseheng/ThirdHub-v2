@@ -40,6 +40,15 @@ class LocalLib {
     try { await File(path).delete(); } catch (_) {}
   }
 
+  // 编辑元数据(书名/作者/封面…): path 定位条目, patch 覆盖同名键; 值为 null 删除该键
+  static Future<void> updateMeta(String kind, String path, Map<String, dynamic> patch) async {
+    final items = await list(kind);
+    final i = items.indexWhere((e) => e['path'] == path);
+    if (i < 0) return;
+    patch.forEach((k, v) { if (v == null) items[i].remove(k); else items[i][k] = v; });
+    await _save(kind, items);
+  }
+
   // ── 文本解码: UTF-8/UTF-16(BOM) → 严格UTF-8 → GBK(中文小说常见) → 容错UTF-8 ──
   // 网上下载的中文 txt 小说大量是 GBK/GB18030 编码, 直接 latin1 兜底会全文乱码("看不了")
   static String decodeText(List<int> bytes) {
