@@ -363,6 +363,9 @@ class AiContext {
     await AiInstruct.load();
     await AiMemory.load();
     final out = <Map<String, String>>[];
+    // 前端渲染能力声明(放最弱位): 客户端有完整 Markdown 渲染(表格/代码块/标题),
+    // 不要因为"怕客户端显示不了"而退化成纯文本; 需要结构化对比时主动出表格。
+    out.add({'role': 'system', 'content': '【输出格式】你的回答会被完整 Markdown 渲染: 对比/列举结构化数据时主动用标准 Markdown 表格(| 列头 | + 分隔行), 代码用 ```语言 围栏, 长回答用 # 标题分层。需要把内容存成文件时用 file_write 落盘(file_share 可分享给其他 App); 需要计算/数据处理时用 run_python 在家庭后端执行 Python。'});
     final base = AiInstruct.build();
     if (base.isNotEmpty) out.add({'role': 'system', 'content': base});
     if (agent != null && agent.system.isNotEmpty) {

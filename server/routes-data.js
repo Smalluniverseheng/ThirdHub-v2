@@ -204,6 +204,45 @@ async function handle(req, res, body, u, p, send, ctx) {
     if (edge) voices = ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural', 'zh-CN-YunjianNeural', 'zh-CN-XiaoyiNeural', 'zh-CN-YunyangNeural'];
     return send(200, { object:'meta', data: { piper, edge, voices }});
   }
+  // ── Python 执行(AI 智能体工具 run_python): 后端本机 python 跑代码片段 ──
+  // 安全边界: 后端只服务局域网内持有配对密钥的设备(入口 401 闸门); 本端点再收紧:
+  // 代码 ≤20KB, 跑 20s 强杀, stdout/stderr 各截 8KB, -I 隔离模式(不带当前目录/PYTHONPATH)。
+  if (p === '/v1/py' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const code = String(d.code || '');
+    if (!code.trim()) return send(400, { object:'error', data:{ type:'invalid_request', message:'code 不能为空' }});
+    if (code.length > 20000) return send(413, { object:'error', data:{ type:'invalid_request', message:'代码过长(≤20000字符)' }});
+    const { spawn } = require('child_process');
+    const tmpDir = path.join(DATA, 'py_tmp');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const f = path.join(tmpDir, 'run_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex') + '.py');
+    fs.writeFileSync(f, code, 'utf8');
+    const bin = process.platform === 'win32' ? 'python' : 'python3';
+    let child;
+    try {
+      child = spawn(bin, ['-I', f], { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      fs.unlinkSync(f);
+      return send(503, { object:'error', data:{ type:'server_error', message:'后端本机没有 Python。安装 Python 3 并加入 PATH 即可启用' }});
+    }
+    let out = '', err = '', done = false;
+    const cap = (s, c) => (s + c).length > 8192 ? (s + c).slice(0, 8192) : s + c;
+    child.stdout.on('data', c2 => { out = cap(out, c2.toString('utf8')); });
+    child.stderr.on('data', c2 => { err = cap(err, c2.toString('utf8')); });
+    const killer = setTimeout(() => { if (!done) { try { child.kill('SIGKILL'); } catch (e) {} } }, 20000);
+    child.on('error', () => {
+      if (done) return; done = true; clearTimeout(killer);
+      try { fs.unlinkSync(f); } catch (e) {}
+      send(503, { object:'error', data:{ type:'server_error', message:'后端本机没有 Python。安装 Python 3 并加入 PATH 即可启用' }});
+    });
+    child.on('close', (code2, sig) => {
+      if (done) return; done = true; clearTimeout(killer);
+      try { fs.unlinkSync(f); } catch (e) {}
+      if (sig) err = (err ? err + '\n' : '') + '(超时被终止)';
+      send(200, { object:'meta', data: { stdout: out, stderr: err, code: code2 ?? -1 } });
+    });
+    return;
+  }
   // ── 反馈中心(应用内反馈, 不再跳 GitHub): 文字+图片 → 落盘 data/feedback/ ──
   if (p === '/v1/feedback' && req.method === 'POST') {
     let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}

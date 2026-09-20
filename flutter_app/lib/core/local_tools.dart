@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'tts.dart';
+import 'tts_presets.dart';
 import 'ai.dart';
 
 class LocalTool {
@@ -74,6 +75,36 @@ class LocalTools {
       final f = File('${(await _dir()).path}/${'${a['name'] ?? ''}'.replaceAll(RegExp(r'[/\\]'), '_')}');
       if (!await f.exists()) return '文件不存在';
       await f.delete(); return '已删除';
+    }),
+    LocalTool('file_share', '把 App 文档目录里已保存的文件调起系统分享(发给微信/存到网盘等)', _obj({'name': '文件名'}, ['name']), (a) async {
+      final f = File('${(await _dir()).path}/${'${a['name'] ?? ''}'.replaceAll(RegExp(r'[/\\]'), '_')}');
+      if (!await f.exists()) return '文件不存在';
+      await Share.shareXFiles([XFile(f.path)]);
+      return '已调起分享: ${f.path.split('/').last}';
+    }),
+    // Python 代码执行: 走家庭后端 /v1/py(后端本机 python 跑), 不在手机上跑
+    LocalTool('run_python', '在家庭后端(电脑)上执行 Python 代码并返回输出(计算/数据处理/批量生成等)',
+      _obj({'code': '要执行的 Python 代码'}, ['code']), (a) async {
+      if (!TtsBackend.available) return '未连接家庭后端——Python 执行需要后端在线(在「设备互联」里配对/连接后端)';
+      final code = '${a['code'] ?? ''}';
+      if (code.trim().isEmpty) return 'code 不能为空';
+      try {
+        final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+        final req = await c.postUrl(Uri.parse('${TtsBackend.base}/v1/py')).timeout(const Duration(seconds: 10));
+        req.headers.set('X-TH-Token', TtsBackend.token);
+        req.headers.set('Content-Type', 'application/json; charset=utf-8');
+        req.write(jsonEncode({'code': code}));
+        final resp = await req.close().timeout(const Duration(seconds: 35));
+        final bodyText = utf8.decode(await resp.expand((c2) => c2).toList());
+        final j = jsonDecode(bodyText);
+        if (resp.statusCode != 200) return '执行失败: ${j['data']?['message'] ?? 'HTTP ${resp.statusCode}'}';
+        final d = j['data'] ?? {};
+        final out = StringBuffer();
+        if ('${d['stdout'] ?? ''}'.isNotEmpty) out.write('输出:\n${d['stdout']}');
+        if ('${d['stderr'] ?? ''}'.isNotEmpty) out.write('${out.isEmpty ? '' : '\n'}错误输出:\n${d['stderr']}');
+        if (out.isEmpty) out.write('(无输出, 退出码 ${d['code']})');
+        return out.toString();
+      } catch (e) { return 'Python 执行调用失败: $e'; }
     }),
     LocalTool('web_search', '联网搜索(需已配置搜索服务)', _obj({'query': '搜索关键词'}, ['query']), (a) async {
       final items = await WebSearch.search('${a['query'] ?? ''}');

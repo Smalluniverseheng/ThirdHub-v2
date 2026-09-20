@@ -5,6 +5,7 @@
 /// 模型简介表(精确键优先, 前缀键兜底)。
 const Map<String, String> kModelIntros = {
   /* OpenAI */
+  'openai/gpt-6': 'OpenAI 的 GPT-6 代旗舰（Astra），为最难的端到端任务而生，智能体与编程能力顶尖。',
   'openai/gpt-5': 'OpenAI 的旗舰模型，擅长复杂推理、编程与专业知识工作，是目前综合能力最强的模型之一。',
   'openai/gpt-5-mini': 'OpenAI 的轻量旗舰，保留大部分推理能力的同时更快、更省，适合日常对话与写作。',
   'openai/gpt-5-nano': 'OpenAI 的超轻量模型，响应极快、成本极低，适合简单问答与高并发任务。',
@@ -24,6 +25,8 @@ const Map<String, String> kModelIntros = {
   /* xAI */
   'xai/grok': 'xAI 的模型，思维直率、反应快，实时信息与数学推理表现不俗。',
   /* DeepSeek */
+  'deepseek/deepseek-flash': 'DeepSeek V4.1 Flash（2026-09 新架构）：非对称编解码 MoE，原生识图，又快又省，基准超越上一代旗舰。',
+  'deepseek/deepseek-v4': 'DeepSeek V4 Pro：旗舰推理/编程模型，百万级上下文，深度思考能力突出。',
   'deepseek/deepseek-chat': 'DeepSeek 的对话模型（V3 系列），中文能力强、性价比极高，写作与编程都很能打。',
   'deepseek/deepseek-reasoner': 'DeepSeek 的推理模型（R1 系列），会先展示思考过程再作答，数学与逻辑难题表现亮眼。',
   /* Kimi */

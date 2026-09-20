@@ -21,6 +21,9 @@ import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
 import 'tts.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
 class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
@@ -120,6 +123,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   // 抽屉状态
   double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; String _historyQuery = '';
   String _rankCat = 'overall'; bool _webSearchOn = false; bool _mcpOn = true;
+  // 语音输入(Kimi 同款: 点麦克风切语音条, 长按说话转文字, 点键盘切回)
+  final SpeechToText _stt = SpeechToText();
+  bool _sttReady = false; bool _sttTried = false; bool _listening = false; bool _voiceMode = false;
+  // 流式合帧: 逐 token setState 会让界面"一颤一颤", 攒 66ms 一帧(约 15fps)
+  String _pendingDelta = ''; Timer? _flushT;
+  // 顶栏模型胶囊三态: loading|noModel|noKey|ok
+  String _capsule = 'loading';
   // TH-Agent v1: 文本工具协议兜底(不支持原生 function-calling 的厂商也能用工具) / MCP 工具是否需确认
   bool _toolFallback = true; bool _confirmMcp = false;
   StreamSubscription? _regSub;
@@ -142,11 +152,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     _regSub?.cancel();
     RootNav.moduleTick.removeListener(_onModuleTick);
     AiSection.newSessionTick.removeListener(_onNewSessionTick);
+    _flushT?.cancel(); _stt.cancel();
     input.dispose(); scroll.dispose(); super.dispose(); }
   void _onModuleTick() { if (RootNav.currentModuleKey != 'AI') _closeDrawerSilent(); }
   Future<void> _onNewSessionTick() async {
     final (p, m) = await AiRegistry.lastModel(); // 与启动逻辑一致: 沿用上次用的模型
     setState(() { session = AiStore.create(p, m); _closeDrawerSilent(); });
+    _refreshCapsule();
     HapticFeedback.lightImpact();
   }
   Future<void> _boot() async {
@@ -165,6 +177,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
+    _refreshCapsule();
     if (mounted) setState(() {});
   }
 
@@ -272,6 +285,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       _closeDrawer(); return;
     }
     setState(() { session = AiStore.create(session?.providerId ?? 'deepseek', session?.model ?? 'deepseek-chat', agentId: agentId, system: system); streaming = ''; });
+    _refreshCapsule();
     _closeDrawer();
   }
 
@@ -409,9 +423,18 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
           _steps.add({'icon': '🛠', 'text': '正在调用工具 $name', 'status': 'running'});
         }); if (!pinned) _jumpBottom(); },
-        onDelta: (d) { setState(() {
+        onDelta: (d) { _pendingDelta += d;
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
-          streaming += d; }); if (!pinned) _jumpBottom(); });
+          // 合帧: 66ms 才落一次 UI, 消除逐 token 的抖动; 未钉住时顺手滚到底
+          _flushT ??= Timer(const Duration(milliseconds: 66), () {
+            _flushT = null;
+            if (_pendingDelta.isEmpty || !mounted) return;
+            setState(() { streaming += _pendingDelta; _pendingDelta = ''; });
+            if (!pinned) _jumpBottom();
+          }); });
+      // 收尾前把未落盘的尾巴冲掉, 避免最后几个 token 延迟一帧
+      _flushT?.cancel(); _flushT = null;
+      if (_pendingDelta.isNotEmpty) { streaming += _pendingDelta; _pendingDelta = ''; }
       setState(() {
         for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
         session!.messages.add({'role': 'assistant', 'content': full,
@@ -499,12 +522,21 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     final s = session;
     return Scaffold(
       appBar: AppBar(leading: IconButton(icon: const Icon(Icons.menu), onPressed: _openDrawer),
-        title: GestureDetector(onTap: _quickSheet,
+        title: GestureDetector(onTap: () {
+            // 未配密钥时点胶囊直达厂商配置页; 已配则开快捷切换
+            if (_capsule == 'noKey') {
+              Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage()))
+                .then((_) => _refreshCapsule());
+            } else { _quickSheet(); }
+          },
           child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(18)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Flexible(child: Text(s == null || s.model.isEmpty ? '选择模型' : s.model,
-                style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+              Flexible(child: Text(
+                _capsule == 'noKey' ? '未配置密钥 · 点我配置'
+                  : (s == null || s.model.isEmpty) ? '当前无模型' : s.model,
+                style: TextStyle(fontSize: 13, color: _capsule == 'noKey' ? Colors.orange : null),
+                overflow: TextOverflow.ellipsis)),
               const Icon(Icons.arrow_drop_down, size: 18)]))),
         actions: [IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat())]),
       body: Column(children: [
@@ -619,8 +651,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
                 borderRadius: BorderRadius.only(topLeft: const Radius.circular(16), topRight: const Radius.circular(16),
                   bottomLeft: Radius.circular(me ? 16 : 4), bottomRight: Radius.circular(me ? 4 : 16))),
-              child: Text(m['content'] ?? '', style: TextStyle(fontSize: 14, height: 1.6,
-                color: me ? Colors.white : null))));
+              child: me
+                ? Text(m['content'] ?? '', style: const TextStyle(fontSize: 14, height: 1.6, color: Colors.white))
+                // 助手消息走真 Markdown 渲染(表格/代码块/标题/列表全量), 长按仍可复制原文
+                : MarkdownBody(data: m['content'] ?? '', selectable: true, styleSheet: _mdStyle(c),
+                    onTapLink: (t, h, _) { if (h != null) launchUrl(Uri.parse(h), mode: LaunchMode.externalApplication); })));
           final avatar = CircleAvatar(radius: 14,
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
             child: Icon(me ? Icons.person_outline : Icons.smart_toy_outlined, size: 15,
@@ -651,6 +686,83 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     ]);
   }
 
+  // Markdown 样式表(助手消息): 表格边框/代码块/引用条/标题层级, 深浅色自适应
+  MarkdownStyleSheet _mdStyle(BuildContext c) {
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    final base = Theme.of(c).textTheme.bodyMedium ?? const TextStyle();
+    return MarkdownStyleSheet(
+      p: base.copyWith(fontSize: 14, height: 1.6, color: dark ? const Color(0xFFE6E6EE) : null),
+      h1: base.copyWith(fontSize: 19, fontWeight: FontWeight.w700),
+      h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
+      h3: base.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
+      code: base.copyWith(fontFamily: 'monospace', fontSize: 12.5,
+        backgroundColor: dark ? Colors.white10 : const Color(0xFFF1F0F7)),
+      codeblockDecoration: BoxDecoration(color: dark ? const Color(0xFF12141C) : const Color(0xFFF6F5FA),
+        borderRadius: BorderRadius.circular(8)),
+      tableHead: base.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
+      tableBody: base.copyWith(fontSize: 13),
+      tableBorder: TableBorder.all(color: dark ? Colors.white24 : const Color(0xFFD8D4E8), width: 0.5),
+      tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      blockquoteDecoration: BoxDecoration(color: dark ? Colors.white10 : const Color(0xFFF1F0F7),
+        borderRadius: BorderRadius.circular(4)),
+      listBullet: base.copyWith(fontSize: 14, color: dark ? const Color(0xFFE6E6EE) : null),
+    );
+  }
+
+  // 顶栏胶囊三态: 无模型→当前无模型; 有模型但没配该厂商密钥→未配置密钥; 正常→模型名
+  Future<void> _refreshCapsule() async {
+    final s = session;
+    String v;
+    if (s == null || s.model.isEmpty) { v = 'noModel'; }
+    else if ((await AiRegistry.keyOf(s.providerId)).isEmpty) { v = 'noKey'; }
+    else { v = 'ok'; }
+    if (mounted && v != _capsule) setState(() => _capsule = v);
+  }
+
+  // ── 语音输入(Kimi 同款) ──
+  Future<void> _enterVoice() async {
+    if (!_sttTried) {
+      _sttTried = true;
+      try { _sttReady = await _stt.initialize(); } catch (_) { _sttReady = false; }
+    }
+    if (!_sttReady) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本机没有可用的语音识别服务（需系统自带语音引擎）')));
+      return;
+    }
+    setState(() => _voiceMode = true);
+  }
+  Future<void> _startListen() async {
+    if (!_sttReady || _listening) return;
+    setState(() => _listening = true);
+    try {
+      await _stt.listen(
+        onResult: (r) { input.text = r.recognizedWords; },
+        localeId: 'zh_CN', pauseFor: const Duration(seconds: 4),
+        listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true));
+    } catch (_) {}
+  }
+  Future<void> _stopListen() async {
+    if (!_listening) return;
+    try { await _stt.stop(); } catch (_) {}
+    // 识别文字落进输入框并切回键盘模式(可改可发)
+    if (mounted) setState(() { _listening = false; _voiceMode = false; });
+  }
+  Widget _voiceBar(BuildContext c) => GestureDetector(
+    onLongPressStart: (_) => _startListen(),
+    onLongPressEnd: (_) => _stopListen(),
+    child: Container(height: 46, alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _listening ? Theme.of(c).colorScheme.primary : Theme.of(c).cardTheme.color,
+        borderRadius: BorderRadius.circular(22)),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(_listening ? Icons.mic : Icons.mic_none, size: 18,
+          color: _listening ? Colors.white : Colors.grey),
+        const SizedBox(width: 6),
+        Text(_listening ? '正在聆听… 松手结束' : '按住 说话',
+          style: TextStyle(fontSize: 14, color: _listening ? Colors.white : Colors.grey)),
+      ])));
+
   // 长按消息: 复制 / 朗读(系统离线 TTS)
   void _msgActions(BuildContext c, String text) {
     if (text.isEmpty) return;
@@ -670,16 +782,24 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
     child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
       IconButton(icon: const Icon(Icons.add_circle_outline), tooltip: '更多功能', onPressed: () => _plusSheet(c)),
-      Expanded(child: TextField(controller: input, minLines: 1, maxLines: 5,
+      Expanded(child: _voiceMode ? _voiceBar(c) : TextField(controller: input, minLines: 1, maxLines: 5,
         decoration: InputDecoration(hintText: '输入消息…', isDense: true, filled: true,
           fillColor: Theme.of(c).cardTheme.color,
           border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(22)), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+        // 打字实时切换尾键(空→麦克风 / 有字→发送), Kimi 同款
+        onChanged: (_) => setState(() {}),
         onSubmitted: (_) => _send())),
-      IconButton(icon: const Icon(Icons.mic_none), tooltip: '语音输入(准备开放)',
-        onPressed: () => ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('语音输入准备开放')))),
-      sending ? const SizedBox(width: 40, height: 40, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)))
-        : IconButton.filled(onPressed: _send, icon: const Icon(Icons.send, size: 18)),
+      // 尾键三态: 语音条模式→键盘图标; 有文字→发送; 空→麦克风
+      if (_voiceMode)
+        IconButton(icon: const Icon(Icons.keyboard_outlined), tooltip: '切换键盘输入',
+          onPressed: () => setState(() => _voiceMode = false))
+      else if (sending)
+        const SizedBox(width: 40, height: 40, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)))
+      else if (input.text.trim().isNotEmpty)
+        IconButton.filled(onPressed: _send, icon: const Icon(Icons.send, size: 18))
+      else
+        IconButton(icon: const Icon(Icons.mic_none), tooltip: '语音输入(点按进入, 按住说话)', onPressed: _enterVoice),
     ])));
 
   void _plusSheet(BuildContext c) {
@@ -870,7 +990,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
             ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已更新常用模型(顶栏模型名下拉里可快速切换)'), duration: Duration(seconds: 1))); },
           onTap: () async { await AiRegistry.setLastModel(p.id, m);
             if (session != null) { session!.providerId = p.id; session!.model = m; }
-            setState(() {}); AiStore.save(); _closeDrawer(); }),
+            setState(() {}); AiStore.save(); _closeDrawer(); _refreshCapsule(); }),
         // 历史模型(默认折叠, 与网站一致)
         if (p.deprecated.isNotEmpty && _drawerFilter != 'image' && _drawerFilter != 'video' && _drawerFilter != 'audio' && _drawerFilter != 'recog')
           ExpansionTile(dense: true, tilePadding: const EdgeInsets.only(left: 30, right: 16),
