@@ -12,11 +12,11 @@ class Recents {
     if (title.isEmpty) return;
     try {
       final p = await SharedPreferences.getInstance();
-      final list = await list();
-      list.removeWhere((e) => e['target'] == target && target.isNotEmpty && e['kind'] == kind);
-      list.insert(0, {'kind': kind, 'title': title, 'sub': sub, 'target': target,
+      final items = await list();
+      items.removeWhere((e) => e['target'] == target && target.isNotEmpty && e['kind'] == kind);
+      items.insert(0, {'kind': kind, 'title': title, 'sub': sub, 'target': target,
         'at': DateTime.now().toString().substring(0, 16)});
-      await p.setString(_key, jsonEncode(list.take(_max).toList()));
+      await p.setString(_key, jsonEncode(items.take(_max).toList()));
     } catch (_) {}
   }
 
@@ -30,9 +30,9 @@ class Recents {
   static Future<void> remove(String kind, String target) async {
     try {
       final p = await SharedPreferences.getInstance();
-      final list = await list();
-      list.removeWhere((e) => e['kind'] == kind && e['target'] == target);
-      await p.setString(_key, jsonEncode(list));
+      final items = await list();
+      items.removeWhere((e) => e['kind'] == kind && e['target'] == target);
+      await p.setString(_key, jsonEncode(items));
     } catch (_) {}
   }
 }
