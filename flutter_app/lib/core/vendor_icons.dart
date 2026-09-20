@@ -1,4 +1,7 @@
-// 厂商品牌图标(与网站 vendors.js 同源): lobehub CDN PNG, 失败回退品牌色字母徽标
+// 厂商品牌图标(与网站 vendors.js 同源)。
+// ★2026-09-20: 图标改为打进安装包(assets/vendor_icons/)——原来走 jsdelivr CDN 在线拉,
+//   该 CDN 在国内时通时断, 表现为"图标有时候不显示"。本地资源秒出、离线可用;
+//   个别厂商(新加未收进包)才回退品牌色字母徽标。
 import 'package:flutter/material.dart';
 
 const Map<String, (int, String?, String)> kVendorBrands = {
@@ -53,8 +56,8 @@ class VendorIcon extends StatelessWidget {
       child: Text(letter, style: TextStyle(color: Colors.white, fontSize: size * 0.4, fontWeight: FontWeight.bold)));
     if (lobe == null) return fallback();
     return ClipRRect(borderRadius: BorderRadius.circular(size * 0.24),
-      child: Image.network('https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/light/$lobe.png',
-        width: size, height: size, fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback(),
-        loadingBuilder: (_, child, p) => p == null ? child : fallback()));
+      child: Image.asset('assets/vendor_icons/$lobe.png',
+        width: size, height: size, fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => fallback()));
   }
 }

@@ -296,12 +296,12 @@ class AppSettings {
       p.getBool('fs_mod_$modKey') ?? !fsOffByDefault.contains(modKey);
   static Future<void> setFsEnabledFor(String modKey, bool v) async {
     await p.setBool('fs_mod_$modKey', v); await sync(); }
-  // 左右滑动切换模块（★2026-09-19 默认改为 **关**）。
-  // 旧版默认开: 模块间横滑 = PageView 翻页，会**沿途构建中间的每个模块**并触发它们的加载，
-  // 用户感受是「从一个模块穿过好几个才到目标」，AI 模块尤其会在这过程中被带动、把左上角的
-  // 东西呼出来。默认关掉即"模块间手势完全隔离"，切模块只走直接跳转；
-  // 想保留横滑的人可在「我的 → 导航」自行打开。
-  static bool get navSwipe => p.getBool('nav_swipe') ?? false;
+  // 左右滑动切换模块（★2026-09-20 默认改回 **开**）。
+  // 曾默认关(09-19): 担心"沿途构建中间模块"——那是 animateToPage 跳页的问题(已改 jumpToPage 根治);
+  // 物理拖拽一次只能过相邻一页, 相邻页本来就由 PageView 缓存构建, 不存在沿途加载。
+  // 模块内横向手势(游戏/歌词翻页等)都在 push 出来的子页或小热区里, 与本层拖拽不冲突。
+  // 不想横滑的人仍可在「我的 → 导航」关闭。
+  static bool get navSwipe => p.getBool('nav_swipe') ?? true;
   static Future<void> setNavSwipe(bool v) async { await p.setBool('nav_swipe', v); await sync(); }
   static Offset get orbPos {
     final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
@@ -3062,7 +3062,9 @@ class _RootNavState extends State<RootNav> {
   // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
   static const _noAppBarModules = {'浏览器', '相册'};
   // 全沉浸模块: 连底部导航也隐藏(屏幕留给正文, 通过模块宫格返回)
-  static const _noNavModules = {'浏览器'};
+  // ★浏览器已撤出该名单(用户反馈"一进去就直接全屏"): 现在和其它模块一样
+  //   进入先显示底栏, 3 秒(可调)无操作才按自动全屏规则收起。
+  static const _noNavModules = <String>{};
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
     RootNav.fullscreen.addListener(_onFs);
@@ -3146,7 +3148,7 @@ class _RootNavState extends State<RootNav> {
     final hideBar = _noAppBarModules.contains(key);   // 沉浸: 该模块自带页头, 不补状态栏留白
     final hideNav = _noNavModules.contains(key);      // 底栏: 沉浸页不显示
     final kbOpen = MediaQuery.viewInsetsOf(c).bottom > 100; // 键盘弹出时底栏让位(网页端 kb-open 同款)
-    // 左右滑动切换模块(默认开, 与完全体一致): 关闭时退回"模块间手势完全隔离"
+    // 左右滑动切换模块(默认开): 关闭时退回"模块间手势完全隔离"
     final swipe = AppSettings.navSwipe;
     // PageView 防回跳兜底: 任何原因导致页面重建后停在第0页而 idx 不在0时, 帧末拉回当前模块。
     // 只在**禁止滑动**时启用 —— 允许滑动时 `_page.page` 会在手势中途出现 2.5 这种值,
@@ -3647,31 +3649,66 @@ class _At extends State<AccountTile> {
 }
 
 // ═══ 下载中心: 产品列表(前端/后端/引擎/网页版), 点击进详情页再下载 ═══
-class DownloadCenterTile extends StatelessWidget {
+class DownloadCenterTile extends StatefulWidget {
   const DownloadCenterTile({super.key});
   static const _base = 'https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub';
   static const products = [
     ('第三方聚合', 'Flutter 纯播放器前端(本应用)', '$_base/thirdhub-app.apk', Icons.phone_android,
       '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'),
     ('第三方后端', '手机内嵌 Node.js 后端', '$_base/thirdhub-backend.apk', Icons.dns,
-      '在手机上运行的资源库后端: 书源/影视源/音源/图源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。'),
-    ('开源阅读引擎', 'Legado 书源引擎(THP 直连)', '$_base/thirdhub-engine.apk', Icons.menu_book,
-      '兼容"开源阅读"书源格式的独立引擎。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。'),
-    ('venera 漫画引擎', 'venera JS 漫画源引擎(THP 直连)', '$_base/thirdhub-venera.apk', Icons.photo_library,
-      '兼容 venera JS 漫画源的独立引擎。支持图源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。'),
+      '在手机上运行的资源库后端: 内容源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。'),
     ('网页版', 'thirdhub.pages.dev', 'https://thirdhub.pages.dev', Icons.language,
       '浏览器打开即用, 可安装为 PWA。与客户端同一账号体系, 数据全端互通。'),
     ('网页版 1.0(经典旧版)', '最初网页版存档 · 怀旧/老设备', 'https://0d57a5ba.thirdhub.pages.dev', Icons.history,
       'ThirdHub 最初的网页版 1.0 存档(2026-08-06 首次部署)。功能与界面以新版网页版为准, 此版本仅供老设备兼容与怀旧使用。'),
   ];
-  @override Widget build(BuildContext c) => Column(children: [
-    for (final p in products)
-      ListTile(dense: true, leading: Icon(p.$4, size: 20),
-        title: Text(p.$1, style: const TextStyle(fontSize: 13)),
-        subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
-        trailing: const Icon(Icons.chevron_right, size: 18),
-        onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ProductDetailPage(name: p.$1, sub: p.$2, url: p.$3, icon: p.$4, desc: p.$5)))),
-  ]);
+  @override State<DownloadCenterTile> createState() => _Dct();
+}
+
+class _Dct extends State<DownloadCenterTile> {
+  // 引擎下载条目仅管理员可见(与更新历史同一套账号体系判定, 权限在服务端 RLS)
+  Map<String, dynamic>? _engine, _venera;
+  @override void initState() {
+    super.initState();
+    if (ChangelogStore.isAdmin) _loadEngines();
+  }
+  Future<void> _loadEngines() async {
+    // 版本化清单: 永远指向最新引擎包(服务端发版时同步推进)
+    try { _engine = await Cloud.latestManifest('engine'); } catch (_) {}
+    try { _venera = await Cloud.latestManifest('venera'); } catch (_) {}
+    if (mounted) setState(() {});
+  }
+  @override Widget build(BuildContext c) {
+    final admin = ChangelogStore.isAdmin;
+    final ev = '${_engine?['version'] ?? ''}';
+    final vv = '${_venera?['version'] ?? ''}';
+    final engineUrl = '${_engine?['url'] ?? '${DownloadCenterTile._base}/thirdhub-engine.apk'}';
+    final veneraUrl = '${_venera?['url'] ?? '${DownloadCenterTile._base}/thirdhub-venera.apk'}';
+    return Column(children: [
+      for (final p in DownloadCenterTile.products)
+        ListTile(dense: true, leading: Icon(p.$4, size: 20),
+          title: Text(p.$1, style: const TextStyle(fontSize: 13)),
+          subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ProductDetailPage(name: p.$1, sub: p.$2, url: p.$3, icon: p.$4, desc: p.$5)))),
+      if (admin) ...[
+        ListTile(dense: true, leading: const Icon(Icons.menu_book, size: 20),
+          title: const Text('开源阅读引擎', style: TextStyle(fontSize: 13)),
+          subtitle: Text('THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}', style: const TextStyle(fontSize: 10)),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ProductDetailPage(
+            name: '开源阅读引擎${ev.isEmpty ? '' : ' v$ev'}', sub: 'Legado 书源引擎(THP 直连)', url: engineUrl, icon: Icons.menu_book,
+            desc: '兼容"开源阅读"书源格式的独立引擎。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
+        ListTile(dense: true, leading: const Icon(Icons.photo_library, size: 20),
+          title: const Text('venera 漫画引擎', style: TextStyle(fontSize: 13)),
+          subtitle: Text('THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}', style: const TextStyle(fontSize: 10)),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ProductDetailPage(
+            name: 'venera 漫画引擎${vv.isEmpty ? '' : ' v$vv'}', sub: 'venera JS 漫画源引擎(THP 直连)', url: veneraUrl, icon: Icons.photo_library,
+            desc: '兼容 venera JS 漫画源的独立引擎。支持图源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
+      ],
+    ]);
+  }
 }
 
 // 产品详情子页: 介绍 + 底部下载按钮
@@ -3704,8 +3741,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.28.1';
-  static const int currentCode = 50520;
+  static const String currentVersion = '4.29.0';
+  static const int currentCode = 50521;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -3759,12 +3796,15 @@ class Updater {
   }
   static String newVer = '';
 
-  // 多镜像: 主URL(云端) → Supabase版本包 → GitHub Release, 依次尝试直到成功
+  // 多镜像: 主URL(云端) → Supabase版本包 → ghfast 镜像(GitHub) → GitHub 直链(国外线路兜底)
+  // ★GitHub 直链对国内用户需要翻墙, 默认不放在前面——镜像优先, 直链仅作最后手段
   static List<String> _mirrorUrls(String url, String ver) {
     final list = <String>[url];
     if (ver.isNotEmpty) {
       list.add('https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
-      list.add('https://github.com/Smalluniverseheng/ThirdHub-v2/releases/download/v$ver/ThirdHub-$ver.apk');
+      const gh = 'https://github.com/Smalluniverseheng/ThirdHub-v2/releases/download';
+      list.add('https://ghfast.top/$gh/v$ver/ThirdHub-$ver.apk');
+      list.add('$gh/v$ver/ThirdHub-$ver.apk');
     }
     return list.toSet().toList();
   }
@@ -4501,7 +4541,14 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
       final m = await Cloud.latestManifest('app');
       if (m != null) { _latestVer = (m['version'] as String?) ?? ''; _latestUrl = (m['url'] as String?) ?? ''; }
     } catch (_) {}
-    final r = await ChangelogStore.load(admin: _full, force: force);
+    final r = await ChangelogStore.load(admin: _full, force: force, onRemote: (ClogDoc d) {
+      // 后台拉到比当前展示的更新的数据时, 当场换上去(不再等下次打开)
+      if (!mounted) return;
+      final cur = _doc;
+      if (cur == null || d.latest != cur.latest || d.updated != cur.updated) {
+        setState(() { _doc = d; _fromCache = false; _err = ''; });
+      }
+    });
     if (!mounted) return;
     setState(() {
       _loading = false; _refreshing = false;

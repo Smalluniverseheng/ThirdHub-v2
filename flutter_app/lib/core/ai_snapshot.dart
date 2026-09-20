@@ -2,7 +2,7 @@
 //
 // ★本文件由脚本生成，请勿手改：`python tool/gen_ai_snapshot.py`
 //   数据源: https://thirdhub.pages.dev/js/ai/ai-models.js
-//   生成时间: 2026-09-19 · 36 家厂商 / 263 个对话模型 / 29 个绘画+视频模型
+//   生成时间: 2026-09-20 · 36 家厂商 / 263 个对话模型 / 29 个绘画+视频模型
 //
 // 注意: models 必须是 List<String>（AiProvider.from 用 List<String>.from），
 //   ai-models.js 里形如 {id,tags,privacyLevel} 的"免费模型"对象由生成器取 id 平铺，

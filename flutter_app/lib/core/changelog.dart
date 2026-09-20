@@ -162,12 +162,14 @@ class ChangelogStore {
   /// 加载：先给缓存（有就立即返回），[force] 时强制走网络并刷新缓存。
   ///
   /// 网络失败时回落到缓存并把错误原因带出去，UI 自己决定怎么提示。
-  static Future<ClogResult> load({required bool admin, bool force = false}) async {
+  /// [onRemote]：非 force 且命中缓存时，后台静默拉到新数据后回调（让 UI 当次就更新，
+  /// 而不是下次打开才看到——"刷新不出新版本"的另一半原因就在这）。
+  static Future<ClogResult> load({required bool admin, bool force = false, void Function(ClogDoc doc)? onRemote}) async {
     if (!force) {
       final ClogDoc? c = await cached(admin: admin);
       if (c != null) {
-        // 后台静默刷新，失败不打扰
-        _refreshInBackground(admin: admin);
+        // 后台静默刷新，失败不打扰；拉到新的就通知 UI 当场更新
+        _refreshInBackground(admin: admin, onRemote: onRemote);
         return ClogResult(doc: c, fromCache: true);
       }
     }
@@ -190,11 +192,14 @@ class ChangelogStore {
     await p.setString(_cacheKey(admin), jsonEncode(doc.toJson()));
   }
 
-  static void _refreshInBackground({required bool admin}) {
-    // 不 await：拿到就用新数据覆盖缓存，下次打开更准
+  static void _refreshInBackground({required bool admin, void Function(ClogDoc doc)? onRemote}) {
+    // 不 await：拿到就用新数据覆盖缓存并回调 UI，失败静默
     _remote(admin: admin)
         .then((ClogDoc? d) async {
-          if (d != null) await _save(admin: admin, doc: d);
+          if (d != null) {
+            await _save(admin: admin, doc: d);
+            if (onRemote != null) onRemote(d);
+          }
         })
         .catchError((Object _) {});
   }

@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.28.1+50520
+version: 4.29.0+50521
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -45,6 +45,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/legal/
+    - assets/vendor_icons/
 
 dependency_overrides:
   # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，
