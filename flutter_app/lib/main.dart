@@ -24,6 +24,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
+import 'core/recents.dart';
+import 'core/read_stats.dart';
 import 'core/mini_modules2.dart';
 import 'core/mini_modules3.dart';
 import 'core/mini_modules4.dart';
@@ -1111,6 +1113,10 @@ class _Pf extends State<ProfilePage> {
         _sep(),
         entry(Icons.dns_outlined, '后端管理', value: Api.base.isEmpty ? '未连接' : '已连接', page: const BackendAdminPage()),
         _sep(),
+        entry(Icons.play_circle_outline, '最近播放', page: const RecentPlayPage()),
+        _sep(),
+        entry(Icons.bar_chart_outlined, '阅读统计', page: const ReadStatsPage()),
+        _sep(),
         entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
         _sep(),
         entry(Icons.receipt_long_outlined, '日志中心', value: '运行透明 · 含报错中心', page: const LogCenterPage()),
@@ -1314,6 +1320,77 @@ class _Psub extends State<ProfileSubPage> {
           child: Center(child: Text('退出登录', style: TextStyle(color: Colors.redAccent, fontSize: 15)))),
       ))),
     ]));
+  }
+}
+
+// ═══ 统一最近播放(规划 M-4): 音乐/视频/有声书/广播 一处回看 ═══
+class RecentPlayPage extends StatefulWidget { const RecentPlayPage({super.key}); @override State<RecentPlayPage> createState() => _Rp(); }
+class _Rp extends State<RecentPlayPage> {
+  List<Map<String, String>> items = [];
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { items = await Recents.list(); if (mounted) setState(() {}); }
+  static const _icons = {'music': Icons.music_note, 'video': Icons.play_circle_outline, 'audiobook': Icons.headphones, 'radio': Icons.radio};
+  static const _kinds = {'music': '音乐', 'video': '视频', 'audiobook': '有声书', 'radio': '广播'};
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('最近播放')),
+    body: items.isEmpty
+      ? const Center(child: Text('还没有播放记录\n去音乐/视频/有声书/广播里播点什么', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      : ListView(children: [
+          for (final e in items)
+            ListTile(dense: true,
+              leading: Icon(_icons[e['kind']] ?? Icons.play_arrow, size: 20),
+              title: Text(e['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+              subtitle: Text('${_kinds[e['kind']] ?? e['kind']}${(e['sub'] ?? '').isNotEmpty ? ' · ${e['sub']}' : ''} · ${e['at'] ?? ''}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              trailing: IconButton(icon: const Icon(Icons.close, size: 16),
+                onPressed: () async { await Recents.remove(e['kind'] ?? '', e['target'] ?? ''); _load(); })),
+        ]));
+}
+
+// ═══ 阅读统计(规划 R-1): 时长 + 字数, 今日/本周 ═══
+class ReadStatsPage extends StatefulWidget { const ReadStatsPage({super.key}); @override State<ReadStatsPage> createState() => _Rs(); }
+class _Rs extends State<ReadStatsPage> {
+  (int, int, int, int) s = (0, 0, 0, 0); Map<String, Map<String, int>> days = {};
+  @override void initState() { super.initState(); _load(); }
+  Future<void> _load() async { s = await ReadStats.summary(); days = await ReadStats.load(); if (mounted) setState(() {}); }
+  String _fmtSec(int sec) { if (sec >= 3600) return '${(sec / 3600).toStringAsFixed(1)} 小时'; if (sec >= 60) return '${(sec / 60).round()} 分钟'; return '$sec 秒'; }
+  String _fmtChars(int n) => n >= 10000 ? '${(n / 10000).toStringAsFixed(1)} 万字' : '$n 字';
+  @override Widget build(BuildContext c) {
+    final sorted = days.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
+    return Scaffold(appBar: AppBar(title: const Text('阅读统计')),
+      body: ListView(padding: const EdgeInsets.all(14), children: [
+        Row(children: [
+          Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('今日时长', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(_fmtSec(s.$1), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          ])))),
+          Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('今日字数', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(_fmtChars(s.$2), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          ])))),
+        ]),
+        Row(children: [
+          Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('本周时长', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(_fmtSec(s.$3), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          ])))),
+          Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('本周字数', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(_fmtChars(s.$4), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          ])))),
+        ]),
+        if (sorted.isEmpty) const Padding(padding: EdgeInsets.all(32),
+          child: Center(child: Text('还没有阅读记录\n打开任意一本小说开始计时', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))),
+        if (sorted.isNotEmpty) ...[
+          const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 6), child: Text('按天明细', style: TextStyle(fontSize: 12, color: Colors.grey))),
+          Card(child: Column(children: [
+            for (final e in sorted.take(30))
+              ListTile(dense: true, leading: const Icon(Icons.calendar_today_outlined, size: 16),
+                title: Text(e.key, style: const TextStyle(fontSize: 13)),
+                trailing: Text('${_fmtSec(e.value['sec'] ?? 0)} · ${_fmtChars(e.value['chars'] ?? 0)}',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey))),
+          ])),
+        ],
+      ]));
   }
 }
 
@@ -2498,6 +2575,7 @@ class _MPlay extends State<MusicPlayPage> {
       else { await player.setAudioSource(AudioSource.uri(Uri.parse(playUrl), tag: mediaItem)); }
       await _restorePos();
       await player.play();
+      Recents.add('music', '${cur['name'] ?? ''}', sub: '${cur['artist'] ?? ''}', target: playUrl);
       setState(() => loading = false);
       // 歌词(尽力而为, 支持LRC同步)
       unawaited(_loadLyric(playUrl));
@@ -3798,8 +3876,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.32.0';
-  static const int currentCode = 50525;
+  static const String currentVersion = '4.33.0';
+  static const int currentCode = 50526;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -4075,8 +4153,23 @@ class Updater {
 class LocalNovelsPage extends StatefulWidget { const LocalNovelsPage({super.key}); @override State<LocalNovelsPage> createState() => _Ln(); }
 class _Ln extends State<LocalNovelsPage> {
   List<Map<String, dynamic>> items = []; bool loading = true;
+  // 批量管理(规划 R-6): 长按进多选 → 批量删除
+  bool selecting = false; final Set<String> sel = {};
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async { items = await LocalLib.list('novel'); setState(() => loading = false); }
+
+  Future<void> _batchDelete() async {
+    if (sel.isEmpty) return;
+    final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
+      title: Text('删除 ${sel.length} 本书?'),
+      content: const Text('从书架移除(不删本地文件)'),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+    if (ok != true) return;
+    for (final path in sel) { await LocalLib.remove('novel', path); }
+    setState(() { selecting = false; sel.clear(); });
+    _load();
+  }
 
   // 编辑书籍(学开源阅读): 书名/作者/封面, 封面从相册选并复制到书籍同目录持久保存
   Future<void> _editBook(Map<String, dynamic> b) async {
@@ -4124,7 +4217,16 @@ class _Ln extends State<LocalNovelsPage> {
     nameC.dispose(); authorC.dispose();
   }
 
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: const Text('本地小说'), actions: [
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(
+    title: Text(selecting ? '已选 ${sel.length} 本' : '本地小说'),
+    actions: selecting ? [
+      TextButton(onPressed: () => setState(() { sel..clear()..addAll(items.map((e) => '${e['path']}')); }),
+        child: const Text('全选')),
+      TextButton(onPressed: _batchDelete, child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
+      TextButton(onPressed: () => setState(() { selecting = false; sel.clear(); }), child: const Text('取消')),
+    ] : [
+    IconButton(icon: const Icon(Icons.library_add_check_outlined), tooltip: '批量管理',
+      onPressed: () => setState(() => selecting = true)),
     IconButton(icon: const Icon(Icons.add), onPressed: () async { final n = await importWithChoice(c, 'novel') ?? 0;
       ScaffoldMessenger.of(c).showSnackBar(importSnack(n, '本')); _load(); })]),
     body: loading ? const Center(child: CircularProgressIndicator())
@@ -4132,14 +4234,23 @@ class _Ln extends State<LocalNovelsPage> {
       : ListView.builder(itemCount: items.length, itemBuilder: (_, i) { final b = items[i];
         final cov = (b['cover'] ?? '').toString();
         final author = (b['author'] ?? '').toString();
-        return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4),
+        final path = '${b['path'] ?? ''}';
+        final checked = sel.contains(path);
+        return ListTile(leading: selecting
+          ? Icon(checked ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: checked ? Theme.of(c).colorScheme.primary : Colors.grey)
+          : ClipRRect(borderRadius: BorderRadius.circular(4),
             child: cov.isNotEmpty && File(cov).existsSync()
               ? Image.file(File(cov), width: 38, height: 52, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const Icon(Icons.menu_book, size: 30))
               : const Icon(Icons.menu_book, size: 30)),
           title: Text(b['name'] ?? ''), subtitle: Text('${author.isNotEmpty ? '$author · ' : ''}${b['format'] ?? 'txt'} · 本地', style: const TextStyle(fontSize: 11)),
-          onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LocalNovelReader(book: b))),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          onTap: () {
+            if (selecting) { setState(() { if (checked) { sel.remove(path); } else { sel.add(path); } }); return; }
+            Navigator.push(c, MaterialPageRoute(builder: (_) => LocalNovelReader(book: b)));
+          },
+          onLongPress: () { if (!selecting) setState(() { selecting = true; sel.add(path); }); },
+          trailing: selecting ? null : Row(mainAxisSize: MainAxisSize.min, children: [
             IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: () => _editBook(b)),
             IconButton(icon: const Icon(Icons.delete_outline, size: 18),
               onPressed: () async { await LocalLib.remove('novel', b['path']); _load(); })])); }));
@@ -4219,7 +4330,8 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   String _cueText = '';
   Timer? _cueTimer;
 
-  @override void initState() { super.initState(); _init(); }
+  @override void initState() { super.initState(); _init();
+    Recents.add('video', '${widget.item['name'] ?? ''}', target: '${widget.item['path'] ?? ''}'); }
   Future<void> _init() async {
     try {
       ctrl = VideoPlayerController.file(File(widget.item['path']));

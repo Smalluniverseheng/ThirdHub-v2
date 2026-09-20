@@ -1,10 +1,14 @@
 // 浏览器模块: 自研实现(参考 FOSS Browser / Privacy Browser 的功能设计, 无代码拷贝, 无协议冲突)
 // 多标签页 · 地址栏(搜索/网址) · 前进后退刷新 · 书签 · 历史 · 进度条 · 全屏模式
+// 无痕标签(不写历史/关闭即焚) · 阅读模式(提取正文 → 一键交给小说阅读器)
 // 沉浸式设计: 本模块隐藏 App 顶栏/底栏, 屏幕全给网页; 切换模块走菜单/悬浮钮
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../main.dart' show LocalNovelReader;
 
 // 与 RootNav(main.dart) 的桥: 打开模块宫格
 class BrowserHooks {
@@ -13,7 +17,8 @@ class BrowserHooks {
 
 class _Tab {
   WebViewController? ctrl; String url = ''; String title = '新标签页'; int progress = 0;
-  _Tab(this.url);
+  bool incognito = false; // 无痕: 不写历史, 标签页关闭即焚(会话不持久化)
+  _Tab(this.url, {this.incognito = false});
 }
 
 // 搜索引擎预设
@@ -150,6 +155,7 @@ class _Bp extends State<BrowserPage> {
 
   void _recordHistory(String title, String url) {
     if (url.isEmpty || url == 'about:blank') return;
+    if (t.incognito) return; // 无痕标签不写历史
     history.removeWhere((h) => h['url'] == url);
     history.insert(0, {'title': title, 'url': url, 'at': DateTime.now().toString().substring(0, 16)});
     history = history.take(200).toList();
@@ -194,6 +200,8 @@ class _Bp extends State<BrowserPage> {
             const PopupMenuItem(value: 'refresh', child: ListTile(dense: true, leading: Icon(Icons.refresh, size: 18), title: Text('刷新', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'fullscreen', child: ListTile(dense: true, leading: Icon(Icons.fullscreen, size: 18), title: Text('全屏浏览', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'readmode', child: ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 18), title: Text('阅读模式(交给小说阅读器)', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'incognito', child: ListTile(dense: true, leading: Icon(Icons.visibility_off_outlined, size: 18), title: Text('新建无痕标签页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'newtab', child: ListTile(dense: true, leading: Icon(Icons.add, size: 18), title: Text('新建标签页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'bookmarks', child: ListTile(dense: true, leading: Icon(Icons.bookmark_border, size: 18), title: Text('书签', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'history', child: ListTile(dense: true, leading: Icon(Icons.history, size: 18), title: Text('历史记录', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
@@ -229,6 +237,8 @@ class _Bp extends State<BrowserPage> {
       case 'forward': if (await t.ctrl?.canGoForward() ?? false) t.ctrl!.goForward(); break;
       case 'refresh': t.ctrl?.reload(); break;
       case 'fullscreen': setState(() => fullscreen = true); break;
+      case 'readmode': _readMode(); break;
+      case 'incognito': setState(() { tabs.add(_Tab('', incognito: true)); cur = tabs.length - 1; editing = true; }); break;
       case 'bookmarks': _listSheet('书签', bookmarks); break;
       case 'history': _listSheet('历史', history); break;
       case 'home': setState(() { editing = true; }); break;
@@ -237,6 +247,53 @@ class _Bp extends State<BrowserPage> {
       case 'engine': _engineSheet(); break;
       case 'adblock': _toggleAdblock(); break;
     }
+  }
+
+  // 阅读模式: 从当前网页提取正文 → 一键交给小说阅读器(跨模块调用)
+  // 提取策略(Readability-lite): 优先 <article>/<main>, 否则取 p 最多的最大文本块
+  Future<void> _readMode() async {
+    final ctrl = t.ctrl;
+    if (ctrl == null || t.url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('先打开一个网页')));
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('正在提取正文…'), duration: Duration(seconds: 1)));
+    String title = t.title; String text = '';
+    try {
+      final r = await ctrl.runJavaScriptReturningResult('''
+(() => {
+  const art = document.querySelector('article') || document.querySelector('main');
+  let best = art, bestLen = art ? (art.innerText || '').length : 0;
+  if (bestLen < 400) {
+    document.querySelectorAll('div,section').forEach(e => {
+      const tx = e.innerText || '';
+      if (tx.length > bestLen && e.querySelectorAll('p').length >= 2) { best = e; bestLen = tx.length; }
+    });
+  }
+  const text = ((best ? best.innerText : document.body.innerText) || '').trim();
+  return JSON.stringify({ title: document.title || '', text: text.slice(0, 300000) });
+})()''');
+      var s = '$r';
+      // Android webview 返回带引号的 JSON 串, 剥一层
+      if (s.startsWith('"')) { try { s = jsonDecode(s) as String; } catch (_) {} }
+      final j = jsonDecode(s) as Map;
+      title = '${j['title'] ?? title}'.trim();
+      text = '${j['text'] ?? ''}'.trim();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('正文提取失败: $e')));
+      return;
+    }
+    if (text.length < 200) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('这页提取不到成段正文(可能是列表页/脚本页)')));
+      return;
+    }
+    // 落成临时 txt 交给阅读器(与本地书同一条通路, 排版/听书/进度记忆全部继承)
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/readmode_${DateTime.now().millisecondsSinceEpoch}.txt');
+    await f.writeAsString('$title\n\n$text', flush: true);
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => LocalNovelReader(
+      book: {'name': title.isEmpty ? '网页正文' : title, 'path': f.path, 'format': 'txt'})));
   }
 
   bool _isBookmarked(String url) => url.isNotEmpty && bookmarks.any((b) => b['url'] == url);
@@ -283,6 +340,8 @@ class _Bp extends State<BrowserPage> {
       Padding(padding: const EdgeInsets.all(8), child: Row(children: [
         Text('标签页 (${tabs.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
         const Spacer(),
+        TextButton.icon(onPressed: () { setState(() { tabs.add(_Tab('', incognito: true)); cur = tabs.length - 1; editing = true; }); Navigator.pop(c2); },
+          icon: const Icon(Icons.visibility_off_outlined, size: 16), label: const Text('无痕')),
         TextButton.icon(onPressed: () { setState(() { tabs.add(_Tab('')); cur = tabs.length - 1; editing = true; }); Navigator.pop(c2); },
           icon: const Icon(Icons.add, size: 16), label: const Text('新建')),
       ])),
@@ -294,7 +353,8 @@ class _Bp extends State<BrowserPage> {
             child: InkWell(onTap: () { setState(() { cur = i; editing = tab.url.isEmpty; }); Navigator.pop(c2); },
               child: Stack(children: [
                 Padding(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Icon(Icons.language, size: 16),
+                  Icon(tab.incognito ? Icons.visibility_off_outlined : Icons.language, size: 16,
+                    color: tab.incognito ? Colors.deepPurple : null),
                   const Spacer(),
                   Text(tab.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
                 ])),

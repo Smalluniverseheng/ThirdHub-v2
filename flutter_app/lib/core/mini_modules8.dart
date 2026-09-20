@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:file_picker/file_picker.dart';
+import 'recents.dart';
 
 // ═══ 扫描仪: 拍照/选图 → 灰度增强 → 保存 ═══
 class ScannerPage extends StatefulWidget { const ScannerPage({super.key}); @override State<ScannerPage> createState() => _Scan(); }
@@ -101,6 +102,7 @@ class _Ab extends State<AudiobookPage> {
     await _player.setAudioSource(tagFile(path, title: path.split('/').last, album: 'ThirdHub 音乐'));
     dur = await _player.durationFuture ?? Duration.zero;
     setState(() => playing = path);
+    Recents.add('audiobook', path.split('/').last, sub: dirPath.split('/').last, target: path);
     _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });
     await _player.play();
     _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed).then((_) {

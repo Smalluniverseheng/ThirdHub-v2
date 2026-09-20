@@ -9,6 +9,8 @@ import 'play_tag.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'browser_page.dart';
+import 'recents.dart';
 
 class _Store4 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -156,6 +158,7 @@ class _Radio extends State<RadioPage> {
       await _player.setAudioSource(tagUrl(url, title: '${s['name'] ?? '网络电台'}', album: 'ThirdHub 电台'));
       setState(() { playingUrl = url; playingName = s['name'] ?? ''; });
       await _player.play();
+      Recents.add('radio', '${s['name'] ?? '网络电台'}', target: url);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('播放失败: $e')));
     }
@@ -327,13 +330,38 @@ class _Pod extends State<PodcastPage> {
   ]);
 }
 
-// ═══ 书签: 收藏/分组/打开/删除 ═══
+// ═══ 书签: 与浏览器模块共用同一份书签(规划「模块合并」——不再各存一份) ═══
+// 存储键与浏览器完全一致('browser_bookmarks'); 首次打开把旧独立书签迁移过来。
+// 点按书签 → 内置浏览器打开(跨模块调用), 不再跳系统浏览器。
 class BookmarksPage extends StatefulWidget { const BookmarksPage({super.key}); @override State<BookmarksPage> createState() => _Bm(); }
 class _Bm extends State<BookmarksPage> {
-  List<Map<String, dynamic>> items = [];
+  List<Map<String, String>> items = [];
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => items = await _Store4.list('bookmarks'));
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    try { items = [ for (final e in jsonDecode(p.getString('browser_bookmarks') ?? '[]') as List) Map<String, String>.from(e) ]; } catch (_) { items = []; }
+    // 一次性迁移: 旧独立书签(_Store4 'bookmarks')并进浏览器书签
+    if (p.getBool('bookmarks_merged_v1') != true) {
+      try {
+        final legacy = await _Store4.list('bookmarks');
+        if (legacy.isNotEmpty) {
+          for (final e in legacy) {
+            final url = '${e['url'] ?? ''}';
+            if (url.isEmpty || items.any((b) => b['url'] == url)) continue;
+            items.add({'title': '${e['title'] ?? url}', 'url': url, 'at': DateTime.now().toString().substring(0, 16)});
+          }
+          await _save();
+        }
+        await p.setBool('bookmarks_merged_v1', true);
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
+  }
+  Future<void> _save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString('browser_bookmarks', jsonEncode(items));
+  }
 
   Future<void> _add() async {
     final titleC = TextEditingController(); final urlC = TextEditingController();
@@ -353,29 +381,29 @@ class _Bm extends State<BookmarksPage> {
     var url = urlC.text.trim();
     if (!url.startsWith('http')) url = 'https://$url';
     items.insert(0, {'title': titleC.text.trim().isEmpty ? Uri.parse(url).host : titleC.text.trim(),
-      'url': url, 'ts': DateTime.now().millisecondsSinceEpoch});
-    await _Store4.save('bookmarks', items);
+      'url': url, 'at': DateTime.now().toString().substring(0, 16)});
+    await _save();
     _load();
   }
 
   @override Widget build(BuildContext c) => Column(children: [
     Padding(padding: const EdgeInsets.all(12), child: SizedBox(width: double.infinity,
-      child: FilledButton.icon(icon: const Icon(Icons.add, size: 18), label: const Text('添加书签(剪贴板有链接会自动填入)'), onPressed: _add))),
+      child: FilledButton.icon(icon: const Icon(Icons.add, size: 18), label: const Text('添加书签(与浏览器同步)'), onPressed: _add))),
     Expanded(child: items.isEmpty
-      ? const Center(child: Text('还没有书签', style: TextStyle(color: Colors.grey)))
+      ? const Center(child: Text('还没有书签\n浏览器里点地址栏右侧书签图标也会进这里', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
       : ListView(children: [
-          for (final e in items) Dismissible(key: ValueKey('${e['ts']}_${e['url']}'),
+          for (final e in items) Dismissible(key: ValueKey('${e['at']}_${e['url']}'),
             direction: DismissDirection.endToStart,
             background: Container(color: Colors.redAccent, alignment: Alignment.centerRight,
               padding: const EdgeInsets.only(right: 16), child: const Icon(Icons.delete, color: Colors.white)),
-            onDismissed: (_) { items.remove(e); _Store4.save('bookmarks', items).then((_) => _load()); },
+            onDismissed: (_) { items.remove(e); _save().then((_) => _load()); },
             child: ListTile(dense: true,
               leading: const Icon(Icons.bookmark_border, size: 20),
               title: Text(e['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
               subtitle: Text(e['url'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 10, color: Colors.grey)),
               trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-              onTap: () => launchUrl(Uri.parse(e['url'] ?? ''), mode: LaunchMode.externalApplication))),
+              onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => BrowserPage(initialUrl: e['url']))))),
         ])),
   ]);
 }

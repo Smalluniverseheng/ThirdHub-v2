@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
+import 'read_stats.dart';
 import 'tts.dart';
 import 'tts_presets.dart';
 import 'ai.dart';
@@ -85,6 +86,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
   final Map<int, Map<String, dynamic>> chapCache = {};
   final GlobalKey<_FlipPagerState> _pagerKey = GlobalKey<_FlipPagerState>();
   static const _volChan = MethodChannel('thirdhub/volume_keys');
+  // 阅读统计(规划 R-1): 每 30 秒记一次时长
+  Timer? _statTimer;
   DateTime _lastVolAt = DateTime.fromMillisecondsSinceEpoch(0);
   int get idx => widget.index;
   Map<String, dynamic> get chapter => widget.chapters[idx];
@@ -92,7 +95,10 @@ class _NovelReaderState extends State<NovelReaderPage> {
   bool get hasNext => idx < widget.chapters.length - 1;
 
   @override void initState() { super.initState(); _initTts(); _boot();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoRead()); }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoRead());
+    // 阅读统计(规划 R-1): 每 30 秒记一次时长
+    _statTimer = Timer.periodic(const Duration(seconds: 30), (_) => ReadStats.tick(sec: 30));
+  }
   void _applyOrientation() {
     SystemChrome.setPreferredOrientations(ReaderCfg.landscape
       ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
@@ -119,7 +125,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   // ── 听书 ──
   StreamSubscription? _ttsSub;
   void _initTts() { _ttsSub = TtsManager.onState.listen((_) { if (mounted) setState(() {}); }); }
-  @override void dispose() { _ttsSub?.cancel(); _autoTimer?.cancel(); _vScroll.dispose(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop();
+  @override void dispose() { _ttsSub?.cancel(); _autoTimer?.cancel(); _statTimer?.cancel(); _vScroll.dispose(); _volChan.setMethodCallHandler(null); _volChan.invokeMethod('enable', false); TtsManager.stop();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values); super.dispose(); }
 
   // 音量键翻页: MainActivity 原生拦截音量键并回传(只在阅读页启用, 不改变系统音量)
@@ -233,6 +239,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
       else { d = await widget.fetchContent(widget.sourceId, chapter['url'] ?? ''); chapCache[idx] = d; }
       text = d['text'] as String? ?? ''; images = List<String>.from(d['images'] ?? []);
       if (text.isEmpty && images.isEmpty) text = '本章无内容';
+      ReadStats.tick(chars: text.length); // 阅读统计: 按章记字数
       final p = await SharedPreferences.getInstance();
       await p.setInt('progress_${widget.bookUrl}', idx);
       try { await widget.onProgress?.call(idx, chapter['name'] ?? ''); } catch (_) {}
