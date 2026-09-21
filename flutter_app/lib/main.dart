@@ -3945,8 +3945,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.33.0';
-  static const int currentCode = 50526;
+  static const String currentVersion = '4.40.0';
+  static const int currentCode = 50527;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
