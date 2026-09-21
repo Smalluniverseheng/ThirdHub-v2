@@ -203,7 +203,7 @@ class BrowserProHost {
 Future<void> showBrowserPro(BuildContext context, BrowserProHost host) async {
   bool night = await BrowserPro.nightOn();
   bool gesture = await BrowserPro.gestureOn();
-  final ua = await BrowserPro.uaFor(host.url());
+  String ua = await BrowserPro.uaFor(host.url());
   if (!context.mounted) return;
 
   await showModalBottomSheet<void>(
