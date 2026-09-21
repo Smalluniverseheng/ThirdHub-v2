@@ -298,7 +298,11 @@ R-1 阅读统计 → R-6 书架批量管理 → M-4 统一最近播放 → B-1 �
 | 治理 UI | `mcp_page.dart` | 后端托管（主）+ 本机直连（兼容）双区 |
 
 **自检**（CI `agent-selfcheck.yml`，推送即跑）：服务端 `test_agent_proto.cjs` 88 条（含「没装 DSH 也要优雅降级」）；
-客户端 `tool/agent_proto_selfcheck.dart` 117 条（含与服务端权限表逐工具对拍 + 幽灵工具检测）。
+客户端 `tool/agent_proto_selfcheck.dart` 140 条（含与服务端权限表逐工具对拍 + 幽灵工具检测）。
+
+**仓库卫生**（方案 §12 清单，同批完成）：签名密钥（`android/keystore.properties` + `*.jks.b64`）移出仓库并补 `.gitignore`
+→ tag 出包改从 `secrets.TH_KEYSTORE_BASE64` 还原；补 `LICENSE`（MIT）；`server/vendor/THIRD-PARTY.md` 逐组件登记许可证
+（aria2 = GPL-2.0 独立子进程聚合分发；`drpy2.min.js` 无许可证声明 → 如实标「待确认」）；补 `docs/AGENT-PROTOCOL.md`；CI 加本 workflow。
 
 **已知边界（不假装已做）**：
 
