@@ -214,32 +214,139 @@ const D = (r) => (r.out && r.out.json && r.out.json.data) || {};
   ck('MIT 在 allow 名单', (pol.licenseAllow || []).includes('MIT'));
   ck('内置插件都是放行许可证', D(r).every((p) => ['MIT', 'Apache-2.0', 'BSD-3-Clause'].includes(p.license)), JSON.stringify(D(r).map((p) => p.license)));
 
-  // ── 9. 落盘与重启可读 ──
-  console.log('== 9. 落盘 ==');
+  // ── 9. 产物文本：小文本内联 / 大文本落盘 + 可回取 ──
+  console.log('== 9. 产物文本 ==');
+  const smallDiff = '--- a\n+++ b\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n';
+  r = await call('POST', '/agent/artifact', { text: smallDiff });
+  const smallId = D(r).id;
+  ck('POST 产物 -> 200 且返回 id', r.out.status === 200 && /^art_/.test(String(smallId || '')), JSON.stringify(r.out));
+  ck('返回的 uri 指向该产物', String(D(r).uri || '') === 'server://artifacts/' + smallId);
+  r = await call('GET', '/agent/artifact?id=' + smallId);
+  ck('回取全文逐字一致', D(r).text === smallDiff, JSON.stringify(D(r)).slice(0, 140));
+  ck('回取带字节数与行数', D(r).bytes === Buffer.byteLength(smallDiff, 'utf8') && D(r).lines === 6,
+    'bytes=' + D(r).bytes + ' lines=' + D(r).lines);
+  ck('产物落成文件', fs.existsSync(path.join(DATA, 'agent-artifacts', smallId + '.txt')));
+  r = await call('GET', '/agent/artifact?id=..%2f..%2fetc%2fpasswd');
+  ck('★非法 id 被拒（不能当目录穿越用）', r.out.status === 400, JSON.stringify(r.out));
+  r = await call('GET', '/agent/artifact?id=art_nope_0001');
+  ck('形状合法但不存在的产物 -> 404', r.out.status === 404, JSON.stringify(r.out));
+  r = await call('GET', '/agent/artifact');
+  ck('缺 id -> 400', r.out.status === 400, JSON.stringify(r.out));
+  r = await call('GET', '/agent/artifact?uri=' + encodeURIComponent('server://artifacts/' + smallId));
+  ck('用 uri 形式也能取回', D(r).text === smallDiff, JSON.stringify(r.out).slice(0, 140));
+
+  // artifact 事件的两态：小文本内联；大文本只留预览 + 指向全文
+  r = await call('POST', '/agent/event', {
+    sessionId: 's1', type: 'artifact',
+    payload: { kind: 'diff', summary: '小补丁', text: smallDiff },
+  });
+  ck('小产物事件内联且不标截断', D(r).payload.textTruncated === false && D(r).payload.text === smallDiff,
+    JSON.stringify(D(r).payload).slice(0, 140));
+  const bigText = Array.from({ length: 900 }, (_, i) => (i % 2 ? '+' : '-') + 'line ' + i).join('\n');
+  r = await call('POST', '/agent/event', {
+    sessionId: 's1', type: 'artifact',
+    payload: { kind: 'diff', summary: '大补丁', text: bigText },
+  });
+  const bigP = D(r).payload;
+  ck('大产物事件标记 textTruncated', bigP.textTruncated === true, JSON.stringify(bigP).slice(0, 120));
+  ck('大产物只内联预览行数', String(bigP.text).split('\n').length === 120, String(bigP.text).split('\n').length);
+  ck('大产物 bytes 记的是全文', bigP.bytes === Buffer.byteLength(bigText, 'utf8'), bigP.bytes);
+  ck('大产物 uri 指向全文', bigP.uri === 'server://artifacts/' + bigP.storedId, bigP.uri);
+  r = await call('GET', '/agent/artifact?id=' + bigP.storedId);
+  ck('★大产物回取全文逐字一致', D(r).text === bigText, ('实际长度=' + String(D(r).text || '').length));
+  // 向后兼容：没有 text 的老形态（只有 uri）必须原样通过
+  r = await call('POST', '/agent/event', {
+    sessionId: 's1', type: 'artifact',
+    payload: { kind: 'file', uri: 'server://x', summary: 'y' },
+  });
+  ck('无 text 的 artifact 原样通过（向后兼容）',
+    D(r).payload.text === undefined && D(r).payload.textTruncated === undefined, JSON.stringify(D(r).payload));
+
+  // ── 10. 落盘与重启可读 ──
+  console.log('== 10. 落盘 ==');
   const sf = path.join(DATA, 'agent-sessions', 's1.jsonl');
   ck('会话事件落成 jsonl', fs.existsSync(sf), sf);
   ck('jsonl 行数 = 事件数', fs.readFileSync(sf, 'utf8').split('\n').filter(Boolean).length >= 8,
     fs.readFileSync(sf, 'utf8').split('\n').filter(Boolean).length);
   ck('审计落成 jsonl', fs.existsSync(path.join(DATA, 'agent-audit.jsonl')));
   ck('会话索引写出来了', fs.existsSync(path.join(DATA, 'agent-sessions', 'index.json')));
-  // 换一个进程内实例读同一份 DATA（模拟重启）：历史必须还在
+
+  // 先留一个**未答复**的挂起确认：重启后它必须还在
+  const rc = await call('POST', '/agent/confirm', { sessionId: 's1', tool: 'note.save', args: { p: 1 }, reason: '跨重启' });
+  ck('发起确认 -> 200 且有 confirmId',
+    rc.out.status === 200 && String(D(rc).confirmId || '').startsWith('evt_'), JSON.stringify(rc.out));
+  const pendId = D(rc).confirmId;
+  const cfFile = path.join(DATA, 'agent-confirms.json');
+  ck('挂起队列落成文件', fs.existsSync(cfFile), cfFile);
+  const cf1 = JSON.parse(fs.readFileSync(cfFile, 'utf8'));
+  ck('落盘内容含该确认项', (cf1.items || []).some((x) => x.confirmId === pendId),
+    JSON.stringify(cf1).slice(0, 160));
+
+  // 换一个进程内实例读同一份 DATA（模拟重启）：历史与挂起队列都必须还在
   delete require.cache[require.resolve(path.join(__dirname, 'agent-dsh.js'))];
   delete require.cache[require.resolve(path.join(__dirname, 'routes-agent.js'))];
   const routes2 = require(path.join(__dirname, 'routes-agent.js'));
-  const u2 = new URL('http://x/agent/events?sessionId=s1');
-  let out2 = null;
-  await routes2.handle({ method: 'GET', headers: {}, on() {} },
-    { writeHead() {}, end() {}, write() {} }, '', u2, u2.pathname,
-    (code, payload) => { out2 = { code, payload }; return true; }, { DATA, SECRET: 'test' });
-  ck('「重启」后仍能读回历史事件', out2 && out2.code === 200 && out2.payload.data.length >= 8,
-    JSON.stringify(out2 && out2.payload && out2.payload.data && out2.payload.data.length));
+  const call2 = async (method, fullPath, obj) => {
+    const u = new URL('http://x' + fullPath);
+    let o = null;
+    await routes2.handle({ method, headers: {}, on() {} },
+      { writeHead() {}, end() {}, write() {} },
+      obj === undefined ? '' : JSON.stringify(obj), u, u.pathname,
+      (code, payload) => { o = { status: code, json: payload }; return true; },
+      { DATA, SECRET: 'test' });
+    return o;
+  };
+  let o2 = await call2('GET', '/agent/events?sessionId=s1');
+  ck('「重启」后仍能读回历史事件', o2.status === 200 && (o2.json.data || []).length >= 8,
+    '事件数=' + ((o2.json.data || []).length));
+  o2 = await call2('GET', '/agent/confirm?sessionId=s1');
+  ck('★重启后挂起确认仍在（不再是纯内存态）',
+    (o2.json.data || []).some((x) => x.confirmId === pendId), JSON.stringify(o2.json.data).slice(0, 160));
+  o2 = await call2('POST', '/agent/confirm', { confirmId: pendId, allow: false });
+  ck('重启后仍能答复该确认', o2.status === 200, JSON.stringify(o2.json).slice(0, 140));
+  o2 = await call2('GET', '/agent/confirm?sessionId=s1');
+  ck('答复后队列清空', (o2.json.data || []).length === 0, JSON.stringify(o2.json.data).slice(0, 160));
+  const cf2 = JSON.parse(fs.readFileSync(cfFile, 'utf8'));
+  ck('答复状态同样落盘（再重启不会复活）', (cf2.items || []).length === 0, JSON.stringify(cf2).slice(0, 120));
+  o2 = await call2('GET', '/agent/events?sessionId=s1&since=0');
+  ck('confirm_result 已落进事件流',
+    (o2.json.data || []).some((e) => e.type === 'confirm_result' && e.payload.confirmId === pendId),
+    '事件数=' + (o2.json.data || []).length);
 
-  // ── 10. 未命中交回主路由 ──
-  console.log('== 10. 路由边界 ==');
+  // ── 11. 未命中交回主路由 ──
+  console.log('== 11. 路由边界 ==');
   r = await call('GET', '/v1/不存在');
   ck('/v1/* 返回 false 交回主路由', r.hit === false, 'got ' + r.hit);
   r = await call('GET', '/agent/不存在');
   ck('未实现的 /agent/* 也返回 false', r.hit === false, 'got ' + r.hit);
+
+  // ── 12. SSE 增量推送（单定时器 + 按会话多路分发） ──
+  console.log('== 12. SSE 增量推送 ==');
+  const mkRes = () => {
+    const chunks = [];
+    return {
+      chunks, ended: false,
+      writeHead() {},
+      write(s) { chunks.push(String(s)); },
+      end() { this.ended = true; },
+    };
+  };
+  const mkReq = () => ({ method: 'GET', headers: {}, on() {} });
+  const su = new URL('http://x/agent/events/stream?sessionId=s1');
+  const sres1 = mkRes();
+  const hitSse = await routes.handle(mkReq(), sres1, '', su, su.pathname, () => {}, { DATA, SECRET: 'test' });
+  ck('SSE 命中并保持连接（返回 true）', hitSse === true, 'got ' + hitSse);
+  ck('首帧发 hello', sres1.chunks.join('').includes('event: hello'));
+  const sres2 = mkRes();
+  await routes.handle(mkReq(), sres2, '', su, su.pathname, () => {}, { DATA, SECRET: 'test' });
+  await call('POST', '/agent/event', { sessionId: 's1', type: 'assistant_message', payload: { text: '推送测试' } });
+  await new Promise((rs) => setTimeout(rs, 1100));
+  ck('连接1 收到推送', sres1.chunks.join('').includes('推送测试'));
+  ck('连接2 也收到推送（同一会话多路分发）', sres2.chunks.join('').includes('推送测试'));
+  await call('POST', '/agent/event', { sessionId: 's1', type: 'done', payload: { taskStatus: 'ok' } });
+  await new Promise((rs) => setTimeout(rs, 1100));
+  ck('done 之后两个连接都关闭', sres1.ended === true && sres2.ended === true);
+  ck('发出 close 事件', sres1.chunks.join('').includes('event: close'));
 
   console.log('');
   console.log(fails === 0 ? ('全部通过 ' + total + '/' + total) : (fails + '/' + total + ' 项失败'));

@@ -315,6 +315,40 @@ class AgentDshClient {
   }
 
   // ── 5. MCP（只管理服务端注册表，不在本地跑 stdio） ──────────────────────
+  // ── 产物全文（事件里只带预览时才需要回取） ───────────────────────────────
+  /// 按 id 取回落盘产物全文。大 diff / 大日志走这条，事件流因此保持轻量。
+  static Future<({bool ok, String text, int bytes, String error})> artifact(
+      String id) async {
+    final key = id.trim();
+    if (key.isEmpty) return (ok: false, text: '', bytes: 0, error: '缺产物 id');
+    final m = await _send('GET', '/agent/artifact',
+        query: {'id': key}, timeout: _long);
+    final d = _data(m);
+    if (d is Map) {
+      final t = '${d['text'] ?? ''}';
+      final b = d['bytes'] is num ? (d['bytes'] as num).toInt() : t.length;
+      return (ok: true, text: t, bytes: b, error: '');
+    }
+    return (
+      ok: false,
+      text: '',
+      bytes: 0,
+      error: '取回失败（后端未连接，或产物已被清理）',
+    );
+  }
+
+  /// 把一份文本存到服务端换回 id/uri（需要落地大产物的调用方用）
+  static Future<({bool ok, String id, String uri, String error})> putArtifact(
+      String text) async {
+    final m = await _send('POST', '/agent/artifact',
+        body: {'text': text}, timeout: _long);
+    final d = _data(m);
+    if (d is Map && d['id'] != null) {
+      return (ok: true, id: '${d['id']}', uri: '${d['uri'] ?? ''}', error: '');
+    }
+    return (ok: false, id: '', uri: '', error: '保存失败（后端未连接）');
+  }
+
   static Future<List<Map<String, dynamic>>> mcpList() async =>
       _list(_data(await _send('GET', '/agent/mcp')));
 

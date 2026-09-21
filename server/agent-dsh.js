@@ -16,6 +16,8 @@
 //   <DATA>/agent-sessions/index.json      会话索引
 //   <DATA>/agent-sessions/<sid>.jsonl     单会话事件流（一行一个事件）
 //   <DATA>/agent-audit.jsonl              审计流水（跨会话）
+//   <DATA>/agent-confirms.json            挂起确认队列（重启不丢，见 §14）
+//   <DATA>/agent-artifacts/<id>.txt       产物全文（大 diff / 大日志落这里，事件里只放预览）
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require('fs');
 const path = require('path');
@@ -30,6 +32,13 @@ const EVENT_TYPES = [
 const MODES = { FULL: 'full', FALLBACK: 'fallback' };
 const DECISIONS = ['allow', 'confirm', 'deny'];
 
+// artifact 文本落地阈值：小文本直接内联进事件（客户端即刻高亮，无需回取），
+// 超过则全文落 <DATA>/agent-artifacts/，事件里只带前 N 行预览 + textTruncated 标记。
+// 这样「大段内容不进对话流」的协议承诺才真正兑现 —— 事件流读起来永远是轻的。
+const ARTIFACT_INLINE_MAX_LINES = 400;
+const ARTIFACT_INLINE_MAX_CHARS = 24000;
+const ARTIFACT_PREVIEW_LINES = 120;
+
 // ── 内部状态 ────────────────────────────────────────────────────────────────
 let DATA_DIR = '';
 let PROFILES = null;            // agent-profiles.json 内容
@@ -38,6 +47,7 @@ const SESS = new Map();         // sid -> {meta, events:[], seq}
 const PENDING = new Map();      // confirmId -> {sid, tool, args, risk, at}
 let DSH_STATE = { mode: MODES.FALLBACK, kind: 'none', target: '', version: '', lastProbe: 0, error: '', proc: null };
 let _seq = 0;
+let _artSeq = 0;
 
 // ── 工具与 id ───────────────────────────────────────────────────────────────
 function nextEventId() {
@@ -66,18 +76,83 @@ function loadPlugins() {
 }
 
 function init(dataDir) {
-  DATA_DIR = dataDir || DATA_DIR || '.';
+  const next = dataDir || DATA_DIR || '.';
+  const switched = next !== DATA_DIR;   // 数据目录变了才重载队列，否则每个请求都读一次盘
+  DATA_DIR = next;
   try { fs.mkdirSync(path.join(DATA_DIR, 'agent-sessions'), { recursive: true }); } catch (_) {}
+  try { fs.mkdirSync(path.join(DATA_DIR, 'agent-artifacts'), { recursive: true }); } catch (_) {}
   loadProfiles(); loadPlugins();
+  if (switched) loadPending();   // 挂起确认队列跨重启恢复（见 §14 边界 3）
   return { ok: true };
 }
 
 function sessFile(sid) { return path.join(DATA_DIR, 'agent-sessions', sid + '.jsonl'); }
 function indexFile() { return path.join(DATA_DIR, 'agent-sessions', 'index.json'); }
 function auditFile() { return path.join(DATA_DIR, 'agent-audit.jsonl'); }
+function confirmsFile() { return path.join(DATA_DIR, 'agent-confirms.json'); }
+function artifactDir() { return path.join(DATA_DIR, 'agent-artifacts'); }
+function artifactFile(id) { return path.join(artifactDir(), id + '.txt'); }
 
 function appendJsonl(f, obj) {
   try { fs.appendFileSync(f, JSON.stringify(obj) + '\n', 'utf8'); } catch (_) {}
+}
+
+// ── 产物文本（大 diff / 大日志的落地与回取） ────────────────────────────────
+// id 只允许 [A-Za-z0-9_]，写入与读取都走这一步 —— 否则「回取」就是个目录穿越洞。
+function safeArtifactId(id) {
+  const s = String(id || '');
+  return /^[A-Za-z0-9_]{1,80}$/.test(s) ? s : '';
+}
+
+/** 落盘产物全文，返回 id。失败也返回 id（读回时给 null，不会假装成功）。 */
+function putArtifactText(text) {
+  _artSeq += 1;
+  const id = 'art_' + Date.now().toString(36) + '_' + _artSeq.toString(36).padStart(4, '0');
+  try {
+    fs.mkdirSync(artifactDir(), { recursive: true });
+    fs.writeFileSync(artifactFile(id), String(text), 'utf8');
+  } catch (_) {}
+  return id;
+}
+
+/** 按 id 取回全文；id 非法或不存在一律返回 null（调用方据此给 404）。 */
+function getArtifactText(id) {
+  const s = safeArtifactId(id);
+  if (!s) return null;
+  try { return fs.readFileSync(artifactFile(s), 'utf8'); } catch (_) { return null; }
+}
+
+/** 把 `server://artifacts/<id>` 或裸 id 归一成 id，取不出就返回 ''。 */
+function artifactIdOf(ref) {
+  const raw = String(ref || '').trim();
+  if (!raw) return '';
+  const m = raw.match(/^server:\/\/artifacts\/(.+)$/);
+  return safeArtifactId(m ? m[1] : raw);
+}
+
+/**
+ * artifact 载荷规范化（服务端权威，只在 appendEvent 里调一次）：
+ *   · 无 text        → 原样返回（uri-only 的老形态继续可用，向后兼容）
+ *   · 小 text        → 内联，textTruncated=false，补 bytes
+ *   · 大 text        → 落盘全文，内联前 N 行预览，textTruncated=true + storedId/uri 指向全文
+ * bytes 恒为**全文**字节数，客户端因此能显示「共多少」而不是「看到多少」。
+ */
+function normalizeArtifactPayload(payload) {
+  const out = Object.assign({}, payload || {});
+  const text = typeof out.text === 'string' ? out.text : '';
+  if (!text) return out;
+  out.bytes = Buffer.byteLength(text, 'utf8');
+  const lineCount = text.split(/\r?\n/).length;
+  if (lineCount <= ARTIFACT_INLINE_MAX_LINES && text.length <= ARTIFACT_INLINE_MAX_CHARS) {
+    out.textTruncated = false;
+    return out;
+  }
+  const id = putArtifactText(text);
+  out.storedId = id;
+  if (!out.uri) out.uri = 'server://artifacts/' + id;
+  out.text = text.split(/\r?\n/).slice(0, ARTIFACT_PREVIEW_LINES).join('\n');
+  out.textTruncated = true;
+  return out;
 }
 
 // ── 会话 ────────────────────────────────────────────────────────────────────
@@ -148,13 +223,16 @@ function appendEvent(sid, type, payload = {}, opts = {}) {
   const rec = ensureLoaded(sid);
   if (!rec) throw new Error('会话不存在: ' + sid);
   rec.seq += 1;
+  // 规范化只发生在这一个写入原语里 —— 事件日志里存下来的永远是规范形态，
+  // 所以回读历史事件不需要再判一次（两端对同一份 JSON 的解析结论必然一致）。
+  const norm = type === 'artifact' ? normalizeArtifactPayload(payload) : (payload || {});
   const evt = {
     id: nextEventId(),
     sessionId: sid,
     seq: rec.seq,
     ts: Date.now(),
     type,
-    payload: payload || {},
+    payload: norm,
   };
   rec.events.push(evt);
   appendJsonl(sessFile(sid), evt);
@@ -250,6 +328,28 @@ function decide(profileId, tool) {
 }
 
 // ── 确认队列 ────────────────────────────────────────────────────────────────
+// 跨重启：挂起队列落盘。重启后未答复的确认仍能被答复、且挂起数不为 0 ——
+// 否则「事件流完整、但确认全部消失」会让用户以为系统悄悄放行了高危操作。
+function savePending() {
+  try {
+    const items = [];
+    for (const [cid, p] of PENDING.entries()) items.push(Object.assign({ confirmId: cid }, p));
+    fs.writeFileSync(confirmsFile(), JSON.stringify({ version: 1, items }, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+function loadPending() {
+  const j = readJsonSafe(confirmsFile(), { version: 1, items: [] });
+  PENDING.clear();
+  for (const it of (j.items || [])) {
+    if (!it || !it.confirmId) continue;
+    const p = Object.assign({}, it);
+    delete p.confirmId;
+    PENDING.set(String(it.confirmId), p);
+  }
+  return PENDING.size;
+}
+
 function requestConfirm(sid, { tool, args, reason }) {
   const rec = ensureLoaded(sid);
   if (!rec) throw new Error('会话不存在: ' + sid);
@@ -266,6 +366,7 @@ function requestConfirm(sid, { tool, args, reason }) {
   const argsDigest = digestOf(args);
   const evt = appendEvent(sid, 'confirm_request', { tool, args, argsDigest, risk: d.risk, reason: reason || d.reason });
   PENDING.set(evt.id, { sid, tool, args, risk: d.risk, at: evt.ts, argsDigest });
+  savePending();
   return { ok: true, confirmId: evt.id, decision: 'confirm', risk: d.risk };
 }
 
@@ -285,6 +386,7 @@ function resolveConfirm(confirmId, allow, by = 'user') {
     confirmId, tool: p.tool, allow: !!allow, by, argsDigest: p.argsDigest,
   });
   PENDING.delete(confirmId);
+  savePending();
   return { ok: true, allow: !!allow, eventId: evt.id };
 }
 
@@ -499,8 +601,12 @@ function snapshot() {
 }
 
 function resetForTest() {
-  SESS.clear(); PENDING.clear(); _seq = 0;
+  SESS.clear(); PENDING.clear(); _seq = 0; _artSeq = 0;
   DSH_STATE = { mode: MODES.FALLBACK, kind: 'none', target: '', version: '', lastProbe: 0, error: '', proc: null };
+  // DATA_DIR 一并清空，好让下一次 init(同一目录) 被判定成「切换目录」并重新载入队列 ——
+  // 测试正是靠这一步模拟「进程重启后从盘上恢复挂起确认」。
+  // 刻意**不写盘**：写完就把要验证的队列抹掉了。测试间隔离靠各自独立的 DATA_DIR。
+  DATA_DIR = '';
 }
 
 module.exports = {
@@ -508,6 +614,8 @@ module.exports = {
   createSession, listSessions, getSession, appendEvent, events,
   decide, riskOf, profileOf, requestConfirm, pendingConfirms, resolveConfirm,
   audit, listAudit, toolCatalog, snapshot, resetForTest,
+  putArtifactText, getArtifactText, artifactIdOf, normalizeArtifactPayload, loadPending,
   EVENT_TYPES, MODES, digestOf,
+  ARTIFACT_INLINE_MAX_LINES, ARTIFACT_INLINE_MAX_CHARS, ARTIFACT_PREVIEW_LINES,
   get DSH_STATE() { return DSH_STATE; },
 };

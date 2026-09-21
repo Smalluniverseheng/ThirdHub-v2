@@ -1,6 +1,6 @@
 # THA/1 · ThirdHub Agent 协议
 
-> 状态：已实现（v4.42.0）。服务端实现 `server/agent-dsh.js` + `server/routes-agent.js`，
+> 状态：已实现（v4.43.0）。服务端实现 `server/agent-dsh.js` + `server/routes-agent.js`，
 > 客户端实现 `flutter_app/lib/core/agent_{models,policy,dsh_client}.dart`。
 > 自检：`node server/test_agent_proto.cjs`（88 条）、
 > `dart run tool/agent_proto_selfcheck.dart`（140 条）。
@@ -82,6 +82,8 @@ Flutter 是控制面：发起任务、渲染事件流、批准高危操作、看
 | POST | `/agent/confirm` | 发起确认 `{sessionId,tool,args}` **或** 答复 `{confirmId,allow,by}` |
 | GET | `/agent/audit` | `?limit=&sessionId=` 审计流水（倒序） |
 | POST | `/agent/audit` | 手工补一条审计（一般不用，事件会自动落） |
+| GET | `/agent/artifact` | `?id=`（或 `?uri=server://artifacts/<id>`）取回产物全文；`&raw=1` 返回 `text/plain` |
+| POST | `/agent/artifact` | 存一份产物文本 `{text}`，回带 `{id,uri,bytes}` |
 | GET | `/agent/profiles` | 三档定义 + `meta.risk`（工具风险表） |
 | GET | `/agent/tools` | `?profile=` 该档位下每个工具的 allow/confirm/deny（**判定由服务端算好**） |
 | GET | `/agent/plugins` | 插件白名单 + 许可证策略 |
@@ -118,9 +120,24 @@ Flutter 是控制面：发起任务、渲染事件流、批准高危操作、看
 | `confirm_request` | `{tool, args, argsDigest, risk, reason}` | 服务端 |
 | `confirm_result` | `{confirmId, tool, allow, by, argsDigest?}` | 客户端/服务端 |
 | `audit` | `{note, decision?, tool?, profile?, risk?}` | 任一侧 |
-| `artifact` | `{kind: patch\|file\|diff\|log, uri, summary, requiresConfirm}` | 任一侧 |
+| `artifact` | `{kind: patch\|file\|diff\|log, uri, summary, requiresConfirm, text?, textTruncated?, bytes?, storedId?}` | 任一侧 |
 | `error` | `{code, message, tool?}` | 任一侧 |
 | `done` | `{taskStatus, tokens?, cost?, rounds?, mode?}` | 任一侧 |
+
+**`artifact` 的文本两态**（`text` 是**可选**字段；老形态只给 `uri` 时行为完全不变）：
+
+| 情形 | 事件里的载荷 | 客户端怎么做 |
+|---|---|---|
+| 小文本（≤400 行且 ≤24000 字符） | `text` = 全文，`textTruncated:false`，`bytes` = 字节数 | 直接渲染（`diff`/`patch` 走逐行高亮） |
+| 大文本 | `text` = 前 120 行预览，`textTruncated:true`，`storedId` + `uri` 指向全文，`bytes` = **全文**字节数 | 先渲染预览；要全文再 `GET /agent/artifact?id=` |
+
+`bytes` 恒为**全文**字节数（即使只内联了预览）—— 界面因此能说「共多少」
+而不是「你看到多少」。规范化只发生在服务端 `appendEvent` 这一个写入原语里，
+所以落进事件日志的**永远是规范形态**，回读历史不需要再判一次。
+
+**diff 逐行解析在客户端做，且只在真 diff 上做**：客户端不计算差异，只把服务端给的
+文本分类染色。**只有出现 `@@ … @@` 块头才按 diff 分类** —— 否则 `- 第一项` 这种
+Markdown 列表会被染成删除行。宁可不加颜色，也不要把正文染错。
 
 未知类型：服务端 `POST /agent/event` 返回 **400**（不是 500），
 客户端渲染时兜底成一行「未知事件」，不得因为一条脏数据中断整条流。
@@ -232,6 +249,9 @@ data: {"sessionId":"…","lastSeq":18}   ← 本轮出现 done 后主动收尾
 约定：
 
 - 服务端每 **700ms** 推一次增量；无新事件发心跳注释行。
+- **全局单定时器 + 按会话分组分发**：同一个会话有 N 个连接时，**只查一次**
+  `events()` 再按各自 `since` 分发。连接数只影响「写给谁」，不影响「查几次」。
+  空闲时（无人订阅）定时器直接停掉，不空转。
 - 出现 `done` 就发 `close` 并 `res.end()` —— 客户端不必自己猜何时结束。
 - 连接最长挂 **10 分钟**，到点强制断开，避免连接泄漏。
 - 客户端断流/被中间设备掐掉时，**必须回落到轮询** `GET /agent/events?since=`。
@@ -358,6 +378,17 @@ summary memory 2k–6k | kb/rag 4k–12k | selected files 4k–16k | 输出预�
   最后跑两端自检 —— bridge 漏登记会让工具在任何档位都调不动。
 - 改档位语义：必须同时更新 `agent-profiles.json` 与 `agent_policy.dart`，
   否则对拍自检会红。
+- **加可选载荷字段**：字段必须可选、缺省时行为不变（老客户端不许被新字段搞崩）；
+  服务端规范化只写在 `appendEvent` **一处**，两端各自补解析断言。
+
+### 4.43.0 变更（原「已知边界」第 2/3/4 条已解决）
+
+| 变更 | 落在哪 |
+|---|---|
+| `artifact` 内联文本两态 + `GET/POST /agent/artifact` | `routes-agent.js`、`agent_models.dart`、`ai_agent_page.dart` |
+| 客户端逐行 diff 高亮（`AgentDiff.parse` 零依赖纯函数，可被纯 Dart 自检） | `agent_models.dart`、`ai_agent_page.dart` |
+| 挂起确认队列落盘（跨重启不再丢） | `agent-dsh.js`、`<DATA>/agent-confirms.json` |
+| SSE 单定时器 + 按会话多路分发（连接数不再放大查询次数） | `routes-agent.js` |
 
 ---
 
@@ -366,9 +397,12 @@ summary memory 2k–6k | kb/rag 4k–12k | selected files 4k–16k | 输出预�
 1. **DSH 未内置**：本机/本仓不带 DSH。`/agent/health` 会如实报 `fallback`，
    并给出原因。`full` 模式需要用户在服务端装好 DSH 后
    `POST /agent/dsh/start`（或配 `TH_DSH_URL` / `TH_DSH_CMD` / `<DATA>/agent-dsh.json`）。
-2. **补丁/差异展示**：`artifact` 的 `diff` / `patch` 目前只把 `summary` + `uri` 展示出来，
-   没有做逐行 diff 高亮。
-3. **确认项不跨重启**：挂起队列在内存里；重启后事件流完整，但未答复的确认需要重新发起。
-4. **`/agent/events/stream` 单会话一份轮询定时器**：会话很多时以 SSE 长连接的代价换增量实时性，
-   后续可换成单定时器 + 多连接分发。
-5. **`argsDigest` 用 sha256 前 32 位**：用于比对，不作为口令学意义上的完整性证明。
+2. **产物文件不自动清理**：`<DATA>/agent-artifacts/` 只增不减，没有保留期与配额。
+   长期跑会占盘，需要运维自己按目录清理（删了之后旧事件的「查看全文」会变 404，
+   预览仍可读 —— 降级是安全的，但不会主动提示「已被清理」之外的信息）。
+3. **挂起确认无过期时间**：队列落盘后可以跨重启，但**永不超时**。
+   一个没答复的确认会一直挂着（这比静默消失安全，但会话多了需要自己清理）。
+4. **`argsDigest` 用 sha256 前 32 位**：用于比对，不作为口令学意义上的完整性证明。
+5. **diff 高亮只做展示**：客户端只把服务端给的文本分类染色，**不计算差异**。
+   若上游给的不是标准 unified diff（比如只看 `-`/`+` 而没有 `@@` 块头），
+   会按普通文本渲染 —— 宁可不加颜色，也不把正文染错。

@@ -445,6 +445,11 @@ class _TaskTabState extends State<_TaskTab> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
 
+  /// artifact：已回取的全文 / 正在回取 / 已展开的 diff（都按事件 id 存，跨重建保持）
+  final Map<String, String> _artFull = {};
+  final Set<String> _artBusy = {};
+  final Set<String> _artDiffOpen = {};
+
   bool get _online => AgentRuntime.backendConnected;
   AgentTimeline get _tl => AgentTimeline(_events);
   int get _lastSeq => _events.isEmpty ? 0 : _events.last.seq;
@@ -824,7 +829,7 @@ class _TaskTabState extends State<_TaskTab> {
     if (e.type == AgentEventType.toolCall) return _toolCard(AgentToolCall.from(e.payload));
     if (e.type == AgentEventType.toolResult) return _resultCard(e);
     if (e.type == AgentEventType.confirmRequest) return _confirmCard(e, confirmOpen);
-    if (e.type == AgentEventType.artifact) return _artifactCard(AgentArtifact.from(e.payload));
+    if (e.type == AgentEventType.artifact) return _artifactCard(e);
     if (e.type == AgentEventType.error) return _errorCard(e);
     if (e.type == AgentEventType.done) return _doneLine(e);
     return null; // audit 事件有专门一栏，不混进对话流
@@ -912,21 +917,164 @@ class _TaskTabState extends State<_TaskTab> {
         ])));
   }
 
-  Widget _artifactCard(AgentArtifact a) => Card(margin: const EdgeInsets.only(bottom: 8, right: 16),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-    child: Padding(padding: const EdgeInsets.all(10),
-      child: Row(children: [
-        const Icon(Icons.folder_zip_outlined, size: 15),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(a.summary.isEmpty ? a.kind : a.summary, style: const TextStyle(fontSize: 12)),
-          if (a.uri.isNotEmpty)
-            Text(a.uri, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: Colors.grey)),
-        ])),
-        if (a.requiresConfirm)
-          const Text('待确认', style: TextStyle(fontSize: 9.5, color: Colors.orange)),
-      ])));
+  // ── artifact：补丁要看得懂「哪几行被改了」，不能只丢一个文件名 ──
+  static const _mono = TextStyle(fontFamily: 'monospace', fontSize: 10.5, height: 1.42);
+  static const _diffFoldAt = 60;
+
+  static String _size(int b) {
+    if (b <= 0) return '大小未知';
+    if (b < 1024) return '$b 字节';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB';
+    return '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
+  }
+
+  /// 按 id 回取被截断的全文（事件流里只带了预览）
+  Future<void> _fetchArtifact(String key, AgentArtifact a) async {
+    setState(() => _artBusy.add(key));
+    final r = await AgentDshClient.artifact(a.storeId);
+    if (!mounted) return;
+    setState(() {
+      _artBusy.remove(key);
+      if (r.ok) {
+        _artFull[key] = r.text;
+      } else {
+        _note = r.error;
+        _noteBad = true;
+      }
+    });
+  }
+
+  Widget _artifactCard(AgentEvent e) {
+    final a = AgentArtifact.from(e.payload);
+    final key = e.id;
+    final full = _artFull[key]; // 非 null 表示已取回全文
+    final body = full ?? a.text;
+    final d = body.trim().isEmpty ? null : AgentDiff.parse(body, assumeDiff: a.isDiff);
+    final open = _artDiffOpen.contains(key);
+    final busy = _artBusy.contains(key);
+
+    return Card(
+        margin: const EdgeInsets.only(bottom: 8, right: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+        child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(a.isDiff ? Icons.difference_outlined : Icons.folder_zip_outlined, size: 15),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(a.summary.isEmpty ? a.kind : a.summary,
+                      style: const TextStyle(fontSize: 12)),
+                  if (d != null && d.hunks > 0)
+                    Text('${d.hunks} 处改动 · +${d.added} −${d.removed}',
+                        style: const TextStyle(fontSize: 10, color: Colors.grey))
+                  else if (a.uri.isNotEmpty && a.text.isEmpty)
+                    Text(a.uri,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                ])),
+                if (a.requiresConfirm)
+                  const Text('待确认', style: TextStyle(fontSize: 9.5, color: Colors.orange)),
+              ]),
+              if (d != null && d.lines.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                _diffBody(d, key, open),
+                if (full != null)
+                  const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('已载入全文', style: TextStyle(fontSize: 10, color: Colors.grey))),
+              ],
+              if (a.textTruncated && a.canFetchFull && full == null)
+                Row(children: [
+                  TextButton.icon(
+                    onPressed: busy ? null : () => _fetchArtifact(key, a),
+                    icon: busy
+                        ? const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.download_outlined, size: 14),
+                    label: Text(
+                        busy ? '取回中…' : '查看全文（预览被截断，全文 ${_size(a.bytes)}）',
+                        style: const TextStyle(fontSize: 11.5)),
+                  ),
+                ])
+              else if (a.textTruncated && !a.canFetchFull)
+                const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text('预览已截断，但服务端未给出全文地址',
+                        style: TextStyle(fontSize: 10.5, color: Colors.orange))),
+            ])));
+  }
+
+  Widget _diffBody(AgentDiff d, String key, bool open) {
+    final cut = (!open && d.lines.length > _diffFoldAt) ? _diffFoldAt : d.lines.length;
+    final rows = d.lines.take(cut).toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Column(children: [for (final l in rows) _diffRow(l)]),
+      ),
+      if (cut < d.lines.length)
+        TextButton(
+          onPressed: () => setState(() => _artDiffOpen.add(key)),
+          child: Text('展开全部（共 ${d.lines.length} 行）',
+              style: const TextStyle(fontSize: 11.5)),
+        )
+      else if (d.lines.length > _diffFoldAt)
+        TextButton(
+          onPressed: () => setState(() => _artDiffOpen.remove(key)),
+          child: const Text('收起', style: TextStyle(fontSize: 11.5)),
+        ),
+    ]);
+  }
+
+  Widget _diffRow(AgentDiffLine l) {
+    Color bg = Colors.transparent;
+    Color markColor = Colors.grey;
+    String mark = ' ';
+    var strong = false;
+    if (l.kind == AgentDiffKind.add) {
+      bg = Colors.green.withValues(alpha: 0.13);
+      mark = '+';
+      markColor = Colors.green;
+    } else if (l.kind == AgentDiffKind.del) {
+      bg = Colors.red.withValues(alpha: 0.13);
+      mark = '−';
+      markColor = Colors.red;
+    } else if (l.kind == AgentDiffKind.hunk) {
+      bg = Colors.blueGrey.withValues(alpha: 0.16);
+      strong = true;
+    } else if (l.kind == AgentDiffKind.file) {
+      bg = Colors.grey.withValues(alpha: 0.14);
+      strong = true;
+    } else if (l.kind == AgentDiffKind.meta) {
+      bg = Colors.grey.withValues(alpha: 0.08);
+    }
+    final no = l.kind == AgentDiffKind.add ? l.bLine : l.aLine;
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+            width: 26,
+            child: Text(no == null ? '' : '$no',
+                textAlign: TextAlign.right,
+                style: _mono.copyWith(color: Colors.grey, fontSize: 9.5))),
+        const SizedBox(width: 6),
+        SizedBox(
+            width: 9,
+            child: Text(mark,
+                style: _mono.copyWith(color: markColor, fontWeight: FontWeight.w700))),
+        Expanded(
+            child: SelectableText(l.text.isEmpty ? ' ' : l.text,
+                style: _mono.copyWith(
+                    fontWeight: strong ? FontWeight.w700 : FontWeight.normal))),
+      ]),
+    );
+  }
 
   Widget _errorCard(AgentEvent e) {
     final code = '${e.payload['code'] ?? ''}';

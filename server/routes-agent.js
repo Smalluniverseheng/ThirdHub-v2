@@ -10,6 +10,85 @@ const mcp = require('./mcp-registry');
 
 function parse(body) { try { return JSON.parse(body || '{}') || {}; } catch (_) { return {}; } }
 
+/** 行数：`"a\nb\n"` 是 2 行不是 3 行（末尾换行不额外算一行），空文本 0 行 */
+function countLines(t) {
+  if (!t) return 0;
+  const n = String(t).split(/\r?\n/).length;
+  return /[\r\n]$/.test(t) ? n - 1 : n;
+}
+
+// ── SSE 分发器 ──────────────────────────────────────────────────────────────
+// 之前每个连接各自 setInterval：会话一多，定时器与「查一次 events」的次数线性增长。
+// 改成全局单定时器 + 按会话分组：**同一会话有 N 个连接也只查一次**，查到的事件再
+// 按各自 since 分发给 N 个连接。连接数只影响「写给谁」，不影响「查几次」。
+const SSE_TICK_MS = 700;
+const SSE_MAX_MS = 600000;
+const SSE_SINKS = new Map();   // sid -> Set<{res, since, closed, timer}>
+let SSE_TIMER = null;
+
+function sseRemove(sid, sink) {
+  const set = SSE_SINKS.get(sid);
+  if (set) {
+    set.delete(sink);
+    if (!set.size) SSE_SINKS.delete(sid);
+  }
+  if (sink && sink.timer) { clearTimeout(sink.timer); sink.timer = null; }
+  // 无人订阅就把定时器也停掉 —— 空闲后端不该一直醒着
+  if (!SSE_SINKS.size && SSE_TIMER) { clearInterval(SSE_TIMER); SSE_TIMER = null; }
+}
+
+function sseClose(sid, sink, lastSeq) {
+  try {
+    sink.res.write(`event: close\ndata: ${JSON.stringify({ sessionId: sid, lastSeq: lastSeq == null ? sink.since : lastSeq })}\n\n`);
+    sink.res.end();
+  } catch (_) {}
+  sink.closed = true;
+  sseRemove(sid, sink);
+}
+
+function sseAdd(sid, sink) {
+  let set = SSE_SINKS.get(sid);
+  if (!set) { set = new Set(); SSE_SINKS.set(sid, set); }
+  set.add(sink);
+  if (!SSE_TIMER) {
+    SSE_TIMER = setInterval(sseTick, SSE_TICK_MS);
+    if (SSE_TIMER.unref) SSE_TIMER.unref();   // 不拖住进程退出
+  }
+}
+
+function sseTick() {
+  for (const [sid, set] of Array.from(SSE_SINKS.entries())) {
+    const sinks = Array.from(set);
+    if (!sinks.length) { SSE_SINKS.delete(sid); continue; }
+    // 本会话只需查一次：从所有连接里最小的 since 起查，再按各自进度分发
+    const minSince = sinks.reduce((m, s) => (s.since < m ? s.since : m), sinks[0].since);
+    let r = null;
+    try { r = agent.events(sid, { since: minSince, limit: 500 }); } catch (_) { r = null; }
+    if (!r) {                       // 会话没了（被清理）→ 收尾，不留悬挂连接
+      for (const s of sinks) sseClose(sid, s, null);
+      continue;
+    }
+    for (const sink of sinks) {
+      if (sink.closed) { sseRemove(sid, sink); continue; }
+      const fresh = r.events.filter((e) => e.seq > sink.since);
+      if (!fresh.length) {
+        try { sink.res.write(': ping\n\n'); } catch (_) { sseRemove(sid, sink); }
+        continue;
+      }
+      let done = false;
+      try {
+        for (const e of fresh) {
+          sink.res.write(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+          sink.since = e.seq;
+          // 本轮结束 → 主动收尾，客户端不必自己猜
+          if (e.type === 'done') done = true;
+        }
+      } catch (_) { sseRemove(sid, sink); continue; }
+      if (done) sseClose(sid, sink, sink.since);
+    }
+  }
+}
+
 async function handle(req, res, body, u, p, send, ctx) {
   if (!p.startsWith('/agent')) return false;
   const DATA = (ctx && ctx.DATA) || '.';
@@ -82,37 +161,15 @@ async function handle(req, res, body, u, p, send, ctx) {
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    let last = Number(q.get('since') || 0);
+    const sink = { res, since: Number(q.get('since') || 0), closed: false, timer: null };
     const mode = agent.snapshot().mode;
-    res.write(`event: hello\ndata: ${JSON.stringify({ sessionId: sid, mode, lastSeq: last })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ sessionId: sid, mode, lastSeq: sink.since })}\n\n`);
 
-    let closed = false;
-    req.on('close', () => { closed = true; });
-
-    const tick = setInterval(() => {
-      if (closed) { clearInterval(tick); return; }
-      try {
-        const r = agent.events(sid, { since: last, limit: 200 });
-        if (r && r.events.length) {
-          for (const e of r.events) {
-            res.write(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
-            last = e.seq;
-          }
-        } else {
-          res.write(': ping\n\n');   // 心跳，避免代理断连
-        }
-        // 本轮结束 → 主动收尾，客户端不必自己猜
-        if (r && r.events.some((e) => e.type === 'done')) {
-          res.write(`event: close\ndata: ${JSON.stringify({ sessionId: sid, lastSeq: last })}\n\n`);
-          res.end();
-          closed = true;
-          clearInterval(tick);
-        }
-      } catch (_) { /* 单次失败不影响后续 tick */ }
-    }, 700);
-
+    req.on('close', () => { sink.closed = true; sseRemove(sid, sink); });
+    sseAdd(sid, sink);
     // 兜底：SSE 最长挂 10 分钟，避免连接泄漏
-    setTimeout(() => { if (!closed) { try { res.end(); } catch (_) {} closed = true; clearInterval(tick); } }, 600000);
+    sink.timer = setTimeout(() => { try { res.end(); } catch (_) {} sink.closed = true; sseRemove(sid, sink); }, SSE_MAX_MS);
+    if (sink.timer.unref) sink.timer.unref();
     return true;
   }
 
@@ -193,6 +250,40 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p === '/agent/audit' && method === 'POST') {
     const d = parse(body);
     return send(200, { object: 'meta', data: agent.audit(d) });
+  }
+
+  // ── 产物文本（大 diff / 大日志的落地与回取） ──
+  // 事件里只放预览（textTruncated=true），全文在这里取；也支持 POST 直接存。
+  if (p === '/agent/artifact' && method === 'GET') {
+    const id = agent.artifactIdOf(q.get('id') || q.get('uri') || '');
+    if (!id) {
+      return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 id，或 uri=server://artifacts/<id>' } });
+    }
+    const text = agent.getArtifactText(id);
+    if (text == null) return send(404, { object: 'error', data: { type: 'not_found', message: '产物不存在: ' + id } });
+    if (q.get('raw') === '1') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(text);
+      return true;
+    }
+    return send(200, {
+      object: 'meta',
+      data: {
+        id, text, uri: 'server://artifacts/' + id,
+        bytes: Buffer.byteLength(text, 'utf8'),
+        lines: countLines(text),
+      },
+    });
+  }
+  if (p === '/agent/artifact' && method === 'POST') {
+    const d = parse(body);
+    const text = typeof d.text === 'string' ? d.text : '';
+    if (!text) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 text' } });
+    const id = agent.putArtifactText(text);
+    return send(200, {
+      object: 'meta',
+      data: { id, uri: 'server://artifacts/' + id, bytes: Buffer.byteLength(text, 'utf8') },
+    });
   }
 
   // ── 权限档位与工具目录（判定结果由服务端算好，前端只做展示与预判） ──

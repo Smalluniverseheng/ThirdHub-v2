@@ -148,11 +148,27 @@ class AgentArtifact {
   final String summary;
   final bool requiresConfirm;
 
+  /// 内联文本（可选）。超过服务端阈值时只内联前若干行预览，
+  /// 并把 [textTruncated] 置 true、[storeId] 指向全文 —— 客户端据此决定要不要回取。
+  final String text;
+  final bool textTruncated;
+
+  /// 全文字节数。**预览被截断时记的也是全文的字节数**，
+  /// 所以界面能显示「共多少」而不是「你看到多少」。
+  final int bytes;
+
+  /// 落盘产物的 id（服务端 `storedId`，或从 [uri] 反解）；取不到为空串。
+  final String storeId;
+
   const AgentArtifact({
     required this.kind,
     required this.uri,
     this.summary = '',
     this.requiresConfirm = true,
+    this.text = '',
+    this.textTruncated = false,
+    this.bytes = 0,
+    this.storeId = '',
   });
 
   factory AgentArtifact.from(Map<String, dynamic> j) => AgentArtifact(
@@ -160,11 +176,160 @@ class AgentArtifact {
         uri: '${j['uri'] ?? ''}',
         summary: '${j['summary'] ?? ''}',
         requiresConfirm: j['requiresConfirm'] != false,
+        text: '${j['text'] ?? ''}',
+        textTruncated: j['textTruncated'] == true,
+        bytes: j['bytes'] is num ? (j['bytes'] as num).toInt() : 0,
+        storeId: _storeIdOf('${j['storedId'] ?? ''}', '${j['uri'] ?? ''}'),
       );
+
+  /// 这个产物是不是补丁/差异 —— 决定要不要走逐行高亮
+  bool get isDiff => kind == 'diff' || kind == 'patch';
+
+  /// 有没有可渲染的内联正文
+  bool get hasText => text.trim().isNotEmpty;
+
+  /// 能不能回取全文（有 id 且确实被截断了才值得给「查看全文」入口）
+  bool get canFetchFull => storeId.isNotEmpty;
 
   static bool looksLikeArtifact(Map<String, dynamic> j) =>
       j.containsKey('artifact') ||
       j.containsKey('kind') && j.containsKey('uri');
+}
+
+/// 从 `storedId` 字段或 `server://artifacts/<id>` 形式的 uri 里取出产物 id。
+/// id 形状与服务端 `safeArtifactId` 保持一致（只允许 [A-Za-z0-9_]），
+/// 形状不符一律返回空串 —— 客户端不往服务端发形状可疑的东西。
+String _storeIdOf(String stored, String uri) {
+  final direct = stored.trim();
+  if (_artIdRe.hasMatch(direct)) return direct;
+  final raw = uri.trim();
+  const prefix = 'server://artifacts/';
+  final id = raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
+  return _artIdRe.hasMatch(id) ? id : '';
+}
+
+final RegExp _artIdRe = RegExp(r'^[A-Za-z0-9_]{1,80}$');
+
+/// diff 行的种类
+enum AgentDiffKind {
+  file, // diff --git / Index: / --- / +++
+  hunk, // @@ -1,2 +1,2 @@
+  add, // +xxx
+  del, // -xxx
+  context, // ' xxx'（未改动的上下文行）
+  meta, // \ No newline at end of file
+  plain, // 非 diff 文本
+}
+
+class AgentDiffLine {
+  final AgentDiffKind kind;
+
+  /// 去掉前缀后的正文（file / hunk / plain 保留整行原文）
+  final String text;
+
+  /// 老文件行号（del / context 有值）
+  final int? aLine;
+
+  /// 新文件行号（add / context 有值）
+  final int? bLine;
+
+  const AgentDiffLine(this.kind, this.text, {this.aLine, this.bLine});
+}
+
+final RegExp _hunkHeadRe = RegExp(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@');
+final RegExp _segHeadRe = RegExp(r'^(diff --git |diff --|Index: |={5,})');
+final RegExp _fileMarkerRe = RegExp(r'^(--- |\+\+\+ )');
+
+/// unified diff 的**纯解析器**（零依赖，可被纯 Dart 自检直接验证）。
+///
+/// 立场：Flutter 只负责把服务端给的文本摆成人能看的样子，**不做 diff 计算**，
+/// 所以这里只做「分类 + 行号」，不产生差异。
+///
+/// 关键防误判：`- 第一项` 这种 Markdown 列表不能被渲染成删除行。因此只有当文本里
+/// 真的出现 `@@ ... @@` 块头时才逐行分类；没有块头时最多标一下 `---`/`+++` 文件头，
+/// 正文一律按普通文本 —— **宁可不加颜色，也不要把正文染错**。
+class AgentDiff {
+  final List<AgentDiffLine> lines;
+  final int added;
+  final int removed;
+  final int hunks;
+
+  /// 是否已按 diff 分类（false 表示整份按普通文本渲染）
+  final bool isDiff;
+
+  const AgentDiff(this.lines,
+      {this.added = 0, this.removed = 0, this.hunks = 0, this.isDiff = false});
+
+  static AgentDiff parse(String text, {bool assumeDiff = false}) {
+    final raw = const LineSplitter().convert(text);
+    final hasHunk = raw.any(_hunkHeadRe.hasMatch);
+
+    if (!hasHunk) {
+      // 没有块头 → 不逐行染色。assumeDiff 只让我们把文件头认出来，
+      // 绝不把 `- xxx` / `+ xxx` 当成增删（那正是 Markdown 列表的写法）。
+      int a = 0, b = 0;
+      final list = <AgentDiffLine>[];
+      for (final l in raw) {
+        if (assumeDiff && (_fileMarkerRe.hasMatch(l) || _segHeadRe.hasMatch(l))) {
+          list.add(AgentDiffLine(AgentDiffKind.file, l));
+        } else {
+          list.add(AgentDiffLine(AgentDiffKind.plain, l));
+        }
+        a++;
+        b++;
+      }
+      return AgentDiff(list, isDiff: assumeDiff);
+    }
+
+    final out = <AgentDiffLine>[];
+    int add = 0, del = 0, hunks = 0, a = 0, b = 0;
+    bool inHunk = false;
+    for (final l in raw) {
+      final hm = _hunkHeadRe.firstMatch(l);
+      if (hm != null) {
+        hunks++;
+        a = int.parse(hm.group(1)!);
+        b = int.parse(hm.group(2)!);
+        inHunk = true;
+        out.add(AgentDiffLine(AgentDiffKind.hunk, l));
+        continue;
+      }
+      // 新文件段开始：无条件退出 hunk 上下文
+      if (_segHeadRe.hasMatch(l)) {
+        inHunk = false;
+        out.add(AgentDiffLine(AgentDiffKind.file, l));
+        continue;
+      }
+      // `--- `/`+++ ` 只在 hunk 外才算文件头；hunk 内的 `+++ x` 是「新增了一行 + x」
+      if (!inHunk && _fileMarkerRe.hasMatch(l)) {
+        out.add(AgentDiffLine(AgentDiffKind.file, l));
+        continue;
+      }
+      if (l.startsWith('\\')) {
+        out.add(AgentDiffLine(AgentDiffKind.meta, l));
+        continue;
+      }
+      if (!inHunk) {
+        out.add(AgentDiffLine(AgentDiffKind.plain, l));
+        continue;
+      }
+      if (l.startsWith('+')) {
+        out.add(AgentDiffLine(AgentDiffKind.add, l.substring(1), bLine: b));
+        b++;
+        add++;
+      } else if (l.startsWith('-')) {
+        out.add(AgentDiffLine(AgentDiffKind.del, l.substring(1), aLine: a));
+        a++;
+        del++;
+      } else {
+        final body = l.startsWith(' ') ? l.substring(1) : l;
+        out.add(AgentDiffLine(AgentDiffKind.context, body, aLine: a, bLine: b));
+        a++;
+        b++;
+      }
+    }
+    return AgentDiff(out, added: add, removed: del, hunks: hunks, isDiff: true);
+  }
 }
 
 /// 审计记录（§9）—— 字段与 server 侧 audit() 一一对应

@@ -296,7 +296,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   const jWrite = (n, v) => { try { fs.writeFileSync(jFile(n), JSON.stringify(v, null, 2)); } catch (e) {} };
 
   if (p === '/v1/ping') {
-    return send(200, { object: 'meta', data: { pong: true, t: Date.now(), version: '4.42.0' } });
+    return send(200, { object: 'meta', data: { pong: true, t: Date.now(), version: '4.43.0' } });
   }
 
   // ── R-3 / R-10 批注与摘抄(设备间同步) ──
@@ -522,7 +522,7 @@ async function handle(req, res, body, u, p, send, ctx) {
       return send(200, { jsonrpc: '2.0', id, result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'ThirdHub Backend', version: '4.42.0' } } });
+        serverInfo: { name: 'ThirdHub Backend', version: '4.43.0' } } });
     }
     if (method === 'tools/list') {
       const reg = jRead('mcp-tools.json', { tools: [] });

@@ -51,7 +51,7 @@ class ProAi {
 
 /// 本批次(4.40.0)统一的本地存储 + 后端访问入口。
 class ProKit {
-  static const batch = 'v4.42.0';
+  static const batch = 'v4.43.0';
 
   static Future<SharedPreferences> prefs() => SharedPreferences.getInstance();
 
