@@ -1,6 +1,6 @@
 # ThirdHub 功能规划 v3.0
 
-> 对齐日期：2026-09-21（晚） · 对应：ThirdHub-v2 v4.43.0
+> 对齐日期：2026-09-21（深夜） · 对应：ThirdHub-v2 v4.44.0
 > 定位：仓库 `docs/TASKS.md` 管理 M1-M5 冲刺看板（五组并行）；本文档管理 M5 之后的扩展路线 与横向功能全景
 > 优先级总方针：前端优先（体感最明显）→ 自用引擎联调 → 资源库数据层 → AI 最后总攻
 
@@ -343,3 +343,57 @@ R-1 阅读统计 → R-6 书架批量管理 → M-4 统一最近播放 → B-1 �
 客户端 `tool/agent_proto_selfcheck.dart` **191** 条（+51：artifact 两态 11 / diff 解析 40）。
 新增断言里最要紧的是几条**防误判**用例：Markdown 列表不算删除行、`@@` 块内 `+++ abc`
 是新增一行而非文件头、路径穿越 id 被拒、CRLF 与末尾换行不多算行。
+
+---
+
+## 附五：4.44.0 端网 + 插件体系（2026-09-21 深夜）
+
+**立场**：前面四代客户端一直是「单机 App + 一个后端」。这一轮换的是**拓扑**——
+把前端、后端、插件、DSA 四类端放进同一个局域网命名空间，任意一端输入的东西
+其他端能用。规划 v3.0 里没有这一条，属于新增能力面，所以单独立附。
+
+**协议（PH/1）** 一句话：UDP 广播负责"看见"，账号口令负责"接入"。两者严格分开。
+
+| 设计点 | 为什么这么做 |
+|---|---|
+| 广播 `TH-PEER/1 HELLO` **无鉴权**，只登记为「待登录」 | 局域网广播天生可伪造，不能拿它当身份。发现只是"让用户知道有这个设备" |
+| 必须 `POST /agent/peer/join` 换 `peerToken` 才算在线 | 未登录端**不进 `peers`、不可被 invoke**（`PEER_NOT_LOGGED_IN`）。"看见但用不了"是刻意的 |
+| 匿名探针 `GET\|POST /agent/peer/ping` 放在鉴权闸门**之前** | 插件上线时手上还没有 token，探针必须匿名可达。但它**只回身份**（object/proto/name/iid/version/caps），不回端列表、不回密钥——有断言卡死这一点 |
+| 后端自身固定 `iid='local-back'` 且 `vip=true` | 它是中枢，不能被自己发现、不能被局域网伪造广播顶掉 |
+| `execToken`：插件出生时生成、只在 join 交给后端 | 否则局域网里任何人 `POST http://<插件>:8801/peer/exec` 就能使唤插件。后端 invoke 时以 `X-TH-Peer-Exec` 出示，不符回 403。**端列表绝不返回它** |
+| 心跳 15s 与消息拉取 3s **拆成两个 effect** | 曾经绑在一起：用户在 App 打的字要等 15 秒才到插件。心跳慢没关系，消息慢是体感事故 |
+| 路由三档：本地离线能力 → 有端能接（hub 转发 / direct 直连）→ 后端自身能力 | 本地能力**永远优先**；后端不在线时自动退化为直连插件，功能不断 |
+
+**插件体系**：`plugins/th-plugin.js` 是 SDK，`plugins/example-downloader/` 是可直接跑的示例，
+`plugins/selftest-plugin-e2e.js` 起真后端 + 真插件子进程做全链路自检，`docs/PLUGIN-SDK.md` 是教程。
+插件照 DSH/Cordis 的规范写：**具名 `apply(ctx)`、禁 `export default`、无模块级副作用、
+`setInterval` 必须进 `ctx.effect()` 并返回 disposer**。
+
+**踩过的真坑**（都留在自检里了）：
+
+1. SDK 原来探 `/v1/meta` —— 这个端点**根本不存在**，插件永远找不到后端。修法是后端补一个匿名探针，而不是让插件去猜更多路径。
+2. `ctx.putSecret()` 在 `apply()` 里直接崩：`this._pushSecrets is not a function`（它在 `apply` 之后才绑定）。**子进程测试第一轮就抓到了** —— 这也是为什么这个自检必须起真进程、真 HTTP，不能 mock。
+3. `dispose()` 断言假红：内部还在 await 网络请求时定时器仍跑，基准取早了。正解是**先 `await dispose()` 再取基准**。
+4. Windows 的 `SIGTERM` 是硬终止、跑不到 handler，"优雅下线"无声失败 → 示例插件加 IPC 口，测试用 `child.send('shutdown')`。
+
+**自检**：服务端 `selftest-peer-hub.js` **174** 条；插件 `selftest-plugin-e2e.js` **78** 条；
+纯 Dart `peer_hub_selfcheck.dart` **327** 条（含「发现 ≠ 接入」「重名拒绝猜」两组防误判用例）。
+
+**没做的（不假装已做）**：插件市场/远程分发（当前是本地目录 + 手动启动）；
+PH/1 的跨网段穿透只支持 IPv6 与第三方穿透，没有自建中继；真机端到端复验仍待做。
+
+---
+
+## 附六：4.44.0 版本号收归单一来源
+
+**问题**：版本号此前散在 5 个 Dart 文件里各写一遍，它们**不会一起失败，只会各自变陈旧**：
+
+- `main.dart` 的 `Updater.currentVersion/currentCode` 在 4.40.0 漏改 → 装了新版仍被判成旧版、**反复弹升级提示**（用户侧可见的怪象）；
+- `ai.dart` 的 MCP `clientInfo.version` 停在 `4.8.0`，**几代没人注意** —— 等于每次和 MCP 服务端握手都在谎报客户端版本。
+
+**处置**：新增 `flutter_app/lib/core/app_version.dart`（`kAppVersion` / `kAppCode`），
+`main.dart` / `pro_kit.dart` / `pro_system.dart` / `ai.dart` 全部改为引用它。
+
+**发版仍需手工同步的三处**（Dart 常量跨不过语言边界，如实记下）：
+`flutter_app/pubspec.yaml` 的 `version: x.y.z+code`、`server/mcp-registry.js`、
+`server/routes-data.js` 里上报给外部的 version 字符串。
