@@ -218,8 +218,9 @@ class MainActivity : FlutterActivity() {
     private fun enterPip(): Boolean {
         if (!hasPip()) return false
         return try {
-            // 注意：enterPictureInPictureMode(...) 返回 Unit，不能直接当 if 分支的值——
-            // 否则 if/else 会被推断成 Any，与函数签名 Boolean 不匹配（编译期报
+            // 注意：这里不读 enterPictureInPictureMode(...) 的返回值——不同 SDK 与
+            // Kotlin 编译器对它的返回类型声明并不一致，直接把它当 if 分支的值会让
+            // if/else 被推断成 Any，与函数签名 Boolean 冲突（编译期报
             // "Return type mismatch: expected 'Boolean', actual 'Unit'"）。显式写 true。
             if (android.os.Build.VERSION.SDK_INT >= 26) {
                 enterPictureInPictureMode(buildPipParams())
@@ -233,8 +234,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Android 8.0 以下（7.0 / 7.1）只能用无参重载进画中画。
+     *
+     * 注意：这个无参方法在各版本 SDK 与 Kotlin 编译器下的返回值声明并不一致
+     * （有的被映射成 Unit），因此**不能**写成表达式体
+     * `= enterPictureInPictureMode()` —— 否则会报
+     * "Return type mismatch: expected 'Boolean', actual 'Unit'"。
+     * 这里改为块体并丢弃返回值：只要调用不抛异常，就视为已进入画中画。
+     */
     @Suppress("DEPRECATION")
-    private fun enterPipLegacy(): Boolean = enterPictureInPictureMode()
+    private fun enterPipLegacy(): Boolean {
+        return try {
+            enterPictureInPictureMode()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     /**
      * Android 12 以下没有 autoEnterEnabled，只能在这里自己判断：
