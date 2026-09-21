@@ -31,8 +31,20 @@ ThirdHub 官方**不分发、不推荐、不审核**任何引擎与内容源（T
 ```
 
 完成度自检用仓库自带工具：`thp-check <你的地址> --role engine`（见 THP.md §16）。
+自己写的引擎也可以拿 `sdk/sample-engine.js` 对读——它是**已经被 82 条断言验过**的参照实现，
+遇到"我这样写到底对不对"时，先看它怎么写。
 
 ## 2. 快速开始（Node.js 最小参考实现）
+
+> **想看完整可运行版**：`sdk/sample-engine.js`（零依赖，`node sdk/sample-engine.js` 即可跑），
+> 配套 `node sdk/selfcheck.cjs` 有 **82 条断言**逐条验证本文档的硬约束（含中文往返、
+> 降级码白名单、`/thp/meta` 与 UDP 广播的 caps 一致性、instanceId 重启不变）。
+> 下面这份是**精简到极致的骨架**，便于快速看清结构；两者行为一致。
+>
+> ⚠ 三处最容易照抄出错的点，下面代码已修好，抄的时候别改回去：
+> ① `content-type` **必须带 `charset=utf-8`**（否则中文被按 US-ASCII 解码成 U+FFFD，HTTP 仍 200）；
+> ② 失败信封的 HTTP 状态码要**贴合语义**（`err` 不设 200 默认值，见 §3.2）；
+> ③ `search`/`toc` 的 `data` 是**数组本身**，不是 `{items:[...]}`（后者是旧草稿形状）。
 
 ```js
 // my-engine.js —— 一个最小可运行的 THP/1.0 小说引擎
@@ -54,12 +66,16 @@ catch { iid = crypto.randomUUID(); fs.writeFileSync(IID_FILE, iid); }
 const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 const hello = `THP/1 HELLO ${PORT} ${iid} engine m:${MODULE} 我的引擎`;
 sock.bind(() => { sock.setBroadcast(true);
+  sock.send(hello, 19527, '255.255.255.255');                        // 启动立即发一次，别让前端干等 30s
   setInterval(() => sock.send(hello, 19527, '255.255.255.255'), 30000); });
 process.on('SIGINT', () => { sock.send(`THP/1 BYE ${iid}`, 19527, '255.255.255.255', () => process.exit(0)); });
 
 // ③④ HTTP 端点（统一信封）
-const ok  = (res, data, meta = {}) => { res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ ok: true, data, meta })); };
-const err = (res, code, message, status = 200) => { res.writeHead(status, {'content-type':'application/json'}); res.end(JSON.stringify({ ok: false, error: { code, message } })); };
+// ★ charset=utf-8 必须带：少了它中文会被按 US-ASCII 解码成 U+FFFD，且 HTTP 仍是 200
+const JSON_CT = 'application/json; charset=utf-8';
+const ok  = (res, data, meta = {}) => { res.writeHead(200, {'content-type': JSON_CT}); res.end(JSON.stringify({ ok: true, data, meta })); };
+// ★ status 不给 200 默认值：回 200 再在 body 里写 error，调用方会以为请求成功
+const err = (res, code, message, status = 500) => { res.writeHead(status, {'content-type': JSON_CT}); res.end(JSON.stringify({ ok: false, error: { code, message } })); };
 
 http.createServer(async (req, res) => {
   const rid = req.headers['x-th-request-id'];           // 回显请求追踪头
@@ -72,17 +88,25 @@ http.createServer(async (req, res) => {
       version: '1.0.0', vendor: 'me', caps: [`m:${MODULE}`, 'post-query'],
       auth: ['none'], remote: false, endpoints: ['search','toc','content'], deprecated: [], ext: {} });
 
-  if (u.pathname === `/thp/m/${MODULE}/search`)
-    return ok(res, [{ id: 'book-1', name: '示例书', author: '作者', coverUrl: '', intro: '', ref: 'https://site/book/1' }],
-      { source: iid, cursor: '', hasMore: false });
+  const m = u.pathname.match(/^\/thp\/m\/([a-z]+)\/(search|toc|content)$/);
+  if (!m) return err(res, 'NOT_FOUND', 'unknown endpoint', 404);
+  const [mod, op] = [m[1], m[2]];
+  if (mod !== MODULE) return err(res, 'NOT_FOUND', '未注册的模块: ' + mod, 404);   // caps 没声明的模块 → 404 NOT_FOUND
 
-  if (u.pathname === `/thp/m/${MODULE}/toc`)
-    return ok(res, [{ id: 'c1', name: '第1章', index: 0 }], { source: iid, cursor: '', hasMore: false });
+  const q = body.q ?? u.searchParams.get('q');
+  if (op === 'search') {
+    if (!q) return err(res, 'INVALID_REQUEST', '缺参数 q', 400);                  // 调用方写错，不可降级
+    return ok(res, [{ id: 'book-1', name: '示例书', author: '作者', coverUrl: '', intro: '', ref: '' }],
+      { source: iid, cursor: '', hasMore: false, total: 1 });                     // data 是数组本身
+  }
+  const id = body.id ?? u.searchParams.get('id');
+  if (!id) return err(res, 'INVALID_REQUEST', '缺参数 id', 400);
+  if (op === 'toc')
+    return ok(res, [{ id: 'c1', name: '第1章', index: 0 }], { source: iid, cursor: '', hasMore: false, total: 1 });
 
-  if (u.pathname === `/thp/m/${MODULE}/content`)
-    return ok(res, { text: '正文……' }, { source: iid });
-
-  err(res, 'NOT_FOUND', 'unknown endpoint', 404);
+  const chapterId = body.chapterId ?? u.searchParams.get('chapterId');
+  if (!chapterId) return err(res, 'INVALID_REQUEST', '缺参数 chapterId', 400);
+  return ok(res, { text: '正文……' }, { source: iid });
 }).listen(PORT);
 ```
 

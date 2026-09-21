@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- ═══ 局域网发现（★必需，勿删）═══
+         引擎靠 UDP 19527 广播自报(THP/1 HELLO)。Android 的 WiFi 固件在省电模式下
+         会**静默丢弃入站的广播/组播帧**（熄屏后尤其明显）→ 表现为"有时能发现引擎、
+         锁屏一会儿就没了"。要收得住，必须持有 WifiManager.MulticastLock，
+         而创建该锁需要 CHANGE_WIFI_MULTICAST_STATE；读网段/网关需要 ACCESS_WIFI_STATE。
+         三者缺一，发现层就退化成"只能靠主动扫描"，广播这条快路等于没接。 -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <!-- 相册: Android13+ 细分媒体权限 / 13以下旧权限 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
@@ -30,8 +38,17 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
+        <!-- ═══ 画中画（★必需，勿删）═══
+             supportsPictureInPicture 不开，则 enterPictureInPictureMode() 直接抛
+             IllegalStateException（Dart 侧表现为「点了画中画没反应」）；
+             resizeableActivity 必须为 true——它一旦为 false，系统会拒绝把 Activity
+             缩成小窗，且 7.0 起 Android TV 之外的设备也靠它判定可否分屏/浮窗。
+             configChanges 里的 screenSize|smallestScreenSize|screenLayout 是画中画切换时
+             必然发生的配置变化，不声明就会走 Activity 重建 → 播放器被销毁、画面黑掉。 -->
         <activity android:name=".MainActivity" android:exported="true"
             android:launchMode="singleTop" android:theme="@style/LaunchTheme"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme"/>

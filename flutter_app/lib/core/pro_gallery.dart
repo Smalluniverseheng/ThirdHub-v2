@@ -17,6 +17,7 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
 import 'pro_kit.dart';
+import 'photo_map.dart';
 
 // ══════════════════════════════════════════════════════════════
 // F-2 哈希(SHA-256) 工具
@@ -535,6 +536,8 @@ class _GP extends ProPageState<GalleryProPage> {
       ProUI.card('F-3 / F-5 浏览与归档', [
         ProUI.row(Icons.photo_library_outlined, '时间轴',
             sub: '按天浏览整个相册', onTap: () => _push(c, const TimelinePage())),
+        ProUI.row(Icons.map_outlined, '照片地图',
+            sub: '按拍摄地点聚在地图上, 坐标只在本机解析', onTap: () => _push(c, const PhotoMapPage())),
         ProUI.row(Icons.face_retouching_natural, '人物归档(本地标记)',
             value: '$faces 人',
             sub: '标过的照片按人物分组, 全部留在本机', onTap: () => _push(c, const FacePage())),

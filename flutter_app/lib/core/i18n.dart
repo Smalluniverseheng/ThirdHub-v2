@@ -148,6 +148,10 @@ class I18n extends ChangeNotifier {
       '备份 · 秒传 · 加密柜 · 分享链': 'Backup · Instant upload · Vault · Share links',
       '工具 · 确认队列 · 定时 · 审计': 'Tools · Confirm queue · Cron · Audit',
       '模块 · 多后端 · 迁移 · 授权': 'Modules · Multi-backend · Migration · Grants',
+      // 4.41.0 进阶模块补充(PiP / 照片地图 / 聊天)
+      '投屏 DLNA · 下载归一 · 画中画': 'DLNA cast · Unified downloads · PiP',
+      '备份 · 秒传 · 地图 · 加密柜 · 分享链': 'Backup · Instant upload · Map · Vault · Share links',
+      '离线优先 · 多设备同步 · AI 摘要': 'Offline-first · Multi-device sync · AI summary',
     },
     'ja': {
       '搜索': '検索', '书架': '本棚', '小说': '小説', '漫画': '漫画', '视频': '動画',
@@ -221,6 +225,10 @@ class I18n extends ChangeNotifier {
       '备份 · 秒传 · 加密柜 · 分享链': 'バックアップ · 即時転送 · 金庫 · 共有リンク',
       '工具 · 确认队列 · 定时 · 审计': 'ツール · 確認キュー · 定期 · 監査',
       '模块 · 多后端 · 迁移 · 授权': 'モジュール · マルチバックエンド · 移行 · 認可',
+      // 4.41.0 进阶模块补充(PiP / 照片地图 / 聊天)
+      '投屏 DLNA · 下载归一 · 画中画': 'DLNAキャスト · DL統合 · ピクチャインピクチャ',
+      '备份 · 秒传 · 地图 · 加密柜 · 分享链': 'バックアップ · 即時転送 · 地図 · 金庫 · 共有リンク',
+      '离线优先 · 多设备同步 · AI 摘要': 'オフライン優先 · マルチデバイス同期 · AI要約',
     },
     // fr/ru/es/ar: 核心词逐步补全(缺失回落中文)
     'fr': {

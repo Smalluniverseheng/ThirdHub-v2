@@ -337,6 +337,87 @@ async function handle(req, res, body, u, p, send, ctx) {
     return send(200, { object: 'meta', data: { total: all.length } });
   }
 
+  // ── D-F 聊天: 会话与消息 ──
+  // 协议规范见 docs/CHAT-PROTOCOL.md，与前端 lib/core/chat.dart 一一对应。
+  // 两条要点:
+  //  1) 上行按 cid 幂等 —— 客户端离线时会积压一批，重连后整批重发，
+  //     服务端必须认出"这条已经收过了"并回原来那个 seq，否则会造出重复消息；
+  //  2) seq 是**会话内**单调递增，由服务端分配。客户端本地 seq=0 表示"还没发出去"。
+  if (p === '/v1/chat/sessions') {
+    const ss = jRead('chat-sessions.json', {});
+    if (req.method === 'GET') {
+      const list = Object.keys(ss).map((k) => ss[k]).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+      return send(200, { object: 'list', data: { sessions: list } });
+    }
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const sid = String(d.id || '').trim();
+    if (!sid) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 id' } });
+    const old = ss[sid] || {};
+    ss[sid] = {
+      id: sid,
+      title: String(d.title != null ? d.title : (old.title || '会话')),
+      peer: String(d.peer != null ? d.peer : (old.peer || '')),
+      lastSeq: old.lastSeq || 0,
+      lastTs: old.lastTs || 0,
+      count: old.count || 0,
+    };
+    jWrite('chat-sessions.json', ss);
+    return send(200, { object: 'meta', data: { saved: sid } });
+  }
+
+  if (p === '/v1/chat/messages' && req.method === 'GET') {
+    const sid = String(u.searchParams.get('sid') || '');
+    const since = Number(u.searchParams.get('since') || 0) || 0;
+    const limit = Math.min(Number(u.searchParams.get('limit') || 200) || 200, 1000);
+    const all = jRead('chat-messages.json', {});
+    let list = Array.isArray(all[sid]) ? all[sid] : [];
+    if (since > 0) list = list.filter((m) => (m.seq || 0) > since);
+    return send(200, { object: 'list', data: { messages: list.slice(0, limit) } });
+  }
+
+  if (p === '/v1/chat/send') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const sid = String(d.sid || ''); const cid = String(d.cid || '');
+    if (!sid || !cid) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 sid 与 cid' } });
+    const all = jRead('chat-messages.json', {});
+    const list = Array.isArray(all[sid]) ? all[sid] : [];
+    const dup = list.find((m) => m.cid === cid);
+    if (dup) return send(200, { object: 'meta', data: { seq: dup.seq, dup: true } });
+    let maxSeq = 0;
+    for (const m of list) { if ((m.seq || 0) > maxSeq) maxSeq = m.seq || 0; }
+    const seq = maxSeq + 1;
+    const msg = {
+      v: Number(d.v || 1), cid: cid, sid: sid, seq: seq,
+      ts: Number(d.ts || Date.now()),
+      from: String(d.from || ''),
+      t: String(d.t || 'text'),
+      body: String(d.body || ''),
+    };
+    if (d.ref) msg.ref = String(d.ref);
+    if (d.name) msg.name = String(d.name);
+    list.push(msg);
+    all[sid] = list;
+    jWrite('chat-messages.json', all);
+    // 会话索引跟着走，列表页才显示得出"共几条 / 最后一条什么时候"
+    const ss = jRead('chat-sessions.json', {});
+    const s = ss[sid] || { id: sid, title: '会话', peer: '' };
+    s.lastSeq = seq; s.lastTs = msg.ts; s.count = list.length;
+    ss[sid] = s;
+    jWrite('chat-sessions.json', ss);
+    return send(200, { object: 'meta', data: { seq: seq, id: cid } });
+  }
+
+  // 已读回执: 记录读游标(按会话)
+  if (p === '/v1/chat/ack') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const sid = String(d.sid || '');
+    if (!sid) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 sid' } });
+    const acks = jRead('chat-acks.json', {});
+    acks[sid] = { seq: Number(d.seq || 0), at: Date.now() };
+    jWrite('chat-acks.json', acks);
+    return send(200, { object: 'meta', data: acks[sid] });
+  }
+
   // ── F-2 秒传判定: 这个 hash 存在吗 ──
   if (p === '/v1/blob/has' && req.method === 'GET') {
     const hash = String(u.searchParams.get('hash') || '');

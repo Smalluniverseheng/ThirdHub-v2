@@ -74,6 +74,8 @@ import 'core/pro_browser.dart';
 import 'core/pro_gallery.dart';
 import 'core/pro_system.dart';
 import 'core/pro_ai.dart';
+import 'core/pip.dart';
+import 'core/chat.dart';
 
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
@@ -1120,9 +1122,11 @@ class _Pf extends State<ProfilePage> {
       _section(tr('进阶'), [
         entry(Icons.menu_book_outlined, tr('阅读进阶'), value: tr('换源 · 批注 · 摘抄 · 追更'), page: const ReadingProPage()),
         _sep(),
-        entry(Icons.cast_outlined, tr('影音进阶'), value: tr('投屏 DLNA · 下载归一'), page: const MediaProPage()),
+        entry(Icons.cast_outlined, tr('影音进阶'), value: tr('投屏 DLNA · 下载归一 · 画中画'), page: const MediaProPage()),
         _sep(),
-        entry(Icons.photo_library_outlined, tr('相册闭环'), value: tr('备份 · 秒传 · 加密柜 · 分享链'), page: const GalleryProPage()),
+        entry(Icons.photo_library_outlined, tr('相册闭环'), value: tr('备份 · 秒传 · 地图 · 加密柜 · 分享链'), page: const GalleryProPage()),
+        _sep(),
+        entry(Icons.forum_outlined, tr('聊天'), value: tr('离线优先 · 多设备同步 · AI 摘要'), page: const ChatSessionsPage()),
         _sep(),
         entry(Icons.auto_awesome_outlined, tr('AI 工作台'), value: tr('工具 · 确认队列 · 定时 · 审计'), page: const AiWorkbenchPage()),
         _sep(),
@@ -2930,6 +2934,11 @@ class VideoPlayPage extends StatefulWidget { final String sourceId, epUrl, flag,
   @override State<VideoPlayPage> createState() => _Vp(); }
 class _Vp extends State<VideoPlayPage> {
   VideoPlayerController? _vc; ChewieController? _cc; bool loading = true; String? err;
+  // 画中画（与本地播放器同一套机制，见 core/pip.dart）
+  bool _pipOk = false; bool _pipLastPlaying = false; int _pipGen = 0;
+  double get _aspect { final v = _vc;
+    if (v == null || !v.value.isInitialized) return 16 / 9;
+    final a = v.value.aspectRatio; return a > 0 ? a : 16 / 9; }
   int get idx => widget.index;
   bool get hasPrev => idx > 0; bool get hasNext => idx < widget.episodes.length - 1;
   @override void initState() { super.initState(); initPlayer(); }
@@ -2946,9 +2955,37 @@ class _Vp extends State<VideoPlayPage> {
         allowedScreenSleep: false, allowPlaybackSpeedChanging: true,
         playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]);
       await _vc!.setPlaybackSpeed(speed);
+      await _setupPip();
       setState(() => loading = false);
     } catch (e) { setState(() { loading = false; err = '$e'; }); } }
-  @override void dispose() { _cc?.dispose(); _vc?.dispose(); super.dispose(); }
+
+  /// 声明「正在放视频」并接上画中画小窗里的播放/暂停按钮。
+  Future<void> _setupPip() async {
+    _pipOk = await Pip.supported();
+    Pip.onToggle = () {
+      final v = _vc;
+      if (v == null || !v.value.isInitialized) return;
+      v.value.isPlaying ? v.pause() : v.play();
+    };
+    _vc?.addListener(_onPipTick);
+    if (!mounted) return;
+    setState(() {});
+    if (!_pipOk) return;
+    _pipGen = await Pip.claimAuto(aspect: _aspect, playing: _vc?.value.isPlaying ?? false);
+  }
+
+  void _onPipTick() {
+    final v = _vc;
+    if (v == null || !v.value.isInitialized) return;
+    if (v.value.isPlaying == _pipLastPlaying) return;
+    _pipLastPlaying = v.value.isPlaying;
+    Pip.updatePlaying(_pipLastPlaying);
+  }
+
+  @override void dispose() {
+    Pip.releaseAuto(_pipGen); Pip.onToggle = null; Pip.inPip.value = false;
+    _vc?.removeListener(_onPipTick);
+    _cc?.dispose(); _vc?.dispose(); super.dispose(); }
   void goEpisode(int i) { final ep = widget.episodes[i];
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoPlayPage(
       sourceId: widget.sourceId, epUrl: ep['url'] ?? '', flag: ep['flag'] ?? '', title: ep['name'] ?? '',
@@ -2964,7 +3001,23 @@ class _Vp extends State<VideoPlayPage> {
           onPressed: () { Navigator.pop(c2); goEpisode(i); },
           child: Text(widget.episodes[i]['name'] ?? '第${i + 1}集', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))));
   }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 15)), actions: [
+  @override Widget build(BuildContext c) => ValueListenableBuilder<bool>(
+        valueListenable: Pip.inPip,
+        builder: (c, pip, _) => pip ? _pipOnly() : _buildFull(c),
+      );
+
+  /// 画中画里只留画面：AppBar、选集条、上一集/下一集都不该被缩进那个小窗。
+  Widget _pipOnly() => Scaffold(backgroundColor: Colors.black, body: Center(
+    child: _cc == null ? const SizedBox.shrink()
+      : AspectRatio(aspectRatio: _cc!.aspectRatio ?? 16 / 9, child: Chewie(controller: _cc!))));
+
+  Widget _buildFull(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.title, style: const TextStyle(fontSize: 15)), actions: [
+      if (_pipOk) IconButton(icon: const Icon(Icons.picture_in_picture_alt, size: 20), tooltip: '画中画',
+        onPressed: () async {
+          final ok = await Pip.enter(aspect: _aspect, playing: _vc?.value.isPlaying ?? false);
+          if (!ok && mounted) ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('这台设备/当前状态进不了画中画')));
+        }),
       if (widget.episodes.isNotEmpty) IconButton(icon: const Icon(Icons.grid_view), tooltip: '选集', onPressed: _epSheet)]),
     body: err != null ? Center(child: Text('播放错误: $err', style: const TextStyle(color: Colors.red)))
       : loading ? const Center(child: CircularProgressIndicator())
@@ -3945,8 +3998,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.40.0';
-  static const int currentCode = 50527;
+  static const String currentVersion = '4.41.0';
+  static const int currentCode = 50528;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -4398,6 +4451,18 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   int _subIdx = -1;            // -1 = 关闭字幕; 否则为 _subs 的下标
   String _cueText = '';
   Timer? _cueTimer;
+  // 画中画: 系统是否支持 / 上次同步给原生侧的播放状态(变化才过通道, 避免每帧都走 JNI)
+  bool _pipOk = false; bool _pipLastPlaying = false;
+  int _pipGen = 0;   // 本次「允许自动进画中画」声明的代，dispose 时按代释放
+
+  /// 当前片源的宽高比。初始化之前统一按 16:9 报给系统——未初始化时 aspectRatio
+  /// 读出来是 1.0，直接传进去会让画中画小窗变成正方形。
+  double get _aspect {
+    final c = ctrl;
+    if (c == null || !c.value.isInitialized) return 16 / 9;
+    final a = c.value.aspectRatio;
+    return a > 0 ? a : 16 / 9;
+  }
 
   @override void initState() { super.initState(); _init();
     Recents.add('video', '${widget.item['name'] ?? ''}', target: '${widget.item['path'] ?? ''}'); }
@@ -4415,6 +4480,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
         playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0],
         allowFullScreen: true, allowMuting: true,
         materialProgressColors: ChewieProgressColors(playedColor: Theme.of(context).colorScheme.primary));
+      _setupPip();
       _posTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         if (ctrl != null && ctrl!.value.isPlaying) AppSettings.p.setInt(_posKey, ctrl!.value.position.inSeconds);
       });
@@ -4423,6 +4489,33 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       if (_subs.isNotEmpty) await _pickSub(0);
       setState(() {});
     } catch (e) { setState(() => err = '$e'); }
+  }
+
+  // ═══ 画中画 ═══
+  // 这里只负责「声明状态 + 接按钮」；真正缩窗由 MainActivity 做（Flutter 没有该 API）。
+  Future<void> _setupPip() async {
+    _pipOk = await Pip.supported();
+    // PiP 小窗里那颗播放/暂停按钮按下去会回到这里
+    Pip.onToggle = () {
+      final c = ctrl;
+      if (c == null || !c.value.isInitialized) return;
+      c.value.isPlaying ? c.pause() : c.play();
+    };
+    ctrl?.addListener(_onPipTick);
+    if (!mounted) return;
+    setState(() {});
+    if (!_pipOk) return;
+    // 声明「正在放视频」：此后按 Home 会自动缩成小窗
+    _pipGen = await Pip.claimAuto(aspect: _aspect, playing: ctrl?.value.isPlaying ?? false);
+  }
+
+  /// 播放/暂停一变就刷新小窗里的按钮图标。只在真正变化时过通道。
+  void _onPipTick() {
+    final c = ctrl;
+    if (c == null || !c.value.isInitialized) return;
+    if (c.value.isPlaying == _pipLastPlaying) return;
+    _pipLastPlaying = c.value.isPlaying;
+    Pip.updatePlaying(_pipLastPlaying);
   }
 
   /// 装载第 [i] 条字幕并开始跟随播放进度。
@@ -4482,6 +4575,14 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   }
 
   @override void dispose() { _posTimer?.cancel(); _hintTimer?.cancel(); _cueTimer?.cancel();
+    // 离开视频页必须收回「允许自动进画中画」——不收回的话，在列表页按 Home 也会缩窗。
+    // 这里不能 await（dispose 是同步的），但通道调用是即发即走，原生侧不依赖返回值。
+    // 按「代」释放：切集是 pushReplacement，旧页 dispose 可能晚于新页声明，
+    // 不带代就会把新页刚开的开关又关掉。
+    Pip.releaseAuto(_pipGen);
+    Pip.onToggle = null;
+    Pip.inPip.value = false;
+    ctrl?.removeListener(_onPipTick);
     if (ctrl != null && ctrl!.value.isInitialized) {
       final pos = ctrl!.value.position.inSeconds;
       final dur = ctrl!.value.duration.inSeconds;
@@ -4507,9 +4608,40 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       : DeviceOrientation.values);
   }
 
-  @override Widget build(BuildContext c) {
-    // 系统解码器解不了的封装(部分 rmvb/wmv/老 avi 等): 不吞错, 给一条真正的出路
-    final Widget body = err != null
+  /// 画中画里只该有画面本身——AppBar、播放条、双击提示都不该被缩进那个小窗。
+  /// 不切布局的话，整个 App 界面会被等比缩成一个小方块，等于没法看。
+  @override Widget build(BuildContext c) => ValueListenableBuilder<bool>(
+        valueListenable: Pip.inPip,
+        builder: (c, pip, _) => pip
+            ? Scaffold(backgroundColor: Colors.black,
+                body: Center(child: _videoArea(true)))
+            : _buildFull(c),
+      );
+
+  Widget _buildFull(BuildContext c) {
+    final Widget body = _videoArea(false);
+    if (_fs) return Scaffold(backgroundColor: Colors.black, body: SafeArea(child: Stack(children: [
+      Center(child: body),
+      Positioned(top: 4, left: 4, child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), onPressed: _toggleFs)),
+    ])));
+    return Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14)),
+      actions: [
+        if (_pipOk) IconButton(icon: const Icon(Icons.picture_in_picture_alt, size: 20), tooltip: '画中画',
+          onPressed: () async {
+            final ok = await Pip.enter(aspect: _aspect, playing: ctrl?.value.isPlaying ?? false);
+            if (!ok && mounted) ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('这台设备/当前状态进不了画中画')));
+          }),
+        IconButton(icon: Icon(_subIdx >= 0 ? Icons.subtitles : Icons.subtitles_off),
+          tooltip: _subs.isEmpty ? '没有外挂字幕' : '字幕 (${_subs.length})', onPressed: _pickSubSheet),
+        IconButton(icon: const Icon(Icons.fullscreen), tooltip: '横屏全屏', onPressed: _toggleFs),
+      ]),
+      body: Center(child: body));
+  }
+
+  /// 画面本身。系统解码器解不了的封装(部分 rmvb/wmv/老 avi 等)不吞错，给一条真正的出路。
+  /// [pip] 为真时按小窗调尺寸——字幕贴底 56px 是为了躲开播放条，小窗里没有播放条。
+  Widget _videoArea(bool pip) => err != null
       ? Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 40),
           const SizedBox(height: 10),
@@ -4525,37 +4657,25 @@ class _Lvp extends State<LocalVideoPlayerPage> {
         ]))
       : chewie != null ? GestureDetector(
           onDoubleTapDown: (d) {
-            final w = MediaQuery.of(c).size.width;
+            final w = MediaQuery.of(context).size.width;
             _seekBy(d.globalPosition.dx < w / 2 ? -10 : 10);
           },
           onDoubleTap: () {},
           child: Stack(alignment: Alignment.center, children: [
             AspectRatio(aspectRatio: ctrl!.value.aspectRatio, child: Chewie(controller: chewie!)),
-            if (_cueText.trim().isNotEmpty) Positioned(left: 12, right: 12, bottom: 56, child: IgnorePointer(
+            if (_cueText.trim().isNotEmpty) Positioned(left: 12, right: 12, bottom: pip ? 10 : 56, child: IgnorePointer(
               child: Align(alignment: Alignment.bottomCenter, child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(6)),
                 child: Text(_cueText, textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.35)))))),
-            if (_seekHint.isNotEmpty) IgnorePointer(child: Container(
+            if (!pip && _seekHint.isNotEmpty) IgnorePointer(child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
               child: Text(_seekHint, style: const TextStyle(color: Colors.white, fontSize: 14)))),
           ]))
       : const CircularProgressIndicator();
-    if (_fs) return Scaffold(backgroundColor: Colors.black, body: SafeArea(child: Stack(children: [
-      Center(child: body),
-      Positioned(top: 4, left: 4, child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), onPressed: _toggleFs)),
-    ])));
-    return Scaffold(appBar: AppBar(title: Text(widget.item['name'] ?? '', style: const TextStyle(fontSize: 14)),
-      actions: [
-        IconButton(icon: Icon(_subIdx >= 0 ? Icons.subtitles : Icons.subtitles_off),
-          tooltip: _subs.isEmpty ? '没有外挂字幕' : '字幕 (${_subs.length})', onPressed: _pickSubSheet),
-        IconButton(icon: const Icon(Icons.fullscreen), tooltip: '横屏全屏', onPressed: _toggleFs),
-      ]),
-      body: Center(child: body));
-  }
 }
 
 // ═══ 本地音乐库 ═══
