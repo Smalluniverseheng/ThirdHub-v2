@@ -325,6 +325,7 @@ const rtData = require('./routes-data');
 const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
+const rtAgent = require('./routes-agent');
 // 存储进程状态(原在文件尾, 上移供 adminCtx 引用)
 const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
 // 共享上下文(引用传递, 与各路由模块互通)
@@ -334,6 +335,7 @@ const dataCtx = { DATA, SECRET };
 const sourcesCtx = { sources, saveSources, drpySources, saveDrpy, comicSources, saveComic, musicSources, saveMusic, devices, health, DATA };
 const searchCtx = { aggCache, sources, engine, pool, comicSources, drpySources, musicSources, devices, thpOnline, thpCall, library, health, healthHit };
 const libraryCtx = { sources, engine, devices, library, saveLib, LIB_DIR, tocCache, contentCache, tocGet, healthHit };
+const agentCtx = { DATA, SECRET };
 
 // ─── API ───
 async function handle(req, res, body) {
@@ -441,6 +443,9 @@ async function handle(req, res, body) {
   if ((await rtAdmin.handle(req, res, body, u, p, send, adminCtx)) || res.writableEnded) return;
   // ── 数据服务(密钥库/进度/设置/相册): server/routes-data.js ──
   if ((await rtData.handle(req, res, body, u, p, send, dataCtx)) || res.writableEnded) return;
+  // ── Agent Runtime(/agent/*): server/routes-agent.js ──
+  // 顺序放在数据服务之后、源管理之前：/agent 前缀与其它路由无重叠。
+  if ((await rtAgent.handle(req, res, body, u, p, send, agentCtx)) || res.writableEnded) return;
   // ── 源管理(/v1/src /v1/sources /v1/img /v1/status): server/routes-sources.js ──
   if ((await rtSources.handle(req, res, body, u, p, send, sourcesCtx)) || res.writableEnded) return;
   // 统一搜索路由: 前端只说"搜什么类型", 后端按引擎能力分发

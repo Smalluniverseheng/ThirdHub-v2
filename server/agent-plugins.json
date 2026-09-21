@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "updated": "2026-09-21",
+  "note": "DSH 插件白名单。未登记在此的插件一律不加载 —— 白名单制，不做黑名单。",
+  "policy": {
+    "defaultProfileNoFullAccess": true,
+    "pinVersion": true,
+    "newPluginTrialProfile": "isolated",
+    "licenseAllow": ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"],
+    "licenseCaution": ["LGPL-2.1", "LGPL-3.0", "MPL-2.0"],
+    "licenseDeny": ["GPL-2.0", "GPL-3.0", "AGPL-3.0", "SSPL-1.0", "BUSL-1.1"],
+    "note": "deny 名单内的许可证不得进入闭源分发包；caution 需法务确认后再放行。"
+  },
+  "plugins": [
+    {
+      "id": "core-context",
+      "name": "上下文装配",
+      "version": "1.0.0",
+      "license": "MIT",
+      "enabled": true,
+      "builtin": true,
+      "permissions": ["context.read", "context.compress"],
+      "network": [],
+      "desc": "把引用（选中文本/书籍/文件/知识库 chunk）解析成模型上下文并按预算裁剪"
+    },
+    {
+      "id": "core-memory",
+      "name": "长期记忆",
+      "version": "1.0.0",
+      "license": "MIT",
+      "enabled": true,
+      "builtin": true,
+      "permissions": ["memory.read", "memory.write"],
+      "network": [],
+      "desc": "跨会话事实条目，对应 Flutter 侧 AiMemory 的 server 版"
+    },
+    {
+      "id": "core-mcp",
+      "name": "MCP 桥",
+      "version": "1.0.0",
+      "license": "MIT",
+      "enabled": true,
+      "builtin": true,
+      "permissions": ["mcp.invoke"],
+      "network": ["*"],
+      "desc": "在 server/DSH 侧运行 MCP server，Flutter 不跑 stdio"
+    },
+    {
+      "id": "core-sandbox",
+      "name": "沙箱",
+      "version": "1.0.0",
+      "license": "MIT",
+      "enabled": true,
+      "builtin": true,
+      "permissions": ["fs.read", "fs.write", "process.spawn"],
+      "network": [],
+      "desc": "按 profile 限制文件与进程能力"
+    },
+    {
+      "id": "audit-log",
+      "name": "审计记录",
+      "version": "1.0.0",
+      "license": "MIT",
+      "enabled": true,
+      "builtin": true,
+      "permissions": ["audit.write"],
+      "network": [],
+      "desc": "所有工具判定与结果落 DATA/agent-audit.jsonl"
+    }
+  ],
+  "trial": {
+    "note": "新插件先跑 isolated profile（无网络、只读 fs），确认行为后再给正常权限",
+    "isolated": {
+      "allowRisk": ["read"],
+      "network": [],
+      "fs": ["read:workspace"]
+    }
+  }
+}

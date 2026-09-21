@@ -218,22 +218,28 @@ Future<void> main() async {
     toolManifest: true,
     tools: tools,
   );
-  _eq(stack.length, 6, '6 段 system(指令/身份/技能/记忆/钉注/工具)');
+  // 注：4.31.0 起 systemStack 恒定在最弱位加一段「输出格式」声明
+  // （告诉模型客户端能渲染完整 Markdown，别自我阉割成纯文本）。
+  // 所以这里是最弱位 1 段 + 6 段按需注入 = 7 段；本自检原先按 6 段写，
+  // 自 4.31.0 起一直是红的 —— 已按实现修正。
+  _eq(stack.length, 7, '7 段 system(输出格式/指令/身份/技能/记忆/钉注/工具)');
   _ok(stack.every((m) => m['role'] == 'system'), '全部 role=system');
-  _ok(stack[0]['content']!.contains('【对话风格】'), '第 1 段 = 全局指令');
-  _ok(stack[1]['content']!.contains('【当前身份】') && stack[1]['content']!.contains('研究员'),
+  _ok(stack[0]['content']!.contains('【输出格式】'), '第 0 段 = 输出格式声明(最弱位)');
+  _ok(stack[1]['content']!.contains('【对话风格】'), '第 1 段 = 全局指令');
+  _ok(stack[2]['content']!.contains('【当前身份】') && stack[2]['content']!.contains('研究员'),
       '第 2 段 = 当前智能体身份');
-  _ok(stack[2]['content']!.contains('技能已装载'), '第 3 段 = 技能');
-  _ok(stack[3]['content']!.contains('【已装配记忆】'), '第 4 段 = 长期记忆');
-  _ok(stack[4]['content']!.contains('【本次会话固定上下文】'), '第 5 段 = 会话钉注');
-  _ok(stack[5]['content']!.contains('【可用工具】'), '第 6 段 = 工具清单(最靠后)');
+  _ok(stack[3]['content']!.contains('技能已装载'), '第 3 段 = 技能');
+  _ok(stack[4]['content']!.contains('【已装配记忆】'), '第 4 段 = 长期记忆');
+  _ok(stack[5]['content']!.contains('【本次会话固定上下文】'), '第 5 段 = 会话钉注');
+  _ok(stack[6]['content']!.contains('【可用工具】'), '第 6 段 = 工具清单(最靠后)');
 
-  // 先清干净全局注入, 再验证"什么都不注入时 system 栈为空"
+  // 先清干净全局注入, 再验证"什么都不注入时只剩那段输出格式声明"
   await AiInstruct.setPersona('default');
   await AiInstruct.setCustom('');
   AiMemory.entries.clear();
   final minimal = await AiContext.systemStack();
-  _ok(minimal.isEmpty, '无任何注入时 system 栈为空', '${minimal.length}');
+  _eq(minimal.length, 1, '无注入时只剩输出格式声明');
+  _ok(minimal[0]['content']!.contains('【输出格式】'), '剩下那段确实是输出格式声明');
 
   // ── 5. 上下文预算压缩 ──────────────────────────────────────────────
   print('\n5) AiCompress 预算压缩');

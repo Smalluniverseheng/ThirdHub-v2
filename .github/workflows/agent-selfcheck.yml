@@ -1,0 +1,69 @@
+name: agent-selfcheck
+
+# Agent 协议（THA/1）自检。
+#
+# 为什么单独一个 workflow、而不是塞进 build-apk：
+#   ① build-apk 只在 flutter_app/** 变更时触发，协议改动大多发生在 server/；
+#   ② 协议自检是「秒级」的，不该和 6~10 分钟的 APK 构建互相拖累；
+#   ③ 出包失败和协议自检失败的排查方向完全不同，分开更容易定位。
+#
+# 覆盖：服务端事件流/策略/确认/审计/MCP（node） + 客户端模型与策略镜像对拍（dart）。
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/agent-dsh.js'
+      - 'server/routes-agent.js'
+      - 'server/mcp-registry.js'
+      - 'server/agent-profiles.json'
+      - 'server/agent-plugins.json'
+      - 'server/test_agent_proto.cjs'
+      - 'server/test_chat_proto.cjs'
+      - 'server/routes-data.js'
+      - 'flutter_app/lib/core/agent_*.dart'
+      - 'flutter_app/lib/core/ai_agent.dart'
+      - 'flutter_app/lib/core/local_tools.dart'
+      - 'flutter_app/tool/agent_proto_selfcheck.dart'
+      - 'flutter_app/tool/agent_selfcheck.dart'
+      - 'docs/AGENT-PROTOCOL.md'
+      - '.github/workflows/agent-selfcheck.yml'
+  workflow_dispatch:
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      # ── 服务端协议 ──
+      # 这两个脚本都不依赖后端在跑（用假的 req/res 直接驱动路由），
+      # 也不依赖本机装没装 DSH —— 「没装 DSH 要能优雅降级」本身就是断言之一。
+      - name: server agent protocol selfcheck
+        run: node server/test_agent_proto.cjs
+
+      - name: server chat protocol selfcheck
+        run: node server/test_chat_proto.cjs
+
+      # ── 客户端控制面 ──
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+
+      - name: pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      # agent_proto_selfcheck 会读 ../server/agent-profiles.json 做逐工具对拍 ——
+      # 所以必须在仓根的子目录里跑，不能把 flutter_app 单独拷出去。
+      - name: dart agent proto selfcheck (含与服务端表的对拍)
+        working-directory: flutter_app
+        run: dart run tool/agent_proto_selfcheck.dart
+
+      - name: dart agent core selfcheck
+        working-directory: flutter_app
+        run: dart run tool/agent_selfcheck.dart

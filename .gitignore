@@ -1,2 +1,32 @@
+# 依赖与运行时数据
 server/node_modules/
 server/data/
+
+# ── 签名与凭据（绝不入库） ──
+# CI 出包用的是 secrets.TH_KEYSTORE_BASE64（见 .github/workflows/build-apk.yml），
+# 本地出包请在 android/ 下自建 keystore.properties 并放好 .jks。
+# 这两类文件一旦进过仓库，即便删掉也仍留在 git 历史里 —— 所以必须轮换密钥。
+android/keystore.properties
+android/*.jks
+android/*.jks.b64
+android/*.keystore
+*.p12
+*.pem
+*.key
+.env
+.env.*
+
+# 构建产物
+flutter_app/build/
+flutter_app/android/.gradle/
+flutter_app/.dart_tool/
+build/
+*.apk
+*.aab
+
+# 临时/工作残留
+_*.txt
+_*.log
+*.tmp
+.DS_Store
+Thumbs.db

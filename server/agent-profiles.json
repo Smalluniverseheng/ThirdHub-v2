@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "updated": "2026-09-21",
+  "note": "Agent 权限档位与工具风险分级。服务端为权威，Flutter 侧 agent_policy.dart 是本地镜像（只用于 UI 预判与断网时拦截）；两边不一致时以服务端判定为准。",
+  "risk": {
+    "read": {
+      "label": "只读安全",
+      "desc": "不改动任何用户数据，可直接执行",
+      "tools": ["kb.search", "book.info", "file.readSelected", "clipboard.read", "text.diff", "device.info", "fs.list"]
+    },
+    "write": {
+      "label": "受控写入",
+      "desc": "会落盘或改动用户数据，需要一次明确确认",
+      "tools": ["note.save", "download.export", "bookshelf.update", "reading.progress.write", "clipboard.write", "device.tts", "device.share", "fs.share"]
+    },
+    "danger": {
+      "label": "高危",
+      "desc": "影响面大或可逃逸出沙箱，默认禁用；开启需更高档位 + 用户确认 + 全量审计",
+      "tools": ["fs.write", "fs.delete", "shell.run", "package.install", "browser.open", "accessibility.tap"]
+    }
+  },
+  "bridge": {
+    "note": "Flutter 本机工具名（LocalTools.schemas() 里 local_ 之后那截）→ 策略工具名的映射。未登记的一律按 danger 处理，所以新加本机工具时必须同时在这里登记，否则它在任何档位下都调不动。",
+    "map": {
+      "get_device_info": "device.info",
+      "clipboard_read": "clipboard.read",
+      "clipboard_write": "clipboard.write",
+      "tts_speak": "device.tts",
+      "open_url": "browser.open",
+      "share_text": "device.share",
+      "file_write": "fs.write",
+      "file_read": "file.readSelected",
+      "file_list": "fs.list",
+      "file_delete": "fs.delete",
+      "file_share": "fs.share",
+      "run_python": "shell.run",
+      "web_search": "kb.search"
+    }
+  },
+  "profiles": {
+    "default": {
+      "label": "默认",
+      "desc": "只读 + 保存草稿 + 书架阅读类写入",
+      "allowRisk": ["read"],
+      "allowTools": ["note.save", "bookshelf.update", "reading.progress.write", "download.export"],
+      "confirmTools": ["note.save", "bookshelf.update", "reading.progress.write", "download.export"],
+      "denyTools": [],
+      "denyFullAccess": true,
+      "visibleToUser": true
+    },
+    "acceptEdits": {
+      "label": "本次会话接受修改",
+      "desc": "当前会话内明确确认过的写文件 / 改书架 / 保存笔记；高危工具仍需逐次确认",
+      "allowRisk": ["read", "write"],
+      "allowTools": ["fs.write"],
+      "confirmTools": ["fs.write"],
+      "denyTools": ["shell.run", "package.install", "accessibility.tap"],
+      "denyFullAccess": true,
+      "visibleToUser": true
+    },
+    "full-access": {
+      "label": "完全访问",
+      "desc": "仅服务端管理侧使用，普通用户界面不展示。全部工具放行，仍逐条写审计。",
+      "allowRisk": ["read", "write", "danger"],
+      "allowTools": ["*"],
+      "confirmTools": [],
+      "denyTools": [],
+      "denyFullAccess": false,
+      "visibleToUser": false
+    }
+  },
+  "budget": {
+    "note": "上下文预算（token 估算量级），由 server/DSH 负责裁剪，Flutter 只上报引用与优先级",
+    "systemPrompt": [6000, 12000],
+    "toolSchemas": [4000, 10000],
+    "chatHistory": [12000, 32000],
+    "summaryMemory": [2000, 6000],
+    "kbRag": [4000, 12000],
+    "selectedFiles": [4000, 16000],
+    "outputReservePct": [15, 30]
+  },
+  "priority": [
+    "用户显式选中 > 当前阅读/当前页面 > 工具返回摘要 > KB/RAG > 会话摘要 > 老历史"
+  ]
+}

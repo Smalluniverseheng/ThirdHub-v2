@@ -13,6 +13,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import 'dart:convert';
 
+import 'agent_dsh_client.dart';
+import 'agent_models.dart';
+import 'agent_policy.dart';
+
 // ── 存储抽象 ───────────────────────────────────────────────────────────────
 // TH-Agent 核心刻意**不依赖 Flutter**: 键值读写只走 [AiStore]。
 //   · App 运行时由 `ai_store_prefs.dart` 注入 SharedPreferences 实现;
@@ -524,4 +528,118 @@ class AiTodo {
   static void clear() => items.clear();
   static bool get active => items.isNotEmpty;
   static int get progress => items.isEmpty ? 0 : items.where((e) => e.done).length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 6. 总路由：DSH 优先，轻量兜底
+//
+// 这一层只做「往哪走」的判断与状态，不实现模型循环本身：
+//   · 有 DSH（server/局域网设备上跑着）→ 走 AgentDshClient，事件由 DSH 产出；
+//   · 没有 DSH → 走 ai.dart + local_tools.dart 的轻量循环（本文件上面那套
+//     AiContext / AiTools / AiCompress 就是给这条路用的）。
+//
+// 为什么要有这一层：AI 功能不该因为「后端没开」就整个不可用，但也**不该假装**
+// 自己什么都能做。所以模式必须可观测（[health]）、原因必须可读（[HealthSummary]），
+// 高危能力在降级时一律不可用。
+// ─────────────────────────────────────────────────────────────────────────
+class AgentRuntime {
+  /// 最近一次探到的运行时状态（默认就是「没有后端」的降级态）
+  static AgentHealth health = const AgentHealth();
+
+  /// 当前会话使用的权限档位（普通用户只有两档可见）
+  static String _profile = AgentProfileId.normal;
+  static String get profile => _profile;
+
+  static bool _booted = false;
+  static bool get booted => _booted;
+
+  /// 后端地址/token 是否已配置（连上家庭后端才有值）
+  static bool get backendConnected => AgentDshClient.configured;
+
+  /// 是否走完整 Agent（要有后端 **且** 后端那侧真接上了 DSH）
+  static bool get useFullAgent => AgentDshClient.configured && health.isFull;
+
+  /// 给 UI 的一句话
+  static String get modeLabel => useFullAgent ? '完整 Agent' : '轻量 Agent';
+
+  static Future<void> loadProfile() async {
+    final v = await aiStore.getString('ai_agent_profile');
+    if (v != null && v.isNotEmpty) _profile = v;
+  }
+
+  /// 切档位。名字非法直接忽略（不能把无效值写进去，否则后面判定会全拒）
+  static Future<void> setProfile(String id) async {
+    if (!AgentPolicy.hasProfile(id)) return;
+    _profile = id;
+    await aiStore.setString('ai_agent_profile', id);
+  }
+
+  /// 启动时调一次：读档位 → 拉服务端权威表 → 探 DSH。
+  ///
+  /// [probe] = false 时不主动去探（省一次往返），但仍会读 /agent/health，
+  /// 所以「后端没接 DSH」这种情况照样能如实显示。
+  static Future<AgentHealth?> bootstrap({bool probe = false}) async {
+    await loadProfile();
+    if (!AgentDshClient.configured) {
+      health = const AgentHealth(dshError: '未连接家庭后端——轻量模式（本地工具仍可用）');
+      _booted = true;
+      return health;
+    }
+    await AgentDshClient.syncPolicy();
+    final h = await AgentDshClient.health(probe: probe);
+    if (h != null) health = h;
+    _booted = true;
+    return health;
+  }
+
+  /// 重新探测（用户在设置页点「重新检测」时用）
+  static Future<AgentHealth?> refresh() async {
+    if (!AgentDshClient.configured) {
+      health = const AgentHealth(dshError: '未连接家庭后端');
+      return health;
+    }
+    final h = await AgentDshClient.health(probe: true);
+    if (h != null) health = h;
+    return health;
+  }
+
+  /// 某个工具在当前档位下能不能用（服务端权威 + 本地镜像兜底）
+  ///
+  /// 三重判断，顺序不能变：
+  ///   ① 后端明确说「完整 Agent 可用」→ 交给服务端判（本地只做 UI 预判）
+  ///   ② 无后端 → 只有白名单内的工具放行，高危一律拒
+  ///   ③ 有后端但无 DSH → 仍按服务端规则判（服务端在线时它就是权威）
+  static PolicyDecision checkTool(String tool) {
+    if (!backendConnected) {
+      if (AgentPolicy.allowOffline(tool)) {
+        return PolicyDecision(AgentDecision.allow, AgentPolicy.riskOf(tool), '离线模式：该工具在本地白名单内');
+      }
+      return PolicyDecision(
+        AgentDecision.deny, AgentPolicy.riskOf(tool),
+        '离线模式：${AgentPolicy.riskOf(tool) == AgentRisk.danger ? '高危工具不可用' : '该工具需要连接后端'}',
+      );
+    }
+    return AgentPolicy.decide(_profile, tool);
+  }
+
+  /// 该工具在降级时能否用（UI 画灰用）
+  static bool availableOffline(String tool) => AgentPolicy.allowOffline(tool);
+
+  /// 新建一个服务端会话；无后端时返回 null（走纯本地会话）
+  static Future<AgentSession?> newSession({
+    String title = '新任务',
+    String userId = '',
+  }) async {
+    if (!backendConnected) return null;
+    return AgentDshClient.createSession(title: title, profile: _profile, userId: userId);
+  }
+
+  static void resetForTest() {
+    health = const AgentHealth();
+    _profile = AgentProfileId.normal;
+    _booted = false;
+    AgentDshClient.base = '';
+    AgentDshClient.token = '';
+    AgentPolicy.reset();
+  }
 }
