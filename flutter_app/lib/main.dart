@@ -5163,7 +5163,7 @@ class _Da extends State<DownloadAppsPage> {
           const SizedBox(height: 10),
           DownloadShareBlock(
             name: '第三方聚合(ThirdHub)',
-            url: '$_base/thirdhub-app.apk',
+            url: '${DownloadCenterTile._base}/thirdhub-app.apk',
             sub: '全系列产品下载入口 · 覆盖安装数据保留',
             version: 'v${Updater.currentVersion}',
             compact: true,

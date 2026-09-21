@@ -62,7 +62,7 @@ class _Http {
     HttpClientRequest req;
     try {
       final u = Uri.parse(url);
-      req = await _client.openUrl(method, u).timeout(const Duration(milliseconds: timeoutMs));
+      req = await _client.openUrl(method, u).timeout(Duration(milliseconds: timeoutMs));
     } catch (e) {
       return _Resp(0, '', '连不上 ${PeerUrl.hostOf(url)}: ${_short(e)}');
     }
@@ -70,8 +70,8 @@ class _Http {
       req.headers.set('Content-Type', 'application/json; charset=utf-8');
       headers.forEach(req.headers.set);
       if (body != null) req.write(jsonEncode(body));
-      final r = await req.close().timeout(const Duration(milliseconds: timeoutMs));
-      final t = await r.transform(utf8.decoder).join().timeout(const Duration(milliseconds: timeoutMs));
+      final r = await req.close().timeout(Duration(milliseconds: timeoutMs));
+      final t = await r.transform(utf8.decoder).join().timeout(Duration(milliseconds: timeoutMs));
       return _Resp(r.statusCode, t);
     } catch (e) {
       return _Resp(0, '', _short(e));
@@ -568,10 +568,18 @@ class PeerHubRuntime {
     if (!_ctrl.isClosed) _ctrl.add(registry);
   }
 
+  /// 本机在端网里的显示名。
+  ///
+  /// 必须存成字段：`start()` 有 `name` 形参，但 `tick()` 没有 —— 心跳是周期性
+  /// 重连，不该每次重带一遍身份。之前 `tick()` 里直接写 `name: name`，引用了一个
+  /// 该作用域里不存在的标识符；语法检查看不出来，直到真编译才炸。
+  static String selfName = '我的手机';
+
   /// 启动：加载身份 → 缓存先上屏 → join → 立刻 beat 一次 → 定时心跳。
   static Future<void> start({String name = '我的手机'}) async {
     if (running) return;
     running = true;
+    selfName = name;
     await PeerHubClient.loadIdentity();
     registry = (await PeerHubClient.list(refresh: false)).stamped(DateTime.now().millisecondsSinceEpoch);
     _emit();
@@ -607,7 +615,7 @@ class PeerHubRuntime {
       final addr = addressProvider?.call() ?? const <String, String>{};
       final caps = capabilityProvider?.call() ?? const <String, List<String>>{};
       final r = await PeerHubClient.join(
-        name: name,
+        name: selfName,
         url: addr['url'] ?? '',
         ipv6: addr['ipv6'] ?? '',
         tunnel: addr['tunnel'] ?? '',

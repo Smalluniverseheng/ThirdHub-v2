@@ -425,14 +425,21 @@ class LocalTools {
         }
         target = route.peer;
       }
+      // 到这里 target 一定非空（两条分支要么 return，要么赋了值），但 Dart 的
+      // 流分析看不穿「某个分支里 route.peer 已判非空」，所以显式收成一个非空局部量。
+      final PeerInfo t = target!;
       if (tool.isEmpty) {
-        return '「${target.name}」提供的工具：'
-            '${target.tools.isEmpty ? "(它没上报工具名，只有能力 ${target.caps.join("/")})" : target.tools.join(", ")}';
+        return '「${t.name}」提供的工具：'
+            '${t.tools.isEmpty ? "(它没上报工具名，只有能力 ${t.caps.join("/")})" : t.tools.join(", ")}';
       }
-      final r = await PeerHubClient.invoke(target.iid, tool, callArgs);
+      // ★ invoke 的第一个位置参数是 **cap**（能力），不是工具名 —— 这里是
+      //   `invoke(String cap, {String? tool, ...})`。传 tool 当 cap 是有意的：
+      //   内核的 canTake/route 对 cap 与 tool 是**两套标识都查**的
+      //   （caps 粗粒度如 download，tools 具体如 dl.add），所以 tool 名同样能匹配到端。
+      final r = await PeerHubClient.invoke(tool, tool: tool, args: callArgs, preferIid: t.iid);
       if (!r.ok) return '调用失败：${r.error}';
       final s = r.result is String ? r.result : jsonEncode(r.result);
-      return '已通过${r.via == PeerVia.hub ? "后端转发" : "直连"}调用「${target.name}」的 $tool，结果：$s';
+      return '已通过${r.via == PeerVia.hub ? "后端转发" : "直连"}调用「${t.name}」的 $tool，结果：$s';
     }),
   ];
 
