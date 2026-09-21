@@ -218,8 +218,15 @@ class MainActivity : FlutterActivity() {
     private fun enterPip(): Boolean {
         if (!hasPip()) return false
         return try {
-            if (android.os.Build.VERSION.SDK_INT >= 26) enterPictureInPictureMode(buildPipParams())
-            else enterPipLegacy()
+            // 注意：enterPictureInPictureMode(...) 返回 Unit，不能直接当 if 分支的值——
+            // 否则 if/else 会被推断成 Any，与函数签名 Boolean 不匹配（编译期报
+            // "Return type mismatch: expected 'Boolean', actual 'Unit'"）。显式写 true。
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                enterPictureInPictureMode(buildPipParams())
+                true
+            } else {
+                enterPipLegacy()
+            }
         } catch (e: Exception) {
             // 已经在画中画里、或当前处于不支持的窗口状态（如系统对话框压着），都不是错误
             false
