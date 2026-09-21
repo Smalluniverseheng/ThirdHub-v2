@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_version.dart';
 import 'pro_kit.dart';
 
 /// main.dart 注册的桥: 系统页需要动"宿主"的东西(导航/主题/字体/打开模块)都走这里,
@@ -101,7 +102,7 @@ class Migration {
     }
     final payload = jsonEncode({
       'app': 'ThirdHub',
-      'version': '4.43.0',
+      'version': kAppVersion,
       'at': ProKit.now(),
       'withCred': withCred,
       'keys': out.length,

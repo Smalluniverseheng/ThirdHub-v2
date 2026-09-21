@@ -87,6 +87,94 @@ void main() {
   _ok(art.requiresConfirm, 'artifact 默认需要确认');
   _ok(!AgentArtifact.from({'kind': 'log', 'uri': 'u', 'requiresConfirm': false}).requiresConfirm, 'requiresConfirm=false 生效');
 
+  // ── artifact 文本两态（4.43.0：内联预览 / 落盘回取）──
+  final aInline = AgentArtifact.from({
+    'kind': 'diff', 'uri': '', 'summary': 's',
+    'text': '+a\n-b\n', 'textTruncated': false, 'bytes': 6,
+  });
+  _ok(aInline.hasText, '有内联文本 -> hasText');
+  _ok(aInline.isDiff, 'kind=diff -> isDiff');
+  _ok(!aInline.textTruncated, 'textTruncated=false');
+  _eq(aInline.bytes, 6, 'bytes 解析');
+  _ok(!aInline.canFetchFull, '无 id 时不能回取');
+
+  final aBig = AgentArtifact.from({
+    'kind': 'patch', 'uri': 'server://artifacts/art_1_0001', 'summary': 's',
+    'text': '@@ -1 +1 @@\n-a\n+b', 'textTruncated': true, 'bytes': 4096,
+  });
+  _ok(aBig.isDiff, 'kind=patch -> isDiff');
+  _ok(aBig.textTruncated, 'textTruncated=true');
+  _eq(aBig.storeId, 'art_1_0001', '从 uri 反解 storeId');
+  _ok(aBig.canFetchFull, '有 id 时可回取');
+  _eq(AgentArtifact.from({'kind': 'file', 'storedId': 'art_9', 'uri': ''}).storeId, 'art_9',
+      'storedId 字段可直接用');
+  _eq(AgentArtifact.from({'kind': 'file', 'uri': 'server://artifacts/../../x'}).storeId, '',
+      '★形状可疑的 id 一律拒绝（不发目录穿越给服务端）');
+  _ok(!AgentArtifact.from({'kind': 'file', 'uri': 'u'}).hasText, '无文本 hasText=false');
+  _ok(!AgentArtifact.from({'kind': 'log', 'uri': 'u'}).isDiff, 'kind=log 不是 diff');
+
+  _section('2b. diff 逐行解析（AgentDiff）');
+  final diffText = 'diff --git a/x.txt b/x.txt\n'
+      'Index: x.txt\n'
+      '--- a/x.txt\n'
+      '+++ b/x.txt\n'
+      '@@ -1,3 +1,3 @@\n'
+      ' keep\n'
+      '-old\n'
+      '+new\n'
+      ' tail\n';
+  final dp = AgentDiff.parse(diffText);
+  _ok(dp.isDiff, '有 hunk 头 -> isDiff');
+  _eq(dp.hunks, 1, 'hunk 数');
+  _eq(dp.added, 1, '新增行数');
+  _eq(dp.removed, 1, '删除行数');
+  _eq(dp.lines.length, 9, '行数不丢不吞');
+  _eq(dp.lines[0].kind, AgentDiffKind.file, 'diff --git 认成文件头');
+  _eq(dp.lines[2].kind, AgentDiffKind.file, '--- 认成文件头');
+  _eq(dp.lines[4].kind, AgentDiffKind.hunk, '@@ 认成 hunk');
+  _eq(dp.lines[5].kind, AgentDiffKind.context, '上下文行');
+  _eq(dp.lines[6].kind, AgentDiffKind.del, '删除行');
+  _eq(dp.lines[6].text, 'old', '删除行去掉前缀');
+  _eq(dp.lines[7].kind, AgentDiffKind.add, '新增行');
+  _eq(dp.lines[7].text, 'new', '新增行去掉前缀');
+  _eq(dp.lines[5].aLine, 1, 'context 老行号从 hunk 头起算');
+  _eq(dp.lines[5].bLine, 1, 'context 新行号从 hunk 头起算');
+  _eq(dp.lines[6].aLine, 2, '删除行占老行号 2');
+  _eq(dp.lines[7].bLine, 2, '新增行占新行号 2');
+  _eq(dp.lines[8].aLine, 3, '尾行老行号 3');
+  _eq(dp.lines[8].bLine, 3, '尾行新行号 3');
+
+  // ★最容易出的误判：Markdown 列表 / 引用不能因为以 - + 开头就被染色
+  final md = AgentDiff.parse('- 第一项\n- 第二项\n+ 这不是新增\n');
+  _ok(!md.isDiff, '★无 hunk 头不按 diff 解析（Markdown 列表安全）');
+  _eq(md.added, 0, '无 hunk 时不统计新增');
+  _eq(md.removed, 0, '无 hunk 时不统计删除');
+  _ok(md.lines.every((l) => l.kind == AgentDiffKind.plain), '全部按普通文本');
+  _eq(AgentDiff.parse('- x\n', assumeDiff: true).removed, 0, '★assumeDiff 也不把 - 行当删除');
+  _eq(AgentDiff.parse('--- a/f\n+++ b/f\n', assumeDiff: true).lines[0].kind, AgentDiffKind.file,
+      'assumeDiff 只把文件头认出来');
+
+  // ★hunk 内以 +++ 开头的新增内容，不能被误判成文件头
+  final tricky = AgentDiff.parse('@@ -1 +1 @@\n+++ abc\n');
+  _eq(tricky.lines[1].kind, AgentDiffKind.add, '★hunk 内 "+++ abc" 是新增一行 "++ abc"');
+  _eq(tricky.lines[1].text, '++ abc', 'hunk 内 +++ 行只去掉一个 +');
+  _eq(tricky.added, 1, 'tricky 统计新增 1');
+
+  // 边界：空串 / 末尾换行 / CRLF / 多 hunk 行号重置
+  _ok(!AgentDiff.parse('').isDiff, '空串不是 diff');
+  _eq(AgentDiff.parse('').lines.length, 0, '空串 0 行');
+  _eq(AgentDiff.parse('a\nb\n').lines.length, 2, '末尾换行不多出空行');
+  final crlf = AgentDiff.parse('@@ -1 +1 @@\r\n-a\r\n+b\r\n');
+  _eq(crlf.lines.length, 3, 'CRLF 不产生多余空行');
+  _eq(crlf.lines[1].text, 'a', 'CRLF 行不含回车符');
+  _eq(crlf.added, 1, 'CRLF 下统计仍正确');
+  _eq(AgentDiff.parse('@@ -1 +1 @@\n\\ No newline at end of file\n').lines[1].kind,
+      AgentDiffKind.meta, '反斜杠行认成 meta');
+  final two = AgentDiff.parse('@@ -1 +1 @@\n-a\n+b\n@@ -10 +10 @@\n-c\n+d\n');
+  _eq(two.hunks, 2, '两个 hunk');
+  _eq(two.added, 2, '两个 hunk 的新增合计');
+  _eq(two.lines[5].bLine, 10, '★第二个 hunk 的行号重置为 10');
+
   // ─────────────────────────────────────────────────────────────────────────
   _section('3. 事件流折叠（AgentTimeline）');
   final tl = AgentTimeline([

@@ -128,7 +128,7 @@ async function connect(id) {
     const initRes = await rpc(s.url, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'ThirdHub-v4', version: '4.43.0' },
+      clientInfo: { name: 'ThirdHub-v4', version: '4.44.0' },
     });
     const toolsRes = await rpc(s.url, 'tools/list', {});
     s.tools = (toolsRes.tools || []).map((t) => ({

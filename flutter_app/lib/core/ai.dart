@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_snapshot.dart';
 import 'ai_agent.dart';
+import 'app_version.dart';
 
 class AiProvider {
   final String id, name, base, type;
@@ -536,7 +537,9 @@ class Mcp {
     s.status = 'connecting'; _change.add(null);
     try {
       await _rpc(s.url, 'initialize', {'protocolVersion': '2024-11-05', 'capabilities': {},
-        'clientInfo': {'name': 'ThirdHub', 'version': '4.8.0'}});
+        // 版本号走单一来源。此前这里写死 '4.8.0'，几代没更新 —— 等于每次 MCP
+        // 握手都在跟服务端谎报客户端版本（会误导服务端做版本适配）。
+        'clientInfo': {'name': 'ThirdHub', 'version': kAppVersion}});
       final result = await _rpc(s.url, 'tools/list', {});
       s.tools = [ for (final t in (result['tools'] as List? ?? [])) Map<String, dynamic>.from(t) ];
       s.status = 'connected'; s.error = '';

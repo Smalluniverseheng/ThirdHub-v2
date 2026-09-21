@@ -22,6 +22,8 @@ import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'core/nav_swipe.dart';
+import 'core/local_tools.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
 import 'core/recents.dart';
@@ -50,6 +52,8 @@ import 'core/ai.dart';
 import 'core/ai_page.dart';
 import 'core/ai_agent.dart';
 import 'core/agent_dsh_client.dart';
+import 'core/peer_hub.dart';
+import 'core/peer_page.dart';
 import 'core/ai_agent_page.dart';
 import 'core/ai_store_prefs.dart';
 import 'core/job_center.dart';
@@ -77,6 +81,9 @@ import 'core/pro_system.dart';
 import 'core/pro_ai.dart';
 import 'core/pip.dart';
 import 'core/chat.dart';
+import 'core/app_version.dart';
+import 'core/share_card.dart';
+import 'core/module_clog_page.dart';
 
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
@@ -323,6 +330,17 @@ class AppSettings {
     return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
   }
   static Future<void> setOrbPos(Offset o) async { await p.setDouble('orb_x', o.dx); await p.setDouble('orb_y', o.dy); }
+  // ★4.44.0 退出全屏悬浮球的位置：原先是**固定在右上角**（right:8/top:0），
+  // 全屏时正好压在手指常滑的区域上、会挡住手势。改成可随意拖动并记住位置。
+  // 默认 (-1,-1) = 尚未拖过 → 首次仍落在右上角，与旧行为一致。
+  static Offset get fsOrbPos {
+    final x = p.getDouble('fs_orb_x'), y = p.getDouble('fs_orb_y');
+    return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
+  }
+  static Future<void> setFsOrbPos(Offset o) async {
+    await p.setDouble('fs_orb_x', o.dx); await p.setDouble('fs_orb_y', o.dy); }
+  static Future<void> resetFsOrbPos() async {
+    await p.remove('fs_orb_x'); await p.remove('fs_orb_y'); }
 
   // ── 资料(网页版-个人资料) ──
   static String get bio => p.getString('bio') ?? '';
@@ -666,6 +684,9 @@ class _ThAppState extends State<ThApp> {
     // Agent Runtime(DSH) 用的是同一个后端 —— 两处必须同源，否则会出现
     // 「TTS 通了、AI 却说没后端」这种自相矛盾的状态。
     AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
+    // ★4.44.0 端网(PH/1)用的是**同一个后端** —— 同样必须同源，
+    //   否则会出现「DSH 通了、端网却说没后端」这种自相矛盾的状态。
+    PeerHubClient.base = Api.base; PeerHubClient.token = Api.token;
     if (_agentBootedBase != Api.base) {
       _agentBootedBase = Api.base;
       // build 里不能 await：把探测推到这一帧画完之后，探一次就够。
@@ -869,6 +890,7 @@ class _Conn extends State<ConnectLibraryPage> {
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
         TtsBackend.base = Api.base; TtsBackend.token = Api.token;
         AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
+        PeerHubClient.base = Api.base; PeerHubClient.token = Api.token;
         runApp(ThApp(ready: true, base: baseC.text.trim(), token: tokenC.text.trim())); }
     } catch (e) { setState(() { busy = false; err = '连接失败: $e'; }); } }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
@@ -3067,6 +3089,9 @@ final Map<String, ModuleDef> kModules = {
   '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(), localKind: 'video'),
   '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(), localKind: 'music'),
   'AI': const ModuleDef('AI', Icons.smart_toy_outlined, AiSection()),
+  // ★4.44.0 端网：前端/后端/插件/DSA 任意组合互相插线的地方。
+  //   放在「核心」分类紧挨 AI —— 它是 AI 能力的延伸（让模型能指挥别的端）。
+  '端网': const ModuleDef('端网', Icons.hub_outlined, PeerPage()),
   '聊天': const ModuleDef('聊天', Icons.forum_outlined, ChatPage()),
   '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, GamesPage()),
   '社区': const ModuleDef('社区', Icons.groups_outlined, CommunityPage()),
@@ -3164,7 +3189,7 @@ const Map<String, String> kModuleRenames = {
 // ═══ 模块分类(导航栏管理树状分组用) ═══
 const kCatOrder = ['核心', '内容', '生活', '效率', '家庭', '实验室'];
 const Map<String, String> kModuleCats = {
-  '搜索': '核心', 'AI': '核心', '浏览器': '核心', '文件': '核心', '相册': '核心', '我的': '核心',
+  '搜索': '核心', 'AI': '核心', '端网': '核心', '浏览器': '核心', '文件': '核心', '相册': '核心', '我的': '核心',
   '小说': '内容', '漫画': '内容', '视频': '内容', '音乐': '内容', '直播': '内容',
   '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容',
   '笔记': '生活', '待办': '生活', '录音机': '生活', '日历': '生活', '提醒中心': '生活', '日记': '生活', '记账': '生活',
@@ -3242,6 +3267,12 @@ class _RootNavState extends State<RootNav> {
   int idx = 0;
   bool _navCollapsed = false; // 点按正文收起(去文字, 缩到 ~1/3 高, 点细条恢复)
   final PageController _page = PageController();
+  // ★4.44.0 左右滑动切模块: 手势改由 NavSwipeRecognizer 接管(带主方向判定)。
+  // 原实现直接用 PageView 的 PageScrollPhysics —— 内置识别器只看水平位移是否
+  // 超过 kTouchSlop(18), 不看垂直分量, 于是"斜着上滑"会被误判成切模块。
+  bool _swHand = false;    // 本手势正在被手工跟手驱动
+  int _swFrom = 0;         // 手势起始页(不随拖拽中的 idx 变化)
+  double _swBasePx = 0;    // 手势起始像素位置
   final ScrollController _navScroll = ScrollController();
   // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
   static const _noAppBarModules = {'浏览器', '相册'};
@@ -3256,7 +3287,136 @@ class _RootNavState extends State<RootNav> {
     proOpenModule.addListener(_onProOpen);
     // 浏览器等沉浸页的"切换模块"入口
     BrowserHooks.openModules = (c) => NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
+    _wireLocalHooks(); // ★4.44.0 上下文注入 + 前端控制能力
+    unawaited(_bootPeers()); // ★4.44.0 端网：接入 + 定时心跳（无后端时自动退化为直连模式）
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
+
+  /// ★4.44.0 把本端接入端网（PH/1）。
+  ///
+  /// 放在 _RootNavState 而不是 ThApp 的原因：本端要**对外声明**的东西
+  /// （模块列表 / 离线工具 / 设置项 / 是否已连后端）都只有这里知道；
+  /// 换个地方就得把这些信息复制一份，早晚走偏。
+  ///
+  /// 失败不影响启动：PeerHubRuntime 会退化成"离线模式/无后端直连模式"。
+  Future<void> _bootPeers() async {
+    PeerHubRuntime.addressProvider = () => {
+          // 本端对外可达地址。留空也能用 —— 只是别的端无法反向直连本机。
+          // 填了内网穿透地址后，即使后端不在线，别的端也能通过它找到本机。
+          'url': AppSettings.p.get('peer_url')?.toString() ?? '',
+          'ipv6': AppSettings.p.get('peer_ipv6')?.toString() ?? '',
+          'tunnel': AppSettings.p.get('peer_tunnel')?.toString() ?? '',
+        };
+    PeerHubRuntime.capabilityProvider = () => {
+          'caps': <String>[
+            'front',
+            'tools',
+            'secrets',
+            if (AgentRuntime.backendConnected) 'llm',
+          ],
+          // 把本机离线工具全报上去 —— 其他端就知道"这台手机能干什么"。
+          'tools': LocalTools.all.map((t) => 'local_${t.name}').toList(),
+        };
+    try {
+      await PeerHubRuntime.start(name: '我的手机');
+    } catch (_) {
+      // 端网起不来绝不能拖垮启动
+    }
+  }
+
+  /// ★4.44.0 把「前端知道的东西」与「前端能做的事」交给本地工具层。
+  ///
+  /// 这是"上下文注入"的落点：AI 不再需要用户先告诉它"我在哪个模块"。
+  /// 同时也是"前端是控制层"的落点：goto_module / setting 让模型能直接指挥前端，
+  /// 而**这些能力完全不依赖后端** —— 没连后端时照样能用。
+  static const List<String> _settingKeys = [
+    'nav_swipe', 'nav_style', 'nav_side', 'nav_autohide', 'auto_fs_sec',
+    'orb_snap', 'theme_mode', 'accent_color', 'locale', 'splash_anim',
+  ];
+
+  void _wireLocalHooks() {
+    LocalHooks.listModules = () async => List<String>.from(enabled);
+    LocalHooks.gotoModule = (m) async {
+      final name = m.trim();
+      var i = enabled.indexOf(name);
+      if (i < 0) {
+        // 容忍"浏览器"/"浏览器模块"这类写法
+        i = enabled.indexWhere((e) => e == name || name.startsWith(e) || e.startsWith(name));
+      }
+      if (i < 0) return '当前导航栏没有「$name」。可用模块: ${enabled.join(' · ')}';
+      _go(i);
+      return '已切到「${enabled[i]}」';
+    };
+    LocalHooks.contextOf = () async {
+      final now = DateTime.now();
+      final mod = enabled.isEmpty ? '(无)' : enabled[idx.clamp(0, enabled.length - 1)];
+      final buf = StringBuffer()
+        ..writeln('App: ThirdHub ${Updater.currentVersion} (build ${Updater.currentCode})')
+        ..writeln('当前模块: $mod')
+        ..writeln('导航栏: ${enabled.join(' · ')}')
+        ..writeln('全屏中: ${RootNav.fullscreen.value ? '是' : '否'} · 左右滑动切模块: ${AppSettings.navSwipe ? '开' : '关'}')
+        ..writeln('本地时间: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}')
+        ..writeln('家庭后端: ${AgentRuntime.backendConnected ? '已连接' : '未连接（离线能力仍可用）'}')
+        ..writeln('Agent 模式: ${AgentRuntime.modeLabel}');
+      try { buf.writeln('本地笔记: ${await LocalNotes.count()} 条'); } catch (_) {}
+      return buf.toString().trim();
+    };
+    LocalHooks.getSetting = (k) async => _readSetting(k);
+    LocalHooks.setSetting = (k, v) async => _writeSetting(k, v);
+    _syncContext();
+  }
+
+  /// 刷新「当前上下文」快照（同步，供 prompt 构建直接读）。
+  /// 模块切换 / 翻页 / 全屏变化时调用。
+  void _syncContext() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final mod = enabled.isEmpty ? '(无)' : enabled[idx.clamp(0, enabled.length - 1)];
+    final t = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    LocalContextSnapshot.set(
+      '【当前状态】ThirdHub ${Updater.currentVersion} · 用户正在「$mod」模块 · '
+      '导航栏: ${enabled.join(" / ")} · ${RootNav.fullscreen.value ? "全屏中" : "非全屏"} · '
+      '家庭后端${AgentRuntime.backendConnected ? "已连接" : "未连接(离线能力仍可用)"} · '
+      'Agent 模式 ${AgentRuntime.modeLabel} · '
+      // ★4.44.0 端网状态也进上下文：模型据此知道"现在能不能指挥别的端"，
+      //   不用等用户先说"我连了插件没有"。
+      '端网 ${PeerHubRuntime.status.isEmpty ? "未接入" : PeerHubRuntime.status}'
+      '${PeerHubRuntime.registry.hub != null ? "" : "（无后端直连模式）"} · '
+      '本地时间 $t。'
+      '回答时可以自然地结合用户所在模块给出建议，但不要生硬复述这串状态。');
+  }
+
+  String _readSetting(String k) {
+    final key = k.trim();
+    if (!_settingKeys.contains(key)) return '未知设置项。可用: ${_settingKeys.join(' · ')}';
+    final v = AppSettings.p.get(key);
+    return v == null ? '$key = (未设置, 用默认值)' : '$key = $v';
+  }
+
+  Future<String> _writeSetting(String k, String v) async {
+    final key = k.trim();
+    if (!_settingKeys.contains(key)) return '未知设置项。可用: ${_settingKeys.join(' · ')}';
+    final p = AppSettings.p;
+    try {
+      if (const {'nav_swipe', 'nav_autohide', 'orb_snap', 'splash_anim'}.contains(key)) {
+        final b = v == 'true' || v == '1' || v == 'on' || v == '开';
+        await p.setBool(key, b);
+      } else if (const {'auto_fs_sec', 'accent_color'}.contains(key)) {
+        final n = int.tryParse(v.trim());
+        if (n == null) return '$key 需要整数';
+        await p.setInt(key, key == 'auto_fs_sec' ? n.clamp(0, 10) : n);
+      } else {
+        await p.setString(key, v);
+      }
+    } catch (e) {
+      return '写入失败: $e';
+    }
+    AppSettings.onChanged?.call();
+    RootNav.navTick.value++; // 让导航层/设置页重读
+    if (mounted) setState(() {});
+    return '已设置 $key = $v';
+  }
   void _onNavChanged() { _load(); }
   // 4.40.0: 消费一次"打开模块"请求(AI 工具 / 系统中心 / 任意 Pro 模块发起)
   Future<void> _onProOpen() async {
@@ -3366,6 +3526,7 @@ class _RootNavState extends State<RootNav> {
     _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
     AppLog.module('打开模块', d: {'module': enabled[i]});
     _armAutoFs();
+    _syncContext(); // 上下文注入：模块变了，快照跟着变
     if (!_page.hasClients) return;
     if (animate) {
       _animating = true;
@@ -3373,6 +3534,43 @@ class _RootNavState extends State<RootNav> {
         .whenComplete(() => _animating = false);
     }
     else { _page.jumpToPage(i); }
+  }
+  /// ★4.44.0 跟手驱动：把 PageView 挪到 `起始页 - 累计手势位移` 处。
+  ///
+  /// PageView 的 physics 恒为 NeverScrollableScrollPhysics（它自己不碰手势），
+  /// 位置完全由这里驱动。用**绝对位移**而不是增量，天然幂等，不会累积漂移。
+  void _swDragTo(double dx) {
+    if (!_page.hasClients) return;
+    final p = _page.position;
+    final target = (_swBasePx - dx).clamp(p.minScrollExtent, p.maxScrollExtent);
+    if (target != p.pixels) p.jumpTo(target);
+  }
+  /// ★4.44.0 松手结算：按「位移比例 or 甩动速度」决定翻页还是回弹。
+  ///
+  /// [dx] 是累计手势位移（手指向左为负），[vx] 是手指水平速度。
+  /// 注意 `_swFrom` 是**手势起始页**而不是当前 idx —— 拖拽途中 onPageChanged
+  /// 可能已经把 idx 改掉，用 idx 会算错方向。
+  void _swSettle(double dx, double vx) {
+    if (!_page.hasClients) return;
+    final p = _page.position;
+    final t = SwipeSettleDecider.target(
+      from: _swFrom, count: enabled.length,
+      movedPx: -dx, pageWidth: p.viewportDimension, velocityDx: vx);
+    if (t == _swFrom) {
+      // 没滑够 → 弹回原页（不记日志、不震动，什么都没发生）
+      _page.animateToPage(_swFrom,
+        duration: const Duration(milliseconds: 160), curve: Curves.easeOut);
+      return;
+    }
+    // 落到目标页：副作用在这里显式补一次 —— 拖拽途中 onPageChanged 被静默处理了
+    HapticFeedback.selectionClick();
+    setState(() { idx = t; RootNav.currentModuleKey = enabled[t]; });
+    _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
+    AppLog.module('滑动切到模块', d: {'module': enabled[t]});
+    _armAutoFs();
+    _syncContext();
+    _page.animateToPage(t,
+      duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
   }
   @override Widget build(BuildContext c) {
     ScreenFit.update(c);
@@ -3392,6 +3590,31 @@ class _RootNavState extends State<RootNav> {
       });
     }
     // 点按正文→底栏收起为 1/3 细条(保持收起, 不再因松手/上滑弹回); 点细条恢复
+    // ── ★4.44.0 左右滑动切模块：PageView 不再自己处理手势 ──
+    // physics 恒定 NeverScrollableScrollPhysics ⇒ Scrollable 不注册内置识别器，
+    // 手势全部交给外层 NavSwipeRecognizer（要求"水平分量明确占主导"）。
+    // 这样"在模块内斜着上滑"会主动退场、让位给模块自己的滚动视图，永不误判成切模块。
+    final pageView = PageView(
+      controller: _page,
+      physics: const NeverScrollableScrollPhysics(),
+      onPageChanged: (i) {
+        // 手工跟手期间（或目标页已被 _swSettle 先行 setState）只同步状态：
+        // 避免"拖到一半就写日志/震动/重置自动全屏"这类半途副作用。
+        if (_swHand || i == idx) {
+          setState(() { idx = i; });
+          RootNav.currentModuleKey = enabled[i];
+          _syncContext();
+          return;
+        }
+        setState(() { idx = i; });
+        RootNav.currentModuleKey = enabled[i];
+        RootNav.moduleTick.value++;
+        _fsSuppressed = false;
+        AppLog.module('滑动切到模块', d: {'module': enabled[i]});
+        _armAutoFs();
+        _syncContext();
+      },
+      children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]);
     final body = GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
@@ -3399,17 +3622,43 @@ class _RootNavState extends State<RootNav> {
         _fsTimer?.cancel(); // 点按正文 = 一次操作，本轮不再自动进入全屏
         setState(() => _navCollapsed = true);
       },
-      child: PageView(controller: _page, onPageChanged: (i) { setState(() { idx = i; }); RootNav.currentModuleKey = enabled[i]; RootNav.moduleTick.value++;
-        _fsSuppressed = false; AppLog.module('滑动切到模块', d: {'module': enabled[i]}); _armAutoFs(); },
-        physics: swipe ? const PageScrollPhysics() : const NeverScrollableScrollPhysics(),
-        children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]));
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: swipe ? <Type, GestureRecognizerFactory>{
+          NavSwipeRecognizer: GestureRecognizerFactoryWithHandlers<NavSwipeRecognizer>(
+            () => NavSwipeRecognizer(debugOwner: this),
+            (r) => r
+              ..onDown = (d) {
+                _swFrom = idx;
+                _swHand = false;
+                // 用「起始页 × 视口宽」定位基准，而不是 position.pixels ——
+                // 若上一次翻页动画还没跑完，pixels 是中间值，会让跟手起点偏移。
+                _swBasePx = _page.hasClients ? _swFrom * _page.position.viewportDimension : 0;
+              }
+              ..onStart = (_) { _swHand = true; _animating = true; }
+              ..onUpdate = (d) {
+                if (r.yieldedVertical) return; // 已让位给内层滚动
+                _swDragTo(r.totalDx(d.globalPosition.dx));
+              }
+              ..onEnd = (d) {
+                _swHand = false; _animating = false;
+                // 竞技场只剩本识别器时会被强制 accept，此时仍可能是垂直手势 ——
+                // 必须再查一次，否则"上滑也翻页"会从后门回来。
+                if (r.yieldedVertical) return;
+                _swSettle(r.totalDx(d.globalPosition.dx), d.velocity.pixelsPerSecond.dx);
+              }
+              ..onCancel = () {
+                _swHand = false; _animating = false;
+                if (_page.hasClients) _swSettle(0, 0); // 取消 → 回弹原页
+              },
+          ),
+        } : const <Type, GestureRecognizerFactory>{},
+        child: pageView));
     // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进各模块页分段行右侧 ⋯ / 悬浮球长按 (openModuleMenu)
     // body 始终位于 Stack 第 0 位且包裹类型恒定(SafeArea.top 开关), 全屏切换不再重建 PageView —— 修复"点全屏跳回搜索页"
     final bodyStack = Stack(children: [
       SafeArea(top: !hideBar && !fs, bottom: false, child: body),
-      if (fs) Positioned(top: 0, right: 8, child: SafeArea(child: Material(color: Colors.black45, shape: const CircleBorder(),
-        child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white), tooltip: '退出全屏',
-          onPressed: _exitFs)))),
+      if (fs) const FsExitOrb(),
     ]);
     // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
     if (ScreenFit.isWide) {
@@ -3463,6 +3712,14 @@ class _RootNavState extends State<RootNav> {
       if (_settingsModules.contains(key))
         ListTile(dense: true, leading: const Icon(Icons.tune, size: 20), title: Text('${mod.name}设置'),
           onTap: () { Navigator.pop(c2); showModuleSettings(context, key); }),
+      // ★4.44.0 每个模块各自的更新公告。放在这里而不是给 65 个模块各改一次 UI ——
+      //   模块菜单本来就是"这一模块自己的事"的入口（本地库/导入/模块设置都在这）。
+      ListTile(dense: true, leading: const Icon(Icons.campaign_outlined, size: 20),
+        title: Text('${mod.name}更新公告'),
+        subtitle: const Text('只显示与这个模块有关的改动', style: TextStyle(fontSize: 11)),
+        onTap: () { Navigator.pop(c2); Navigator.push(context, smoothRoute(ModuleClogPage(module: key))); }),
+      ListTile(dense: true, leading: const Icon(Icons.history, size: 20), title: const Text('全部更新历史'),
+        onTap: () { Navigator.pop(c2); Navigator.push(context, smoothRoute(const ChangelogPage())); }),
       ListTile(dense: true, leading: Icon(fsNow ? Icons.fullscreen_exit : Icons.fullscreen, size: 20),
         title: Text(fsNow ? '退出全屏' : '全屏'),
         onTap: () { Navigator.pop(c2); RootNav.fullscreen.value = !fsNow; }),
@@ -3827,8 +4084,11 @@ class _At extends State<AccountTile> {
         Api.base = winner.value; Api.token = secret;
         TtsBackend.base = Api.base; TtsBackend.token = Api.token;
         AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
+        PeerHubClient.base = Api.base; PeerHubClient.token = Api.token;
         // 刚自动连上后端：顺手探一次 Agent Runtime，让「任务」栏一进去就是正确的模式
         try { await AgentRuntime.bootstrap(); } catch (_) {}
+        // 端网也要跟着切到新后端（否则会拿着旧地址去 join）
+        try { await PeerHubRuntime.refresh(); } catch (_) {}
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已通过${winner.key}自动连接后端')));
       }
     } catch (_) {}
@@ -4001,6 +4261,11 @@ class ProductDetailPage extends StatelessWidget {
       Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(desc, style: const TextStyle(fontSize: 13, height: 1.8)))),
       const SizedBox(height: 12),
       const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('覆盖安装, 数据自动保留\n下载完成的安装包会保存在"已下载的安装包"列表, 可随时重装或长按删除', style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.8)))),
+      // ★4.44.0 下载物要能"离开这台设备"：直链在手机上没法传给家人，
+      //   所以这一页除了下载按钮，还给二维码和分享图。
+      const Padding(padding: EdgeInsets.fromLTRB(4, 20, 4, 4),
+        child: Text('扫码安装 / 分享给家人', style: TextStyle(fontSize: 12, color: Colors.grey))),
+      DownloadShareBlock(name: name, url: url, sub: sub),
     ]),
     bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.all(16),
       child: url.toLowerCase().endsWith('.apk')
@@ -4016,8 +4281,10 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.43.0';
-  static const int currentCode = 50530;
+  // ★ 版本号唯一来源 = core/app_version.dart。
+  //   4.40.0 时这里漏改，导致装了新版仍被判成旧版、反复弹升级提示。别再写死字面量。
+  static const String currentVersion = kAppVersion;
+  static const int currentCode = kAppCode;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数
@@ -4882,6 +5149,27 @@ class _Da extends State<DownloadAppsPage> {
       const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
         child: Text('ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留', style: TextStyle(fontSize: 12, color: Colors.grey))),
       const Card(child: DownloadCenterTile()),
+      // ★4.44.0 下载页多了一个真实用途：把 App 交给别人。
+      //   直链在手机上没法递给家人（微信会拦、手打太长），所以这里给二维码和分享图。
+      //   用**无版本别名** thirdhub-app.apk：扫码的一方永远拿到当前最新包，
+      //   不会因为分享图在群里躺了半个月就装到旧版。
+      Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('把 App 分享给家人', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          const Text('扫码直接下载最新版 · 或保存分享图发到群里', style: TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(height: 10),
+          DownloadShareBlock(
+            name: '第三方聚合(ThirdHub)',
+            url: '$_base/thirdhub-app.apk',
+            sub: '全系列产品下载入口 · 覆盖安装数据保留',
+            version: 'v${Updater.currentVersion}',
+            compact: true,
+          ),
+        ]))),
+      ),
       if (apks.isNotEmpty) ...[
         const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
           child: Text('已下载的安装包(点按安装 · 长按删除)', style: TextStyle(fontSize: 12, color: Colors.grey))),
@@ -4925,6 +5213,40 @@ class _Da extends State<DownloadAppsPage> {
     ])));
 }
 
+/// 「全部更新历史」独立页。
+///
+/// 入口在任意模块菜单里。之所以要单独一页、而不是让用户去下载页翻：
+/// 下载页是"我要装东西"的地方，更新历史是"我想看改了什么"的地方，
+/// 两种意图混在同一屏，用户会找不到。
+///
+/// 刷新走 [GlobalKey] 直连自己那份面板的 `_load`，**不经过** [ChangelogPanel] 的
+/// 静态 hook —— 否则它会顶掉下载页那份、并在本页 dispose 时把对方清空。
+class ChangelogPage extends StatefulWidget {
+  const ChangelogPage({super.key});
+
+  @override State<ChangelogPage> createState() => _ChangelogPageState();
+}
+
+class _ChangelogPageState extends State<ChangelogPage> {
+  final GlobalKey<_ChangelogPanelState> _panelKey = GlobalKey<_ChangelogPanelState>();
+
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('全部更新历史')),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _panelKey.currentState?._load(force: true);
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+          children: <Widget>[ChangelogPanel(key: _panelKey, ownRefresh: true)],
+        ),
+      ),
+    );
+  }
+}
+
 /// 更新历史面板。
 ///
 /// 设计取舍：
@@ -4934,7 +5256,16 @@ class _Da extends State<DownloadAppsPage> {
 ///    权限由服务端 RLS 强制，这一层只管要不要显示入口。
 ///  * **逐版本折叠** —— 默认全收起，副标题给两行摘要，需要时再展开看全。
 class ChangelogPanel extends StatefulWidget {
-  const ChangelogPanel({super.key});
+  const ChangelogPanel({super.key, this.ownRefresh = false});
+
+  /// true = 这一份自己管刷新，不碰全局 [refreshHook]。
+  ///
+  /// 下载页那一份把刷新函数挂到静态 hook 上，供页面级下拉刷新调用（面板自己
+  /// 不是滚动容器）。但「全部更新历史」页是独立路由 —— 两份面板同时躺在导航栈
+  /// 上时，共用一个静态字段会互相覆盖，且**先建的那份 dispose 时会把 hook 清成
+  /// null**，回到下载页后下拉刷新就静默失效。所以独立页这份用 ownRefresh 退出
+  /// 这套全局约定，自己挂 RefreshIndicator。
+  final bool ownRefresh;
 
   /// 面板把自己刷新函数挂出来，供页面级下拉刷新调用（面板本身不是滚动容器）。
   static Future<void> Function()? refreshHook;
@@ -4954,12 +5285,14 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
 
   @override void initState() {
     super.initState();
-    ChangelogPanel.refreshHook = () => _load(force: true);
+    if (!widget.ownRefresh) ChangelogPanel.refreshHook = () => _load(force: true);
     _load();
   }
 
   @override void dispose() {
-    if (ChangelogPanel.refreshHook != null) ChangelogPanel.refreshHook = null;
+    // ★ 只清自己挂的那一个：ownRefresh 的实例从没写过 hook，若它也执行清空，
+    //   就会把下载页那份挂着的刷新函数抹掉。
+    if (!widget.ownRefresh && ChangelogPanel.refreshHook != null) ChangelogPanel.refreshHook = null;
     super.dispose();
   }
 
@@ -5308,6 +5641,7 @@ class AboutPage extends StatelessWidget { const AboutPage({super.key});
     '视频': '片库/历史/发现 · 断点续播 · 选集连播 · 本地播放',
     '音乐': '歌单/收藏/历史 · 通知栏控制 · LRC同步歌词 · 断点续播',
     'AI': '多模型六分类 · 统一密钥库 · 思考链 · 联网搜索 · MCP · 消息排队',
+    '端网': '前端/后端/插件任意插线 · 端列表与跨端调用 · 密钥统一 · 无后端可直连 · 插件登录账号即接入',
     '直播': '直播源聚合播放 · 低延迟',
     '浏览器': '内置网页浏览 · 全屏模式 · 沉浸式布局',
     '相册': '系统相册浏览 · 一键备份到资源库',
@@ -5528,6 +5862,87 @@ class _Ecr extends State<EngineComicReader> {
     ])) : null);
 }
 
+
+// ═══ ★4.44.0 退出全屏悬浮球：可随意拖动、记住位置 ═══
+//
+// 旧实现把退出全屏按钮**钉死在右上角**（`Positioned(top:0, right:8)`）。
+// 全屏本来就是"想专心看内容"的状态，而这个按钮正好压在右手拇指最常滑动的
+// 区域上 —— 用户反馈"会挡住手"。现在改成和导航悬浮球同款的手势：
+//   · 按住拖动 → 停哪放哪（不强制吸边，满足"随意拖动"）
+//   · 位置写进设置，下次进全屏还在原地
+//   · 不拖动时半透明（0.5），拖动中变实心并放大一点，看得见手在哪
+//   · 长按可复位回右上角默认位（拖动后找不到它时的退路）
+class FsExitOrb extends StatefulWidget {
+  const FsExitOrb({super.key});
+  @override State<FsExitOrb> createState() => _FsExitOrbState();
+}
+
+class _FsExitOrbState extends State<FsExitOrb> {
+  static const double sz = 44;
+  Offset _pos = const Offset(-1, -1);
+  bool _drag = false;
+
+  @override void initState() { super.initState(); _pos = AppSettings.fsOrbPos; }
+
+  void _clampInto(Size screen, EdgeInsets pad) {
+    final mx = (screen.width - sz).clamp(0.0, double.infinity);
+    final my = (screen.height - sz).clamp(0.0, double.infinity);
+    _pos = Offset(_pos.dx.clamp(0.0, mx), _pos.dy.clamp(pad.top + 4, my));
+  }
+
+  @override Widget build(BuildContext c) {
+    final screen = MediaQuery.of(c).size;
+    final pad = MediaQuery.of(c).padding;
+    if (_pos.dx < 0) {
+      // 首次（或用户复位后）：右上角，与旧行为一致
+      _pos = Offset(screen.width - sz - 12, pad.top + 8);
+    } else {
+      _clampInto(screen, pad); // 屏幕旋转/换设备后保证还在可见范围内
+    }
+    return Positioned(
+      left: _pos.dx, top: _pos.dy,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) => setState(() => _drag = true),
+        onPanUpdate: (d) => setState(() {
+          final mx = (screen.width - sz).clamp(0.0, double.infinity);
+          final my = (screen.height - sz).clamp(0.0, double.infinity);
+          _pos = Offset((_pos.dx + d.delta.dx).clamp(0.0, mx),
+                        (_pos.dy + d.delta.dy).clamp(pad.top + 4, my));
+        }),
+        onPanEnd: (_) { setState(() => _drag = false); AppSettings.setFsOrbPos(_pos); },
+        onPanCancel: () { setState(() => _drag = false); AppSettings.setFsOrbPos(_pos); },
+        onTap: () {
+          HapticFeedback.selectionClick();
+          c.findAncestorStateOfType<_RootNavState>()?._exitFs();
+        },
+        onLongPress: () async {
+          HapticFeedback.mediumImpact();
+          await AppSettings.resetFsOrbPos();
+          if (!mounted) return;
+          setState(() => _pos = Offset(-1, -1)); // 回默认右上角
+          if (mounted) {
+            ScaffoldMessenger.maybeOf(c)?.showSnackBar(
+              const SnackBar(content: Text('退出全屏按钮已复位到右上角'), duration: Duration(seconds: 2)));
+          }
+        },
+        child: Tooltip(
+          message: '退出全屏（可拖动 · 长按复位）',
+          child: AnimatedScale(
+            scale: _drag ? 1.12 : 1.0,
+            duration: const Duration(milliseconds: 120),
+            child: Container(
+              width: sz, height: sz,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: _drag ? 0.78 : 0.5),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withValues(alpha: _drag ? 0.55 : 0.25)),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: _drag ? 12 : 6)]),
+              child: Icon(_drag ? Icons.open_with : Icons.fullscreen_exit,
+                color: Colors.white.withValues(alpha: _drag ? 1.0 : 0.9), size: 22)))),
+      ));
+  }
+}
 
 // ═══ 导航悬浮球: 可自由拖动/自动吸边, 点按弹出模块宫格(按屏宽自适应排布) ═══
 class NavOrb extends StatefulWidget {

@@ -13,7 +13,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'changelog_logic.dart';
 import 'cloud.dart';
+
+// 让调用方（main.dart / 分模块公告页）只 import 本文件就能用上零依赖的归类内核
+export 'changelog_logic.dart';
 
 /// 单条版本记录。
 class ClogEntry {
@@ -78,6 +82,14 @@ class ClogDoc {
         'note': note,
         'entries': <Map<String, dynamic>>[for (final ClogEntry e in entries) e.toJson()],
       };
+
+  /// 转成零依赖内核的行格式，交给 [ClogModules] 按模块切。
+  ///
+  /// 为什么要转一层：`changelog.dart` 依赖 http / shared_preferences，
+  /// 纯 Dart 自检跑不起来；归类逻辑必须住在能被自检覆盖的地方。
+  List<ClogRow> toRows() => <ClogRow>[
+        for (final ClogEntry e in entries) ClogRow(v: e.v, date: e.date, items: e.items),
+      ];
 }
 
 /// 一次加载的结果：拿到什么、是不是缓存、错了什么。
@@ -202,5 +214,36 @@ class ChangelogStore {
           }
         })
         .catchError((Object _) {});
+  }
+
+  // ── 分模块公告 ────────────────────────────────────────────────────────
+
+  /// 某个模块最近一份完整更新历史（含本地缓存兜底）。
+  ///
+  /// 复用同一份 [ClogDoc] 缓存 —— 不为每个模块单独请求/单独缓存。
+  /// 模块公告只是**同一个数据源的另一种切法**，多开一套缓存只会带来不一致。
+  static Future<ModClog> forModule(
+    String module, {
+    int limit = 30,
+    bool admin = false,
+    bool force = false,
+  }) async {
+    final ClogResult r = await load(admin: admin, force: force);
+    final List<ClogRow> rows = r.doc?.toRows() ?? const <ClogRow>[];
+    return ClogModules.pick(rows, module, limit: limit);
+  }
+
+  /// 有更新记录的模块清单（按 [ClogModules.all] 的顺序，末尾接「全局」）。
+  static Future<List<String>> modulesWithClog({bool admin = false}) async {
+    final ClogResult r = await load(admin: admin);
+    final List<ClogRow> rows = r.doc?.toRows() ?? const <ClogRow>[];
+    return ClogModules.present(rows);
+  }
+
+  /// 某个模块最近一次更新的一句话摘要（给入口按钮当副标题）。
+  static Future<String> briefOf(String module, {bool admin = false}) async {
+    final ClogResult r = await load(admin: admin);
+    final List<ClogRow> rows = r.doc?.toRows() ?? const <ClogRow>[];
+    return ClogModules.brief(rows, module);
   }
 }

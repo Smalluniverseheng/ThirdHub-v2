@@ -122,6 +122,21 @@ try {
       if (i >= 0) { devices.splice(i, 1); saveDevices(devices); }
       return;
     }
+    // ── PH/1 插件发现: TH-PEER/1 HELLO <port> <iid> <capsCsv> <name> ──
+    // 只登记"局域网里有这么个插件"，**不发 token**；插件仍必须用账号
+    // POST /agent/peer/join 才真正接入（见 peer-hub.js 的 discover 注释）。
+    // 注：peerHub 是 const，本回调在启动后才执行，闭包引用安全。
+    const pm = s.match(/^TH-PEER\/1 HELLO (\d+) ([\w\-]+) ?([\w:,\-]*) ?(.*)$/);
+    if (pm) {
+      try {
+        peerHub.discover({
+          port: pm[1], iid: pm[2],
+          caps: pm[3] ? pm[3].split(',').filter(Boolean) : [],
+          name: pm[4], addr: rinfo.address,
+        });
+      } catch (e) { /* 发现失败不影响 THP 主流程 */ }
+      return;
+    }
     // 新格式
     let m = s.match(/^THP\/1 HELLO (\d+) ([\w\-]+) (engine|library) ([\w:,\-]+)(?:\s+(.*))?$/);
     if (m) {
@@ -219,6 +234,8 @@ function searchLocal(module, q) {
   return out.slice(0, 50);
 }
 thp1.init({ thpOnline, searchLocal, library, saveLib, LIB_DIR });
+// PH/1 端间互通中枢：需要 DATA 与 SECRET 才能校验插件登录凭据。
+peerHub.init({ DATA, SECRET });
 
 // ─── 传输加密(可选, 默认不加密): AES-256-GCM, 密钥=配对secret ───
 const ENC_KEY = crypto.createHash('sha256').update(SECRET).digest();
@@ -326,6 +343,7 @@ const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtAgent = require('./routes-agent');
+const peerHub = require('./peer-hub');
 // 存储进程状态(原在文件尾, 上移供 adminCtx 引用)
 const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
 // 共享上下文(引用传递, 与各路由模块互通)
@@ -350,6 +368,13 @@ async function handle(req, res, body) {
 
   // THP/1.0 端点：匿名可达(L0)，统一信封，优先于旧 /v1 路由
   if (p.startsWith('/thp') && await thp1.handle(req, res, body, u)) return;
+
+  // ── PH/1 端间互通中枢(端/插件注册 · 跨端调用 · 密钥统一) ──
+  // ★ 必须放在鉴权闸门之前：与 /v1/pair 同一个教训 —— 还没拿到密钥的端
+  //   如果被 401 挡死，表现就是"插件连不上/没反应"，无法诊断。
+  //   安全性由 /agent/peer/join 的凭据校验(账号口令或后端密钥) + 后续
+  //   请求的 peerToken 兜住；join 绝不回传 SECRET。
+  if (p.startsWith('/agent/peer') && await peerHub.handle(req, res, body, u)) return;
 
   // Web控制台与静态文件(public/)
   if ((p === '/' || p === '/index.html') && req.method === 'GET') {

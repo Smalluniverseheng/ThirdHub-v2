@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'agent_dsh_client.dart';
 import 'agent_models.dart';
 import 'agent_policy.dart';
+import 'local_tools_logic.dart';
 
 // ── 存储抽象 ───────────────────────────────────────────────────────────────
 // TH-Agent 核心刻意**不依赖 Flutter**: 键值读写只走 [AiStore]。
@@ -369,7 +370,24 @@ class AiContext {
     final out = <Map<String, String>>[];
     // 前端渲染能力声明(放最弱位): 客户端有完整 Markdown 渲染(表格/代码块/标题),
     // 不要因为"怕客户端显示不了"而退化成纯文本; 需要结构化对比时主动出表格。
-    out.add({'role': 'system', 'content': '【输出格式】你的回答会被完整 Markdown 渲染: 对比/列举结构化数据时主动用标准 Markdown 表格(| 列头 | + 分隔行), 代码用 ```语言 围栏, 长回答用 # 标题分层。需要把内容存成文件时用 file_write 落盘(file_share 可分享给其他 App); 需要计算/数据处理时用 run_python 在家庭后端执行 Python。'});
+    // ★4.44.0：在**同一段**里追加「本机离线能力」清单。
+    //   为什么必须合并进这一段而不是单独成段：systemStack 的段数/顺序是
+    //   被 tool/agent_selfcheck.dart 锁定的契约（第 0 段=输出格式声明、
+    //   无注入时恰好 1 段）。单独成段会同时打破这两条断言。
+    //   内容上为什么必须有：不写这一条，模型习惯性回答"需要后端/我无法计算"，
+    //   前端自带的离线能力就等于白做。
+    out.add({
+      'role': 'system',
+      'content': '【输出格式】你的回答会被完整 Markdown 渲染: 对比/列举结构化数据时主动用标准 Markdown 表格(| 列头 | + 分隔行), 代码用 ```语言 围栏, 长回答用 # 标题分层。'
+          '需要把内容存成文件时用 file_write 落盘(file_share 可分享给其他 App); 需要计算/数据处理时用 run_python 在家庭后端执行 Python。'
+          '【本机离线能力】以下工具**不依赖后端与网络**，任何时候都能直接调用，不要回答"我做不到/需要联网"：'
+          'local_calc 计算表达式 · local_text_stats 文本统计 · local_text_diff 文本对比 · local_json_tool 处理 JSON · '
+          'local_codec 编解码 · local_unit_convert 单位换算 · local_regex_tool 正则 · local_time_tool 时间与时间戳 · '
+          'local_hash_text 文本指纹 · local_id_gen 生成 id · local_note 本地笔记(可增删查) · local_context_now 取当前上下文 · '
+          'local_list_modules 列可用模块 · local_goto_module 切换模块 · local_setting 读写 App 设置 · '
+          'file_write/file_read/file_list 本地文件 · clipboard_read/clipboard_write 剪贴板 · share_text 系统分享 · tts_speak 语音朗读 · open_url 打开链接。'
+          '只有 run_python 与 web_search 需要后端/网络；它们不可用时请改用上面的本地能力完成任务。'
+    });
     final base = AiInstruct.build();
     if (base.isNotEmpty) out.add({'role': 'system', 'content': base});
     if (agent != null && agent.system.isNotEmpty) {
@@ -383,6 +401,16 @@ class AiContext {
     if (toolManifest && tools.isNotEmpty) {
       out.add({'role': 'system', 'content': AiTools.manifest(tools)});
     }
+    // ★4.44.0 上下文注入（不依赖后端，离线同样注入，放在**最靠后**）：
+    //   由前端在模块切换/状态变化时维护快照（main.dart 的 _syncContext），
+    //   构建 prompt 时同步读出。有了它，模型不用先问"你现在在哪个页面"
+    //   就能给出贴合当下位置的回答。
+    //   放末位是刻意的：它是"此刻的状态事实"，最贴近本轮对话；
+    //   而它前一格是工具清单 —— 工具清单仍是最后一段**指令**。
+    //   快照为空时**完全不占用段位**，因此不影响无注入场景的段数契约。
+    if (LocalContextSnapshot.has) {
+      out.add({'role': 'system', 'content': LocalContextSnapshot.text});
+    }
     return out;
   }
 }
@@ -395,6 +423,13 @@ class AiTools {
   static const Set<String> _dangerous = {
     'local_file_delete', 'local_file_write', 'local_clipboard_write',
     'local_open_url', 'local_share_text', 'local_tts_speak',
+    // ★4.44.0 离线能力批里会**改动状态**的两个：
+    //   note 会写/删本地笔记文件；setting set 会改 App 设置。
+    //   goto_module / calc / text_stats 这类只读或纯计算的保持 safe，不打扰用户。
+    'local_note', 'local_setting',
+    // ★4.44.0 端网：peer_invoke 会让**别的端**去干活（插件能读写文件、跑程序），
+    //   影响范围超出本机，所以必须先问一句。peer_list 只读，保持 safe。
+    'local_peer_invoke',
   };
 
   /// 工具所属命名空间: serverId == 'local' → 'local', 其余一律 'mcp'

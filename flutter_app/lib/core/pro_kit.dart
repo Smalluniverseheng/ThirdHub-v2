@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_version.dart';
 import 'ai.dart';
 
 /// 全批次共用的 AI 调用入口(网页翻译 / 摘要 / 语义提取 / 定时 Agent 都用它)。
@@ -51,7 +52,7 @@ class ProAi {
 
 /// 本批次(4.40.0)统一的本地存储 + 后端访问入口。
 class ProKit {
-  static const batch = 'v4.43.0';
+  static const batch = 'v$kAppVersion';
 
   static Future<SharedPreferences> prefs() => SharedPreferences.getInstance();
 

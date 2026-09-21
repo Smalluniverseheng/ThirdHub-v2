@@ -10,6 +10,7 @@
 import 'dart:convert';
 
 import 'package:thirdhub_app/core/ai_agent.dart';
+import 'package:thirdhub_app/core/local_tools_logic.dart';
 
 int _pass = 0;
 int _fail = 0;
@@ -240,6 +241,22 @@ Future<void> main() async {
   final minimal = await AiContext.systemStack();
   _eq(minimal.length, 1, '无注入时只剩输出格式声明');
   _ok(minimal[0]['content']!.contains('【输出格式】'), '剩下那段确实是输出格式声明');
+  // ★4.44.0 离线能力清单必须**并进首段**：单独成段会同时打破上面两条断言。
+  _ok(minimal[0]['content']!.contains('【本机离线能力】'), '首段内联了离线能力清单(不单独占段)');
+  _ok(minimal[0]['content']!.contains('local_calc'), '离线清单点名了 local_calc');
+  _ok(minimal[0]['content']!.contains('只有 run_python 与 web_search 需要后端'),
+      '离线清单明确了唯一两个需要后端的工具');
+
+  // ★4.44.0 上下文快照：为空时不占段位，非空时落在**最靠后**一段。
+  LocalContextSnapshot.set('【当前上下文】用户正在「阅读」模块的第二本书');
+  final withCtx = await AiContext.systemStack(toolManifest: true, tools: tools);
+  _eq(withCtx.length, 3, '有快照时 = 输出格式 + 工具清单 + 快照');
+  _ok(withCtx.first['content']!.contains('【输出格式】'), '快照不影响首段位置');
+  _ok(withCtx[1]['content']!.contains('【可用工具】'), '工具清单仍在倒数第二位(指令最末)');
+  _ok(withCtx.last['content']!.contains('【当前上下文】'), '快照落在最后一段');
+  LocalContextSnapshot.clear();
+  final noCtx = await AiContext.systemStack();
+  _eq(noCtx.length, 1, '清空快照后回到 1 段(快照为空不占段位)');
 
   // ── 5. 上下文预算压缩 ──────────────────────────────────────────────
   print('\n5) AiCompress 预算压缩');
