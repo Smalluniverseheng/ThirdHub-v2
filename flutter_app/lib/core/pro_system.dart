@@ -101,7 +101,7 @@ class Migration {
     }
     final payload = jsonEncode({
       'app': 'ThirdHub',
-      'version': '4.41.0',
+      'version': '4.42.0',
       'at': ProKit.now(),
       'withCred': withCred,
       'keys': out.length,

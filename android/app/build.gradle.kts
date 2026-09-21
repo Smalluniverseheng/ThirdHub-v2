@@ -13,20 +13,37 @@ android {
         versionName = (findProperty("verName") as String?) ?: "4.2.0"
         manifestPlaceholders["appLabel"] = (findProperty("appLabel") as String?) ?: "第三方后端"
     }
+    // 签名材料不再入库（android/keystore.properties 与 *.jks 已从仓库删除，见 .gitignore）。
+    // 取值顺序：环境变量（CI 从 secrets 注入）→ 本地 keystore.properties（自建，不入库）。
+    // 两者都没有时**不配置签名**：assembleRelease 照样能出未签名包，不会像旧写法那样
+    // 在 configure 阶段就抛 FileNotFoundException 把整个构建打断。
     signingConfigs {
-        create("release") {
-            val p = Properties()
-            p.load(File(rootDir, "keystore.properties").inputStream())
-            storeFile = File(rootDir, p.getProperty("storeFile"))
-            storePassword = p.getProperty("storePassword")
-            keyAlias = p.getProperty("keyAlias")
-            keyPassword = p.getProperty("keyPassword")
+        val envStore = System.getenv("TH_STORE_FILE")
+        val propFile = File(rootDir, "keystore.properties")
+        if (!envStore.isNullOrBlank()) {
+            create("release") {
+                storeFile = File(envStore)
+                storePassword = System.getenv("TH_STORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("TH_KEY_ALIAS") ?: "thirdhub"
+                keyPassword = System.getenv("TH_KEY_PASSWORD") ?: ""
+            }
+        } else if (propFile.exists()) {
+            create("release") {
+                val p = Properties()
+                propFile.inputStream().use { p.load(it) }
+                storeFile = File(rootDir, p.getProperty("storeFile"))
+                storePassword = p.getProperty("storePassword")
+                keyAlias = p.getProperty("keyAlias")
+                keyPassword = p.getProperty("keyPassword")
+            }
+        } else {
+            logger.lifecycle("[ThirdHub] 未找到签名材料（TH_STORE_FILE 或 android/keystore.properties）——本次产出未签名 APK")
         }
     }
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {

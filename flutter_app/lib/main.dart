@@ -49,6 +49,7 @@ import 'core/i18n.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
 import 'core/ai_agent.dart';
+import 'core/agent_dsh_client.dart';
 import 'core/ai_agent_page.dart';
 import 'core/ai_store_prefs.dart';
 import 'core/job_center.dart';
@@ -651,6 +652,9 @@ class ThApp extends StatefulWidget {
   @override State<ThApp> createState() => _ThAppState();
 }
 class _ThAppState extends State<ThApp> {
+  /// 记住上一次已探测过的后端地址 —— 只有地址变了才重新探 DSH，避免每帧都发请求
+  String _agentBootedBase = '';
+
   @override void initState() { super.initState();
     AppSettings.onChanged = () { if (mounted) setState(() {}); };
     I18n.instance.addListener(_onLang); }
@@ -659,6 +663,16 @@ class _ThAppState extends State<ThApp> {
   @override Widget build(BuildContext c) { Api.base = widget.base; Api.token = widget.token;
     // 同步给 TTS 后端合成通道（core/tts_presets.dart 为避免循环 import 不直接读 Api）
     TtsBackend.base = Api.base; TtsBackend.token = Api.token;
+    // Agent Runtime(DSH) 用的是同一个后端 —— 两处必须同源，否则会出现
+    // 「TTS 通了、AI 却说没后端」这种自相矛盾的状态。
+    AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
+    if (_agentBootedBase != Api.base) {
+      _agentBootedBase = Api.base;
+      // build 里不能 await：把探测推到这一帧画完之后，探一次就够。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(AgentRuntime.bootstrap());
+      });
+    }
     final accent = Color(AppSettings.accentColor);
     final mode = AppSettings.themeModeStr;
     ThemeData buildTheme(Brightness b) {
@@ -854,6 +868,7 @@ class _Conn extends State<ConnectLibraryPage> {
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
         TtsBackend.base = Api.base; TtsBackend.token = Api.token;
+        AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
         runApp(ThApp(ready: true, base: baseC.text.trim(), token: tokenC.text.trim())); }
     } catch (e) { setState(() { busy = false; err = '连接失败: $e'; }); } }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
@@ -3811,6 +3826,9 @@ class _At extends State<AccountTile> {
         await p.setString('base', winner.value); await p.setString('token', secret);
         Api.base = winner.value; Api.token = secret;
         TtsBackend.base = Api.base; TtsBackend.token = Api.token;
+        AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
+        // 刚自动连上后端：顺手探一次 Agent Runtime，让「任务」栏一进去就是正确的模式
+        try { await AgentRuntime.bootstrap(); } catch (_) {}
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已通过${winner.key}自动连接后端')));
       }
     } catch (_) {}
@@ -3998,8 +4016,8 @@ class ProductDetailPage extends StatelessWidget {
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
 class Updater {
-  static const String currentVersion = '4.41.0';
-  static const int currentCode = 50528;
+  static const String currentVersion = '4.42.0';
+  static const int currentCode = 50529;
   static bool _checked = false;
 
   // 语义化版本比较: a>b 返回正数

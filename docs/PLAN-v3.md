@@ -1,6 +1,6 @@
 # ThirdHub 功能规划 v3.0
 
-> 对齐日期：2026-09-21 · 对应：ThirdHub-v2 v4.41.0
+> 对齐日期：2026-09-21（晚） · 对应：ThirdHub-v2 v4.42.0
 > 定位：仓库 `docs/TASKS.md` 管理 M1-M5 冲刺看板（五组并行）；本文档管理 M5 之后的扩展路线 与横向功能全景
 > 优先级总方针：前端优先（体感最明显）→ 自用引擎联调 → 资源库数据层 → AI 最后总攻
 
@@ -275,3 +275,34 @@ R-1 阅读统计 → R-6 书架批量管理 → M-4 统一最近播放 → B-1 �
 - **THP caps 编码曾被记错**：`BookType` 位标志（video=4/text=8/audio=32/image=64）是 **Legado 内部**的东西，
   与 THP `caps` 无关。THP caps 是**字符串数组** `["m:novel",…, "post-query"]`，全协议无数字位掩码。
   示例引擎初版按位掩码写，等于教人造出前端发现不了的引擎，已按 `docs/THP.md` 全量重写。
+
+---
+
+## 附三：4.42.0 复用 DeepSeek Harness（2026-09-21 晚）
+
+**立场**：不重写第二套 Agent 内核。Flutter 只做控制面，Agent Runtime 归后端 / 局域网设备上的 DSH；
+无 DSH 时降级为轻量 Agent，但**事件协议不变**，所以控制面代码不用分叉成两套。
+
+| 层 | 落点 | 说明 |
+|---|---|---|
+| 服务端运行时 | `server/agent-dsh.js` | 事件日志（append-only）、权限判定、确认队列、审计、DSH 探测与启停 |
+| 服务端路由 | `server/routes-agent.js` | `/agent/*` 全部在 401 鉴权闸门**之后**；SSE 增量流 + 轮询兜底 |
+| 服务端 MCP | `server/mcp-registry.js` | MCP 注册表移入服务端（凭据不落手机）；JSON-RPC over Streamable HTTP + SSE |
+| 权限表（权威） | `server/agent-profiles.json` | 三档 + 三类风险；判定顺序见 `docs/AGENT-PROTOCOL.md` |
+| 插件与许可证 | `server/agent-plugins.json` | 白名单 + GPL / AGPL / SSPL 拒绝名单 |
+| 客户端模型 | `flutter_app/lib/core/agent_models.dart` | 零 Flutter 依赖，可纯 Dart 自检 |
+| 客户端策略镜像 | `flutter_app/lib/core/agent_policy.dart` | 与服务端同规则；可被服务端表覆盖；自检里逐工具对拍 |
+| 客户端后端入口 | `flutter_app/lib/core/agent_dsh_client.dart` | 唯一 Agent 出口；失败一律返回 null 降级，不抛异常打断 UI |
+| 总路由 | `ai_agent.dart` §6 `AgentRuntime` | DSH 优先 → fallback 兜底；模式与原因可观测 |
+| 控制面 UI | `ai_agent_page.dart` 的「任务」栏 | 四类事件渲染 + 确认审批 + 审计 + 能力矩阵 |
+| 治理 UI | `mcp_page.dart` | 后端托管（主）+ 本机直连（兼容）双区 |
+
+**自检**（CI `agent-selfcheck.yml`，推送即跑）：服务端 `test_agent_proto.cjs` 88 条（含「没装 DSH 也要优雅降级」）；
+客户端 `tool/agent_proto_selfcheck.dart` 117 条（含与服务端权限表逐工具对拍 + 幽灵工具检测）。
+
+**已知边界（不假装已做）**：
+
+- full 模式下事件**由 DSH 产出**；本轮打通的是「事件落账 + 订阅 + 渲染」，DSH 侧的事件产出随其版本演进
+- 轻量模式**不做**多轮工具循环（只落账 + 说明），完整循环仍在「AI 对话」页
+- 原生增强模式（Android 权限桥）按方案列为后置，未进本轮
+- 仓库里的签名密钥曾公开，**建议轮换**（见 `android/README.md`）

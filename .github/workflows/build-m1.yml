@@ -21,10 +21,29 @@ jobs:
         run: bash server/scripts/fetch-node-android.sh
       - name: 接受 Android SDK 许可（runner 预装 SDK，无需 setup-android）
         run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      # 密钥不入库：从 secrets 还原 keystore 与 keystore.properties（见 android/README.md）
+      - name: 注入签名材料
+        env:
+          KS_A: ${{ secrets.TH_KEYSTORE_BASE64 }}
+          KS_B: ${{ secrets.TH_KEY_STORE }}
+          SP: ${{ secrets.TH_STORE_PASSWORD }}
+          KP: ${{ secrets.TH_KEY_PASSWORD }}
+        run: |
+          KS="$KS_A"; [ -n "$KS" ] || KS="$KS_B"
+          [ -n "$KS" ] || { echo "::error::缺少 keystore secret（TH_KEYSTORE_BASE64 / TH_KEY_STORE）"; exit 1; }
+          printf '%s' "$KS" | base64 -d > "$GITHUB_WORKSPACE/android/thirdhub.jks"
+          [ -s "$GITHUB_WORKSPACE/android/thirdhub.jks" ] || { echo "::error::keystore 解码为空"; exit 1; }
+          {
+            echo "storeFile=thirdhub.jks"
+            echo "storePassword=$SP"
+            echo "keyAlias=thirdhub"
+            echo "keyPassword=$KP"
+          } > "$GITHUB_WORKSPACE/android/keystore.properties"
+          chmod 600 "$GITHUB_WORKSPACE/android/keystore.properties"
+          ls -l "$GITHUB_WORKSPACE/android/thirdhub.jks"
       - name: 构建 APK
         run: |
           cd android
-          base64 -d thirdhub.jks.b64 > thirdhub.jks
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
           mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/thirdhub-backend.apk
@@ -54,10 +73,28 @@ jobs:
         run: echo "venera.js" > android/app/src/main/assets/server/entry.txt
       - name: 接受 Android SDK 许可
         run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      - name: 注入签名材料
+        env:
+          KS_A: ${{ secrets.TH_KEYSTORE_BASE64 }}
+          KS_B: ${{ secrets.TH_KEY_STORE }}
+          SP: ${{ secrets.TH_STORE_PASSWORD }}
+          KP: ${{ secrets.TH_KEY_PASSWORD }}
+        run: |
+          KS="$KS_A"; [ -n "$KS" ] || KS="$KS_B"
+          [ -n "$KS" ] || { echo "::error::缺少 keystore secret（TH_KEYSTORE_BASE64 / TH_KEY_STORE）"; exit 1; }
+          printf '%s' "$KS" | base64 -d > "$GITHUB_WORKSPACE/android/thirdhub.jks"
+          [ -s "$GITHUB_WORKSPACE/android/thirdhub.jks" ] || { echo "::error::keystore 解码为空"; exit 1; }
+          {
+            echo "storeFile=thirdhub.jks"
+            echo "storePassword=$SP"
+            echo "keyAlias=thirdhub"
+            echo "keyPassword=$KP"
+          } > "$GITHUB_WORKSPACE/android/keystore.properties"
+          chmod 600 "$GITHUB_WORKSPACE/android/keystore.properties"
+          ls -l "$GITHUB_WORKSPACE/android/thirdhub.jks"
       - name: 构建 venera 引擎 APK(独立包名, 可与后端共存)
         run: |
           cd android
-          base64 -d thirdhub.jks.b64 > thirdhub.jks
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon -PappId=com.thirdhub.venera -PappLabel=venera引擎 -PverName=1.0.0 -PverCode=10000 \
             || gradle assembleRelease --no-daemon -PappId=com.thirdhub.venera -PappLabel=venera引擎 -PverName=1.0.0 -PverCode=10000
