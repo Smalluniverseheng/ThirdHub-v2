@@ -4,11 +4,14 @@
 // 沉浸式设计: 本模块隐藏 App 顶栏/底栏, 屏幕全给网页; 切换模块走菜单/悬浮钮
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../main.dart' show LocalNovelReader;
+import 'pro_browser.dart';
 
 // 与 RootNav(main.dart) 的桥: 打开模块宫格
 class BrowserHooks {
@@ -59,6 +62,11 @@ class _Bp extends State<BrowserPage> {
   List<Map<String, String>> history = [];
   String engine = 'bing';
   bool adblock = true;
+  // ── B 组(4.40.0): 夜间注入 / 边缘手势 / 长截图边界 ──
+  bool nightMode = false;
+  bool edgeGesture = true;
+  final GlobalKey _shotKey = GlobalKey();
+  Offset? _edgeStart;
 
   @override void initState() { super.initState(); _load();
     if ((widget.initialUrl ?? '').isNotEmpty) {
@@ -72,8 +80,56 @@ class _Bp extends State<BrowserPage> {
     try { history = [ for (final e in jsonDecode(p.getString('browser_history') ?? '[]') as List) Map<String, String>.from(e) ]; } catch (_) {}
     engine = p.getString('browser_engine') ?? 'bing';
     adblock = p.getBool('browser_adblock') ?? true;
+    nightMode = p.getBool('browser_night') ?? false;
+    edgeGesture = p.getBool('browser_gesture') ?? true;
     if (mounted) setState(() {});
   }
+
+  // ── 长截图: 把当前视口渲染成 PNG(平台视图在混合合成下可被 RepaintBoundary 捕获) ──
+  Future<Uint8List?> _capturePng() async {
+    try {
+      final obj = _shotKey.currentContext?.findRenderObject();
+      if (obj is! RenderRepaintBoundary) return null;
+      final img = await obj.toImage(pixelRatio: 1.4);
+      final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+      return bd?.buffer.asUint8List();
+    } catch (_) { return null; }
+  }
+
+  // ── 边缘手势: 只在屏幕左右 34px 内起手, 且水平位移够大才算(不干扰网页自身滑动) ──
+  void _onEdgeDown(PointerDownEvent e) {
+    if (!edgeGesture) { _edgeStart = null; return; }
+    final w = MediaQuery.of(context).size.width;
+    final dx = e.position.dx;
+    _edgeStart = (dx < 34 || dx > w - 34) ? e.position : null;
+  }
+  Future<void> _onEdgeUp(PointerUpEvent e) async {
+    final s = _edgeStart; _edgeStart = null;
+    if (s == null || !edgeGesture) return;
+    final dx = e.position.dx - s.dx;
+    final dy = e.position.dy - s.dy;
+    if (dx.abs() < 72 || dy.abs() > 64) return;
+    if (dx > 0) { if ((await t.ctrl?.canGoBack()) ?? false) t.ctrl!.goBack(); }
+    else { if ((await t.ctrl?.canGoForward()) ?? false) t.ctrl!.goForward(); }
+  }
+
+  BrowserProHost _proHost() => BrowserProHost(
+    url: () => t.url,
+    title: () => t.title,
+    run: (js) async { try { await t.ctrl?.runJavaScript(js); } catch (_) {} },
+    eval: (js) async { try { return '${await t.ctrl?.runJavaScriptReturningResult(js)}'; } catch (_) { return ''; } },
+    shot: _capturePng,
+    reload: () async { try { await t.ctrl?.reload(); } catch (_) {} },
+    canBack: () async => (await t.ctrl?.canGoBack()) ?? false,
+    canForward: () async => (await t.ctrl?.canGoForward()) ?? false,
+    goBack: () async { try { await t.ctrl?.goBack(); } catch (_) {} },
+    goForward: () async { try { await t.ctrl?.goForward(); } catch (_) {} },
+    bookmarks: () async => bookmarks,
+    setBookmarks: (l) async { setState(() => bookmarks = l); await _save('browser_bookmarks', l); },
+    toast: (m) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 2))); },
+    onChanged: () { if (mounted) setState(() {}); },
+  );
   Future<void> _save(String key, List<Map<String, String>> list) async {
     final p = await SharedPreferences.getInstance();
     await p.setString(key, jsonEncode(list));
@@ -131,11 +187,17 @@ class _Bp extends State<BrowserPage> {
         return NavigationDecision.navigate;
       },
       onProgress: (p) { if (mounted) setState(() => tab.progress = p); },
-      onPageStarted: (u) { if (mounted) setState(() { tab.url = u; }); },
+      onPageStarted: (u) {
+        if (mounted) setState(() { tab.url = u; });
+        // B-7 UA 记忆: 按域名取用户记住的标识(影响本标签页后续所有请求)
+        BrowserPro.uaFor(u).then((ua) async { if (ua.isNotEmpty) { try { await c.setUserAgent(ua); } catch (_) {} } });
+      },
       onPageFinished: (u) async {
         final title = await c.getTitle() ?? '';
         if (mounted) setState(() { tab.url = u; if (title.isNotEmpty) tab.title = title; });
         _recordHistory(title.isNotEmpty ? title : u, u);
+        // B-9 夜间模式: 换页后自动续用
+        if (nightMode) { try { await c.runJavaScript(BrowserPro.jsNight(true)); } catch (_) {} }
         if (adblock) {
           c.runJavaScript("""(function(){
             if (window.__thAdClean) return; window.__thAdClean = true;
@@ -209,15 +271,24 @@ class _Bp extends State<BrowserPage> {
             const PopupMenuItem(value: 'engine', child: ListTile(dense: true, leading: Icon(Icons.travel_explore, size: 18), title: Text('切换搜索引擎', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'adblock', child: ListTile(dense: true, leading: Icon(Icons.block, size: 18), title: Text('广告拦截 开/关', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuDivider(),
+            const PopupMenuItem(value: 'translate', child: ListTile(dense: true, leading: Icon(Icons.translate, size: 18), title: Text('翻译本页正文', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'longshot', child: ListTile(dense: true, leading: Icon(Icons.photo_size_select_large, size: 18), title: Text('整页长截图存相册', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'night', child: ListTile(dense: true, leading: Icon(Icons.dark_mode_outlined, size: 18), title: Text('夜间模式 开/关', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuItem(value: 'pro', child: ListTile(dense: true, leading: Icon(Icons.tune, size: 18), title: Text('浏览器增强(UA/手势/书签同步)', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            const PopupMenuDivider(),
             const PopupMenuItem(value: 'modules', child: ListTile(dense: true, leading: Icon(Icons.apps, size: 18), title: Text('切换模块', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
           ]),
         ]))),
         // 进度条
         if (!fullscreen && !_showHome && t.progress < 100) LinearProgressIndicator(value: t.progress / 100, minHeight: 2),
-        // 内容区
-        Expanded(child: _showHome ? _homeView(c) : IndexedStack(
-          index: cur,
-          children: [ for (final tab in tabs) tab.ctrl == null || tab.url.isEmpty ? const SizedBox() : WebViewWidget(controller: _ensureCtrl(tab)) ],
+        // 内容区: RepaintBoundary 供长截图, Listener 只监听指针(不拦截网页自身事件) → 边缘手势
+        Expanded(child: Listener(
+          onPointerDown: _onEdgeDown,
+          onPointerUp: _onEdgeUp,
+          child: RepaintBoundary(key: _shotKey, child: _showHome ? _homeView(c) : IndexedStack(
+            index: cur,
+            children: [ for (final tab in tabs) tab.ctrl == null || tab.url.isEmpty ? const SizedBox() : WebViewWidget(controller: _ensureCtrl(tab)) ],
+          )),
         )),
       ]),
       // 全屏模式: 右下角悬浮钮(点按退出全屏; 长按打开模块宫格)
@@ -246,6 +317,24 @@ class _Bp extends State<BrowserPage> {
       case 'modules': BrowserHooks.openModules?.call(context); break;
       case 'engine': _engineSheet(); break;
       case 'adblock': _toggleAdblock(); break;
+      case 'translate': await runTranslateFlow(context, _proHost()); break;
+      case 'longshot': await runLongShotFlow(context, _proHost()); break;
+      case 'night': await _toggleNight(); break;
+      case 'pro': await showBrowserPro(context, _proHost()); break;
+    }
+  }
+
+  // B-9 夜间模式的快捷开关(菜单里一点即用)
+  Future<void> _toggleNight() async {
+    final v = !nightMode;
+    setState(() => nightMode = v);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('browser_night', v);
+    try { await t.ctrl?.runJavaScript(BrowserPro.jsNight(v)); } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(v ? '夜间模式已开启(换页自动续用)' : '夜间模式已关闭'),
+          duration: const Duration(seconds: 1)));
     }
   }
 

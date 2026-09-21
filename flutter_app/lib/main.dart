@@ -67,6 +67,13 @@ import 'core/app_log.dart';
 import 'core/log_page.dart';
 import 'core/auto_scan_page.dart';
 import 'core/tts_presets.dart';
+// ── v4.40.0 一次性补全批次(PLAN-v3 剩余阶段) ──
+import 'core/pro_reading.dart';
+import 'core/pro_media.dart';
+import 'core/pro_browser.dart';
+import 'core/pro_gallery.dart';
+import 'core/pro_system.dart';
+import 'core/pro_ai.dart';
 
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
@@ -212,6 +219,8 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
+  // v4.40.0: 注册进阶功能桥(系统页要动导航/主题/字体; 浏览器译文要交给阅读器)
+  registerProBridges();
   runApp(ThApp(ready: (prefs.getString('base') ?? '').isNotEmpty,
     base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? '', locked: pin.isNotEmpty, fresh: !onboarded));
 }
@@ -1107,6 +1116,17 @@ class _Pf extends State<ProfilePage> {
         entry(Icons.wb_sunny_outlined, tr('外观'), page: const AppearancePage()),
         _sep(),
         entry(Icons.dashboard_customize_outlined, '功能管理', page: const NavSettingsPage()),
+      ]),
+      _section(tr('进阶'), [
+        entry(Icons.menu_book_outlined, tr('阅读进阶'), value: tr('换源 · 批注 · 摘抄 · 追更'), page: const ReadingProPage()),
+        _sep(),
+        entry(Icons.cast_outlined, tr('影音进阶'), value: tr('投屏 DLNA · 下载归一'), page: const MediaProPage()),
+        _sep(),
+        entry(Icons.photo_library_outlined, tr('相册闭环'), value: tr('备份 · 秒传 · 加密柜 · 分享链'), page: const GalleryProPage()),
+        _sep(),
+        entry(Icons.auto_awesome_outlined, tr('AI 工作台'), value: tr('工具 · 确认队列 · 定时 · 审计'), page: const AiWorkbenchPage()),
+        _sep(),
+        entry(Icons.hub_outlined, tr('系统与生态'), value: tr('模块 · 多后端 · 迁移 · 授权'), page: const SystemCenterPage()),
       ]),
       _section('数据', [
         entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
@@ -3164,16 +3184,39 @@ class _RootNavState extends State<RootNav> {
   @override void initState() { super.initState(); _load();
     RootNav.navTick.addListener(_onNavChanged);
     RootNav.fullscreen.addListener(_onFs);
+    // 4.40.0: AI 工具 / 系统中心等"打开某模块"请求 → 真正切模块(未启用则自动加入导航)
+    proOpenModule.addListener(_onProOpen);
     // 浏览器等沉浸页的"切换模块"入口
     BrowserHooks.openModules = (c) => NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
     Future.delayed(const Duration(seconds: 4), () { if (mounted) Updater.check(context); }); }
   void _onNavChanged() { _load(); }
+  // 4.40.0: 消费一次"打开模块"请求(AI 工具 / 系统中心 / 任意 Pro 模块发起)
+  Future<void> _onProOpen() async {
+    final k = proOpenModule.value;
+    if (k == null) return;
+    proOpenModule.value = null;            // 消费掉, 避免重复触发
+    if (!mounted || !kModules.containsKey(k)) return;
+    var i = enabled.indexOf(k);
+    if (i < 0) {
+      // 该模块还没在用户导航栏里 → 自动加入(排在"我的"之前)并持久化
+      try {
+        final p = await SharedPreferences.getInstance();
+        final list = [...enabled.where((e) => e != '我的'), k, '我的'];
+        await p.setStringList('nav_modules', list);
+      } catch (_) {}
+      await _load();
+      if (!mounted) return;
+      i = enabled.indexOf(k);
+    }
+    if (i < 0) return;
+    if (mounted) _go(i, animate: false);
+  }
   void _onFs() {
     if (RootNav.fullscreen.value) { SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky); }
     else { SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); }
     if (mounted) setState(() {});
   }
-  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); RootNav.fullscreen.removeListener(_onFs); BrowserHooks.openModules = null; _fsTimer?.cancel(); _page.dispose(); _navScroll.dispose(); super.dispose(); }
+  @override void dispose() { RootNav.navTick.removeListener(_onNavChanged); RootNav.fullscreen.removeListener(_onFs); proOpenModule.removeListener(_onProOpen); BrowserHooks.openModules = null; _fsTimer?.cancel(); _page.dispose(); _navScroll.dispose(); super.dispose(); }
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
@@ -3223,6 +3266,32 @@ class _RootNavState extends State<RootNav> {
   /// 只有调用方明确要动画时（目前没有）才走动画分支。
   void _go(int i, {bool animate = false}) {
     if (i < 0 || i >= enabled.length) return;
+    // S-6 模块锁(4.40.0): 设过 PIN 的模块, 本次会话首次进入需验证
+    final lockKey = enabled[i];
+    ModuleLocks.locked(lockKey).then((need) {
+      if (!mounted) return;
+      if (!need) { _goNow(i, animate: animate); return; }
+      final cc = TextEditingController();
+      showDialog<bool>(context: context, builder: (c2) => AlertDialog(
+        title: Text('$lockKey 已锁定'),
+        content: TextField(controller: cc, keyboardType: TextInputType.number, obscureText: true,
+          decoration: const InputDecoration(hintText: '输入 PIN')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('解锁')),
+        ])).then((ok) async {
+        if (ok != true) return;
+        final pin = await ModuleLocks.pinOf(lockKey);
+        if (cc.text.trim() == pin) {
+          await ModuleLocks.unlock(lockKey);
+          if (mounted) _goNow(i, animate: animate);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN 不正确')));
+        }
+      });
+    });
+  }
+  void _goNow(int i, {bool animate = false}) {
     HapticFeedback.selectionClick(); // 切换模块轻微震动
     if (i == idx) return;
     setState(() { idx = i; RootNav.currentModuleKey = enabled[i]; });
@@ -4560,6 +4629,59 @@ class _SmoothTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 Route smoothRoute(Widget page) => MaterialPageRoute(builder: (_) => page);
+
+// ═══════════════════════════════════════════════════════════════════════
+// v4.40.0 进阶功能桥: core/ 层的功能页需要"宿主能力"(切模块/改主题/改字号/
+// 把文本交给阅读器), 但 core 不该反向依赖 main.dart 的实现细节 —— 统一在这里注入。
+// ═══════════════════════════════════════════════════════════════════════
+/// AI 工具或系统页请求打开某个模块(由 RootNav 监听)
+final ValueNotifier<String?> proOpenModule = ValueNotifier<String?>(null);
+
+void registerProBridges() {
+  // ── S-1 模块市场: 读写与首启引导同一份 nav_modules ──
+  ProBridge.moduleKeys = () => kModules.keys.toList();
+  ProBridge.navModules = () =>
+      (AppSettings.p.getStringList('nav_modules') ?? <String>[]).toList();
+  ProBridge.setNavModules = (l) async {
+    final list = migrateModuleKeys(l);
+    if (!list.contains('我的')) list.add('我的');
+    await AppSettings.p.setStringList('nav_modules', list);
+    RootNav.navTick.value = RootNav.navTick.value + 1; // 通知 RootNav 重新读取
+  };
+
+  // ── S-4 深色 / S-5 模式字号 ──
+  ProBridge.themeMode = () => AppSettings.themeModeStr;
+  ProBridge.setThemeMode = (m) => AppSettings.setThemeMode(m);
+  ProBridge.textScale = () => AppSettings.p.getDouble('ui_text_scale') ?? 1.0;
+  ProBridge.setTextScale = (v) async {
+    await AppSettings.p.setDouble('ui_text_scale', v);
+    AppSettings.onChanged?.call();
+  };
+
+  // ── AI-1 工具: 打开模块 / 把文本交给阅读器 ──
+  ProBridge.openModule = (k) { proOpenModule.value = k; };
+  ProBridge.openReader = (title, text) async {
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/pro_${DateTime.now().millisecondsSinceEpoch}.txt');
+    await f.writeAsString('$title\n\n$text', flush: true);
+    final ctx = IntentRouter.navKey.currentContext;
+    if (ctx == null) return;
+    await Navigator.push(ctx, MaterialPageRoute(
+      builder: (_) => LocalNovelReader(
+        book: {'name': title.isEmpty ? '文本' : title, 'path': f.path, 'format': 'txt'})));
+  };
+
+  // ── B-2 译文页 → 小说阅读器(继承排版/听书/进度) ──
+  ProBrowserBridge.handToReader = (c, title, text) async {
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/trans_${DateTime.now().millisecondsSinceEpoch}.txt');
+    await f.writeAsString('$title\n\n$text', flush: true);
+    if (!c.mounted) return;
+    await Navigator.push(c, MaterialPageRoute(
+      builder: (_) => LocalNovelReader(
+        book: {'name': title.isEmpty ? '译文' : title, 'path': f.path, 'format': 'txt'})));
+  };
+}
 
 // 屏幕适配: 手表(<360)紧凑 / 手机正常 / 折叠屏展开·平板(>=720)双栏
 class ScreenFit {

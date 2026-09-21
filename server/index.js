@@ -379,6 +379,60 @@ async function handle(req, res, body) {
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
   }
 
+  // ── v4.40.0 分享链(免鉴权, 但只对"被显式分享过"的 hash 开放) ──
+  // 设计: 分享 id 是随机 10 位十六进制, 不可枚举; 撤销 = 删 shares.json 里那条。
+  if (p.startsWith('/s/')) {
+    const parts = p.slice(3).split('/');
+    const sid = String(parts[0] || '').replace(/[^0-9a-f]/g, '');
+    let shares = {};
+    try { shares = JSON.parse(fs.readFileSync(path.join(DATA, 'shares.json'), 'utf8')); } catch (e) {}
+    const rec = shares[sid];
+    if (!sid || !rec) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<html><body style="font-family:sans-serif;padding:32px"><h3>链接不存在或已失效</h3></body></html>');
+    }
+    const fp = path.join(DATA, 'blobs', String(rec.hash || '').replace(/[^0-9a-f]/g, ''));
+    if (parts[1] === 'raw') {
+      if (!fs.existsSync(fp)) {
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end('<html><body style="font-family:sans-serif;padding:32px"><h3>文件已从后端删除</h3></body></html>');
+      }
+      const buf = fs.readFileSync(fp);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf.length,
+        'Content-Disposition': 'attachment; filename="' + encodeURIComponent(rec.name || 'file') + '"'
+      });
+      return res.end(buf);
+    }
+    const size = (rec.size / 1048576).toFixed(2) + ' MB';
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<title>' + rec.name + '</title></head><body style="font-family:system-ui,sans-serif;padding:28px;line-height:1.7">'
+      + '<h3 style="margin:0 0 6px">' + rec.name + '</h3>'
+      + '<p style="color:#666;font-size:13px">' + size + ' · 由 ThirdHub 后端分享</p>'
+      + '<p><a href="/s/' + sid + '/raw" style="display:inline-block;padding:10px 18px;border-radius:22px;'
+      + 'background:#3B5BFD;color:#fff;text-decoration:none">下载</a></p></body></html>');
+  }
+
+  // ── E-1 无状态验签端点(设备身份): 只需要公钥, 不需要任何会话 ──
+  if (p === '/v2/verify' && req.method === 'POST') {
+    let d = {};
+    try { d = JSON.parse(body || '{}'); } catch (e) {}
+    if (!d.publicKey || !d.payload || !d.signature) {
+      return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 publicKey/payload/signature' } });
+    }
+    try {
+      const key = crypto.createPublicKey({ key: Buffer.from(d.publicKey, 'base64'), format: 'der', type: 'spki' });
+      const ok = crypto.verify(null, Buffer.from(String(d.payload), 'utf8'), key, Buffer.from(String(d.signature), 'base64'));
+      if (!ok) return send(200, { object: 'meta', data: { verified: false, reason: 'signature_mismatch' } });
+      const fp = crypto.createHash('sha256').update(Buffer.from(d.publicKey, 'base64')).digest('hex').slice(0, 32);
+      return send(200, { object: 'meta', data: { verified: true, deviceId: d.deviceId || '', keyFingerprint: fp, at: Date.now() } });
+    } catch (e) {
+      return send(400, { object: 'error', data: { type: 'invalid_request', message: '验签失败: ' + String(e.message || e) } });
+    }
+  }
+
   // 其余全需鉴权
   if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
   // ── 媒体路由(音乐/漫画/影视): server/routes-media.js ──

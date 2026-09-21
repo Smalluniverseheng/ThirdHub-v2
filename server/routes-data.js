@@ -288,6 +288,197 @@ async function handle(req, res, body, u, p, send, ctx) {
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
     return res.end(fs.readFileSync(fp));
   }
+  // ══════════════════════════════════════════════════════════════
+  // v4.40.0 一次性补全批次端点: 批注/书签/会话/审计 + blob(F 组) + MCP 双向桥
+  // ══════════════════════════════════════════════════════════════
+  const jFile = (n) => path.join(DATA, n);
+  const jRead = (n, def) => { try { return JSON.parse(fs.readFileSync(jFile(n), 'utf8')); } catch (e) { return def; } };
+  const jWrite = (n, v) => { try { fs.writeFileSync(jFile(n), JSON.stringify(v, null, 2)); } catch (e) {} };
+
+  if (p === '/v1/ping') {
+    return send(200, { object: 'meta', data: { pong: true, t: Date.now(), version: '4.40.0' } });
+  }
+
+  // ── R-3 / R-10 批注与摘抄(设备间同步) ──
+  if (p === '/v1/annotations') {
+    if (req.method === 'GET') return send(200, { object: 'list', data: jRead('annotations.json', []) });
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    if (!Array.isArray(d.list)) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 list 数组' } });
+    jWrite('annotations.json', d.list);
+    return send(200, { object: 'meta', data: { saved: d.list.length } });
+  }
+
+  // ── B-5 书签同步 ──
+  if (p === '/v1/bookmarks') {
+    if (req.method === 'GET') return send(200, { object: 'list', data: jRead('bookmarks.json', []) });
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    if (!Array.isArray(d.list)) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 list 数组' } });
+    jWrite('bookmarks.json', d.list);
+    return send(200, { object: 'meta', data: { saved: d.list.length } });
+  }
+
+  // ── AI-2 会话(换设备续跑) ──
+  if (p === '/v1/sessions') {
+    if (req.method === 'GET') return send(200, { object: 'list', data: jRead('sessions.json', []) });
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    if (!Array.isArray(d.list)) return send(400, { object: 'error', data: { type: 'invalid_request', message: '需 list 数组' } });
+    jWrite('sessions.json', d.list.slice(0, 200));
+    return send(200, { object: 'meta', data: { saved: Math.min(d.list.length, 200) } });
+  }
+
+  // ── AI-8 审计日志上报 ──
+  if (p === '/v1/audit') {
+    if (req.method === 'GET') return send(200, { object: 'list', data: jRead('audit.json', []).slice(0, 500) });
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const cur = jRead('audit.json', []);
+    const add = Array.isArray(d.list) ? d.list : [];
+    const all = [...add, ...cur].slice(0, 2000);
+    jWrite('audit.json', all);
+    return send(200, { object: 'meta', data: { total: all.length } });
+  }
+
+  // ── F-2 秒传判定: 这个 hash 存在吗 ──
+  if (p === '/v1/blob/has' && req.method === 'GET') {
+    const hash = String(u.searchParams.get('hash') || '');
+    const idx = jRead('blobs.json', {});
+    const rec = idx[hash];
+    if (!rec) return send(200, { object: 'meta', data: { has: false } });
+    return send(200, { object: 'meta', data: { has: true, size: rec.size, name: rec.name, ver: rec.ver } });
+  }
+
+  // ── F-1 blob 上传(原始字节, 大文件友好) ──
+  if (p === '/v1/blob' && req.method === 'POST') {
+    const hash = String(u.searchParams.get('hash') || '').replace(/[^0-9a-f]/g, '');
+    const name = String(u.searchParams.get('name') || 'file').slice(0, 200);
+    const ver = String(u.searchParams.get('ver') || '1');
+    if (hash.length < 32) return send(400, { object: 'error', data: { type: 'invalid_request', message: 'hash 缺失或非法' } });
+    let buf = (req.rawBody && req.rawBody.length) ? req.rawBody : Buffer.from(String(body || ''), 'base64');
+    if (!buf || !buf.length) return send(400, { object: 'error', data: { type: 'invalid_request', message: '内容为空' } });
+    if (buf.length > 200 * 1048576) return send(413, { object: 'error', data: { type: 'invalid_request', message: '单文件上限 200MB' } });
+    const dir = path.join(DATA, 'blobs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, hash), buf);
+    const idx = jRead('blobs.json', {});
+    const first = !idx[hash];
+    idx[hash] = { hash, name, size: buf.length, ver, at: Date.now() };
+    jWrite('blobs.json', idx);
+    return send(200, { object: 'meta', data: { hash, size: buf.length, dup: !first, ver } });
+  }
+
+  // ── F-7 版本/清单 ──
+  if (p === '/v1/blob/list' && req.method === 'GET') {
+    const idx = jRead('blobs.json', {});
+    const list = Object.values(idx).map(r => ({
+      hash: r.hash, name: r.name, size: String(r.size), ver: String(r.ver || '1'),
+      at: new Date(r.at || Date.now()).toISOString().slice(0, 19).replace('T', ' ')
+    })).sort((a, b) => (a.at < b.at ? 1 : -1));
+    return send(200, { object: 'list', data: list, meta: { total: list.length } });
+  }
+
+  // ── F-1 blob 下载 ──
+  if (p === '/v1/blob' && req.method === 'GET') {
+    const hash = String(u.searchParams.get('hash') || '');
+    const fp = path.join(DATA, 'blobs', hash.replace(/[^0-9a-f]/g, ''));
+    if (!hash || !fs.existsSync(fp)) return send(404, { object: 'error', data: { type: 'not_found', message: 'blob 不存在' } });
+    const idx = jRead('blobs.json', {});
+    const nm = (idx[hash] && idx[hash].name) ? idx[hash].name : hash;
+    const buf = fs.readFileSync(fp);
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': buf.length,
+      'Content-Disposition': 'attachment; filename="' + encodeURIComponent(nm) + '"'
+    });
+    return res.end(buf);
+  }
+
+  // ── blob 删除 ──
+  if (p === '/v1/blob/delete' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const hash = String(d.hash || '');
+    const idx = jRead('blobs.json', {});
+    if (idx[hash]) { delete idx[hash]; jWrite('blobs.json', idx); }
+    try { fs.unlinkSync(path.join(DATA, 'blobs', hash.replace(/[^0-9a-f]/g, ''))); } catch (e) {}
+    return send(200, { object: 'meta', data: { deleted: hash } });
+  }
+
+  // ── F-8 分享链(真正免鉴权的读取在 index.js 的 /s/ 处) ──
+  if (p === '/v1/share' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const hash = String(d.hash || '');
+    const idx = jRead('blobs.json', {});
+    if (!hash || !idx[hash]) return send(404, { object: 'error', data: { type: 'not_found', message: '先备份这个文件' } });
+    const shares = jRead('shares.json', {});
+    const id = crypto.randomBytes(5).toString('hex');
+    shares[id] = { id, hash, name: d.name || idx[hash].name, size: idx[hash].size, at: Date.now() };
+    jWrite('shares.json', shares);
+    // 局域网地址: 取第一个非内环 IPv4
+    let ip = '127.0.0.1';
+    try {
+      const os = require('os');
+      const nis = os.networkInterfaces();
+      for (const k of Object.keys(nis)) {
+        for (const a of nis[k]) {
+          if (a.family === 'IPv4' && !a.internal) { ip = a.address; break; }
+        }
+        if (ip !== '127.0.0.1') break;
+      }
+    } catch (e) {}
+    return send(200, { object: 'meta', data: { id, url: 'https://' + ip + ':9527/s/' + id, hash, name: shares[id].name } });
+  }
+
+  // ══ AI-7 MCP 双向桥: 设备上报工具表 → 外部 Agent 通过 HTTP 调用 → 设备轮询执行 ══
+  if (p === '/mcp/register' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const tools = Array.isArray(d.tools) ? d.tools : [];
+    jWrite('mcp-tools.json', { tools, at: Date.now(), device: String(d.device || '') });
+    return send(200, { object: 'meta', data: { tools: tools.length } });
+  }
+  if (p === '/mcp' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const id = (d.id === undefined ? 1 : d.id);
+    const method = String(d.method || '');
+    if (method === 'initialize') {
+      return send(200, { jsonrpc: '2.0', id, result: {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'ThirdHub Backend', version: '4.40.0' } } });
+    }
+    if (method === 'tools/list') {
+      const reg = jRead('mcp-tools.json', { tools: [] });
+      return send(200, { jsonrpc: '2.0', id, result: { tools: reg.tools || [], registeredAt: reg.at || 0 } });
+    }
+    if (method === 'tools/call') {
+      const params = d.params || {};
+      const q = jRead('mcp-queue.json', []);
+      const cid = crypto.randomBytes(4).toString('hex');
+      q.push({ id: cid, name: params.name, arguments: params.arguments || {}, at: Date.now() });
+      jWrite('mcp-queue.json', q.slice(-100));
+      return send(200, { jsonrpc: '2.0', id, result: {
+        content: [{ type: 'text', text: '已入队 ' + cid + ', 需设备在线轮询执行。用 /mcp/result?id=' + cid + ' 取结果。' }],
+        callId: cid } });
+    }
+    return send(200, { jsonrpc: '2.0', id, error: { code: -32601, message: '未支持的方法: ' + method } });
+  }
+  // 设备侧轮询取待执行调用
+  if (p === '/mcp/poll' && req.method === 'GET') {
+    const q = jRead('mcp-queue.json', []);
+    jWrite('mcp-queue.json', []);
+    return send(200, { object: 'list', data: q });
+  }
+  if (p === '/mcp/result' && req.method === 'POST') {
+    let d = {}; try { d = JSON.parse(body || '{}'); } catch (e) {}
+    const rs = jRead('mcp-results.json', {});
+    rs[String(d.id || '')] = { id: d.id, output: String(d.output || ''), at: Date.now() };
+    jWrite('mcp-results.json', rs);
+    return send(200, { object: 'meta', data: { saved: d.id } });
+  }
+  if (p === '/mcp/result' && req.method === 'GET') {
+    const rs = jRead('mcp-results.json', {});
+    const rec = rs[String(u.searchParams.get('id') || '')];
+    if (!rec) return send(404, { object: 'error', data: { type: 'not_found', message: '还没有结果(设备可能不在线)' } });
+    return send(200, { object: 'meta', data: rec });
+  }
+
   return false; // 未命中, 交回主路由
 }
 
