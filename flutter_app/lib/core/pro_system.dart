@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_version.dart';
+import 'cloud.dart';
 import 'pro_kit.dart';
 
 /// main.dart 注册的桥: 系统页需要动"宿主"的东西(导航/主题/字体/打开模块)都走这里,
@@ -434,6 +435,17 @@ class _Sys extends ProPageState<SystemCenterPage> {
   @override
   List<Widget> buildBody(BuildContext c) {
     return [
+      // ── P1 数据互通：与网页端读写同一批表 ──
+      ProUI.card('账号数据互通（与网页端）', [
+        ProUI.row(Icons.sync, '与网页端同步设置',
+            value: Cloud.loggedIn ? '已登录' : '未登录',
+            sub: '读写同一张 th_settings —— 网页改过的设置这里能拉下来，这里改的网页端也看得到',
+            onTap: () => _syncNow(c)),
+        ProUI.row(Icons.cloud_done, '同步范围说明',
+            sub: '设置 / 书架 / 阅读进度 / 收藏 / 历史，与网页端同一批表；媒体文件永不上云',
+            onTap: () => _syncScope(c)),
+      ], sub: 'P1：两端读写同一批表（th_settings 等 6 张），这是数据互通的依据'),
+
       // ── S-1 模块市场 ──
       ProUI.card('S-1 模块市场', [
         ProUI.row(Icons.apps, '选择底部导航模块',
@@ -825,6 +837,46 @@ class _Sys extends ProPageState<SystemCenterPage> {
       return;
     }
     await PaymentGate.show(c, url);
+  }
+
+  // ── P1 数据互通（与网页端同一批表）──────────────────────────────
+
+  Future<void> _syncNow(BuildContext c) async {
+    if (!Cloud.loggedIn) {
+      ProUI.toast(c, '先在「我的」登录账号 —— 网页端与手机端要用同一个账号才能互通');
+      return;
+    }
+    ProUI.toast(c, '正在与网页端同步…');
+    final r = await Cloud.syncAll(push: true);
+    final up = (r['up'] ?? 0) > 0 ? '设置已上传' : '设置未上传（本机没有可同步的设置）';
+    ProUI.toast(c, '同步完成：$up；从云端拉回 ${r['keys'] ?? 0} 项设置');
+    await refresh();
+  }
+
+  Future<void> _syncScope(BuildContext c) async {
+    await showDialog<void>(
+      context: c,
+      builder: (d) => AlertDialog(
+        title: const Text('同步范围', style: TextStyle(fontSize: 16)),
+        content: const SingleChildScrollView(
+          child: Text(
+            '与网页端读写同一批数据表：\n\n'
+            '· th_settings —— 设置（字号 / 行距 / 翻页 / 主题 / TTS / 漫画 / 导航等 38 项）\n'
+            '· th_bookshelf —— 书架\n'
+            '· th_reading_progress —— 阅读进度\n'
+            '· th_favorites —— 收藏\n'
+            '· th_history —— 历史\n'
+            '· th_user_devices —— 已登录设备\n\n'
+            '不会上云：书籍 / 漫画 / 音视频 / 照片等媒体文件本身，以及本机独有的缓存。\n\n'
+            '冲突处理：后写覆盖（LWW），以 updated_at 较新的一方为准。',
+            style: TextStyle(fontSize: 12.5, height: 1.7),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('知道了')),
+        ],
+      ),
+    );
   }
 }
 

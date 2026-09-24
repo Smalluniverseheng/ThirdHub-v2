@@ -16,8 +16,8 @@
 //   · `server/mcp-registry.js` / `server/routes-data.js` 里上报给外部的 version
 //     字符串（Node 侧读不到 Dart 常量）
 // 且改完必须**重新出包** —— 这是 Dart 代码改动，不重新编译就不会生效。
-const String kAppVersion = '4.45.0';
+const String kAppVersion = '4.46.0';
 
-/// 安卓 versionCode。语义：4.45.0 → 50532（与 pubspec 的 `+50532` 必须一致）。
+/// 安卓 versionCode。语义：4.46.0 → 50533（与 pubspec 的 `+50533` 必须一致）。
 /// 只增不减；`Updater` 用它与云端清单的 versionCode 比对来判断"有没有新版"。
-const int kAppCode = 50532;
+const int kAppCode = 50533;
