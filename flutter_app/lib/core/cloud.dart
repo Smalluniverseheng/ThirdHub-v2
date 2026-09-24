@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'settings_bridge.dart';
 
 class Cloud {
   static const String base = 'https://mxvxlgjzeboktufumxbp.supabase.co';
@@ -163,17 +164,18 @@ class Cloud {
     'th_bookshelf', 'th_reading_progress', 'th_history', 'th_favorites', 'th_settings', 'th_user_devices',
   ];
 
-  /// 参与同步的设置键（与网页端 js/store.js 的 DEFAULT_SETTINGS 逐字一致，共 38 个）
-  static const List<String> settingKeys = <String>[
-    'theme', 'lang', 'readerFontSize', 'readerLineHeight', 'readerTheme', 'readerFlip',
-    'comicMode', 'comicDir', 'proxyMode', 'proxyUrl', 'ttsRate',
-    'ttsEngine', 'ttsCustomUrl', 'asrEngine', 'asrCustomUrl',
-    'readerFont', 'readerFontWeight', 'readerPadding', 'readerParaGap', 'readerTextColor',
-    'readerBgColor', 'readerBrightness', 'readerFullscreen', 'readerVolumeFlip', 'readerAutoScroll',
-    'readerIllust', 'readerTapFlip', 'readerInfoBar',
-    'comicLayout', 'comicFit', 'comicGap', 'comicBrightness', 'comicCropBorder', 'comicPreload',
-    'navDesktop', 'navMobile', 'navWatch', 'aiDrawerSide',
-  ];
+  /// 云端设置键清单（与网页端 js/store.js 的 DEFAULT_SETTINGS 逐字一致，共 38 个）。
+  ///
+  /// ★ 但**不能拿这些名字去读本机 prefs**：本机的键名与它们几乎完全不同
+  ///   （本机是 fontSize / theme_mode / flip_mode …，唯一同名键 readerTheme 还是
+  ///   int↔String 不同型）。按云端键名直读本机 → 全部取空 → 上行静默不发，
+  ///   表现就是「同步点了没反应」。取值一律走 `SettingsBridge`。
+  static List<String> get settingKeys => SettingsBridge.cloudKeys;
+
+  /// 上次成功同步时刻（epoch ms）。
+  /// ★ 与网页端同一判据（js/modules/settings-sync.js 的 `settings:syncedAt`）——
+  ///   两端靠它判断"云端新还是本机新"，不要另发明一套冲突策略。
+  static const String _syncedAtKey = 'settings_synced_at';
 
   /// 通用：按表写一行（载荷与网页端 syncPush 同构）
   static Future<bool> tableUp(String table, String id, Object data) async {
@@ -202,59 +204,120 @@ class Cloud {
   }
 
   // ── 设置互通（表 th_settings，格式与网页端 settings-sync.js 完全一致）──
-  // 行形状：{ id: <uid>, data: { settings: { s: {...} }, updatedAt } }
+  // 行形状：{ id: <uid>, data: { settings: { s: {...}, kv: {...} }, updatedAt } }
+  //
+  // ★三条纪律（照网页端 js/modules/settings-sync.js 抄，别自己发明）：
+  //   ① **只写共识键**：本机没有这个值时就不写 —— 否则等于拿默认值盖掉用户云端已有的设置。
+  //   ② **合并写入，绝不整体覆盖**：网页端有 38 个键，本机只映射得上 13 个；
+  //      整体覆盖会把用户在网页上设的另外 25 个键连同 kv 一起抹掉。
+  //   ③ **冲突判据 = data.updatedAt（epoch ms）对比本机 _syncedAtKey**；
+  //      云端较新 → 拉下来；本机较新 → 推上去；相等 → 什么都不做。
+  //  （注：库里 version 列恒为 1、从不自增，所以"带版本号防冲突"实际等于 LWW by updatedAt。）
 
-  /// 把本机设置推上云。返回是否成功。本机一个设置都没有时不发（避免用空对象盖掉云端的）。
+  /// 读回云端设置行（未登录 / 无行 → null）
+  static Future<Map<String, dynamic>?> _settingsRow() async {
+    if (!loggedIn) return null;
+    try {
+      final r = await http.get(
+        Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=data,updated_at'),
+        headers: _authHeaders);
+      if (r.statusCode != 200) return null;
+      final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
+      if (list.isEmpty) return null;
+      return Map<String, dynamic>.from(list.first);
+    } catch (_) { return null; }
+  }
+
+  /// 本机 prefs 全量快照（键名原样，不做任何假设 —— 转换交给 SettingsBridge）
+  static Future<Map<String, dynamic>> _localSnapshot() async {
+    final p = await SharedPreferences.getInstance();
+    return {for (final k in p.getKeys()) k: p.get(k)};
+  }
+
+  static int _cloudUpdatedAt(Map<String, dynamic>? row) {
+    final d = row == null ? null : row['data'];
+    if (d is! Map) return 0;
+    final v = d['updatedAt'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return 0;
+  }
+
+  /// 把本机设置推上云（**合并**写入，绝不丢云端已有键）。成功返回 true。
   static Future<bool> settingsUp() async {
     if (!loggedIn) return false;
     try {
-      final p = await SharedPreferences.getInstance();
-      final s = <String, dynamic>{};
-      for (final k in settingKeys) {
-        final v = p.get('setting:$k') ?? p.get(k);
-        if (v != null) s[k] = v;
+      final mine = SettingsBridge.toCloud(await _localSnapshot());
+      if (mine.isEmpty) return false; // 本机一个可映射设置都没有 → 不拿空对象去盖云端
+
+      // ① 读回云端现状，做真合并
+      final row = await _settingsRow();
+      final cloudS = <String, dynamic>{};
+      final cloudKv = <String, dynamic>{};
+      final d = row == null ? null : row['data'];
+      if (d is Map) {
+        final st = d['settings'];
+        if (st is Map) {
+          final s = st['s']; if (s is Map) cloudS.addAll(Map<String, dynamic>.from(s));
+          final kv = st['kv']; if (kv is Map) cloudKv.addAll(Map<String, dynamic>.from(kv));
+        }
       }
-      if (s.isEmpty) return false;
-      final now = DateTime.now().toUtc().toIso8601String();
+      cloudS.addAll(mine); // 认识的键以本机为准；不认识的键原样留在云端
+
+      final now = DateTime.now().millisecondsSinceEpoch;
       final r = await http.post(Uri.parse('$base/rest/v1/th_settings'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
         body: jsonEncode({
           'id': userId, 'user_id': userId,
-          'data': {'settings': {'s': s}, 'updatedAt': now},
-          'updated_at': now,
+          'data': {
+            'settings': {'s': cloudS, if (cloudKv.isNotEmpty) 'kv': cloudKv},
+            'updatedAt': now,
+          },
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }));
-      return r.statusCode >= 200 && r.statusCode < 300;
+      if (r.statusCode >= 200 && r.statusCode < 300) {
+        final p = await SharedPreferences.getInstance();
+        await p.setInt(_syncedAtKey, now);
+        return true;
+      }
+      return false;
     } catch (_) { return false; }
   }
 
-  /// 从云端拉设置并写回本机，返回写入的键数（0 = 云端没有或读取失败）。
-  /// 只写双方共识的键 —— 云端多出来的键一律忽略，不猜、不覆盖本机独有项。
+  /// 从云端拉设置写回本机，返回写入的键数（0 = 云端没有或读取失败）。
+  /// 只写双方共识的键 —— 云端多出来的 25 个键与 kv **一律忽略**，不猜、不覆盖本机独有项。
   static Future<int> settingsDown() async {
     if (!loggedIn) return 0;
     try {
-      final r = await http.get(Uri.parse('$base/rest/v1/th_settings?id=eq.$userId&select=data,updated_at'),
-        headers: _authHeaders);
-      if (r.statusCode != 200) return 0;
-      final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
-      if (list.isEmpty) return 0;
-      final data = list.first['data'];
-      if (data is! Map) return 0;
-      final settings = data['settings'];
-      if (settings is! Map) return 0;
-      final s = settings['s'];
+      final row = await _settingsRow();
+      if (row == null) return 0;
+      final d = row['data'];
+      if (d is! Map) return 0;
+      final st = d['settings'];
+      if (st is! Map) return 0;
+      final s = st['s'];
       if (s is! Map) return 0;
+
+      final items = SettingsBridge.fromCloud(Map<String, dynamic>.from(s));
       final p = await SharedPreferences.getInstance();
       var n = 0;
-      for (final k in settingKeys) {
-        if (!s.containsKey(k)) continue;
-        final v = s[k];
-        if (v is bool) { await p.setBool('setting:$k', v); n++; }
-        else if (v is int) { await p.setInt('setting:$k', v); n++; }
-        else if (v is double) { await p.setDouble('setting:$k', v); n++; }
-        else if (v is String) { await p.setString('setting:$k', v); n++; }
+      for (final e in items) {
+        final v = e.value;
+        if (v is bool) { await p.setBool(e.key, v); n++; }
+        else if (v is int) { await p.setInt(e.key, v); n++; }
+        else if (v is double) { await p.setDouble(e.key, v); n++; }
+        else if (v is String) { await p.setString(e.key, v); n++; }
       }
+      final at = _cloudUpdatedAt(row);
+      if (at > 0) await p.setInt(_syncedAtKey, at);
       return n;
     } catch (_) { return 0; }
+  }
+
+  /// 上次成功同步时刻（epoch ms，0 = 从未同步）。给界面展示用。
+  static Future<int> lastSyncedAt() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getInt(_syncedAtKey) ?? 0;
   }
 
   // ── 阅读进度（表 th_reading_progress）──
@@ -289,12 +352,24 @@ class Cloud {
   static Future<List<Map<String, dynamic>>> historyDown() => tableDown('th_history');
 
   // ── 一键全量同步（给设置页的「与网页端同步」按钮用）──
-  // 返回 (上行成功表数, 下行设置键数)；纯统计，不抛异常。
-  static Future<Map<String, int>> syncAll({bool push = true}) async {
-    var up = 0, keys = 0;
-    if (!loggedIn) return {'up': 0, 'keys': 0};
-    if (push) { if (await settingsUp()) up++; }
-    keys = await settingsDown();
-    return {'up': up, 'keys': keys};
+  // 按网页端同款判据决定方向，**不是**无条件又推又拉（那是旧的错法：
+  // 先推后被自己的拉覆盖、或把本机新改动丢掉）。纯统计，不抛异常。
+  // 返回 { 'result': 'pulled'|'pushed'|'same'|'no-user'|'error', 'keys': 拉下来的键数 }
+  static Future<Map<String, dynamic>> syncAll() async {
+    if (!loggedIn) return {'result': 'no-user', 'keys': 0};
+    try {
+      final row = await _settingsRow();
+      final cloudAt = _cloudUpdatedAt(row);
+      final p = await SharedPreferences.getInstance();
+      final localAt = p.getInt(_syncedAtKey) ?? 0;
+
+      if (row == null || cloudAt == 0) {
+        // 云端还没有这一行（首次同步）→ 以本机为准推上去
+        return {'result': (await settingsUp()) ? 'pushed' : 'error', 'keys': 0};
+      }
+      if (cloudAt > localAt) return {'result': 'pulled', 'keys': await settingsDown()};
+      if (localAt > cloudAt) return {'result': (await settingsUp()) ? 'pushed' : 'error', 'keys': 0};
+      return {'result': 'same', 'keys': 0};
+    } catch (_) { return {'result': 'error', 'keys': 0}; }
   }
 }

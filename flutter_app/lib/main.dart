@@ -5117,6 +5117,14 @@ void registerProBridges() {
     AppSettings.onChanged?.call();
   };
 
+  // ── P1 数据互通: 从云端拉下设置后重新生效（语言 / 主题 / 字号）──
+  // settingsDown() 只写了 SharedPreferences，界面不会自己变；不接这个回调，
+  // 用户会看到"提示同步成功但界面没动" —— 等于又一种假同步。
+  ProBridge.reloadSettings = () async {
+    await I18n.instance.setLocale(I18n.resolve(AppSettings.locale));
+    AppSettings.onChanged?.call();
+  };
+
   // ── AI-1 工具: 打开模块 / 把文本交给阅读器 ──
   ProBridge.openModule = (k) { proOpenModule.value = k; };
   ProBridge.openReader = (title, text) async {

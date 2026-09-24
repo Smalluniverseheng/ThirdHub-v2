@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_version.dart';
 import 'cloud.dart';
 import 'pro_kit.dart';
+import 'settings_bridge.dart';
 
 /// main.dart 注册的桥: 系统页需要动"宿主"的东西(导航/主题/字体/打开模块)都走这里,
 /// 这样 core 层不用直接依赖 main.dart 的实现细节。
@@ -27,6 +28,11 @@ class ProBridge {
   static Future<void> Function(double)? setTextScale;
   static void Function(String moduleKey)? openModule;
   static Future<void> Function(String title, String body)? openReader;
+
+  /// 从云端拉下设置后由宿主重新生效（语言 / 主题 / 字号等）。
+  /// 为什么需要：settingsDown() 只写了 SharedPreferences，界面上的主题与语言
+  /// 不会自己变 —— 不调这个，用户会看到"提示同步成功但其实没生效"。
+  static Future<void> Function()? reloadSettings;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -841,41 +847,98 @@ class _Sys extends ProPageState<SystemCenterPage> {
 
   // ── P1 数据互通（与网页端同一批表）──────────────────────────────
 
-  Future<void> _syncNow(BuildContext c) async {
-    if (!Cloud.loggedIn) {
-      ProUI.toast(c, '先在「我的」登录账号 —— 网页端与手机端要用同一个账号才能互通');
-      return;
-    }
-    ProUI.toast(c, '正在与网页端同步…');
-    final r = await Cloud.syncAll(push: true);
-    final up = (r['up'] ?? 0) > 0 ? '设置已上传' : '设置未上传（本机没有可同步的设置）';
-    ProUI.toast(c, '同步完成：$up；从云端拉回 ${r['keys'] ?? 0} 项设置');
-    await refresh();
-  }
-
-  Future<void> _syncScope(BuildContext c) async {
+  /// 弹一个可读的结果框 —— toast 一闪而过，而同步结果的信息量（方向 / 键数 /
+  /// 上次时间）值得停一下看完。
+  Future<void> _info(BuildContext c, String title, String body) async {
+    if (!c.mounted) return;
     await showDialog<void>(
       context: c,
       builder: (d) => AlertDialog(
-        title: const Text('同步范围', style: TextStyle(fontSize: 16)),
-        content: const SingleChildScrollView(
-          child: Text(
-            '与网页端读写同一批数据表：\n\n'
-            '· th_settings —— 设置（字号 / 行距 / 翻页 / 主题 / TTS / 漫画 / 导航等 38 项）\n'
-            '· th_bookshelf —— 书架\n'
-            '· th_reading_progress —— 阅读进度\n'
-            '· th_favorites —— 收藏\n'
-            '· th_history —— 历史\n'
-            '· th_user_devices —— 已登录设备\n\n'
-            '不会上云：书籍 / 漫画 / 音视频 / 照片等媒体文件本身，以及本机独有的缓存。\n\n'
-            '冲突处理：后写覆盖（LWW），以 updated_at 较新的一方为准。',
-            style: TextStyle(fontSize: 12.5, height: 1.7),
-          ),
+        title: Text(title, style: const TextStyle(fontSize: 16)),
+        content: SingleChildScrollView(
+          child: Text(body, style: const TextStyle(fontSize: 12.5, height: 1.7)),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d), child: const Text('知道了')),
         ],
       ),
+    );
+  }
+
+  Future<void> _syncNow(BuildContext c) async {
+    if (!Cloud.loggedIn) {
+      await _info(c, '未能同步',
+          '先在「我的」登录账号 ——\n网页端与手机端要用同一个账号才能互通。');
+      return;
+    }
+    ProUI.toast(c, '正在与网页端同步…');
+
+    // ★ 按网页端同款判据决定方向（云端 updatedAt 更新→拉、本机更新→推、相等→不动），
+    //   不再无条件又推又拉 —— 旧写法会先推后被自己拉的旧值盖回来。
+    final r = await Cloud.syncAll();
+    final keys = (r['keys'] is int) ? r['keys'] as int : 0;
+    final at = await Cloud.lastSyncedAt();
+    final when = at == 0
+        ? '从未'
+        : DateTime.fromMillisecondsSinceEpoch(at).toString().substring(0, 19);
+
+    final String msg;
+    switch (r['result']) {
+      case 'pulled':
+        msg = '已从云端拉下 $keys 项设置（网页端较新）——本机设置已按云端更新。';
+        break;
+      case 'pushed':
+        msg = '已把本机设置推到云端（本机较新）——网页端下次打开即可看到。';
+        break;
+      case 'same':
+        msg = '两端已一致，无需改动。';
+        break;
+      case 'no-user':
+        msg = '未登录账号，无法同步。';
+        break;
+      default:
+        msg = '同步失败 —— 可能是网络不通，或本机没有可映射的设置。稍后再试。';
+    }
+
+    // 拉下来的设置只是写进了 SharedPreferences，界面不会自己变 —— 必须让宿主重新生效。
+    if (r['result'] == 'pulled') {
+      try { await ProBridge.reloadSettings?.call(); } catch (_) {}
+    }
+
+    await _info(
+      c,
+      '与网页端同步',
+      '$msg\n\n'
+      '最近同步：$when\n'
+      '共享键：${SettingsBridge.bridges.length} / 网页端共 ${SettingsBridge.cloudKeys.length} 项'
+      '（点「同步范围说明」看完整清单）',
+    );
+    await refresh();
+  }
+
+  Future<void> _syncScope(BuildContext c) async {
+    // ★ 如实清单，来自 SettingsBridge.coverage() —— 不再写死一句"38 项"。
+    //   写死数字的坏处：两端键名不同型这件事被掩盖，用户以为"38 项都同步了"，
+    //   实际能互相读懂的只有 13 项。宁可说少，不可说错。
+    final cov = SettingsBridge.coverage();
+    final bridged = cov['bridged'] ?? <String>[];
+    final cloudOnly = cov['cloudOnly'] ?? <String>[];
+    final localOnly = cov['localOnly'] ?? <String>[];
+    await _info(
+      c,
+      '同步范围（如实清单）',
+      '与网页端读写同一批数据表（6 张）：\n'
+      '· th_settings 设置　· th_bookshelf 书架\n'
+      '· th_reading_progress 阅读进度　· th_favorites 收藏\n'
+      '· th_history 历史　· th_user_devices 已登录设备\n\n'
+      '【已接通 ${bridged.length} 项】两端都能改、都能生效：\n'
+      '${bridged.join('、')}\n\n'
+      '【仅网页端有 ${cloudOnly.length} 项】本机不读不写；拉取时原样留在云端，不会被抹掉：\n'
+      '${cloudOnly.join('、')}\n\n'
+      '【仅本机有 ${localOnly.length} 项】属本机行为偏好，不参与跨端同步：\n'
+      '${localOnly.join('、')}\n\n'
+      '不上云：书籍 / 漫画 / 音视频 / 照片等媒体文件本身。\n'
+      '冲突处理：以 updatedAt 较新的一方为准（与网页端同一判据），不会拿旧值盖新值。',
     );
   }
 }
