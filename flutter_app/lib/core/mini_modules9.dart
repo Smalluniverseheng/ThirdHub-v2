@@ -1,4 +1,5 @@
 // 小模块做实第九批: 家庭影院(本地视频库) / 家庭音乐库(本地音乐库)
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -75,21 +76,39 @@ class _CinemaPlayerState extends State<_CinemaPlayer> {
   late int idx = widget.start;
   VideoPlayerController? ctl;
   bool showUi = true;
+  /// 同短剧页：监听器要能被摘掉，且 `_load` 是异步的，退出后不能再 setState。
+  VoidCallback? _tick;
+  bool _alive = true;
   @override void initState() { super.initState(); _load(idx); }
   Future<void> _load(int i) async {
-    await ctl?.dispose();
+    final old = ctl;
+    if (old != null && _tick != null) old.removeListener(_tick!);
+    _tick = null;
+    await old?.dispose();
+    if (!_alive) return;
     final nc = VideoPlayerController.file(File(widget.files[i].path));
     await nc.initialize();
+    if (!_alive) { await nc.dispose(); return; }
     await nc.play();
-    nc.addListener(() {
+    void onTick() {
       if (nc.value.position >= nc.value.duration && nc.value.duration > Duration.zero && i + 1 < widget.files.length) {
         idx = i + 1; _load(idx);
       }
       if (mounted) setState(() {});
-    });
+    }
+    _tick = onTick;
+    nc.addListener(onTick);
+    if (!_alive) { nc.removeListener(onTick); _tick = null; await nc.dispose(); return; }
     setState(() => ctl = nc);
   }
-  @override void dispose() { ctl?.dispose(); super.dispose(); }
+  @override void dispose() {
+    _alive = false;
+    final c = ctl;
+    if (c != null && _tick != null) c.removeListener(_tick!);
+    _tick = null;
+    ctl?.dispose();
+    super.dispose();
+  }
   @override Widget build(BuildContext c) => Scaffold(backgroundColor: Colors.black,
     body: GestureDetector(onTap: () {
       if (!showUi) { setState(() => showUi = true); return; }
@@ -120,8 +139,10 @@ class _Hm extends State<HomeMusicPage> {
   Duration pos = Duration.zero, dur = Duration.zero;
   bool shuffle = false;
   final _rng = Random();
+  /// 进度订阅（同 mini_modules8 的有声书页：此前每次 _play 都新开一个、旧的从不取消）
+  StreamSubscription<Duration>? _posSub;
 
-  @override void dispose() { _player.dispose(); super.dispose(); }
+  @override void dispose() { _posSub?.cancel(); _player.dispose(); super.dispose(); }
 
   Future<void> _pickDir() async {
     final d = await FilePicker.platform.getDirectoryPath();
@@ -136,7 +157,8 @@ class _Hm extends State<HomeMusicPage> {
     await _player.setAudioSource(tagFile(path, title: path.split('/').last.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), ''), album: 'ThirdHub 音乐'));
     dur = await _player.durationFuture ?? Duration.zero;
     setState(() => playing = path);
-    _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });
+    _posSub?.cancel();
+    _posSub = _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });
     await _player.play();
     _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed).then((_) => _next());
   }

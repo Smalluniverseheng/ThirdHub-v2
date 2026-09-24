@@ -124,14 +124,20 @@ class Cloud {
   }
 
   // ── 多前端数据共享(th_shared): 每用户/每类/每名单行, last-write-wins ──
-  static Future<void> syncUp(String kind, String name, Map<String, dynamic> payload) async {
-    if (!loggedIn) return;
+  //
+  // 返回值 = **这条到底有没有真的写到云端**。
+  // 此前是 `Future<void>` + `catch (_) {}`：没登录、网络失败、被 RLS 拦住，
+  // 三种情况全都静默返回，调用方无从得知，用户看到的就是「我明明改了，换个端看还是旧的」。
+  // 现在如实回传；`if (!loggedIn)` 也回 false —— 「没登录所以没同步」同样是一个需要说出口的事实。
+  static Future<bool> syncUp(String kind, String name, Map<String, dynamic> payload) async {
+    if (!loggedIn) return false;
     try {
-      await http.post(Uri.parse('$base/rest/v1/th_shared'),
+      final r = await http.post(Uri.parse('$base/rest/v1/th_shared'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
         body: jsonEncode({'user_id': userId, 'kind': kind, 'name': name,
           'payload': payload, 'updated_at': DateTime.now().toUtc().toIso8601String()}));
-    } catch (_) {}
+      return r.statusCode < 300;
+    } catch (_) { return false; }
   }
 
   static Future<List<Map<String, dynamic>>> syncDown(String kind) async {

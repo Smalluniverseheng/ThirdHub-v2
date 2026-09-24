@@ -8,7 +8,12 @@ import 'package:video_player/video_player.dart';
 
 import 'browser_page.dart';
 
-// ═══ 共享相册: 选照片文件夹 → 网格浏览 + 幻灯片 (云端共享待资源库接口) ═══
+// ═══ 共享相册: 选照片文件夹 → 网格浏览 + 幻灯片 ═══
+//
+// 说明（名实）：模块名叫「共享相册」，但它**只浏览本机文件夹**，没有任何云端共享 ——
+// 相册的云端同步（跨端相册）尚未实现。此前的空态写「云端家庭共享待资源库接口开放」，
+// 读起来像「只是还没开放、开通了就有」，属误导；而 `th_shared` 表其实是存在的
+// （共享清单已经在真的用它同步）。要真做跨端相册，是 P3 的新功能，不是「等接口」。
 class SharedAlbumPage extends StatefulWidget { const SharedAlbumPage({super.key}); @override State<SharedAlbumPage> createState() => _Sa(); }
 class _Sa extends State<SharedAlbumPage> {
   List<FileSystemEntity> photos = [];
@@ -42,7 +47,7 @@ class _Sa extends State<SharedAlbumPage> {
         onPressed: scanning ? null : _pickDir))),
     if (scanning) const LinearProgressIndicator(),
     Expanded(child: photos.isEmpty
-      ? Center(child: Text(scanning ? '扫描中…' : '选一个照片文件夹\n长按缩略图可删除 · 云端家庭共享待资源库接口开放',
+      ? Center(child: Text(scanning ? '扫描中…' : '选一个照片文件夹\n本机浏览 · 长按缩略图可删除（云端家庭共享尚未实现）',
           textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)))
       : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3, mainAxisSpacing: 3, crossAxisSpacing: 3),
@@ -50,7 +55,19 @@ class _Sa extends State<SharedAlbumPage> {
         itemCount: photos.length,
         itemBuilder: (_, i) => InkWell(
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => _AlbumViewer(photos: photos, start: i))),
-          onLongPress: () => setState(() { try { File(photos[i].path).deleteSync(); } catch (_) {} photos.removeAt(i); }),
+          // 删除要如实反馈：此前是 `try { deleteSync() } catch (_) {}` + 无条件 `removeAt(i)` ——
+          // 删不掉（被占用 / 没权限）时缩略图照样从网格里消失，用户以为删了，
+          // 下次重选文件夹它又回来了。现在失败就保留在列表里并说清楚原因。
+          onLongPress: () async {
+            final path = photos[i].path;
+            var ok = true;
+            try { await File(path).delete(); } catch (_) { ok = false; }
+            if (!mounted) return;
+            setState(() { if (ok) photos.removeAt(i); });
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+              content: Text(ok ? '已删除这张照片' : '删不掉：$path（可能被其它程序占用或没有权限）—— 列表保持不变'),
+              duration: const Duration(seconds: 3)));
+          },
           child: Image.file(File(photos[i].path), fit: BoxFit.cover,
             cacheWidth: 300, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined))))),
   ]);

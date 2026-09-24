@@ -18,6 +18,7 @@ import 'agent_models.dart';
 import 'agent_policy.dart';
 import 'ai.dart';
 import 'ai_agent.dart';
+import 'ai_providers_page.dart';
 import 'local_tools.dart';
 
 class AiAgentPage extends StatefulWidget {
@@ -444,6 +445,10 @@ class _TaskTabState extends State<_TaskTab> {
   bool _busy = false, _booted = false, _waiting = false;
   String _note = '';
   bool _noteBad = false;
+  /// 提示右侧的可点按钮。轻量 Agent 最常撞的两件事就是「没选模型」和「没填 Key」，
+  /// 光给一句文字等于让用户自己去翻菜单 —— 这里给一个直达「厂商与密钥」的入口。
+  String _noteAction = '';
+  VoidCallback? _noteActionTap;
   StreamSubscription<AgentEvent>? _sub;
   final _input = TextEditingController();
   final _scroll = ScrollController();
@@ -476,9 +481,30 @@ class _TaskTabState extends State<_TaskTab> {
     super.dispose();
   }
 
-  void _say(String text, {bool bad = false}) {
+  void _say(String text, {bool bad = false, String action = '', VoidCallback? onAction}) {
     if (!mounted) return;
-    setState(() { _note = text; _noteBad = bad; });
+    setState(() { _note = text; _noteBad = bad; _noteAction = action; _noteActionTap = onAction; });
+  }
+
+  /// 直达「厂商与密钥」页 —— 选模型和填 API Key 都在那一页。
+  /// 回来时顺手把结果说清楚，用户不用猜自己配好了没有。
+  Future<void> _openModelSetup() async {
+    if (!mounted) return;
+    await Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const AiProvidersPage()));
+    if (!mounted) return;
+    final (pid, mid) = await AiRegistry.lastModel();
+    final p = AiRegistry.byId(pid);
+    final hasKey = p != null && (await AiRegistry.keyOf(p.id)).isNotEmpty;
+    if (p == null) {
+      _say('本机记住的厂商「$pid」不在厂商表里 —— 请在这一页里点一个模型（点一下即选中）',
+          bad: true, action: '去选模型', onAction: _openModelSetup);
+    } else if (!hasKey) {
+      _say('厂商「${p.name}」还没填 API Key —— 轻量模式要用它来跑循环',
+          bad: true, action: '去填 Key', onAction: _openModelSetup);
+    } else {
+      _say('已选「${p.name} · $mid」，可以直接下达任务了');
+    }
   }
 
   void _toBottom() {
@@ -594,7 +620,7 @@ class _TaskTabState extends State<_TaskTab> {
       return;
     }
     if (_busy) return;
-    setState(() { _busy = true; _note = ''; _noteBad = false; });
+    setState(() { _busy = true; _note = ''; _noteBad = false; _noteAction = ''; _noteActionTap = null; });
     if (_session == null) {
       final title = text.length > 18 ? '${text.substring(0, 18)}…' : text;
       final s = await AgentDshClient.createSession(title: title, profile: _profile);
@@ -638,19 +664,21 @@ class _TaskTabState extends State<_TaskTab> {
     final (provId, lastModelId) = await AiRegistry.lastModel();
     final prov = AiRegistry.byId(provId);
     if (prov == null) {
-      _say('轻量模式需要一个本机模型：先去「AI 对话」页选一个模型'
-           '（本机记住的是「$provId」，它不在厂商表里）', bad: true);
+      _say('轻量模式需要一个本机模型（本机记住的是「$provId」，它已经不在厂商表里了）',
+          bad: true, action: '去选模型', onAction: _openModelSetup);
       return;
     }
     if ((await AiRegistry.keyOf(prov.id)).isEmpty) {
-      _say('模型「${prov.name}」还没填 API Key —— 在「AI 对话」页右上角设置里填上，回来就能用', bad: true);
+      _say('模型「${prov.name}」还没填 API Key，填上就能用',
+          bad: true, action: '去填 Key', onAction: _openModelSetup);
       return;
     }
     final model = lastModelId.isNotEmpty
         ? lastModelId
         : (prov.models.isEmpty ? '' : prov.models.first);
     if (model.isEmpty) {
-      _say('厂商「${prov.name}」没有可用模型名，请到「AI 对话」页重新选一个', bad: true);
+      _say('厂商「${prov.name}」没有可用模型名，换一个厂商试试',
+          bad: true, action: '去选模型', onAction: _openModelSetup);
       return;
     }
     setState(() { _liteRunning = true; _liteStream = ''; });
@@ -808,7 +836,7 @@ class _TaskTabState extends State<_TaskTab> {
 
   Future<void> _newSession() async {
     _sub?.cancel();
-    setState(() { _events.clear(); _session = null; _note = ''; _waiting = false; });
+    setState(() { _events.clear(); _session = null; _note = ''; _noteAction = ''; _noteActionTap = null; _waiting = false; });
   }
 
   Future<void> _answerConfirm(String confirmId, bool allow) async {
@@ -877,6 +905,11 @@ class _TaskTabState extends State<_TaskTab> {
                 onPressed: _busy ? null : () => AgentRuntime.openConnector?.call(),
                 icon: const Icon(Icons.link, size: 16),
                 label: const Text('去填后端地址', style: TextStyle(fontSize: 12))),
+            if (_online && !full)
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _openModelSetup(),
+                icon: const Icon(Icons.key, size: 16),
+                label: const Text('模型与密钥', style: TextStyle(fontSize: 12))),
             OutlinedButton.icon(onPressed: _busy ? null : _boot,
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('重新检测', style: TextStyle(fontSize: 12))),
@@ -1159,6 +1192,8 @@ class _TaskTabState extends State<_TaskTab> {
       } else {
         _note = r.error;
         _noteBad = true;
+        _noteAction = '';
+        _noteActionTap = null;
       }
     });
   }
@@ -1401,6 +1436,14 @@ class _TaskTabState extends State<_TaskTab> {
               const SizedBox(width: 6),
               Expanded(child: Text(_note, style: TextStyle(fontSize: 11, height: 1.45,
                 color: _noteBad ? Colors.redAccent : Colors.grey))),
+              if (_noteAction.isNotEmpty)
+                TextButton(
+                  onPressed: _noteActionTap,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  child: Text(_noteAction, style: const TextStyle(fontSize: 11.5))),
             ])),
         Row(children: [
           Expanded(child: TextField(controller: _input,

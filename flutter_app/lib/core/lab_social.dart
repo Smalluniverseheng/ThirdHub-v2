@@ -19,6 +19,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lab_logic.dart';
 
+/// 论坛里给人看的时间。
+///
+/// 此前回帖那一行直接把毫秒时间戳打进 UI（`Text('${r.ts}')`），屏幕上就是一串
+/// 13 位数字（例 `1758712345678`）—— 既读不懂，看着也像界面出 bug 了。
+/// 主题行用 `_ago`、详情页头部用 `DateTime.toString()`，三处各写各的，这里收成一处。
+String fmtWhen(int ts) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ts);
+  final diff = DateTime.now().difference(d);
+  if (diff.isNegative || diff.inMinutes < 1) return '刚刚';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
+  if (diff.inHours < 24) return '${diff.inHours} 小时前';
+  if (diff.inDays < 7) return '${diff.inDays} 天前';
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // A. 局域网聊天
 //
@@ -691,7 +707,7 @@ class _ForumTopicState extends State<ForumTopicPage> {
             Row(children: [
               Chip(label: Text(topic.board, style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               const Spacer(),
-              Text(DateTime.fromMillisecondsSinceEpoch(topic.ts).toString().split('.').first,
+              Text(fmtWhen(topic.ts),
                 style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
             ]),
             const SizedBox(height: 6),
@@ -705,7 +721,7 @@ class _ForumTopicState extends State<ForumTopicPage> {
               Row(children: [
                 Text(r.by, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
-                Text('${r.ts}', style: TextStyle(fontSize: 9, color: Colors.grey.shade500)),
+                Text(fmtWhen(r.ts), style: TextStyle(fontSize: 9, color: Colors.grey.shade500)),
               ]),
               const SizedBox(height: 4),
               SelectableText(r.text, style: const TextStyle(fontSize: 12, height: 1.5)),

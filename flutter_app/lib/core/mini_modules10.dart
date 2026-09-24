@@ -1,4 +1,8 @@
-// 小模块做实第十批: 共享清单(本地多清单, 云端同步待后端资源库接口)
+// 小模块做实第十批: 共享清单(本地多清单 + 云端 th_shared 同步)
+//
+// 注：此前文件头写「云端同步待后端资源库接口」、空态也这么写 —— 与实际不符：
+// `Cloud.syncUp/syncDown('shared_list')` 早就在同步，`th_shared` 表也确实存在。
+// 真正的问题不是「没接口」，而是同步失败被静默吞掉（见 cloud.dart 的 syncUp 注释）。
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,8 +30,16 @@ class _Sl extends State<SharedListPage> {
   }
 
   // 云端同步: 登录后, 同名清单云端覆盖本地(后写赢), 本地独有的推上去
+  //
+  // 这个提示此前**只赋值、从不渲染**（页面上没有它），等于同步成功与否用户完全看不到；
+  // 现在它在标题下方真的显示出来（见 build 里的 `if (syncMsg.isNotEmpty)`）。
   String syncMsg = '';
+  bool syncBad = false;
   Future<void> _pullCloud() async {
+    if (!Cloud.loggedIn) {
+      if (mounted) setState(() { syncMsg = '未登录 —— 这份清单只存在本机；登录后会与云端合并'; syncBad = false; });
+      return;
+    }
     try {
       final remote = await Cloud.syncDown('shared_list');
       var changed = false;
@@ -45,17 +57,36 @@ class _Sl extends State<SharedListPage> {
       if (changed) {
         if (!lists.containsKey(current)) current = lists.keys.first;
         await _save();
-        if (mounted) setState(() => syncMsg = '已与云端同步');
       }
-    } catch (_) {}
+      if (mounted) {
+        setState(() {
+          syncMsg = changed ? '已从云端拉取并合并（${remote.length} 份清单）'
+                            : '已是最新（云端 ${remote.length} 份清单）';
+          syncBad = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { syncMsg = '拉取云端清单失败：$e —— 现在显示的是本机版本'; syncBad = true; });
+    }
   }
 
   Future<void> _save() async {
     final p = await SharedPreferences.getInstance();
     await p.setString(_key, jsonEncode(lists));
-    if (lists.containsKey(current)) {
-      Cloud.syncUp('shared_list', current, {'items': lists[current]});
-    }
+    if (!lists.containsKey(current)) return;
+    final ok = await Cloud.syncUp('shared_list', current, {'items': lists[current]});
+    if (!mounted) return;
+    setState(() {
+      if (!Cloud.loggedIn) {
+        syncMsg = '已存到本机（未登录，暂不同步云端）'; syncBad = false;
+      } else if (ok) {
+        syncMsg = '已保存并同步到云端'; syncBad = false;
+      } else {
+        // 不再吞掉：说清楚「本机存住了、云端没上去」，用户才知道别的端看不到
+        syncMsg = '已存到本机，但没能同步到云端（网络或权限问题）—— 换端看不到这次改动';
+        syncBad = true;
+      }
+    });
   }
 
   void _addItem() {
@@ -110,8 +141,17 @@ class _Sl extends State<SharedListPage> {
                 onSelected: (_) => setState(() => current = name))),
           IconButton(icon: const Icon(Icons.add, size: 18), onPressed: _addList, tooltip: '新建清单'),
         ])),
+      if (syncMsg.isNotEmpty)
+        Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(syncBad ? Icons.cloud_off : Icons.cloud_done, size: 13,
+              color: syncBad ? Colors.orange : Colors.grey),
+            const SizedBox(width: 5),
+            Expanded(child: Text(syncMsg, style: TextStyle(fontSize: 10.5, height: 1.4,
+              color: syncBad ? Colors.orange : Colors.grey))),
+          ])),
       Expanded(child: items.isEmpty
-        ? const Center(child: Text('点右下角添加第一条\n云端家庭共享同步待资源库接口开放', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+        ? const Center(child: Text('点右下角添加第一条\n登录后这份清单会同步到你的其它端', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
         : ListView(children: [
             for (final it in todo)
               ListTile(dense: true,

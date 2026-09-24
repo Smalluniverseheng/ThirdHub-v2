@@ -1,4 +1,5 @@
 // 小模块做实第八批: 扫描仪 / 有声书(本地) / 短剧(本地) / 文件互传(局域网HTTP共享)
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -83,8 +84,11 @@ class _Ab extends State<AudiobookPage> {
   String dirPath = '';
   String? playing;
   Duration pos = Duration.zero, dur = Duration.zero;
+  /// 进度订阅。此前每次 _play 都 `positionStream.listen(...)` 新开一个、旧的从不取消 ——
+  /// 切 N 次歌就攒下 N 个回调（每个都在 setState），页面退出后仍留着对 State 的引用。
+  StreamSubscription<Duration>? _posSub;
 
-  @override void dispose() { _player.dispose(); super.dispose(); }
+  @override void dispose() { _posSub?.cancel(); _player.dispose(); super.dispose(); }
 
   Future<void> _pickDir() async {
     final d = await FilePicker.platform.getDirectoryPath();
@@ -103,7 +107,8 @@ class _Ab extends State<AudiobookPage> {
     dur = await _player.durationFuture ?? Duration.zero;
     setState(() => playing = path);
     Recents.add('audiobook', path.split('/').last, sub: dirPath.split('/').last, target: path);
-    _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });
+    _posSub?.cancel();
+    _posSub = _player.positionStream.listen((p) { if (mounted) setState(() => pos = p); });
     await _player.play();
     _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed).then((_) {
       // 自动连播下一集
@@ -186,20 +191,40 @@ class _ShortPlayer extends StatefulWidget {
 class _ShortPlayerState extends State<_ShortPlayer> {
   late int idx = widget.start;
   VideoPlayerController? ctl;
+  /// 当前播放器上挂着的那个监听器。此前是匿名闭包：谁都拿不到它，
+  /// 只能等 controller 被 dispose 才顺带清掉；而 `_load` 是异步的，
+  /// 退出页面后仍可能走到 `setState`（"setState() called after dispose()"）。
+  VoidCallback? _tick;
+  bool _alive = true;
   @override void initState() { super.initState(); _load(idx); }
   Future<void> _load(int i) async {
-    await ctl?.dispose();
+    final old = ctl;
+    if (old != null && _tick != null) old.removeListener(_tick!);
+    _tick = null;
+    await old?.dispose();
+    if (!_alive) return;
     final nc = VideoPlayerController.file(File(widget.files[i].path));
     await nc.initialize();
+    if (!_alive) { await nc.dispose(); return; }
     await nc.play();
-    nc.addListener(() {
+    void onTick() {
       if (nc.value.position >= nc.value.duration && nc.value.duration > Duration.zero) {
         if (i + 1 < widget.files.length) { idx = i + 1; _load(idx); } // 自动下一集
       }
-    });
+    }
+    _tick = onTick;
+    nc.addListener(onTick);
+    if (!_alive) { nc.removeListener(onTick); _tick = null; await nc.dispose(); return; }
     setState(() => ctl = nc);
   }
-  @override void dispose() { ctl?.dispose(); super.dispose(); }
+  @override void dispose() {
+    _alive = false;
+    final c = ctl;
+    if (c != null && _tick != null) c.removeListener(_tick!);
+    _tick = null;
+    ctl?.dispose();
+    super.dispose();
+  }
   @override Widget build(BuildContext c) => Scaffold(backgroundColor: Colors.black,
     body: GestureDetector(onTap: () => setState(() { ctl!.value.isPlaying ? ctl!.pause() : ctl!.play(); }),
       child: Stack(children: [
