@@ -2108,9 +2108,66 @@ class _Hp extends State<HistoryPage> { List<Book> items = []; bool loading = tru
         title: Text(b.name), subtitle: Text(b.author, maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b))).then((_) => _load())) ]); }
 
+/// 搜索结果空态 —— 一个函数覆盖四个内容模块（小说 / 漫画 / 视频 / 音乐）。
+///
+/// ★为什么必须重做这段：引擎路径**即使 0 条命中也会塞一个空 group 进 `groups`**，
+///   于是旧判定 `if (groups.isEmpty && !loading)` 恒为假 → 空态永不显示 →
+///   用户看到的是一个只剩搜索框的白页。而「引擎没连上」与「连上了但一条没有」
+///   在白页上完全无法区分 → 「引擎连着、源是空的」被读成「应用坏了」。
+///   这里把三种情形分开讲清，并给「未连接」一条可点的出路（直达引擎直连页）。
+Widget searchEmptyState({
+  required bool loading,
+  required String query,
+  required bool searched,
+  required bool needConn,
+  required List<Map> groups,
+  required List<String> listKeys,
+  required String kind,
+  VoidCallback? onFix,
+}) {
+  if (loading) return const SizedBox.shrink();
+  final hasAny =
+      groups.any((g) => listKeys.any((k) => (g[k] as List?)?.isNotEmpty == true));
+  if (hasAny) return const SizedBox.shrink();
+  if (!searched) {
+    if (query.isEmpty) return _searchEmptyBox(Icons.search, '输入关键词搜索$kind', '');
+    return const SizedBox.shrink();
+  }
+  if (needConn) {
+    return _searchEmptyBox(Icons.link_off, '还没连上内容来源',
+        '「$kind」的内容由引擎 App 或家庭后端提供，两者任连其一即可开始搜索。',
+        onFix: onFix);
+  }
+  return _searchEmptyBox(Icons.search_off, '没有找到相关$kind',
+      '已经连上来源，但这一条确实没有命中。常见原因是引擎里还没有导入可用的源，换一个关键词也可以再试试。');
+}
+
+Widget _searchEmptyBox(IconData icon, String title, String sub,
+        {VoidCallback? onFix, String fixLabel = '去连接引擎'}) =>
+    Padding(
+      padding: const EdgeInsets.fromLTRB(28, 44, 28, 28),
+      child: Column(children: [
+        Icon(icon, size: 40, color: Colors.grey),
+        const SizedBox(height: 12),
+        Text(title, style: const TextStyle(fontSize: 14)),
+        if (sub.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(sub,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)),
+        ],
+        if (onFix != null) ...[
+          const SizedBox(height: 14),
+          FilledButton.tonal(onPressed: onFix, child: Text(fixLabel)),
+        ],
+      ]),
+    );
+
 class NovelSearchResults extends StatefulWidget { final String query; const NovelSearchResults({super.key, required this.query}); @override State<NovelSearchResults> createState() => _NSR(); }
 class _NSR extends State<NovelSearchResults> {
   List<Map> groups = []; bool loading = false; String lastQ = ''; int _seq = 0; List<String> history = [];
+  // 本次搜索是否被「未连接引擎与资源库」拦下 —— 决定空态是"没结果"还是"没连上"。
+  bool needConn = false;
   Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(const Duration(milliseconds: 350)); // 输入防抖: 停顿 350ms 再发请求, 避免逐字打引擎
@@ -2118,7 +2175,7 @@ class _NSR extends State<NovelSearchResults> {
     final p = await SharedPreferences.getInstance();
     history.remove(q); history.insert(0, q); history = history.take(10).toList();
     await p.setStringList('sh_novel', history);
-    setState(() { loading = true; groups = []; });
+    setState(() { loading = true; groups = []; needConn = false; });
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('novel', q);
@@ -2128,6 +2185,7 @@ class _NSR extends State<NovelSearchResults> {
       } else {
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) { lastQ = ''; await go(q); return; }
+        if (mounted) setState(() => needConn = true);
         throw Exception('未连接引擎或资源库');
       }
     }
@@ -2159,7 +2217,10 @@ class _NSR extends State<NovelSearchResults> {
           onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => g['engine'] == true
             ? EngineItemPage(type: 'novel', item: Map<String, dynamic>.from(b))
             : TocPage(book: Book.from(Map<String, dynamic>.from(b)))))),
-      ], if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('输入关键词搜索', style: TextStyle(color: Colors.grey))),
+      ], searchEmptyState(
+        loading: loading, query: widget.query, searched: lastQ.isNotEmpty,
+        needConn: needConn, groups: groups, listKeys: const ['books'], kind: '书籍',
+        onFix: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
     ])), ]); }
 
 class ShelfPage extends StatefulWidget { final String kind; final Widget Function(Book) builder; const ShelfPage({super.key, required this.kind, required this.builder}); @override State<ShelfPage> createState() => _Sh(); }
@@ -2276,8 +2337,12 @@ class _Sh extends State<ShelfPage> { List<Book> items = []; List<Map<String, dyn
 
 class TocPage extends StatefulWidget { final Book book; const TocPage({super.key, required this.book}); @override State<TocPage> createState() => _T(); }
 class _T extends State<TocPage> { List chapters = []; bool loading = true; int lastRead = -1;
+  // ★此前目录加载失败被 `catch (e) {}` 静默吞掉：页面显示「0 章」+ 一片空白，
+  //   用户无法区分「加载失败」与「这本书真的没有章节」。漫画详情页与视频详情页
+  //   都正确地把错误落到 err 并展示，唯独小说目录页没有 —— 这里补齐。
+  String? err;
   @override void initState() { super.initState(); Book.recordHistory(widget.book, 'novel'); load(); }
-  Future<void> load() async { try {
+  Future<void> load() async { err = null; try {
       if (widget.book.sourceId == 'engine') {
         // 引擎直连书: 目录走 THP /thp/chapters
         chapters = await EngineDirect.chapters('novel', widget.book.bookUrl);
@@ -2289,7 +2354,7 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
       } else {
         final r = await Api.get('/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
         chapters = r['data'] ?? [];
-      } } catch (e) {}
+      } } catch (e) { err = '$e'; }
     final p = await SharedPreferences.getInstance();
     lastRead = p.getInt('progress_${widget.book.bookUrl}') ?? -1;
     try { final r = await Api.get('/v1/reading-progress');
@@ -2305,7 +2370,12 @@ class _T extends State<TocPage> { List chapters = []; bool loading = true; int l
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(widget.book.name), actions: [
       IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
       Text('  ${chapters.length}章  ', style: const TextStyle(color: Colors.grey))]),
-    body: loading ? const Center(child: CircularProgressIndicator()) : Column(children: [
+    body: loading ? const Center(child: CircularProgressIndicator())
+      : (err != null && chapters.isEmpty)
+        ? Center(child: SingleChildScrollView(child: _searchEmptyBox(Icons.error_outline,
+            '目录加载失败', err!, fixLabel: '重试',
+            onFix: () { setState(() { loading = true; err = null; }); load(); })))
+        : Column(children: [
       if (lastRead >= 0 && lastRead < chapters.length) MaterialBanner(content: Text('上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
         actions: [TextButton(onPressed: () => openAt(lastRead), child: Text(tr('继续阅读'))),
                   TextButton(onPressed: () => setState(() => lastRead = -1), child: const Text('关闭'))]),
@@ -2358,11 +2428,12 @@ class _Cs extends State<ComicSection> { int sub = 0;
 class ComicSearchResults extends StatefulWidget { final String query; const ComicSearchResults({super.key, required this.query}); @override State<ComicSearchResults> createState() => _CSR(); }
 class _CSR extends State<ComicSearchResults> {
   List<Map> groups = []; bool loading = false; String lastQ = ''; int _seq = 0;
+  bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(const Duration(milliseconds: 350)); // 输入防抖: 停顿 350ms 再发请求, 避免逐字打引擎
     if (!mounted || mySeq != _seq) return;
-    setState(() { loading = true; groups = []; });
+    setState(() { loading = true; groups = []; needConn = false; });
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('comic', q);
@@ -2372,6 +2443,7 @@ class _CSR extends State<ComicSearchResults> {
       } else {
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) { lastQ = ''; await go(q); return; }
+        if (mounted) setState(() => needConn = true);
         throw Exception('未连接引擎或资源库');
       }
     }
@@ -2394,7 +2466,10 @@ class _CSR extends State<ComicSearchResults> {
             ? EngineItemPage(type: 'comic', item: Map<String, dynamic>.from(b))
             : ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? '')))),
       ],
-            if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关漫画', style: TextStyle(color: Colors.grey))),
+      searchEmptyState(
+        loading: loading, query: widget.query, searched: lastQ.isNotEmpty,
+        needConn: needConn, groups: groups, listKeys: const ['items'], kind: '漫画',
+        onFix: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
     ])), ]); }
 
 class ComicDetailPage extends StatefulWidget { final String sourceId, comicId, title; const ComicDetailPage({super.key, required this.sourceId, required this.comicId, required this.title}); @override State<ComicDetailPage> createState() => _Cd(); }
@@ -2535,11 +2610,12 @@ class _MpList extends State<_MusicPlaylist> {
 class MusicSearchResults extends StatefulWidget { final String query; const MusicSearchResults({super.key, required this.query}); @override State<MusicSearchResults> createState() => _MSR(); }
 class _MSR extends State<MusicSearchResults> {
   List<Map> groups = []; bool loading = false; String lastQ = ''; int _seq = 0;
+  bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(const Duration(milliseconds: 350)); // 输入防抖: 停顿 350ms 再发请求, 避免逐字打引擎
     if (!mounted || mySeq != _seq) return;
-    setState(() { loading = true; groups = []; });
+    setState(() { loading = true; groups = []; needConn = false; });
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('music', q);
@@ -2549,6 +2625,7 @@ class _MSR extends State<MusicSearchResults> {
       } else {
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) { lastQ = ''; await go(q); return; }
+        if (mounted) setState(() => needConn = true);
         throw Exception('未连接引擎或资源库');
       }
     }
@@ -2579,7 +2656,10 @@ class _MSR extends State<MusicSearchResults> {
             ? Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'music', item: Map<String, dynamic>.from(m))))
             : play(Map<String, dynamic>.from(m), g['sourceId'] ?? '')),
       ],
-      if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关音乐', style: TextStyle(color: Colors.grey))),
+      searchEmptyState(
+        loading: loading, query: widget.query, searched: lastQ.isNotEmpty,
+        needConn: needConn, groups: groups, listKeys: const ['items'], kind: '音乐',
+        onFix: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
     ])), ]); }
 
 class MusicPlayPage extends StatefulWidget { final Map item; final String sourceId; const MusicPlayPage({super.key, required this.item, this.sourceId = ''}); @override State<MusicPlayPage> createState() => _MPlay(); }
@@ -2922,14 +3002,29 @@ class _Vs extends State<VideoSection> { int sub = 0;
 class LivePage extends StatefulWidget { const LivePage({super.key}); @override State<LivePage> createState() => _Live(); }
 class _Live extends State<LivePage> {
   final ctrl = TextEditingController(); List<Map> channels = []; bool loading = false;
+  bool searched = false;  // 是否已经搜过一轮（决定空态说"请搜索"还是"没找到"）
+  bool needConn = false;  // 本次是否因为没连引擎/后端而空
+  // ★此前这里**只走家庭后端**，没有引擎分支：没配后端时点搜索必然抛异常，
+  //   只弹一句「错误: …」然后列表永远空白，用户无从知道"这个模块需要后端"。
+  //   录像/直播频道在引擎的 video 类源里同样有，所以与视频模块共用一条取数路径。
   Future<void> go([String? preset]) async { final q = preset ?? ctrl.text.trim(); if (q.isEmpty) return;
-    setState(() { loading = true; channels = []; });
-    try { final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}');
-      for (final g in (r['data'] as List? ?? [])) {
-        if (g['ok'] == true) for (final it in (g['items'] as List? ?? [])) channels.add({...Map<String, dynamic>.from(it), 'sourceId': g['sourceId']});
+    setState(() { loading = true; channels = []; needConn = false; });
+    try {
+      if (EngineDirect.connected) {
+        final items = await EngineDirect.search('video', q);
+        for (final it in items) channels.add({...Map<String, dynamic>.from(it), 'engine': true});
+      } else if (Api.base.isNotEmpty) {
+        final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}');
+        for (final g in (r['data'] as List? ?? [])) {
+          if (g['ok'] == true) for (final it in (g['items'] as List? ?? [])) channels.add({...Map<String, dynamic>.from(it), 'sourceId': g['sourceId']});
+        }
+      } else {
+        await EngineDirect.autoConnect();
+        if (EngineDirect.connected) { await go(q); return; }
+        needConn = true;
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
-    setState(() => loading = false); }
+    if (mounted) setState(() { loading = false; searched = true; }); }
   @override Widget build(BuildContext c) => Column(children: [
     Padding(padding: const EdgeInsets.all(8), child: Row(children: [
       Expanded(child: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '搜频道(如:央视/卫视/电影)', border: OutlineInputBorder(), isDense: true), onSubmitted: (_) => go())),
@@ -2938,15 +3033,22 @@ class _Live extends State<LivePage> {
       ActionChip(label: Text(h, style: const TextStyle(fontSize: 12)), onPressed: () { ctrl.text = h; go(h); }) ]),
     if (loading) const LinearProgressIndicator(),
     Expanded(child: channels.isEmpty
-      ? const Center(child: Text('搜索频道名, 或点上方热词', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+      ? Center(child: SingleChildScrollView(child: searched
+          ? _searchEmptyBox(needConn ? Icons.link_off : Icons.search_off,
+              needConn ? '还没连上内容来源' : '没有找到相关频道',
+              '直播频道由引擎 App 或家庭后端提供，两者任连其一即可；\n也可以在「我的 → 引擎直连」里查看当前连接状态。',
+              onFix: needConn ? () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage())) : null)
+          : _searchEmptyBox(Icons.live_tv, '搜索频道名', '也可以点上方热词快速试一个。')))
       : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.75),
         itemCount: channels.length, itemBuilder: (_, i) {
           final ch = channels[i];
-          return GestureDetector(onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoPlayPage(
-              sourceId: ch['sourceId'] ?? '', epUrl: ch['id'] ?? '', flag: '', title: ch['name'] ?? '频道',
-              episodes: [{'name': ch['name'], 'url': ch['id'], 'flag': ''}], index: 0))),
+          return GestureDetector(onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ch['engine'] == true
+              ? EngineItemPage(type: 'video', item: Map<String, dynamic>.from(ch))
+              : VideoPlayPage(
+                  sourceId: ch['sourceId'] ?? '', epUrl: ch['id'] ?? '', flag: '', title: ch['name'] ?? '频道',
+                  episodes: [{'name': ch['name'], 'url': ch['id'], 'flag': ''}], index: 0))),
             child: Column(children: [
-              Expanded(child: (ch['coverUrl'] ?? '') != '' ? Image.network(Api.img(ch['coverUrl']), fit: BoxFit.cover,
+              Expanded(child: (ch['coverUrl'] ?? '') != '' ? Image.network(ch['engine'] == true ? '${ch['coverUrl']}' : Api.img(ch['coverUrl']), fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26, child: Icon(Icons.live_tv))) : const ColoredBox(color: Colors.black26, child: Icon(Icons.live_tv))),
               Padding(padding: const EdgeInsets.all(4), child: Text(ch['name'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
             ])); })),
@@ -2956,11 +3058,12 @@ Widget _videoDetail(Book b) => VideoDetailPage(sourceId: b.sourceId, vodId: b.bo
 class VideoSearchResults extends StatefulWidget { final String query; const VideoSearchResults({super.key, required this.query}); @override State<VideoSearchResults> createState() => _VSR(); }
 class _VSR extends State<VideoSearchResults> {
   List<Map> groups = []; bool loading = false; String lastQ = ''; int _seq = 0;
+  bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async { if (q.isEmpty || q == lastQ) return; lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(const Duration(milliseconds: 350)); // 输入防抖: 停顿 350ms 再发请求, 避免逐字打引擎
     if (!mounted || mySeq != _seq) return;
-    setState(() { loading = true; groups = []; });
+    setState(() { loading = true; groups = []; needConn = false; });
     try {
       if (EngineDirect.connected) {
         final items = await EngineDirect.search('video', q);
@@ -2970,6 +3073,7 @@ class _VSR extends State<VideoSearchResults> {
       } else {
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) { lastQ = ''; await go(q); return; }
+        if (mounted) setState(() => needConn = true);
         throw Exception('未连接引擎或资源库');
       }
     }
@@ -2992,7 +3096,10 @@ class _VSR extends State<VideoSearchResults> {
             ? EngineItemPage(type: 'video', item: Map<String, dynamic>.from(b))
             : VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? '')))),
       ],
-            if (groups.isEmpty && !loading) const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关视频', style: TextStyle(color: Colors.grey))),
+      searchEmptyState(
+        loading: loading, query: widget.query, searched: lastQ.isNotEmpty,
+        needConn: needConn, groups: groups, listKeys: const ['items'], kind: '视频',
+        onFix: () => Navigator.push(c, MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
     ])), ]); }
 
 class VideoDetailPage extends StatefulWidget { final String sourceId, vodId, title; const VideoDetailPage({super.key, required this.sourceId, required this.vodId, required this.title}); @override State<VideoDetailPage> createState() => _Vd(); }

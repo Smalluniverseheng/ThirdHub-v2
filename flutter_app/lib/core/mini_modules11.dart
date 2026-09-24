@@ -6,6 +6,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
+import 'browser_page.dart';
+
 // ═══ 共享相册: 选照片文件夹 → 网格浏览 + 幻灯片 (云端共享待资源库接口) ═══
 class SharedAlbumPage extends StatefulWidget { const SharedAlbumPage({super.key}); @override State<SharedAlbumPage> createState() => _Sa(); }
 class _Sa extends State<SharedAlbumPage> {
@@ -246,8 +248,13 @@ class _Dl extends State<DeviceLinkPage> {
             leading: const Icon(Icons.devices_outlined, size: 20),
             title: Text(ip, style: const TextStyle(fontSize: 13)),
             subtitle: Text('$kind (端口 $port)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            trailing: port == '80' || port == '8080'
-              ? IconButton(icon: const Icon(Icons.open_in_new, size: 16), onPressed: () {})
+            // ★此前这里是空回调 `onPressed: () {}` —— 扫到了同网段的网页服务，
+            //   那个「打开」图标点了毫无反应（页面文案明说可以"看摄像头"）。
+            //   现改为用内置浏览器直接打开，不跳出应用、不依赖外部 App。
+            trailing: (port == '80' || port == '8080')
+              ? IconButton(icon: const Icon(Icons.open_in_new, size: 16), tooltip: '用内置浏览器打开',
+                  onPressed: () => Navigator.push(c, MaterialPageRoute(
+                    builder: (_) => BrowserPage(initialUrl: 'http://$ip:$port'))))
               : null);
         })),
   ]);
