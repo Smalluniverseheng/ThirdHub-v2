@@ -233,6 +233,106 @@ void main() {
   ck('reader_brightness 往返 = 0.8', round['reader_brightness'] == 0.8);
   ck('vol_turn 往返 = true', round['vol_turn'] == true);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── 12. th_settings 取行（一用户多行）──
+  //
+  // 为什么钉这里：`th_settings` 是「一用户多行」的通用键值表 —— 网页端
+  // js/ai/ai-api.js 把各厂商 API Key 也写进同一张表（id = 'ai:key:<provider>'，
+  // data 是**字符串**）。PostgREST 不保证顺序，所以读设置**必须按 id 挑行**。
+  // 取错行有两个可观测后果，本段正面复现它们：
+  //   ① settingsDown 读不到 settings → 写回 0 键 = 「点了同步没反应」
+  //   ② settingsUp 合并基线变空 → 云端另 25 键 + kv 被抹掉（数据丢失）
+  // 夹具用的是**真实云端抓下来的行形状**（账号 67fd9596…，2026-09-25 实测）。
+  // ══════════════════════════════════════════════════════════════════════════
+  print('== 12. th_settings 取行 ==');
+
+  const String rpUid = '67fd9596-6843-4323-b732-78380aa8422e';
+  // 真实形状：{ id, data: { settings: { s, kv }, updatedAt } }
+  Map<String, dynamic> rpSettingsRow() => <String, dynamic>{
+        'id': rpUid,
+        'data': <String, dynamic>{
+          'settings': <String, dynamic>{
+            's': <String, dynamic>{for (final k in webDefaults) k: 'web-$k', 'theme': 'auto', 'lang': 'zh'},
+            'kv': <String, dynamic>{'anchor:lastRead': 'book-42'},
+          },
+          'updatedAt': 1789137190113,
+        },
+      };
+  // 真实形状：网页端 ai-api.js 写进来的 API Key 行 —— data 是**字符串**
+  Map<String, dynamic> rpKeyRow() => <String, dynamic>{
+        'id': 'ai:key:xiaomi',
+        'data': 'sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      };
+  // 客户端「读到一行之后」实际会取到几个键（与 cloud.dart 的读法一致）
+  int rpKeyCount(Map<String, dynamic>? row) {
+    final d = row == null ? null : row['data'];
+    if (d is! Map) return 0;
+    final st = d['settings'];
+    if (st is! Map) return 0;
+    final s = st['s'];
+    if (s is! Map) return 0;
+    return s.length;
+  }
+
+  final rpTrapFirst = <dynamic>[rpKeyRow(), rpSettingsRow()];
+  final rpTrapLast = <dynamic>[rpSettingsRow(), rpKeyRow()];
+
+  ck('空列表 → null', SettingsBridge.pickSettingsRow(<dynamic>[], rpUid) == null);
+  ck('唯一行即设置行 → 取到它',
+      SettingsBridge.pickSettingsRow(<dynamic>[rpSettingsRow()], rpUid)?['id'] == rpUid);
+  ck('★ 陷阱行在前 → 仍取到设置行（旧写法 list.first 会取到陷阱行）',
+      SettingsBridge.pickSettingsRow(rpTrapFirst, rpUid)?['id'] == rpUid);
+  ck('★ 陷阱行在后 → 仍取到设置行',
+      SettingsBridge.pickSettingsRow(rpTrapLast, rpUid)?['id'] == rpUid);
+  ck('★ 两种顺序结果一致（与 PostgREST 返回顺序解耦）',
+      SettingsBridge.pickSettingsRow(rpTrapFirst, rpUid)?['id'] ==
+          SettingsBridge.pickSettingsRow(rpTrapLast, rpUid)?['id']);
+  ck('三行（设置行 + key 行 + keys 列表行）也稳定取到设置行',
+      SettingsBridge.pickSettingsRow(<dynamic>[
+        rpKeyRow(),
+        <String, dynamic>{'id': 'ai:keys:moonshot', 'data': <dynamic>['sk-1', 'sk-2']},
+        rpSettingsRow(),
+      ], rpUid)?['id'] == rpUid);
+  ck('行里没有 id 字段 → 退回第一行（兼容历史数据）',
+      SettingsBridge.pickSettingsRow(<dynamic>[
+        <String, dynamic>{'data': 1}
+      ], rpUid) != null);
+
+  // 取错行的后果（正面复现，证明这条规则不是洁癖）
+  final rpWrong = rpTrapFirst.first as Map<String, dynamic>;
+  ck('陷阱行的 data 确实是字符串（不是 {settings:…}）', rpWrong['data'] is String);
+  ck('★ 取错行 → settingsDown 读到 0 键（表现：点了同步没反应）', rpKeyCount(rpWrong) == 0);
+  ck('★ 取对行 → 读到 38 键', rpKeyCount(SettingsBridge.pickSettingsRow(rpTrapFirst, rpUid)) == 38);
+
+  // 合并语义：基线取错行会不会把云端另 25 键 + kv 抹掉
+  Map<String, dynamic> rpMerge(Map<String, dynamic> row) {
+    final d = row['data'];
+    final Map<String, dynamic> cloudS =
+        (d is Map && d['settings'] is Map && (d['settings'] as Map)['s'] is Map)
+            ? Map<String, dynamic>.from(((d['settings'] as Map)['s']) as Map)
+            : <String, dynamic>{};
+    final Map<String, dynamic> cloudKv =
+        (d is Map && d['settings'] is Map && (d['settings'] as Map)['kv'] is Map)
+            ? Map<String, dynamic>.from(((d['settings'] as Map)['kv']) as Map)
+            : <String, dynamic>{};
+    for (final b in SettingsBridge.bridges) {
+      cloudS[b.cloud] = 'mine-${b.cloud}';
+    }
+    return <String, dynamic>{'s': cloudS, 'kv': cloudKv};
+  }
+
+  final rpGood = rpMerge(SettingsBridge.pickSettingsRow(rpTrapFirst, rpUid)!);
+  final rpBad = rpMerge(rpWrong);
+  final rpCloudOnly = <String>[for (final b in SettingsBridge.bridges) b.cloud];
+  ck('基线取对行：合并后仍 38 键', (rpGood['s'] as Map).length == 38);
+  ck('基线取对行：云端独有 25 键全部保留',
+      webDefaults.where((k) => !rpCloudOnly.contains(k)).every((k) => (rpGood['s'] as Map)[k] == 'web-$k'));
+  ck('基线取对行：kv 保留', (rpGood['kv'] as Map)['anchor:lastRead'] == 'book-42');
+  ck('★ 基线取错行：只剩 13 键（25 个云端键被抹掉）', (rpBad['s'] as Map).length == 13);
+  ck('★ 基线取错行：kv 被清空（数据丢失）', (rpBad['kv'] as Map).isEmpty);
+  ck('损失量 = 38 - 13 = 25，正好是「客户端不映射」的那批',
+      (rpGood['s'] as Map).length - (rpBad['s'] as Map).length == 25);
+
   print('');
   print('PASS $pass   FAIL $fail');
   if (fail == 0) print('\n✅ 全部通过');

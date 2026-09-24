@@ -221,16 +221,20 @@ class Cloud {
   //  （注：库里 version 列恒为 1、从不自增，所以"带版本号防冲突"实际等于 LWW by updatedAt。）
 
   /// 读回云端设置行（未登录 / 无行 → null）
+  ///
+  /// ★ 取行必须走 `SettingsBridge.pickSettingsRow`（按 id 挑，不是取第一个）——
+  ///   `th_settings` 是「一用户多行」的通用键值表，网页端会把 `ai:key:*` 也写进同一张表。
+  ///   取错行的后果与机械成因写在那个方法上；它放在 bridge 里是为了能进纯 Dart 自检。
   static Future<Map<String, dynamic>?> _settingsRow() async {
     if (!loggedIn) return null;
     try {
+      // select 必须带 `id` —— 没有它就没法在 pickSettingsRow 里把设置行认出来
       final r = await http.get(
-        Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=data,updated_at'),
+        Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=id,data,updated_at'),
         headers: _authHeaders);
       if (r.statusCode != 200) return null;
       final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
-      if (list.isEmpty) return null;
-      return Map<String, dynamic>.from(list.first);
+      return SettingsBridge.pickSettingsRow(list, userId);
     } catch (_) { return null; }
   }
 

@@ -238,4 +238,30 @@ class SettingsBridge {
     ];
     return <String, List<String>>{'bridged': bridged, 'cloudOnly': cloudOnly, 'localOnly': localOnly};
   }
+
+  /// 从一批 `th_settings` 行里挑出「设置行」。
+  ///
+  /// ★ 必须**挑**，不能取第一个 —— 这张表是「一用户多行」的通用键值表：
+  ///   网页端 `js/ai/ai-api.js` 会把各厂商的 API Key / Key 列表也写进来，id 是
+  ///   `ai:key:<provider>` / `ai:keys:<provider>`，而它们的 `data` 是**字符串或数组**，
+  ///   不是 `{settings:{…}}`。实测真实账号 `67fd9596…` 就同时有两行
+  ///   （`id=<uid>` 与 `id=ai:key:xiaomi`）。PostgREST **不保证返回顺序**，取 first
+  ///   有概率取到那种行：
+  ///     · `settingsDown()` 读不到 `settings` → 写回 0 个键 → 表现就是「点了同步没反应」；
+  ///     · `settingsUp()` 的合并基线变空 → 只把认识的 13 键写回 `id=<uid>` 行
+  ///       → 云端另外 25 个键连同 `kv` 一起被抹掉（这正是「整体覆盖」那类数据丢失）。
+  ///   网页端 `js/modules/settings-sync.js` 的 `rows.find((r) => r.id === u.id) || rows[0]`
+  ///   就是正确写法，这里与它**对齐**（找不到同名行时退回第一行，兼容历史数据）。
+  ///
+  /// 放在本文件（而非 `cloud.dart`）是因为：本文件是**零 Flutter 依赖**的纯 Dart，
+  /// 能进 `_probe/run_checks.sh` 的 VM 自检 —— 本机 `dart analyze` 已废（管道池耗尽），
+  /// 纯 Dart 自检是唯一能本地跑起来的类型/逻辑闸门。
+  static Map<String, dynamic>? pickSettingsRow(List<dynamic> rows, String uid) {
+    if (rows.isEmpty) return null;
+    for (final e in rows) {
+      final m = Map<String, dynamic>.from(e as Map);
+      if (m['id'] == uid) return m;
+    }
+    return Map<String, dynamic>.from(rows.first as Map);
+  }
 }
