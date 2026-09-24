@@ -52,8 +52,8 @@
 | 部件 | 版本 | 状态 | 下载通道 |
 |---|---|---|---|
 | V4 前端 APK | **4.49.0 / 50536** | ✅ **已四通道发布 + 五通道独立校验全 PASS**。构建源提交 `7bc57c73`，CI `build-apk 36054417044` success；APK sha256 `50bba599c003d0ec7cfa9315f831cdfb1d960218f27c9a069da2d8cfa5bfe922` / 29803914 B；`pickSettingsRow` 符号已在二进制中（4.48.0 二进制为 0 命中，见 §6 #3b） | Supabase `latest-app.json` + 桶三通道 + Release |
-| 网页端主站 | **3.35.0** | 已上线（`thirdhub.pages.dev`，含 GitHub 推送 `b91ba85e`）；V4 下载卡片**实时读** `latest-app.json`，无需为 V4 发版单独部署前端 | — |
-| 家庭后端 | **0.8.4** | 已发三通道（zip 已重打并解包冒烟：118/118 + 174/0） | ① `downloads/thirdhub-backend-0.8.4.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.4`（id `396047309`，资产 5860372 B，digest 与本地逐字节一致）—— 本轮补建** |
+| 网页端主站 | **3.35.1** | 第九轮发版（`tools/release.cjs 3.35.1`）：把下载中心的后端包指向 **0.8.5**。「清单类资源必须走完整发版」——`app-versions.json` 被 SW 接管，不能只 deploy-only | — |
+| 家庭后端 | **0.8.5** | ✅ **已发三通道 + 解包冒烟 13/13 PASS**。zip 6028828 B / sha256 `398524116dca00be7b1e47cb35fb4c402f15ddc56d08b4b1dc8a8de16fa62ca8` | ① `downloads/thirdhub-backend-0.8.5.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.5`（id `396116826`，资产已下载回算 sha256 逐字节一致）** |
 | 旁支（完全体） | 0.4.4 | **已搁置，不要动**（网站端介绍已重写并上线，见 §2） | — |
 
 > **发版批次记**：4.49.0 的 CI 先后跑出两个 run（`36053636554` on `7d26d314`、`36054417044` on `7bc57c73`），
@@ -157,17 +157,18 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 | 3 | 两端数据同步端到端实测 | ✅ **已完成（本轮）**：`_probe/b3_e2e.cjs` 用 service role 建临时用户 → 换**真实 anon key 取真 `authenticated` JWT** → 6 表按客户端原样的 insert/upsert/读回，含 RLS、嵌套+中文载荷、`th_settings` 形状与合并语义、多行歧义；**0 FAIL（连跑两次）**，跑完 6 表行数回到基线（0/13/44/0/5/6）且既有行逐字节未变 | 真机那一段（改本机 → 换端看到）仍留在 #4 里一起做；本机无设备 |
 | 3b | **`th_settings` 取行缺陷（本轮新发现并修复）** | ✅ 代码已修并推 `7bc57c73`；自检 95 → **111**，八连 **PASS 1195 / FAIL 0** | 根因：`th_settings` 是「一用户多行」通用表，网页端把 `ai:key:<provider>` 也写进同一张表（`data` 是字符串/数组），而客户端 `select` 不带 `id` 且取 `list.first`，PostgREST 又不保证顺序 → 读空（「点了同步没反应」）+ 合并基线为空时覆盖掉云端其余 25 键与 `kv`。修法与网页端 `rows.find(r => r.id === u.id) \|\| rows[0]` 对齐 |
 | 4 | **Agent 接入实测** | 🚧 **代码已接通 + 本轮补上缺件直达入口** | 仍需**真机**跑一轮（配对家庭后端 / 或只配本机模型走降级路径）；本机无设备故未做 |
-| 5 | **娱乐性（内容线可用）** | 🚧 已修 5 处（4.48.0）+ 5 处（4.49.0：订阅泄漏×2、监听器不摘×2、删除假成功、回帖时间戳、名实文案×2） | 根因仍在：源包陈旧（148 条抽测仅 20 条真出结果）。方案：把 `tools/source-health.cjs` 产出的健康源包接进内容线 |
-| 6 | **阅读模块逐页可用** | ❌ 未做 | 同 #5 |
+| 5 | **娱乐性（内容线可用）** | 🚧→✅ **后端侧打通**（第九轮）：三层根因全修 —— ① 后端 0.8.4 的包**根本起不来**（`peerHub` 的 TDZ）；② 预置源包**永远导不进来**（判据恒真）；③ 引擎缺 Legado 的 `##` 后处理等 3 处规则语义。随包发 **12 条引擎实测可用源**，同一批源 **3/29 → 12/29** | 前端侧（真机打开阅读）留 #4；「开箱可用」已由 `_probe/_content_e2e.cjs` **12/12 PASS** 证明（真启动 + 真 `/v1/search` → 76 本书 / 3.8s） |
+| 6 | **阅读模块逐页可用** | 🚧 **本轮未验**（只证明了「搜得出书」） | 对后端 `/v1/toc`、`/v1/content` 补一轮真探针（挑 3~5 条健康源，真拉章节列表与正文非空）。**下一轮第一个该做的** |
 | 7 | 两个 CF 用起来 | ❌ 未做 | **R2 未开通（10042）是硬前置**，需用户绑支付方式；在开通前先落地 D1/KV 能做的部分 |
 | 8 | 两个 Supabase 用起来 | ❌ 未做 | 大号 ref 在孟买与宪法「新加坡」冲突 → **需用户拍板**：迁区 or 改宪法 |
 | 9 | P3 板块铺开（笔记/待办/下载中心/相册UI/浏览器增强） | ❌ 未做 | 按优先级，P1/P2 之后 |
 | 10 | P4 后端数据层 + 后端 Android APK | ❌ 未做 | — |
 | 11 | N-1~N-12 新增模块、AI-1~AI-10、E-1~E-6 | ❌ 未做 | 见 `docs/planning/ThirdHub-功能规划-v3.0.md` |
 | 12 | `docs/` 里的过程文档归并（`M1-SPRINT.md` / `PLAN-v3.md`） | ❌ 未做 | 低优 |
-| 13 | 源健康流水线接入日常 | ❌ 未做 | 与 #5 合并做 |
-| 14 | 后端 Android APK（内嵌 server）刷新 | ❌ 未做 | `latest-backend.json` 仍是 **4.2.0**、内嵌 2026-09-20 的 server 代码 → 与 0.8.4 不一致。重建需 Android+Kotlin 工具链，本轮未做（**zip 包已是最新**，仅这个 APK 落后） |
-| 15 | 网站静态清单部署 | ✅ **已完成**：站点 3.34.0 → **3.35.0** 已上线（`tools/release.cjs` 六步全通，含 GitHub 推送 `b91ba85e`）；线上已核实 `server` = 0.8.4 / 5860372、完全体段 mirrors=2 且含「已搁置」措辞 | — |
+| 13 | 源健康流水线接入日常 | 🚧 **本轮建立并修正口径** | ① `tools/source-health.cjs` 的 `--out` 原先**只导 `{module,pack,name,host,url}`、没有源规则 → 导不进去**；已改为带完整 `source` 对象 + 新增 `--out-pack` 写纯 Legado 数组（`--out` 同时给则自动派生 `<name>.pack.json`）。② **代理口径高估可用性**（代理 29/300 vs 引擎真取 3/29）→ 新增 `_probe/engine_source_verify.cjs` 作为**引擎口径权威闸门**，日常以它为准。③ 待办：把这两个口径接进定时任务 |
+| 14 | 后端 Android APK（内嵌 server）刷新 | ❌ 未做 | `latest-backend.json` 仍是 **4.2.0**、内嵌 2026-09-20 的 server 代码 → 与 **0.8.5** 不一致。重建需 Android+Kotlin 工具链，本轮未做（**zip 包已是最新**，仅这个 APK 落后） |
+| 15 | 网站静态清单部署 | ✅ **第九轮再做一次**：站点 3.35.0 → **3.35.1**（`tools/release.cjs` 六步，把 `server` 段指向 0.8.5） | 线上已核实 `server` = 0.8.5 / 6028828 |
+| 18 | **家庭后端 0.8.5 发布（第九轮新增）** | ✅ **已完成**：`_pack_backend.mjs`（打包脚本化 + 5 道包内硬闸门）→ `_smoke_backend_zip.mjs` **13/13 PASS** → 三通道（版本化桶 / 别名桶 / Release `backend-v0.8.5` id `396116826`，资产下载回算 sha256 一致）→ 网站清单同步 | 参见当天日志第九轮 A9-2 |
 | 16 | 娱乐线剩余缺陷 | 🚧 4.49.0 修掉 6 类（`positionStream` 泄漏、监听器不摘 + setState-after-dispose、共享清单静默失败、共享相册删除假成功、共享相册名实不符、论坛回帖裸时间戳） | **仍未做**：视频详情页无引擎兜底、资讯/播客硬编码源无兜底、14 处 `setState(() async ...)` 首屏竞态 |
 | 17 | 网页端 `updated` 日期比本地日期早一天 | ⚠ 已知小缺陷 | `tools/release.cjs` 用 `new Date().toISOString().slice(0,10)`（UTC）写 `updated`/`releaseDate`，本地凌晨发布时会写成前一天。修法：改本地日期。属站点脚本改动，未在本轮动 |
 
@@ -236,6 +237,19 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     - **发版前先看「在途版本有没有被人发过」**：`GET /releases/tags/v<ver>` + 回读 `latest-app.json`。已被别人发过就别抢，改为升一版。
     - **产物认提交，不认版本号**：CI 里同一版本号可能同时有多个 run（不同 head）。发版要挑**含自己那次修复的那个 run** 的 artifact，否则同版本号不同字节 = 已装用户永远收不到更新。
     - 交接文档/日志是「最后写入者胜」，被覆盖了不致命；**代码进 git 才算数**，所以优先把改动推上去。
+11. **★ `/v1/*` 有 `x-th-token` 闸门（`index.js:492`）——不带密钥一律 401**，极易误判成「后端没起来」。
+    探针的写法：`headers: { 'x-th-token': fs.readFileSync('server/data/secret','utf8').trim() }`。
+    （`/v1/meta`、`/v1/pair`、`/agent/peer*`、`/thp/*`、静态页**免鉴权**，所以只看这几个会以为一切正常。）
+12. **Windows `tar.exe -tf` 的输出是 CRLF**：`execFileSync(...).split('\n')` 后每行尾带 `\r`，
+    `.endsWith('.json')` **全假** → 打包自检假失败。用 `split(/\r?\n/).map(s=>s.trim())`。
+13. **发布 zip 是平铺布局**（`index.js` 与 `test_*.cjs`、`routes-data.js` 同级），
+    而仓内脚本常写 `path.join(__dirname,'..','server','x.js')` → **解包里必挂 `MODULE_NOT_FOUND`**，
+    看着像「包坏了」其实是测试自己找不到路。脚本一律「同目录优先、上跳兜底」。
+14. **★ 模块 `require` 的位置会变成 TDZ 崩溃**：`server/index.js` 里 `peerHub.init()` 在 244 行、
+    而 `const peerHub = require('./peer-hub')` 被放在 367 行的「路由模块分组」里 → 启动即抛
+    `ReferenceError: Cannot access 'peerHub' before initialization`，**整个后端起不来**。
+    规矩：**凡文件中部调用某模块的 `init()`，先确认它的 `require` 在同文件更早处**；
+    且「路由模块分组」这种后来重排过位置的分组最容易埋这个坑（0.8.4 出货包就带着它）。
 
 ---
 
@@ -249,6 +263,12 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
 5. **版本号残留 grep**（前端 `kAppVersion/kAppCode` + `pubspec.yaml` + `README.md`；**Node 侧自 0.8.4 起不再需要跟着改**）
 6. **新增/改动依赖 flutter 的 lib 文件时，以上全绿也 ≠ 能编译 → 必须推 CI 真编译一轮。**
    **★ 无法本地类型检查时的替代闸门**：逐个把新增调用点对到定义处（签名 + 参数名逐项核对），因为 `dart analyze` 在本机必死（见 §9.2）。
+7. **发布 zip 必须「解包冒烟」**（第九轮新增，两脚本都在 `D:/ai/_probe/`）：
+   `_pack_backend.mjs`（打包 + 5 道包内硬闸门：版本一致 / 预置源在包内且 ≥2 条 / **不许混进 `data/`（含密钥）** /
+   回读包内 `index.js`·`engine.js` **关键修复必须在**） → `_smoke_backend_zip.mjs`（解到干净目录 →
+   跑包内三重自检 → 真启动 → 走 `/v1/search` 真出书）。**本地 `server/` 的测试全绿 ≠ 包能用**
+   —— 0.8.4 的包就是「测试全绿但装上打不开、且包里没有源」。后端发版四步：
+   打包 → 解包冒烟 → 三通道（版本化桶 / 别名桶 / Release `_rel_backend.mjs` 读回校验）→ 网站清单 `_upd_av_server.mjs` + `tools/release.cjs`。
 
 ---
 
