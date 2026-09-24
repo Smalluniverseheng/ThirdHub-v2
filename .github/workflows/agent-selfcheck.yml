@@ -25,6 +25,9 @@ on:
       - 'server/routes-data.js'
       - 'flutter_app/lib/core/agent_*.dart'
       - 'flutter_app/lib/core/ai_agent.dart'
+      # ai_agent_page.dart 是 Agent 控制面 UI（本轮的「去选模型 / 去填 Key」直达入口就在这里）。
+      # 此前它不在列表里 —— 改了 Agent 的 UI 反而不会触发 Agent 自检，属静默漏测。
+      - 'flutter_app/lib/core/ai_agent_page.dart'
       - 'flutter_app/lib/core/local_tools.dart'
       - 'flutter_app/tool/agent_proto_selfcheck.dart'
       - 'flutter_app/tool/agent_selfcheck.dart'

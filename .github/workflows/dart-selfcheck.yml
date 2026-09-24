@@ -1,0 +1,77 @@
+name: dart-selfcheck
+
+# 纯 Dart 自检「八连」——这是本仓改动后端到端的**最低成本闸门**。
+#
+# 为什么要有这个 workflow（此前是空白）：
+#   · 本机 `dart analyze` / `dart compile` / `flutter test` 全部因
+#     `CreateFile failed 231`（管道池耗尽）不可用 —— 也就是说本地**没有类型检查**；
+#   · 而 agent-selfcheck 只覆盖 agent_* / ai_agent / local_tools 三类路径，
+#     nav_swipe / modules / peer_hub / changelog / settings_bridge **从来没有在 CI 里跑过**，
+#     全靠「人记得在本机敲一遍」。凡是靠人记得的门禁，迟早会漏。
+#   · 本 workflow 不做类型检查（那是 build-apk 的活），只跑自检断言：
+#     秒级完成，失败信息比编译器直白得多，能一次说清是哪条契约破了。
+#
+# 八连（与 docs/HANDOVER-AI.md §10 的基线数字一一对应）：
+#   nav_swipe 57 · local_tools 135 · agent_proto 191 · modules 202
+#   agent 120 · peer_hub 327 · changelog 52 · settings_bridge 95   → PASS 1179 / FAIL 0
+#
+# 注意：这些脚本必须 `working-directory: flutter_app` 下运行 ——
+# agent_proto_selfcheck 要读 `../server/agent-profiles.json` 做逐工具对拍，
+# changelog_selfcheck 要读 `lib/main.dart` 做双向核对。
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/lib/**'
+      - 'flutter_app/tool/**'
+      - 'flutter_app/pubspec.yaml'
+      - '.github/workflows/dart-selfcheck.yml'
+  workflow_dispatch:
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+
+      - name: pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: nav_swipe
+        working-directory: flutter_app
+        run: dart run tool/nav_swipe_selfcheck.dart
+
+      - name: local_tools
+        working-directory: flutter_app
+        run: dart run tool/local_tools_selfcheck.dart
+
+      - name: agent_proto（含与服务端 agent-profiles.json 逐工具对拍）
+        working-directory: flutter_app
+        run: dart run tool/agent_proto_selfcheck.dart
+
+      - name: modules（与 main.dart 的模块注册双向核对）
+        working-directory: flutter_app
+        run: dart run tool/modules_selfcheck.dart
+
+      - name: agent
+        working-directory: flutter_app
+        run: dart run tool/agent_selfcheck.dart
+
+      - name: peer_hub
+        working-directory: flutter_app
+        run: dart run tool/peer_hub_selfcheck.dart
+
+      - name: changelog（65 模块 ↔ main.dart 双向核对）
+        working-directory: flutter_app
+        run: dart run tool/changelog_selfcheck.dart
+
+      - name: settings_bridge（设置 38 键两端一致）
+        working-directory: flutter_app
+        run: dart run tool/settings_bridge_selfcheck.dart
