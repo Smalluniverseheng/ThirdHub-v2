@@ -341,6 +341,12 @@ function resolveList($, listRule) {
     if (o.op === 'sel') {
       let n = cur.find(o.sel);
       if (!n.length && o.alt) n = cur.find(o.alt);        // 裸名双解，与规则链同一语义
+      // ★2026-09-25 自身匹配兜底：真实源常把同一选择器写两遍
+      //   （chapterList=`class.hide@tag.a`，而 `<a>` 自己就带 class `hide`），
+      //   这时 find() 只会搜后代 → 取空。这里退化成「在**当前这批元素里**筛出符合的」，
+      //   保留全部命中项（不是只取第一个 —— 列表场景丢元素就等于丢章节）。
+      if (!n.length) { const f = cur.filter ? cur.filter(o.sel) : null;
+        if (f && f.length) n = f; else if (o.alt && cur.filter) { const f2 = cur.filter(o.alt); if (f2.length) n = f2; } }
       if (o.idx != null && n.length) n = n.eq(o.idx);
       cur = n;
     }
@@ -348,6 +354,40 @@ function resolveList($, listRule) {
     else break; // text/attr 不该出现在 bookList
   }
   return cur && cur.each ? cur : $();
+}
+
+// ─── 正文段落抽取（可单测的纯函数）───
+// ★2026-09-25 修（阅读逐页 P1）：Legado 语义里 `<br>` 就是**换行**。
+//   此前不做转换 → 用 `<br>` 分段的站点整章被切成 **1 段**（实测 365小说网：3707 字 / 段数 1），
+//   端内渲染成一坨没有段落的文字墙（「能看但没法看」）。
+//   另：`textNodes` 取到的多段文本本身以 `\n` 相连，也必须按**单换行**切。
+function extractParas(htmlStr) {
+  const htmlNorm = String(htmlStr).replace(/<br\s*\/?>/gi, '\n');
+  const $clean = cheerio.load('<div>' + htmlNorm + '</div>');
+  $clean('script,style,iframe,noscript,ins,svg').remove();
+  $clean('div[class*=ad],div[id*=ad],p[class*=ad]').remove();
+  const $cd = $clean('div');
+  const paras = $cd.find('p').length
+    ? $cd.find('p').map((i, el) => $clean(el).text().trim()).get().filter(Boolean)
+    : $cd.text().split(/\n+/).map(s => s.trim()).filter(Boolean);
+  return paras.filter(p => p.length > 1 && !/chaptererror|请收藏|天才一秒记住|www\.\w+\.\w{2,}$/i.test(p));
+}
+
+// ─── 正文兜底：取「最长的像正文的块」（可单测的纯函数）───
+// ★2026-09-25 修：原来是在**未清洗**的文档上取最长文本块，于是
+//   ① 页面内联 `<script>` 往往最长 → 取回一坨 JS 当正文（实测 酸奶漫画）；
+//   ② 规则失效的源会兜底出**一整页导航**（实测 笔趣阁：4 万字全是「玄幻奇幻/修真武侠…」）。
+//   现在先剥脚本，再要求候选块链接稀疏（`<a>` < 8）——正文容器链接极少，导航/目录动辄几十上百。
+function largestProseBlock($) {
+  $('script,style,iframe,noscript,ins,svg').remove();
+  let best = ''; let bestLen = 0;
+  $('div,p,section,article').each((i, el) => {
+    const $el = $(el);
+    if ($el.find('a').length >= 8) return;
+    const t = $el.text().trim();
+    if (t.length > bestLen) { bestLen = t.length; best = t; }
+  });
+  return best;
 }
 
 const detailCache = new Map();
@@ -385,24 +425,19 @@ async function catalog(source, bookUrl) {
     const { html, url } = await fetchPage(curUrl, source);
     const $ = cheerio.load(html);
     const listRule = rget(rule, 'chapterList') || rget(rule, 'chapterlist');
-    if (listRule && listRule.startsWith('/')) {
-      const xp = xpathToCheerio(listRule);
-      $(xp.selector).each((i, el) => {
-        const $el = $(el);
-        const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
-        const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
-        chapters.push({ name, url: absUrl(chUrl, url) });
-      });
-    } else {
-      const ops = parseChain(listRule);
-      const sel0 = ops && ops[0];
-      if (sel0) $(sel0.sel).each((i, el) => {
-        const $el = $(el);
-        const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
-        const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
-        chapters.push({ name, url: absUrl(chUrl, url) });
-      });
-    }
+    // ★2026-09-25 修（阅读逐页 P0）：这里原来只取选择器链的**第一段**（`parseChain(listRule)[0].sel`），
+    //   把 `@` 之后的所有段整段丢掉。而真实源的 chapterList **绝大多数是链式**：
+    //     `.box_con@dd` / `ul.detail-list-select@li` / `class.list@li@tag.a` / `#content@.page`
+    //   → 拿容器当条目 → **整本目录只剩 1 条**，且「章节名」是全部子链接文本的**拼接**
+    //   （实测：365小说网 的目录名 = "第一章…第二章…第三章…" 一整串，章节数 = 1）。
+    //   改用与 bookList 同一个 resolveList（链式语义一致），XPath 分支也由它统一处理。
+    const rows = listRule ? resolveList($, listRule) : $();
+    rows.each((i, el) => {
+      const $el = $(el);
+      const name = rget(rule, 'chapterName') ? applyRule($, $el, rget(rule, 'chapterName'), ctx) : $el.text().trim();
+      const chUrl = rget(rule, 'chapterUrl') ? applyRule($, $el, rget(rule, 'chapterUrl'), ctx) : $el.attr('href');
+      chapters.push({ name, url: absUrl(chUrl, url) });
+    });
     // 下一页?
     if (!nextRule) break;
     const nextUrl = applyRule($, $.root(), nextRule, ctx);
@@ -434,14 +469,7 @@ async function content(source, chapterUrl) {
     } else if (r) {
       text = applyRule($, $.root(), r, ctx);
     }
-    if (!text) {
-      let best = ''; let bestLen = 0;
-      $('div,p,section,article').each((i, el) => {
-        const t = $(el).text().trim();
-        if (t.length > bestLen) { bestLen = t.length; best = t; }
-      });
-      text = best;
-    }
+    if (!text) text = largestProseBlock($);
     const htmlStr = String(text);
     // 图片收集
     if (/<img[\s>]/i.test(htmlStr)) {
@@ -452,14 +480,7 @@ async function content(source, chapterUrl) {
       });
     }
     // 净化分段
-    const $clean = cheerio.load('<div>' + htmlStr + '</div>');
-    $clean('script,style,iframe,noscript,ins,svg').remove();
-    $clean('div[class*=ad],div[id*=ad],p[class*=ad]').remove();
-    const $cd = $clean('div');
-    let paras = $cd.find('p').length
-      ? $cd.find('p').map((i, el) => $clean(el).text().trim()).get().filter(Boolean)
-      : $cd.text().split(/\n{2,}|\r\n{2,}/).map(s => s.trim()).filter(Boolean);
-    paras = paras.filter(p => p.length > 1 && !/chaptererror|请收藏|天才一秒记住|www\.\w+\.\w{2,}$/i.test(p));
+    const paras = extractParas(htmlStr);
     allParas = allParas.concat(paras);
     // 下一页?
     if (!nextRule) break;
@@ -475,4 +496,4 @@ async function content(source, chapterUrl) {
   return { text: allParas.join('\n\n'), paragraphs: allParas.length, chapterUrl: finalUrl };
 }
 
-module.exports = { search, detail, catalog, content };
+module.exports = { search, detail, catalog, content, extractParas, largestProseBlock };

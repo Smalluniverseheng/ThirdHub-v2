@@ -1,6 +1,6 @@
 {
   "name": "thirdhub-server",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "ThirdHub v4 家庭后端: 书源引擎+Legado设备编排+自签TLS",
   "main": "index.js",
   "scripts": {
