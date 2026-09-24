@@ -71,7 +71,7 @@ async function handle(req, res, body, u, p, send, ctx) {
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message: String(e.message) }}); }
   }
   if (p === '/v1/status') return send(200, { object:'meta', data: {
-    uptime: Math.floor(process.uptime()), version: '4.0.0-m1',
+    uptime: Math.floor(process.uptime()), version: require('./package.json').version,
     sources: { total: sources.length, enabled: sources.filter(s => s.enabled !== false).length },
     health: Object.fromEntries([...health.entries()].map(([k, v]) => [k, { ...v, rate: v.ok + v.fail ? Math.round(v.ok / (v.ok + v.fail) * 100) + '%' : '-' }])),
     memory: Math.round(process.memoryUsage().rss / 1048576) + 'MB' }});

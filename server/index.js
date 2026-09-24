@@ -1,5 +1,11 @@
-// ThirdHub v4 M1 家庭后端入口 :9527
+// ThirdHub v4 家庭后端入口 :9527
 // TLS 一层(自签+TOFU指纹) + 共享密钥鉴权(二层信封二期) + mDNS广播 + 书源API
+//
+// ── 版本号唯一来源 ─────────────────────────────────────────────────────────
+// 只认 package.json 的 version。网页端清单 app-versions.json 的 server.version
+// 必须与它逐字一致。此前这里散着 3 处硬编码 '4.0.0-m1'，与清单里的 0.8.3 对不上，
+// 于是客户端与 /v1/meta 报出的后端版本是错的 —— 典型串版。
+const PKG_VERSION = require('./package.json').version;
 //
 // ══════════════════════════════════════════════════════════════════════════
 // ★ 依赖前置检查 —— 必须放在**任何业务 require 之前**
@@ -299,7 +305,7 @@ let sources = loadSources();
 try {
   const bonjour = new Bonjour();
   bonjour.publish({ name: 'thirdhub-' + crypto.randomBytes(3).toString('hex'), type: 'thirdhub-dev',
-    port: 9527, txt: { type: 'backend', version: '4.0.0-m1', caps: 'novel' } });
+    port: 9527, txt: { type: 'backend', version: PKG_VERSION, caps: 'novel' } });
 } catch (e) { console.log('mDNS 广播跳过:', e.message); }
 
 // ─── 极简静态(前端flutter build web产物可选挂载) ───
@@ -383,7 +389,7 @@ async function handle(req, res, body) {
   }
   // 健康+指纹(免鉴权, 供前端TOFU)
   if (p === '/v1/meta') return send(200, { v: 1, object: 'meta', data: {
-    name: 'ThirdHub', version: '4.0.0-m1', fingerprint,
+    name: 'ThirdHub', version: PKG_VERSION, fingerprint,
     capabilities: { novel: sources.length > 0, sources: sources.length, devices: devices.length },
     encrypted: true, time: Date.now()
   }});
@@ -614,7 +620,7 @@ server.listen(9527, '::', () => {
   const os = require('os');
   const nets = Object.values(os.networkInterfaces()).flat().filter(n => n && !n.internal);
   console.log('════════════════════════════════════');
-  console.log('ThirdHub v4.0.0-m1 后端就绪');
+  console.log('ThirdHub 家庭后端 v' + PKG_VERSION + ' 就绪');
   console.log('监听: https://:::9527 (IPv4+IPv6 双栈)');
   nets.forEach(n => console.log('  本机: ' + (n.family === 'IPv6' ? 'https://[' + n.address + ']:9527' : 'https://' + n.address + ':9527')));
   console.log('SHA256 指纹(前端首次连接确认):');
