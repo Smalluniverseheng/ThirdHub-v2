@@ -2,7 +2,6 @@ package com.thirdhub.app
 
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,27 +14,9 @@ class MainActivity : FlutterActivity() {
     private var volumeKeys: MethodChannel? = null
     private var interceptVolume = false
 
-    /**
-     * 启动兜底清理安装包 —— 「安装后删除安装包」的第二道闸门。
-     *
-     * 主闸门是 `MY_PACKAGE_REPLACED` 广播（[AppUpdatedReceiver]），它覆盖「正常装完」
-     * 的绝大多数情况；这里兜的是它兜不住的三类：用户中途取消了安装、安装成功但广播
-     * 因系统省电策略没送达、以及下载中断留下的 `.part` 残包。
-     *
-     * 放在后台线程：要逐个读 apk 头拿包名/版本号，是磁盘 IO，不能占用主线程
-     * （否则启动会多出可感知的停顿 —— 这个 App 的启动速度已经在别的轮次被提过）。
-     * 失败一律吞掉：清理是「锦上添花」，任何异常都不该影响启动。
-     */
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        Thread {
-            try {
-                UpdateApkJanitor.sweep(this)
-            } catch (_: Exception) {
-                // 清理失败不影响任何功能：下次启动还会再来一次
-            }
-        }.start()
-    }
+    // 说明：本类已经有一个 onCreate（在文件后段，注册画中画按钮的接收器），
+    // 两者不能并存 —— Kotlin 会直接报 `Conflicting overloads`，CI 在 :app:compileReleaseKotlin
+    // 就断了。所以「启动兜底清理安装包」的那段逻辑写在下面那个 onCreate 里，不要在这里另起一个。
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -296,6 +277,18 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        // ── 「安装后删除安装包」的第二道闸门（唯一的 onCreate，切勿另起一个重载）──
+        // 主闸门是 MY_PACKAGE_REPLACED 广播（AppUpdatedReceiver），覆盖「正常装完」的
+        // 绝大多数情况；这里兜它兜不住的三类：用户中途取消了安装、装成功但广播因系统
+        // 省电策略没送达、下载中断留下的 .part 残包。
+        // 放后台线程：要逐个读 apk 头拿包名/版本号，是磁盘 IO，不能占主线程
+        // （否则启动会多出可感知的停顿）。失败一律吞掉 —— 清理是锦上添花。
+        Thread {
+            try {
+                UpdateApkJanitor.sweep(this)
+            } catch (_: Exception) {
+            }
+        }.start()
         // 画中画里那颗播放/暂停按钮的落点。用动态注册，不必往清单里加 receiver。
         // 注意：这里必须先落到局部变量再注册——pipReceiver 是可空的 var，
         // Kotlin 不对可变属性做智能转换，直接用会报类型不匹配。

@@ -574,11 +574,26 @@ class _Sp extends State<SplashPage> with TickerProviderStateMixin {
   late final AnimationController br = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))..repeat(reverse: true);
   @override void dispose() { ac.dispose(); br.dispose(); super.dispose(); }
   @override Widget build(BuildContext c) {
+    // 与网页端 #boot-splash 逐项对齐：网页端用 @media (prefers-color-scheme: light)
+    // 切明暗，这里用 platformBrightness，语义相同。上一版把浅色配色写死，
+    // 深色系统上会亮成一片白 —— 「对齐样式」必须连明暗一起对齐。
+    //   dark  : bg #0F1115 / 标题 #EEF0F6 / 副标题 #9AA3B2 / 光晕 rgba(99,102,241,.20)
+    //   light : bg #F4F5F9 / 标题 #1C1F2A / 副标题 #5A6072 / 光晕 rgba(99,102,241,.12)
+    final bool dark = MediaQuery.platformBrightnessOf(c) == Brightness.dark;
     const accent = Color(0xFF3B5BFD);
-    return Scaffold(backgroundColor: const Color(0xFFF4F5F9), body: Stack(children: [
+    final Color bg = dark ? const Color(0xFF0F1115) : const Color(0xFFF4F5F9);
+    final Color titleC = dark ? const Color(0xFFEEF0F6) : const Color(0xFF1C1F2A);
+    final Color subC = dark ? const Color(0xFF9AA3B2) : const Color(0xFF5A6072);
+    // rgba(255,255,255,.14) / rgba(15,20,30,.14)
+    final Color track = dark ? const Color(0x24FFFFFF) : const Color(0x241F141E);
+    final Color glow = const Color(0xFF6366F1).withValues(alpha: dark ? 0.20 : 0.12);
+    final List<BoxShadow> logoShadow = dark
+        ? const [BoxShadow(color: Color(0x6B000000), blurRadius: 44, offset: Offset(0, 18))]
+        : const [BoxShadow(color: Color(0x29141A28), blurRadius: 36, offset: Offset(0, 14))];
+    return Scaffold(backgroundColor: bg, body: Stack(children: [
       // 网页端 #boot-splash::before / ::after 的两团模糊光晕（左上大、右下略小且更淡）
-      const Positioned(top: -140, left: -120, child: _Glow(420)),
-      const Positioned(bottom: -130, right: -110, child: _Glow(380, opacity: 0.8)),
+      Positioned(top: -140, left: -120, child: _Glow(420, color: glow)),
+      Positioned(bottom: -130, right: -110, child: _Glow(380, color: glow, opacity: 0.8)),
       SafeArea(child: Column(children: [
         const Spacer(),
         FadeTransition(opacity: CurvedAnimation(parent: ac, curve: Curves.easeOut),
@@ -586,27 +601,27 @@ class _Sp extends State<SplashPage> with TickerProviderStateMixin {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               ScaleTransition(scale: Tween<double>(begin: 1, end: 1.045).animate(CurvedAnimation(parent: br, curve: Curves.easeInOut)),
                 child: Container(width: 96, height: 96,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(22),
-                    boxShadow: const [BoxShadow(color: Color(0x29141A28), blurRadius: 36, offset: Offset(0, 14))]),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), boxShadow: logoShadow),
                   child: ClipRRect(borderRadius: BorderRadius.circular(22),
                     // 自家商标：assets/branding/logo-96.png 与网页端 icons/launcher-96.png 逐字节同源
                     child: Image.asset('assets/branding/logo-96.png', width: 96, height: 96, fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => const ColoredBox(color: accent,
                         child: Icon(Icons.hub_outlined, color: Colors.white, size: 46)))))),
-              const SizedBox(height: 18),
-              const Text('第三方聚合站', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1C1F2A), letterSpacing: 0.5)),
-              const SizedBox(height: 6),
-              const Text('一个入口 · One Hub', style: TextStyle(fontSize: 12, color: Color(0xFF5A6072))),
+              const SizedBox(height: 14),
+              Text('第三方聚合站', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: titleC, letterSpacing: 0.5)),
+              const SizedBox(height: 14),
+              Text('一个入口 · One Hub', style: TextStyle(fontSize: 12, color: subC, letterSpacing: 0.5)),
             ]))),
-        const SizedBox(height: 40),
-        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: accent)),
+        const SizedBox(height: 14),
+        // 网页端 .bs-spin：26px 环、3px 描边、顶段 #3b5bfd
+        SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3, color: accent, backgroundColor: track)),
         const Spacer(),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), const SizedBox(width: 4),
-          const Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+          Icon(Icons.lan_outlined, size: 13, color: subC), const SizedBox(width: 4),
+          Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: subC)),
           const SizedBox(width: 10),
           // 版本号读唯一来源，不再写死
-          Text('v$kAppVersion', style: const TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+          Text('v$kAppVersion', style: TextStyle(fontSize: 11, color: subC)),
         ]),
         const SizedBox(height: 18),
       ])),
@@ -617,13 +632,12 @@ class _Sp extends State<SplashPage> with TickerProviderStateMixin {
 /// 开屏的模糊光晕。网页端用 `filter: blur(110px)` 把纯色圆晕开；
 /// CSS 的 blur(radius) 与 Flutter 的 sigma 约为 2:1，取 sigma 55 还原同一观感。
 class _Glow extends StatelessWidget {
-  final double size; final double opacity;
-  const _Glow(this.size, {this.opacity = 1});
+  final double size; final Color color; final double opacity;
+  const _Glow(this.size, {required this.color, this.opacity = 1});
   @override Widget build(BuildContext c) => IgnorePointer(child: Opacity(opacity: opacity,
     child: ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
       child: Container(width: size, height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle,
-          color: const Color(0xFF6366F1).withValues(alpha: 0.12))))));
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color)))));
 }
 
 // ── 首启协议门: 未同意《用户服务协议》与《隐私政策》前不进入主界面(大厂同款) ──
