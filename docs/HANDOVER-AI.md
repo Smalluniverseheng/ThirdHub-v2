@@ -39,7 +39,9 @@
 │   └── package.json      ★ 后端版本号唯一来源（现 0.8.6；ping/MCP/clientInfo 均已改为运行时读它）
 ├── plugins/         th-plugin.js SDK + example-downloader 示例
 ├── docs/            协议与规划文档（planning/ 是宪法与总清单）
-├── android/         安卓壳配置（keystore 已泄露，见 §7）
+├── android/         安卓壳配置 + **后端 APK 工程**（`app/` 里是 `com.thirdhub.backend` 的 Kotlin 壳：首启把 assets 解压到 filesDir/runtime，再 exec node index.js 常驻前台 Service）。keystore 已泄露，见 §7
+│                    · 版本号读 `../server/package.json`（**不要在 build.gradle.kts 里另写死**）
+│                    · assets（node-arm64 运行时 + server 拷贝，~37MB）**不入库**，由 `server/scripts/fetch-node-android.sh` 注入
 └── tools/           构建与发布工具
 ```
 
@@ -54,12 +56,38 @@
 | V4 前端 APK | **4.49.0 / 50536** | ✅ **已四通道发布 + 五通道独立校验全 PASS**。构建源提交 `7bc57c73`，CI `build-apk 36054417044` success；APK sha256 `50bba599c003d0ec7cfa9315f831cdfb1d960218f27c9a069da2d8cfa5bfe922` / 29803914 B；`pickSettingsRow` 符号已在二进制中（4.48.0 二进制为 0 命中，见 §6 #3b） | Supabase `latest-app.json` + 桶三通道 + Release |
 | 网页端主站 | **3.35.2** | 第十轮发版（`tools/release.cjs 3.35.2`）：把下载中心的后端包指向 **0.8.6**。`updated`/`releaseDate` 改为**本地日期**（原 UTC 写法会把上午发布标成前一天，见 §6 #17） | — |
 | 家庭后端 | **0.8.6** | ✅ **已发三通道 + 解包冒烟 14/14 PASS**。zip 6030007 B / sha256 `bba034f3df69fee2384221bb14f91d2fe65d4f83d3f78705e61f052b2239eb95` | ① `downloads/thirdhub-backend-0.8.6.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.6`（id `396151827`，资产已下载回算 sha256 逐字节一致）** |
+| **家庭后端 APK**（`android/` 壳，包名 `com.thirdhub.backend`） | **0.8.6 / 42806** | ✅ **第十一轮重建并四通道发布**（此前一直是 4.2.0）。APK 32626957 B / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`；内嵌 node-arm64 运行时（复用 4.2.0 包内已验证的那份）+ server 0.8.6（含 `public/` 与 `scripts/`）+ 12 条预置源。**版本号已改为读 `server/package.json`** | ① `downloads/thirdhub-backend-0.8.6.apk` ② 别名 `downloads/thirdhub/thirdhub-backend.apk` ③ **`latest-backend.json`**（客户端「下载中心」实时读它 → 显示「最新 v0.8.6」）④ Release `backend-v0.8.6` 资产。发布脚本 `D:/ai/_probe/_rel_backend_apk.mjs`（8/8 PASS） |
 | 旁支（完全体） | 0.4.4 | **已搁置，不要动**（网站端介绍已重写并上线，见 §2） | — |
 
 > **发版批次记**：4.49.0 的 CI 先后跑出两个 run（`36053636554` on `7d26d314`、`36054417044` on `7bc57c73`），
 > 两个都 success 且都会发 `v4.49.0` Release。**最终资产被后完成的 `36054417044` 覆盖**：
 > digest 由 `e7fb53dd…` 变为 `50bba599…`（体积同为 29803914 B —— 版本串等长抵消，**别用体积判断版本**）。
 > 发布用的是覆盖后的 `50bba599…`。**教训：同一版本号有多个 run 时，认 digest、不认体积、不认 run 的先后。**
+
+### 后端 APK 0.8.6 本轮做了什么（2026-09-25 · 第十一轮）— 把 4.2.0 那个陈年 APK 补齐
+- **★ 版本号一直是假的（P0）**：`android/app/build.gradle.kts` 的默认值是写死的 `"4.2.0"`/`42000`，而
+  `.github/workflows/build-m1.yml` 的 `backend-apk` 作业**从不传 `-PverName`** → 无论后端发到 0.8.x 哪一版，
+  打出来的 APK 都自称 4.2.0，`latest-backend.json` 也就一年到头停在 4.2.0。
+  已改为**直接读 `../server/package.json`**（CI 的 `$GITHUB_WORKSPACE/server` 与本地都成立），
+  `versionCode = 42000 + minor*100 + patch`（0.8.6 → **42806**）；基数取 42000 是为了**单调不减**（Android 拒装更小的 versionCode）。
+- **★ 构建脚本把「管理台」和「自签证书」删掉了（P1）**：`server/scripts/fetch-node-android.sh` 里
+  `rm -rf "$OUT/server/scripts" "$OUT/server/public"` —— 而 `public/index.html` **就是** Web 控制台
+  （`server/index.js:334` 的 `PUB`），`scripts/gencert.js` 是首启自签证书要 `execSync` 调的。
+  **手机上这两样此前根本不在包里。** 已改为与发布包 `_pack_backend.mjs` 用**同一份排除清单**（只排 `data/` 与 `node_modules.msh-partial`），
+  并加硬闸门：`public/index.html`、`scripts/gencert.js`、`index.js`、`package.json` 任一缺失直接 exit 1；
+  组装前先 `rm -rf "$OUT/node" "$OUT/server"`（stale assets 极难发现）。
+- **本机重建成功**：复用旧 4.2.0 APK 里那份**已验证能跑**的 node-arm64 运行时（`node.tar.xz` 21MB，免得再去清华源拉 termux 包）
+  + 现 server 0.8.6（含 `public/` `scripts/`）→ Gradle 8.14.4（缓存里那份 launcher）+ JDK17 + `ANDROID_HOME=D:/ai/android-sdk`，
+  **4m34s BUILD SUCCESSFUL** → APK **32626957 B** / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`。
+- **包内四验全过**：`aapt2` 版本串 = `0.8.6 / 42806 / com.thirdhub.backend`；`apksigner` 签名 DN 与旧包同一把
+  （SHA-256 `7db37a41…`）；`zipalign -c -v 4` OK；Python `zipfile` 直接读包内 → `assets/server/package.json`=0.8.6、
+  `sources-preset/health-book.json`=**12 条源**、`public/index.html` 与 `scripts/gencert.js` 都在、
+  **`data/` 与 `msh-partial` 都不在**、`assets/server` 共 1540 条目。
+- **四通道发布 8/8 PASS**（新脚本 `D:/ai/_probe/_rel_backend_apk.mjs`）：版本化桶 / 别名桶 / `latest-backend.json`（version+code+sha 三项回读一致）
+  / Release `backend-v0.8.6` 资产（下载回算 sha256 一致）；**并且把「用户真正点的那个别名 URL」下回来算了一遍 sha256**。
+  客户端「下载中心」读的就是 `latest-backend.json`（`main.dart:4345` → `cloud.dart:120`）→ 现在会显示「最新 v0.8.6」。
+- 发版前按铁律备份了线上发布面（`D:/ai/_backup_publish_backendapk_20260925_074111/`，含两个前缀清单 + 两个 latest 清单 + 别名 HEAD），
+  并核实在途版本 `thirdhub-backend-0.8.6.apk` **此前未进过桶**（避免重复资产顶掉 digest）。
 
 ### 0.8.6 本轮做了什么（2026-09-25 · 第十轮）— 把「搜得出书」补成「真的能读」
 - **★ 目录永远只有 1 条章（阅读线 P0）**：`catalog()` 只取 `chapterList` 选择器链的**第一段**（`parseChain(listRule)[0].sel`），把 `@` 之后所有段丢掉。真实源几乎全是链式：`.box_con@dd` / `ul.detail-list-select@li` / `class.list@li@tag.a` / `#content@.page` → **拿容器当条目**，一本 500 章的书端内只显示 **1 个**「章节」，且章节名是全部子链接文本的**拼接**。改用与 bookList 同一个 `resolveList`，并补「选择器写两遍时自身匹配」兜底。
@@ -177,13 +205,13 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 | 11 | N-1~N-12 新增模块、AI-1~AI-10、E-1~E-6 | ❌ 未做 | 见 `docs/planning/ThirdHub-功能规划-v3.0.md` |
 | 12 | `docs/` 里的过程文档归并（`M1-SPRINT.md` / `PLAN-v3.md`） | ❌ 未做 | 低优 |
 | 13 | 源健康流水线接入日常 | 🚧 **本轮建立并修正口径** | ① `tools/source-health.cjs` 的 `--out` 原先**只导 `{module,pack,name,host,url}`、没有源规则 → 导不进去**；已改为带完整 `source` 对象 + 新增 `--out-pack` 写纯 Legado 数组（`--out` 同时给则自动派生 `<name>.pack.json`）。② **代理口径高估可用性**（代理 29/300 vs 引擎真取 3/29）→ 新增 `_probe/engine_source_verify.cjs` 作为**引擎口径权威闸门**，日常以它为准。③ 待办：把这两个口径接进定时任务 |
-| 14 | 后端 Android APK（内嵌 server）刷新 | ❌ 未做 | `latest-backend.json` 仍是 **4.2.0**、内嵌 2026-09-20 的 server 代码 → 与 **0.8.5** 不一致。重建需 Android+Kotlin 工具链，本轮未做（**zip 包已是最新**，仅这个 APK 落后） |
+| 14 | 后端 Android APK（内嵌 server）刷新 | ✅ **第十一轮已完成** | 见 #20。APK 现为 **0.8.6 / 42806**，与 zip 同号 |
 | 15 | 网站静态清单部署 | ✅ **第九轮再做一次**：站点 3.35.0 → **3.35.1**（`tools/release.cjs` 六步，把 `server` 段指向 0.8.5） | 线上已核实 `server` = 0.8.5 / 6028828 |
 | 18 | **家庭后端 0.8.5 发布（第九轮新增）** | ✅ **已完成**：`_pack_backend.mjs`（打包脚本化 + 5 道包内硬闸门）→ `_smoke_backend_zip.mjs` **13/13 PASS** → 三通道（版本化桶 / 别名桶 / Release `backend-v0.8.5` id `396116826`，资产下载回算 sha256 一致）→ 网站清单同步 | 参见当天日志第九轮 A9-2 |
 | 16 | 娱乐线剩余缺陷 | 🚧 4.49.0 修掉 6 类（`positionStream` 泄漏、监听器不摘 + setState-after-dispose、共享清单静默失败、共享相册删除假成功、共享相册名实不符、论坛回帖裸时间戳） | **仍未做**：视频详情页无引擎兜底、资讯/播客硬编码源无兜底、14 处 `setState(() async ...)` 首屏竞态 |
 | 17 | 网页端 `updated` 日期比本地日期早一天 | ✅ **第十轮已修** | `tools/release.cjs` 与 `_upd_av_server.mjs` 原来用 `new Date().toISOString().slice(0,10)`（**UTC**）写 `updated`/`releaseDate`，本地上午发布会被写成前一天。已改为按本地时区取 YYYY-MM-DD；3.35.2 实测 `updated=2026-09-25`（UTC 当时还是 09-24） |
 | 19 | 内容线源级缺陷（非引擎） | 🚧 本轮量化 | `💰时阅文学`（用户已标注「搜索正文失-效」）、`凤凰网书城`（detail 500）、`🔖八零电子书`/`⌨52书库`/`总裁🎃`/`快眼看书botaodz`（目录 0 或选择器不匹配）、`🌸笔趣阁`（`.text` 规则已过时 → 正文夹带页面杂质，4 万字/章）。**这些要改的是源包（`sources-preset/health-book.json`），不是引擎**；下一轮可做「按引擎口径重挑一遍健康源」 |
-| 20 | 后端 Android APK（内嵌 server）落后更多 | ❌ 未做 | 现 `latest-backend.json` = **4.2.0**（内嵌 2026-09-20 的 server），而 zip 已是 **0.8.6**。重建需 Android+Kotlin 工具链（本机无 `kotlinc`，但 Android SDK `D:/ai/android-sdk` + JDK17/21 在）；**本轮未找到该 APK 的 Gradle 工程**（`D:/ai/android-build/node-android` 只有交叉编译 node 的脚本，无 gradlew），下一轮先定位工程 |
+| 20 | 后端 Android APK（内嵌 server）落后更多 | ✅ **第十一轮已完成** | 本机 Gradle 重建 → APK **32626957 B** / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`，包名 `com.thirdhub.backend`，**0.8.6 / 42806**。四通道：① 版本化桶 `thirdhub-backend-0.8.6.apk` ② 别名桶 `thirdhub/thirdhub-backend.apk` ③ `latest-backend.json`（version 0.8.6 / code 42806 / sha 一致）④ Release `backend-v0.8.6` 资产（下载回算 sha256 一致）。**8/8 PASS**，客户端「下载中心」会显示「最新 v0.8.6」 |
 
 ### 真机验证的硬约束（不是 bug）
 `adb devices` 无设备 / 无模拟器 → **端网（#68）与插件体系（#69）的真机端到端本轮无法做**，源码级 e2e 与服务端 174 断言已全绿。不要因为「测不了」就以为功能没做。
@@ -271,6 +299,30 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     语法过了不代表规则语义对。本机 `dart analyze`/`dart compile` 已废、`flutter test` 也挂（§9.2）
     → **纯逻辑改动必须落到「能在 VM/Node 里直接跑的单测」上**（`_engine_rules_test.cjs` 就是这个思路：
     用 `vm.runInContext` 加载 `engine.js` 源码并导出内部函数来断言）。
+17. **★ 后端 APK（`android/`）的三个必踩点（第十一轮实测）**：
+    - **`aapt2` / `apksigner` / `zipalign` 都在 `D:/ai/android-sdk/build-tools/34.0.0/`**，
+      但 `apksigner.bat` 是 Java 程序 —— **必须先 `export JAVA_HOME=D:/ai/android-jdk/jdk-17.0.2`**，
+      否则报「JAVA_HOME is not set」而看起来像签名坏了。
+    - **`android/` 里没有 `gradlew`**（CI 是靠 runner 预装的 `gradle` 兜底的）。
+      本机直接用缓存里的 launcher：
+      `~/.gradle/wrapper/dists/gradle-8.14.4-bin/92wwslzcyst3phie3o264zltu/gradle-8.14.4/bin/gradle`，
+      环境给 `JAVA_HOME` + `ANDROID_HOME=D:/ai/android-sdk` 即可（AGP 8.5.2 与 Kotlin 2.0.20 都已在
+      `~/.gradle/caches` 里，不需要联网）。**整包约 4.5 分钟。**
+    - **assets 不在仓里**（.gitignore 已排除，~37MB）→ 重建前必须先组装：`assets/node/`（node-arm64 运行时）
+      + `assets/server/`。**最快的路子是复用旧 APK 里那份已验证的运行时**：
+      `unzip -o 旧APP.apk "assets/node/*" "assets/node/xz/*"`（`node.tar.xz` 21MB，解压即用，
+      不必再跑 `fetch-node-android.sh` 去清华源拉 termux 包）。
+    - **`android/thirdhub.jks` 不在仓里**，只有 `thirdhub.jks.b64` → `base64 -d thirdhub.jks.b64 > thirdhub.jks`
+      （口令在 `android/keystore.properties`：`thirdhub2026`；用 `keytool -list` 可先自证）。
+18. **★ 后端 APK 的版本号原先永远是 4.2.0**：`build.gradle.kts` 默认值写死 `"4.2.0"`/`42000`，而 CI 的
+    `backend-apk` 作业**从不传 `-PverName`** → 无论后端发到哪版，打出来的 APK 都自称 4.2.0，清单也就一直停在 4.2.0。
+    已改为**直接读 `../server/package.json`**（CI 与本地都成立），`versionCode = 42000 + minor*100 + patch`
+    （0.8.6 → 42806）—— **基数取 42000 是为了单调不减**，Android 会拒绝安装比已装版本更小的 versionCode。
+19. **★ `fetch-node-android.sh` 曾把 `public/` 与 `scripts/` 一起删掉**：后果是**手机上「管理台」打不开**
+    （控制台就是 `public/index.html`，`index.js:334` 的 `PUB` 指向它）且**自签证书生成失败**
+    （`index.js:80` 会 `execSync` 调 `scripts/gencert.js`）。现已改为与发布包 `_pack_backend.mjs` **同一份排除清单**
+    （只排 `data/` 与 `node_modules.msh-partial`），并加了「`public/index.html` / `scripts/gencert.js` 必须在包里」的硬闸门。
+    · 推论：**「打包脚本排除清单」是一处极易静默出错的地方** —— 加排除项前先问「运行期真的不需要它吗」。
 
 ---
 
@@ -294,6 +346,15 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
 8. **阅读线权威闸门（第十轮新增）**：`_probe/_read_e2e.cjs`（逐页）+ `_probe/_engine_rules_test.cjs`（规则语义，35 条）
    + `_probe/_read_ab.cjs`（修前/修后 A/B，**证明无回归**）。
    **只有「搜索出书」不够** —— 第九轮就栽在这：`/v1/search` 12/12 PASS，而点进去一本都读不了。
+9. **后端 APK 重建的闸门（第十一轮新增）**：
+   组装 assets（`_probe/_stage_apk_assets.py`，含 10 项硬闸门：`server/index.js` · `engine.js` ·
+   **`public/index.html`** · **`scripts/gencert.js`** · `sources-preset/` · `node_modules/cheerio` ·
+   `node.tar.xz` · `xz/xz` · `liblzma.so.5` 必须齐；**`data/` 与 `node_modules.msh-partial` 必须不在**）
+   → `gradle assembleRelease` → **包内四验**（`aapt2 dump badging` 看 `versionName/versionCode` +
+   `apksigner verify --print-certs`（记得 `JAVA_HOME`）+ `zipalign -c -v 4` + **用 Python 的 `zipfile` 直接读包内
+   `assets/server/package.json` 与 `sources-preset/health-book.json` 核对版本与源数**）
+   → 四通道 `_probe/_rel_backend_apk.mjs`（**8/8 PASS**，含「把用户实际点的别名 URL 真下回来算 sha256」）。
+   · **别只看「BUILD SUCCESSFUL」** —— 构建成功跟「包里装的是对的东西」是两件事（老包就是构建成功但内嵌了旧 server、且缺 public/）。
 
 ---
 

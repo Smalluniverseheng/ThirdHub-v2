@@ -24,6 +24,10 @@ build/
 *.apk
 *.aab
 
+# 后端 APK 的内嵌资产（node-arm64 运行时 ~21MB + server 拷贝 ~17MB）：
+# 由 server/scripts/fetch-node-android.sh 在构建时注入，绝不入库
+android/app/src/main/assets/
+
 # 临时/工作残留
 _*.txt
 _*.log
