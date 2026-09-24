@@ -13,7 +13,13 @@ const fs = require('fs');
 const os = require('os');
 
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'chatdata-'));
-const routes = require(path.join(__dirname, '..', 'server', 'routes-data.js'));
+// ★ 路径要两种布局都能跑：仓库内脚本在 `server/` 里（同目录），
+//   但**发布 zip 是平铺布局**（脚本和 routes-data.js 同级），此时 `../server/` 不存在 ——
+//   历史后果：解包冒烟时这一项报 MODULE_NOT_FOUND，看着像"包坏了"，其实是测试自己找不到路。
+const routesPath = fs.existsSync(path.join(__dirname, 'routes-data.js'))
+  ? path.join(__dirname, 'routes-data.js')
+  : path.join(__dirname, '..', 'server', 'routes-data.js');
+const routes = require(routesPath);
 
 let fails = 0;
 function ck(name, cond, extra) {

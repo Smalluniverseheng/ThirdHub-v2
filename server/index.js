@@ -239,6 +239,13 @@ function searchLocal(module, q) {
   } catch (e) {}
   return out.slice(0, 50);
 }
+// ★ PH/1 端间互通中枢的模块引入必须早于下方 init()：
+//   `const peerHub` 是 const 声明，在声明语句执行前处于 TDZ。原先 require 被放在
+//   文件下半部分的"路由模块(2026-09 拆分)"分组里（约 360 行），而 init() 在 244 行，
+//   于是 node 启动走到 init() 那行直接抛
+//   `ReferenceError: Cannot access 'peerHub' before initialization` —— 后端完全起不来，
+//   表现为"后端打不开/内容线全挂"。此处上移，路由分组里只留注释指回来。
+const peerHub = require('./peer-hub');
 thp1.init({ thpOnline, searchLocal, library, saveLib, LIB_DIR });
 // PH/1 端间互通中枢：需要 DATA 与 SECRET 才能校验插件登录凭据。
 peerHub.init({ DATA, SECRET });
@@ -282,21 +289,36 @@ function saveSources(s) { fs.writeFileSync(SOURCES_FILE, JSON.stringify(s, null,
 let sources = loadSources();
 
 // 首启自动导入预置书源包(server/sources-preset/*.json, CI/手动放入)
+// ★2026-09-25 修复「预置源包一次也进不来」（内容线「能搜、但永远没有结果」的机械成因之一）：
+//   旧判据是 `sources.length > 0 return` —— 而首启就会从本目录导入一份**占位演示源**
+//   (demo.json)，sources 立刻非空，于是此后无论往本目录补多少真实源包都**永久不再导入**。
+//   实测后果：家庭后端 sources 只有 1 条演示源，engine.search() 对它 **0 条结果**（可用率 0%）。
+//   新判据：按「包文件名 + 条目数」记标记（data/preset-imported.json），包**有变化**才增量导入；
+//   包没变就不动 —— 用户自己删掉的源不会被每次重启塞回来。
 (function importPreset() {
   const presetDir = path.join(__dirname, 'sources-preset');
-  if (!fs.existsSync(presetDir) || sources.length > 0) return;
+  if (!fs.existsSync(presetDir)) return;
+  const MARK_FILE = path.join(DATA, 'preset-imported.json');
+  let mark = {};
+  try { mark = JSON.parse(fs.readFileSync(MARK_FILE, 'utf8')); } catch (e) {}
+  let added = 0;
   try {
     const files = fs.readdirSync(presetDir).filter(f => f.endsWith('.json'));
     for (const f of files) {
       const arr = JSON.parse(fs.readFileSync(path.join(presetDir, f), 'utf8'));
-      for (const item of (Array.isArray(arr) ? arr : [])) {
+      const list = Array.isArray(arr) ? arr : (arr.sources || []);
+      if (mark[f] === list.length) continue;          // 包未变化 → 跳过，尊重用户删改
+      for (const item of list) {
         if (item.bookSourceUrl && item.bookSourceName && !sources.some(x => x.bookSourceUrl === item.bookSourceUrl)) {
           sources.push({ ...item, enabled: true });
+          added++;
         }
       }
+      mark[f] = list.length;
     }
-    if (sources.length) { saveSources(sources); console.log(`[preset] 预置书源导入: ${sources.length} 条`); }
   } catch (e) { console.log('[preset] 导入跳过:', e.message); }
+  if (added) { saveSources(sources); console.log(`[preset] 预置书源导入: +${added} 条，现有 ${sources.length} 条`); }
+  try { fs.writeFileSync(MARK_FILE, JSON.stringify(mark)); } catch (e) {}
 })();
 
 // ─── 内置演示书源(若空则提示导入; 不内置具体源, 见 sources/ 目录导入) ───
@@ -349,7 +371,7 @@ const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtAgent = require('./routes-agent');
-const peerHub = require('./peer-hub');
+// 注：peerHub 已上移到 ~242 行（peerHub.init 之前），此处不再重复 require —— 见该处注释。
 // 存储进程状态(原在文件尾, 上移供 adminCtx 引用)
 const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
 // 共享上下文(引用传递, 与各路由模块互通)

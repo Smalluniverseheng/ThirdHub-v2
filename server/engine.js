@@ -37,21 +37,23 @@ function parseChain(rule) {
   for (const seg of segs) {
     if (seg === 'text' || seg === 'text()') ops.push({ op: 'text' });
     else if (seg === 'html' || seg === 'html()') ops.push({ op: 'html' });
+    else if (seg === 'textNodes' || seg === 'textNodes()') ops.push({ op: 'textNodes' });
     else if (seg.startsWith('attr.')) ops.push({ op: 'attr', name: seg.slice(5) });
     else if (/^(href|src|alt|title)$/.test(seg)) ops.push({ op: 'attr', name: seg });
     else if (seg.startsWith('js:') || seg.startsWith('@js:')) ops.push({ op: 'js', code: seg.replace(/^@?js:/, '') });
     else {
-      // 选择段: tag.a.0 | class.xxx | id.xxx | .xxx
+      // 选择段: tag.a.0 | class.xxx | id.xxx | .xxx | 裸名
       let sel = seg;
       const idxMatch = sel.match(/^(.*)\.(\d+)$/); // 末尾数字=eq
       const idx = idxMatch ? parseInt(idxMatch[2]) : null;
       if (idxMatch) sel = idxMatch[1];
+      let alt = null;                                  // 裸名的兼容解释（见下）
       if (sel.startsWith('class.')) sel = '.' + sel.slice(6);
       else if (sel.startsWith('id.')) sel = '#' + sel.slice(3);
       else if (sel.startsWith('tag.')) sel = sel.slice(4);
       else if (sel.startsWith('.') || sel.startsWith('#')) { /* 保持 */ }
-      else if (/^[\w-]+$/.test(sel)) sel = '.' + sel; // 裸名当 class
-      ops.push({ op: 'sel', sel, idx });
+      else if (/^[\w-]+$/.test(sel)) alt = '.' + sel;
+      ops.push({ op: 'sel', sel, idx, alt });
     }
   }
   return ops;
@@ -72,8 +74,42 @@ function miniJsonPath(obj, path) {
   return cur;
 }
 
+// ─── ## 后处理（Legado 规则语义）───
+// 规则形如 `选择器##正则`     → 先按前置规则取值，再用正则**删除**匹配部分
+//          `选择器##正则###替换` → 把匹配部分替换为指定内容
+// ★2026-09-25 补上：此前 engine.js **完全没有 ## 语义**，于是形如
+//   `h2@text##.*_|【.*】` 的规则会被整条当成「一个叫 `text##.*_|【.*】` 的 class 选择器」，
+//   cheerio 直接抛 `Expected name, found ##...`；or 即使不抛也永远取不到值。
+//   实测：29 条「健康源」里有 **22 条**用了 ## —— 也就是说**大多数真实源在这个引擎上
+//   根本走不完规则**（不是源站挂了，也不是源选得不对）。这是内容线「搜不到」的头号机械成因。
+function splitPost(rule) {
+  const s = String(rule);
+  if (s.indexOf('##') < 0) return { body: s, posts: [] };
+  // `###` 是「替换」分隔符，不能被 `##` 拆散 → 先占位再拆
+  const SE = '\u0001';
+  const parts = s.replace(/###/g, SE).split('##').map((p) => p.split(SE).join('###'));
+  return { body: parts[0], posts: parts.slice(1) };
+}
+
+function applyPost(v, post) {
+  if (v == null) return v;
+  const p = String(post);
+  if (!p || p.startsWith('{')) return v;              // `##{...}` 是配置段，不是替换
+  if (/^\$\d+$/.test(p.trim())) return v;             // 孤立的 `$n` 不是可用正则：跳过，不猜语义
+  let re = p, rep = '';
+  const h = p.indexOf('###');
+  if (h >= 0) { re = p.slice(0, h); rep = p.slice(h + 3); }
+  try { return String(v).replace(new RegExp(re, 'g'), rep); } catch (e) { return v; }
+}
+
+/// 把 `##` 之后的所有段依次作用到 v 上（顺序即写法顺序）
+function applyPosts(v, parts) {
+  for (const p of parts) v = applyPost(v, p);
+  return v;
+}
+
 // ─── 在一组 cheerio 元素上执行规则链 ───
-function applyRule($root, elements, rule, context) {
+function applyRuleRaw($root, elements, rule, context) {
   if (rule == null) return null;
   const rs = String(rule).trim();
   // XPath 规则: 直接换算选择器
@@ -93,11 +129,27 @@ function applyRule($root, elements, rule, context) {
   const ops = Array.isArray(rule) ? rule : parseChain(rule);
   if (!ops) return null;
   let cur = elements;
-  for (const o of ops) {
+  for (let oi = 0; oi < ops.length; oi++) {
+    const o = ops[oi];
     if (cur == null) return null;
     if (o.op === 'sel') {
       if (cur && cur.find) {
         let n = cur.find(o.sel);
+        // ★2026-09-25 裸名双解：Legado 的链式规则里，裸段是**选择器**（裸名即标签名），
+        //   本引擎原来把它一律当 class（`a`→`.a`、`h2`→`.h2`），于是形如
+        //   `.bookdesc@a@href` / `.bookdesc@h2@text` 这种极常见写法永远取空 ——
+        //   而 `search()` 末尾 `filter(b => b.name && b.bookUrl)` 会把它们全丢掉，
+        //   表现就是「站点 200、页面里明明有关键词、引擎却 0 条」。
+        //   这里改成「先按标签名找，找不到再退回 class」：严格是超集，
+        //   原本靠 class 命中的源不受影响（标签名找不到时会退回原行为）。
+        if (!n.length && o.alt) n = cur.find(o.alt);
+        // ★2026-09-25 首段自匹配：真实源常把 bookList 的选择器在字段规则里**再写一遍**
+        //   （bookList=`class.tui_1_item`，name=`class.tui_1_item@a@text`）。
+        //   而 find() 只搜**后代**，行元素自身符合时取空 → 字段全空 → 被 filter 丢掉 → 0 条。
+        //   XPath 分支本来就有这个兜底，链式分支漏了，这里补齐。
+        if (!n.length && oi === 0 && cur.is) {
+          if (cur.is(o.sel) || (o.alt && cur.is(o.alt))) n = cur.first();
+        }
         if (o.idx != null && n.length) n = n.eq(o.idx);
         cur = n;
       } else return null;
@@ -107,6 +159,13 @@ function applyRule($root, elements, rule, context) {
       return String(cur).trim();
     } else if (o.op === 'html') {
       return cur && cur.html ? cur.html() : null;
+    } else if (o.op === 'textNodes') {
+      // Legado 的 textNodes：只取**直接文本节点**（不含子元素文字），多段以换行连接。
+      // 此前未支持 → 段名 'textNodes' 被当成 class 名 → 静默取空（不报错，最难查）。
+      if (cur == null || !cur.contents) return null;
+      const tns = cur.contents().toArray().filter((el) => el.type === 'text')
+        .map((el) => String(el.data || '').trim()).filter(Boolean);
+      return tns.length ? tns.join('\n') : null;
     } else if (o.op === 'attr') {
       if (cur == null || !cur.attr) return null;
       const v = cur.attr(o.name);
@@ -130,6 +189,22 @@ function applyRule($root, elements, rule, context) {
   }
   if (cur && cur.text) return cur.text().trim();
   return cur;
+}
+
+// ─── 规则入口：先剥 ## 后处理，再走原链，最后把后处理按顺序作用到结果上 ───
+//（数组形态的规则是内部调用，不含 ## 语义，直接透传）
+function applyRule($root, elements, rule, context) {
+  if (rule == null) return null;
+  if (Array.isArray(rule)) return applyRuleRaw($root, elements, rule, context);
+  const { body, posts } = splitPost(rule);
+  let v;
+  if (String(body).trim() === '') {
+    // 规则以 ## 开头（如 `##作者.([^<\s]+)##$1###`）：Legado 语义是「先取当前元素自身文本」
+    v = (elements && elements.text) ? elements.text().trim() : null;
+  } else {
+    v = applyRuleRaw($root, elements, body, context);
+  }
+  return posts.length ? applyPosts(v, posts) : v;
 }
 
 // ─── 统一取规则(兼容 ruleSearch.name 等字段; 支持 put(key, rule) 简化忽略) ───
@@ -208,8 +283,18 @@ async function search(source, key) {
       method = conf.method || 'GET'; bodyTpl = conf.body || null; urlTpl = urlTpl.slice(0, ci);
     } catch (e) {}
   }
-  let searchUrl = absUrl(urlTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)), source.bookSourceUrl);
-  let body = bodyTpl ? bodyTpl.replace(/\{\{key\}\}|%s/g, encodeURIComponent(key)) : undefined;
+  // ★2026-09-25 补齐搜索地址占位与尾部配置：
+  //   此前只认 {{key}}/%s —— 而真实源里 {{page}} / {{pageIndex}} / {{pageSize}} /
+  //   {{keyword}} / $keyword / $page 都是常见写法，不填就会带着字面量 `{{page}}` 去请求，
+  //   站点按无效参数处理 → 返回空页 → 表现成「源明明是活的，引擎却永远 0 条」。
+  //   另外 `url##{"charset":"gbk"}` 这种尾部配置也不是 URL 的一部分，必须剥掉再请求。
+  urlTpl = urlTpl.replace(/##\{[\s\S]*\}\s*$/, '');
+  const fillTpl = (t) => String(t)
+    .replace(/\{\{key\}\}|\{\{keyword\}\}|%s|\$keyword/gi, encodeURIComponent(key))
+    .replace(/\{\{page\}\}|\{\{pageIndex\}\}|\$page\b/gi, '1')
+    .replace(/\{\{pageSize\}\}/gi, '20');
+  let searchUrl = absUrl(fillTpl(urlTpl), source.bookSourceUrl);
+  let body = bodyTpl ? fillTpl(bodyTpl) : undefined;
   if (bodyTpl && method === 'GET') method = 'POST';
   const resp = await fetchPage(searchUrl, source, method, body);
   const { html, url: finalUrl, json } = resp;
@@ -253,7 +338,12 @@ function resolveList($, listRule) {
   if (lr.startsWith('/')) { const { selector } = xpathToCheerio(lr); return $(selector); }
   let cur = $.root();
   for (const o of parseChain(lr)) {
-    if (o.op === 'sel') { cur = cur.find(o.sel); if (o.idx != null && cur.length) cur = cur.eq(o.idx); }
+    if (o.op === 'sel') {
+      let n = cur.find(o.sel);
+      if (!n.length && o.alt) n = cur.find(o.alt);        // 裸名双解，与规则链同一语义
+      if (o.idx != null && n.length) n = n.eq(o.idx);
+      cur = n;
+    }
     else if (o.op === 'js') { /* 列表级 js 暂不应用, 元素级在 pick 里 */ }
     else break; // text/attr 不该出现在 bookList
   }
