@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.44.0+50531
+version: 4.45.0+50532
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -48,6 +48,10 @@ flutter:
   assets:
     - assets/legal/
     - assets/vendor_icons/
+    # 自家商标（与网页端 icons/launcher-96.png 、icons/launcher.png 逐字节同源）。
+    # 开屏页此前用 Material 内置的 Icons.hub_outlined —— 那是系统通用图标，
+    # 与网页端、桌面快捷方式不是同一个东西，用户看到的就是「开屏不是自家标」。
+    - assets/branding/
 
 dependency_overrides:
   # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，

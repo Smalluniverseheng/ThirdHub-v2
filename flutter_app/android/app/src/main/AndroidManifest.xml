@@ -126,5 +126,15 @@
             </intent-filter>
         </receiver>
             <service android:name=".OverlayService" android:exported="false" />
+        <!-- ═══ 「安装后删除安装包」的权威钩子（★勿删）═══
+             覆盖安装成功后，系统只会把 ACTION_MY_PACKAGE_REPLACED 发给本应用，
+             这是「新版真的装上了」的唯一可靠信号。删包必须挂在这上面 ——
+             若改成「拉起安装器后立刻删」，安装器读到的就是空文件（报「解析包错误」）。
+             exported=false：这个广播只由系统发给本应用，不需要、也不应该被外部触发。 -->
+        <receiver android:name=".AppUpdatedReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

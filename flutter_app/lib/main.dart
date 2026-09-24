@@ -3,7 +3,7 @@
 // 每个板块右上角: [搜索] [设置→连接资源库]
 import 'dart:async'; import 'dart:convert';
 import 'dart:math'; import 'dart:io';
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show PlatformDispatcher, ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -558,36 +558,72 @@ class SplashApp extends StatelessWidget {
     home: anim ? const SplashPage() : const Scaffold(backgroundColor: Colors.white, body: SizedBox.expand()));
 }
 class SplashPage extends StatefulWidget { const SplashPage({super.key}); @override State<SplashPage> createState() => _Sp(); }
-class _Sp extends State<SplashPage> with SingleTickerProviderStateMixin {
+// ★ 与网页端 #boot-splash 同一套视觉：自家商标 + 双向模糊光晕 + 呼吸律动
+//   + 品牌名 + 副标题「一个入口 · One Hub」+ 环形加载。
+//
+//   此前这里的问题（用户报的「开屏图标不是自家商标、加载页没用网页端那一套」）：
+//   ① 图标用的是 Material 内置 Icons.hub_outlined —— 系统通用图标，与网页端开屏、
+//      桌面快捷方式、安装包图标都不是同一个东西；
+//   ② 副标题写成「资源 · 引擎 · 互联」，与网页端的「一个入口 · One Hub」不是一套；
+//   ③ 底部版本号写死 'v4.24.0' —— 装了 4.44.0 开屏仍显示旧版本（与旁支
+//      「关于页写死 0.4.0」是同一类病：常量会忘记同步，读 kAppVersion 不会）。
+class _Sp extends State<SplashPage> with TickerProviderStateMixin {
+  // 入场：淡入 + 轻微放大，一次性
   late final AnimationController ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..forward();
-  @override void dispose() { ac.dispose(); super.dispose(); }
+  // 呼吸律动：与网页端 .bs-logo 的 bs-breathe 2.8s 同期，循环往复
+  late final AnimationController br = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))..repeat(reverse: true);
+  @override void dispose() { ac.dispose(); br.dispose(); super.dispose(); }
   @override Widget build(BuildContext c) {
     const accent = Color(0xFF3B5BFD);
-    return Scaffold(backgroundColor: Colors.white, body: SafeArea(child: Column(children: [
-      const Spacer(),
-      FadeTransition(opacity: CurvedAnimation(parent: ac, curve: Curves.easeOut),
-        child: ScaleTransition(scale: Tween<double>(begin: 0.82, end: 1).animate(CurvedAnimation(parent: ac, curve: Curves.easeOutBack)),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 84, height: 84, decoration: BoxDecoration(borderRadius: BorderRadius.circular(22),
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [accent, Color(0xFF7C6CFF)])),
-              child: const Icon(Icons.hub_outlined, color: Colors.white, size: 46)),
-            const SizedBox(height: 18),
-            const Text('ThirdHub', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1A1D26), letterSpacing: 0.5)),
-            const SizedBox(height: 6),
-            const Text('资源 · 引擎 · 互联', style: TextStyle(fontSize: 12, color: Color(0xFF9AA0AE))),
-          ]))),
-      const SizedBox(height: 40),
-      const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: accent)),
-      const Spacer(),
-      const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), SizedBox(width: 4),
-        Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
-        SizedBox(width: 10),
-        Text('v4.24.0', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
-      ]),
-      const SizedBox(height: 18),
-    ])));
+    return Scaffold(backgroundColor: const Color(0xFFF4F5F9), body: Stack(children: [
+      // 网页端 #boot-splash::before / ::after 的两团模糊光晕（左上大、右下略小且更淡）
+      const Positioned(top: -140, left: -120, child: _Glow(420)),
+      const Positioned(bottom: -130, right: -110, child: _Glow(380, opacity: 0.8)),
+      SafeArea(child: Column(children: [
+        const Spacer(),
+        FadeTransition(opacity: CurvedAnimation(parent: ac, curve: Curves.easeOut),
+          child: ScaleTransition(scale: Tween<double>(begin: 0.82, end: 1).animate(CurvedAnimation(parent: ac, curve: Curves.easeOutBack)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ScaleTransition(scale: Tween<double>(begin: 1, end: 1.045).animate(CurvedAnimation(parent: br, curve: Curves.easeInOut)),
+                child: Container(width: 96, height: 96,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(22),
+                    boxShadow: const [BoxShadow(color: Color(0x29141A28), blurRadius: 36, offset: Offset(0, 14))]),
+                  child: ClipRRect(borderRadius: BorderRadius.circular(22),
+                    // 自家商标：assets/branding/logo-96.png 与网页端 icons/launcher-96.png 逐字节同源
+                    child: Image.asset('assets/branding/logo-96.png', width: 96, height: 96, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(color: accent,
+                        child: Icon(Icons.hub_outlined, color: Colors.white, size: 46)))))),
+              const SizedBox(height: 18),
+              const Text('第三方聚合站', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1C1F2A), letterSpacing: 0.5)),
+              const SizedBox(height: 6),
+              const Text('一个入口 · One Hub', style: TextStyle(fontSize: 12, color: Color(0xFF5A6072))),
+            ]))),
+        const SizedBox(height: 40),
+        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: accent)),
+        const Spacer(),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.lan_outlined, size: 13, color: Color(0xFF9AA0AE)), const SizedBox(width: 4),
+          const Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+          const SizedBox(width: 10),
+          // 版本号读唯一来源，不再写死
+          Text('v$kAppVersion', style: const TextStyle(fontSize: 11, color: Color(0xFF9AA0AE))),
+        ]),
+        const SizedBox(height: 18),
+      ])),
+    ]));
   }
+}
+
+/// 开屏的模糊光晕。网页端用 `filter: blur(110px)` 把纯色圆晕开；
+/// CSS 的 blur(radius) 与 Flutter 的 sigma 约为 2:1，取 sigma 55 还原同一观感。
+class _Glow extends StatelessWidget {
+  final double size; final double opacity;
+  const _Glow(this.size, {this.opacity = 1});
+  @override Widget build(BuildContext c) => IgnorePointer(child: Opacity(opacity: opacity,
+    child: ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
+      child: Container(width: size, height: size,
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          color: const Color(0xFF6366F1).withValues(alpha: 0.12))))));
 }
 
 // ── 首启协议门: 未同意《用户服务协议》与《隐私政策》前不进入主界面(大厂同款) ──
@@ -620,8 +656,12 @@ class ConsentPage extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         child: Padding(padding: const EdgeInsets.fromLTRB(24, 30, 24, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
-            gradient: const LinearGradient(colors: [accent, Color(0xFF7C6CFF)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-            child: const Icon(Icons.hub_outlined, color: Colors.white, size: 34)),
+            boxShadow: const [BoxShadow(color: Color(0x29141A28), blurRadius: 20, offset: Offset(0, 8))]),
+            // 与开屏同源：协议门也显示自家商标，不再用 Material 通用图标
+            child: ClipRRect(borderRadius: BorderRadius.circular(18),
+              child: Image.asset('assets/branding/logo-96.png', width: 64, height: 64, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: accent,
+                  child: Icon(Icons.hub_outlined, color: Colors.white, size: 34))))),
           const SizedBox(height: 16),
           const Text('用户协议与隐私政策', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),

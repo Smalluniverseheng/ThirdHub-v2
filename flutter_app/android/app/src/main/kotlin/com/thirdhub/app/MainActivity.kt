@@ -2,6 +2,7 @@ package com.thirdhub.app
 
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,6 +14,28 @@ private const val PIP_ACTION_TOGGLE = "com.thirdhub.app.PIP_TOGGLE"
 class MainActivity : FlutterActivity() {
     private var volumeKeys: MethodChannel? = null
     private var interceptVolume = false
+
+    /**
+     * 启动兜底清理安装包 —— 「安装后删除安装包」的第二道闸门。
+     *
+     * 主闸门是 `MY_PACKAGE_REPLACED` 广播（[AppUpdatedReceiver]），它覆盖「正常装完」
+     * 的绝大多数情况；这里兜的是它兜不住的三类：用户中途取消了安装、安装成功但广播
+     * 因系统省电策略没送达、以及下载中断留下的 `.part` 残包。
+     *
+     * 放在后台线程：要逐个读 apk 头拿包名/版本号，是磁盘 IO，不能占用主线程
+     * （否则启动会多出可感知的停顿 —— 这个 App 的启动速度已经在别的轮次被提过）。
+     * 失败一律吞掉：清理是「锦上添花」，任何异常都不该影响启动。
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Thread {
+            try {
+                UpdateApkJanitor.sweep(this)
+            } catch (_: Exception) {
+                // 清理失败不影响任何功能：下次启动还会再来一次
+            }
+        }.start()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
