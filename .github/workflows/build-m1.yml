@@ -41,22 +41,62 @@ jobs:
           } > "$GITHUB_WORKSPACE/android/keystore.properties"
           chmod 600 "$GITHUB_WORKSPACE/android/keystore.properties"
           ls -l "$GITHUB_WORKSPACE/android/thirdhub.jks"
+      - name: 取出进包版本（唯一来源 = server/package.json）
+        id: ver
+        run: |
+          node -e "
+            const p=require('./server/package.json');
+            const [M,m,f]=p.version.split('-')[0].split('.').map(Number);
+            const code=42000+m*100+f;
+            console.log('server 版本 '+p.version+' -> versionName='+p.version+' versionCode='+code);
+            require('fs').appendFileSync(process.env.GITHUB_OUTPUT,'name='+p.version+'\ncode='+code+'\n');
+          "
       - name: 构建 APK
         run: |
           cd android
           chmod +x gradlew 2>/dev/null || true
           ./gradlew assembleRelease --no-daemon || gradle assembleRelease --no-daemon
           mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/thirdhub-backend.apk
+      - name: 校验包内版本串 == server/package.json
+        run: |
+          cd android
+          APK=app/build/outputs/apk/release/thirdhub-backend.apk
+          BADGING=$(aapt2 dump badging "$APK" 2>/dev/null || aapt dump badging "$APK")
+          echo "$BADGING" | grep -E "^package:"
+          echo "$BADGING" | grep -q "versionName='${{ steps.ver.outputs.name }}'" \
+            || { echo "::error::包内 versionName 与 server/package.json(${{ steps.ver.outputs.name }}) 不一致"; exit 1; }
+          echo "$BADGING" | grep -q "versionCode='${{ steps.ver.outputs.code }}'" \
+            || { echo "::error::包内 versionCode 与推导值(${{ steps.ver.outputs.code }}) 不一致"; exit 1; }
       - name: 发 Release（先于 artifact 上传，配额满也不影响交付）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with: { files: android/app/build/outputs/apk/release/thirdhub-backend.apk, body: "ThirdHub 后端 APK" }
-      - name: 上传 Supabase 下载桶（网站直链）
+      # 后端 APK 也是「四通道」交付物，只刷别名会漏掉「版本化对象 + 清单」两条（旧版就是这么
+      # 停在 4.2.0 的）。这里把四条通道一次刷齐。
+      - name: 上传 Supabase 下载桶（三通道：版本化 / 别名 / 清单）
+        env:
+          SR: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-backend.apk" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
-            -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @android/app/build/outputs/apk/release/thirdhub-backend.apk
+          set -e
+          APK=android/app/build/outputs/apk/release/thirdhub-backend.apk
+          VER="${{ steps.ver.outputs.name }}"; CODE="${{ steps.ver.outputs.code }}"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          BASE="https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object"
+          CT="Content-Type: application/vnd.android.package-archive"
+          # ① 版本化对象
+          curl -sf -X POST "$BASE/downloads/thirdhub-backend-$VER.apk" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "$CT" --data-binary @"$APK"
+          # ② 别名对象（网站/客户端的静态直链）
+          curl -sf -X POST "$BASE/downloads/thirdhub/thirdhub-backend.apk" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "$CT" --data-binary @"$APK"
+          # ③ 清单 latest-backend.json（客户端「下载中心」实时读它显示版本号）
+          printf '{"version":"%s","versionCode":%s,"code":%s,"packageId":"com.thirdhub.backend","url":"https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub/thirdhub-backend.apk","notes":"内嵌 Node 家庭后端 v%s（与 server/package.json 同号）","sha256":"%s"}' \
+            "$VER" "$CODE" "$CODE" "$VER" "$SHA" > /tmp/latest-backend.json
+          curl -sf -X POST "$BASE/downloads/thirdhub/latest-backend.json" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "Content-Type: application/json" --data-binary @/tmp/latest-backend.json
+          # 回读校验：清单必须真的变成这个版本
+          GOT=$(curl -sf "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub/latest-backend.json?t=$(date +%s)")
+          echo "$GOT"
+          echo "$GOT" | grep -q "\"version\":\"$VER\"" || { echo "::error::latest-backend.json 回读版本不一致"; exit 1; }
+          echo "$GOT" | grep -q "\"sha256\":\"$SHA\"" || { echo "::error::latest-backend.json 回读 sha256 不一致"; exit 1; }
+          echo "三通道 PASS  版本=$VER  体积=$(stat -c%s "$APK")  sha256=$SHA"
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with: { name: thirdhub-backend-apk, path: android/app/build/outputs/apk/release/*.apk }
