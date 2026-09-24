@@ -12,6 +12,10 @@
 const fs = require('fs');
 const path = require('path');
 
+// 后端版本号唯一来源（同 routes-data.js / index.js / peer-hub.js）——
+// 此前这里硬编码，跟着客户端版本一起手工改，属于"迟早会漏"的同步点。
+const PKG_VERSION = require('./package.json').version;
+
 let REG = null;   // 内存缓存
 let DATA_DIR = '';
 
@@ -128,7 +132,7 @@ async function connect(id) {
     const initRes = await rpc(s.url, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'ThirdHub-v4', version: '4.47.0' },
+      clientInfo: { name: 'ThirdHub-v4', version: PKG_VERSION },
     });
     const toolsRes = await rpc(s.url, 'tools/list', {});
     s.tools = (toolsRes.tools || []).map((t) => ({

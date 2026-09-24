@@ -72,8 +72,26 @@ class _Wp extends State<WallpaperPage> {
       IconButton.filled(icon: const Icon(Icons.search, size: 20), onPressed: () => _fetch(q: searchC.text.trim())),
     ])),
     if (err.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
-    Expanded(child: items.isEmpty && !loading
-      ? const Center(child: Text('加载中或没有结果', style: TextStyle(color: Colors.grey)))
+    Expanded(child: items.isEmpty
+      ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(
+          mainAxisSize: MainAxisSize.min, children: [
+            if (loading) const CircularProgressIndicator()
+            else const Icon(Icons.image_not_supported_outlined, size: 34, color: Colors.grey),
+            const SizedBox(height: 10),
+            Text(
+              // 原来无论「在加载」「失败」「真没结果」都写「加载中或没有结果」，
+              // 用户分不清是卡住了还是没搜到。三态分开说。
+              loading
+                  ? '正在拉取壁纸…'
+                  : (err.isNotEmpty
+                      ? '没拉到壁纸（上方是失败原因）\n换个英文关键词试试，例如 nature / city / anime'
+                      : '还没有壁纸\n搜一个英文关键词开始，例如 nature / city / anime'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)),
+            if (!loading)
+              TextButton(onPressed: () => _fetch(q: searchC.text.trim()),
+                child: const Text('重试', style: TextStyle(fontSize: 12))),
+          ])))
       : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3, mainAxisSpacing: 4, crossAxisSpacing: 4, childAspectRatio: 0.65),
         padding: const EdgeInsets.all(8),
@@ -190,6 +208,20 @@ class _Radio extends State<RadioPage> {
     if (err.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
     Expanded(child: loading
       ? const Center(child: CircularProgressIndicator())
+      : stations.isEmpty
+      ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(
+          mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.radio_outlined, size: 34, color: Colors.grey),
+            const SizedBox(height: 10),
+            // 原来 0 条时 listView itemCount=0 → 一片空白，用户以为界面坏了
+            Text(err.isNotEmpty
+                ? '没搜到电台（上方是失败原因）\n电台库是公开接口，偶尔会抽风，稍后再试一次'
+                : '还没有电台\n搜一个关键词开始，例如 BBC / jazz / 中文',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)),
+            TextButton(onPressed: () => _search(searchC.text.trim()),
+              child: const Text('重试', style: TextStyle(fontSize: 12))),
+          ])))
       : ListView.builder(itemCount: stations.length, itemBuilder: (_, i) {
           final s = stations[i];
           final id = s['stationuuid'] ?? s['url'] ?? '';

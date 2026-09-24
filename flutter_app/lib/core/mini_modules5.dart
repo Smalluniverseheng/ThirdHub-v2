@@ -293,7 +293,15 @@ class _Rp extends State<RecipePage> {
             child: Text('做法', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700))),
           Text(m['strInstructions'] ?? '', style: const TextStyle(fontSize: 13, height: 1.7)),
         ]))));
-    } catch (_) {}
+    } catch (_) {
+      // 这里原来是个空 catch：网络失败、或返回体里没有 meals（`as List` 之后
+      // `.first` 抛错）时，用户点了菜谱**什么都不发生** —— 不跳转也不提示，
+      // 看起来就像 App 卡住了。把真因说出来。
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('打不开这道菜 · 菜谱库（TheMealDB）没连上，或这道菜已下架 —— 稍后再试一次')));
+      }
+    }
   }
 
   @override Widget build(BuildContext c) => Column(children: [

@@ -5232,6 +5232,19 @@ void registerProBridges() {
     AppSettings.onChanged?.call();
   };
 
+  // ── Agent 控制面: 从任务页直接跳到「连接资源库」填后端地址 ──
+  // 后端地址唯一的填写入口此前藏在「我的 → 系统 → 连接资源库」，用户在任务页
+  // 看到「连不上」时只能自己去翻菜单 —— 现在任务页那颗「去填后端地址」按钮
+  // 走这个钩子，一步到地方。用钩子是因为 ai_agent.dart 刻意不依赖 Flutter/main。
+  AgentRuntime.openConnector = () async {
+    final ctx = IntentRouter.navKey.currentContext;
+    if (ctx == null) return;
+    await Navigator.push(ctx, smoothRoute(const ConnectLibraryPage()));
+    // 回来后立刻重新探测一次 —— 否则用户填完地址，任务页还是显示「连不上」，
+    // 又会以为是没生效。
+    try { await AgentRuntime.bootstrap(); } catch (_) {}
+  };
+
   // ── AI-1 工具: 打开模块 / 把文本交给阅读器 ──
   ProBridge.openModule = (k) { proOpenModule.value = k; };
   ProBridge.openReader = (title, text) async {
@@ -5855,7 +5868,41 @@ class _Ei extends State<EngineItemPage> {
   String get cover => '${widget.item['coverUrl'] ?? ''}';
   String get authorS => '${widget.item['author'] ?? ''}';
   String get introS => '${widget.item['intro'] ?? ''}';
-  @override void initState() { super.initState(); _load(); }
+  bool shelved = false;
+  @override void initState() { super.initState(); _load(); _markOpened(); }
+
+  /// 把「引擎直连看的内容」也写进书架历史，并查一下它是否已在书架。
+  ///
+  /// 为什么必须补这一步：全项目**只有后端路径的详情页**（VideoDetailPage /
+  /// ComicDetailPage）会写 history_*。走引擎的用户因此**永远进不了「片库 / 历史」**；
+  /// 而那几个页面的空态还写着「搜索后进入详情页，点书签图标加入」—— 它指的就是本页，
+  /// 可本页此前既没有书签按钮、也不写历史，用户照着做也做不到。
+  Future<void> _markOpened() async {
+    final k = widget.type;
+    if (k != 'novel' && k != 'comic' && k != 'video' && k != 'music') return;
+    try {
+      await Book.recordHistory(Book(name, authorS, cover, introS, id, 'engine'), k);
+    } catch (_) {}
+    try {
+      final l = await Book.shelf(k);
+      if (mounted) setState(() => shelved = l.any((x) => x.bookUrl == id));
+    } catch (_) {}
+  }
+
+  Future<void> _addShelf() async {
+    if (shelved) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('它已经在书架里了')));
+      return;
+    }
+    // target 固定 local：引擎直连的内容没有后端资源库条目，没必要往后端提交
+    await Book.add(Book(name, authorS, cover, introS, id, 'engine'), widget.type,
+        target: 'local');
+    if (!mounted) return;
+    setState(() => shelved = true);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已加入书架')));
+  }
   Future<void> _load() async {
     try { chapters = await EngineDirect.chapters(widget.type, id); }
     catch (e) { err = '$e'; }
@@ -5901,7 +5948,16 @@ class _Ei extends State<EngineItemPage> {
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('获取播放地址失败: $e'))); }
   }
-  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+  @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+    actions: [
+      // 引擎条目此前没有任何收藏入口 —— 而「片库 / 历史」的空态正是叫用户
+      // 来这里点书签。补上它，那句引导才成立。
+      if (widget.type == 'novel' || widget.type == 'comic' || widget.type == 'video' || widget.type == 'music')
+        IconButton(
+          icon: Icon(shelved ? Icons.bookmark : Icons.bookmark_border, size: 21),
+          tooltip: shelved ? '已在书架' : '加入书架',
+          onPressed: _addShelf),
+    ]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : err.isNotEmpty ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('加载目录失败: $err', style: const TextStyle(color: Colors.redAccent))))
       : ListView(children: [

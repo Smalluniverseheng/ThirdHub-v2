@@ -409,8 +409,38 @@ class AgentDshClient {
   }
 
   // ── 6. DSH 进程控制（服务端侧） ─────────────────────────────────────────
-  static Future<bool> startDsh() async =>
-      _data(await _send('POST', '/agent/dsh/start')) is Map;
-  static Future<bool> stopDsh() async =>
-      _data(await _send('POST', '/agent/dsh/stop')) is Map;
+  /// 最近一次 DSH 操作的**真实失败原因**（服务端 400 时 data.message）。
+  /// 之前这里被丢掉，界面上只剩一句「后端版本或权限不符」，而真因是「没装 DSH」。
+  static String lastDshError = '';
+
+  /// 信封判定：只有 `object != 'error'` 且带 data 才算成功。
+  ///
+  /// 为什么不能写 `_data(j) is Map`：服务端失败时返回的信封是
+  /// `{object:'error', data:{type:'dsh_start_failed', message:'未找到 DSH 可执行文件'}}`
+  /// —— 它的 data **本身就是 Map**，于是「没装 DSH」被报成了「启动成功」。
+  static bool _accepted(Map<String, dynamic>? j) =>
+      j != null && j['object'] != 'error' && _data(j) is Map;
+
+  static String _errText(Map<String, dynamic>? j) {
+    final d = _data(j);
+    if (d is Map) {
+      final m = '${d['message'] ?? ''}'.trim();
+      if (m.isNotEmpty) return m;
+      final t = '${d['type'] ?? ''}'.trim();
+      if (t.isNotEmpty) return t;
+    }
+    return j == null ? '后端无响应（地址不通或 token 不符）' : '后端拒绝了该操作';
+  }
+
+  static Future<bool> startDsh() async {
+    final j = await _send('POST', '/agent/dsh/start');
+    lastDshError = _accepted(j) ? '' : _errText(j);
+    return _accepted(j);
+  }
+
+  static Future<bool> stopDsh() async {
+    final j = await _send('POST', '/agent/dsh/stop');
+    lastDshError = _accepted(j) ? '' : _errText(j);
+    return _accepted(j);
+  }
 }

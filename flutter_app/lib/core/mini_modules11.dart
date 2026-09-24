@@ -116,9 +116,13 @@ class _Cam extends State<CameraPage> {
         TextField(controller: nc, autofocus: true, decoration: const InputDecoration(hintText: '名字, 如: 客厅', isDense: true)),
         const SizedBox(height: 8),
         TextField(controller: uc, decoration: const InputDecoration(
-          hintText: '流地址 http(s)://… 或 rtsp://…', isDense: true)),
+          hintText: '流地址 http(s)://…（例 http://192.168.1.9:8080/live.mp4）', isDense: true)),
         const Padding(padding: EdgeInsets.only(top: 8),
-          child: Text('常见格式: http://摄像头IP/视频流地址\n(rtsp 需播放器内核支持, 推荐 http/mjpeg)',
+          child: Text(
+            '本机播放内核只吃 http(s) 的 mp4 / m3u8（H.264）。\n'
+            'rtsp:// 与 mjpeg 目前播不了 —— 填了会提示「打不开这个流地址」，'
+            '那是内核不支持，不是你地址写错了。\n'
+            '多数摄像头可以在设置里把输出改成 H.264 的 RTSP→HTTP 转流，或改用厂商的 Web 预览地址。',
             style: TextStyle(fontSize: 10, color: Colors.grey))),
       ]),
       actions: [

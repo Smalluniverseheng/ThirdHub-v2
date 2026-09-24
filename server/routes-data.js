@@ -5,6 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// 后端版本号**唯一来源** —— 与 index.js / peer-hub.js / routes-sources.js 读的是同一份。
+// 为什么必须收口：此前 /v1/ping 与 MCP serverInfo 各自硬编码一个字面量，跟着客户端
+// 版本号一起手工改，于是**同一个后端**从 /v1/meta 问是 0.8.x，从 /v1/ping 问却是 4.x
+// —— 两个端点互相矛盾。凡是"要手工同步的常量"迟早会漏，改成运行时读取即无此患。
+const PKG_VERSION = require('./package.json').version;
+
 // ctx: 共享状态注入(引用类型, 与 index.js 互通)
 async function handle(req, res, body, u, p, send, ctx) {
   const { DATA, SECRET } = ctx;
@@ -296,7 +302,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   const jWrite = (n, v) => { try { fs.writeFileSync(jFile(n), JSON.stringify(v, null, 2)); } catch (e) {} };
 
   if (p === '/v1/ping') {
-    return send(200, { object: 'meta', data: { pong: true, t: Date.now(), version: '4.47.0' } });
+    return send(200, { object: 'meta', data: { pong: true, t: Date.now(), version: PKG_VERSION } });
   }
 
   // ── R-3 / R-10 批注与摘抄(设备间同步) ──
@@ -522,7 +528,7 @@ async function handle(req, res, body, u, p, send, ctx) {
       return send(200, { jsonrpc: '2.0', id, result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'ThirdHub Backend', version: '4.47.0' } } });
+        serverInfo: { name: 'ThirdHub Backend', version: PKG_VERSION } } });
     }
     if (method === 'tools/list') {
       const reg = jRead('mcp-tools.json', { tools: [] });

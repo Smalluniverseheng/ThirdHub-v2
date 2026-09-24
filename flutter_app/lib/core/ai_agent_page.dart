@@ -9,13 +9,16 @@
 // 前四栏作用于**轻量 Agent** 路径；「任务」栏对着服务端 Agent Runtime(DSH)。
 // 两条路的上下文装配规则是同一套(见 ai_agent.dart 的 AiContext)。
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import 'agent_dsh_client.dart';
 import 'agent_models.dart';
 import 'agent_policy.dart';
+import 'ai.dart';
 import 'ai_agent.dart';
+import 'local_tools.dart';
 
 class AiAgentPage extends StatefulWidget {
   /// 传入会话 id 时多出「钉注」一栏(钉注是会话级的)
@@ -450,7 +453,17 @@ class _TaskTabState extends State<_TaskTab> {
   final Set<String> _artBusy = {};
   final Set<String> _artDiffOpen = {};
 
-  bool get _online => AgentRuntime.backendConnected;
+  /// 轻量循环正在流式输出的正文（还没落成 assistant_message 事件的那部分）。
+  /// 单独放一个字段而不是塞假事件进 `_events`：事件流必须是**服务端权威**的
+  /// append-only 记录，本地草稿不该混进去。
+  String _liteStream = '';
+  bool _liteRunning = false;
+
+  /// 后端是否**真的能连上**。
+  ///
+  /// 原来这里写的是 `AgentRuntime.backendConnected`，而它只表示「地址填过」——
+  /// 后端关机后界面照旧显示已连接、能发任务，然后静默失败。
+  bool get _online => AgentRuntime.online;
   AgentTimeline get _tl => AgentTimeline(_events);
   int get _lastSeq => _events.isEmpty ? 0 : _events.last.seq;
 
@@ -476,12 +489,12 @@ class _TaskTabState extends State<_TaskTab> {
 
   Future<void> _boot() async {
     _profile = AgentRuntime.profile;
-    if (_online) {
-      final h = await AgentRuntime.refresh();
-      if (h != null) _h = h;
-      await _reloadAudit();
-    }
+    // 不再用 `if (_online)` 把探测挡在外面 —— online 的初值是 false，
+    // 那样写就永远探不到、永远停在「离线」，是个自锁。
+    final h = await AgentRuntime.refresh();
+    if (h != null) _h = h;
     await _reloadTools();
+    await _reloadAudit();
     if (mounted) setState(() => _booted = true);
   }
 
@@ -518,17 +531,23 @@ class _TaskTabState extends State<_TaskTab> {
 
   Future<void> _toggleDsh(bool start) async {
     if (!_online) {
-      _say('未连接家庭后端 —— DSH 是后端侧的运行时，请先在后端连接页连上再启动', bad: true);
+      _say('连不上家庭后端（${AgentRuntime.offlineReason.isEmpty ? "地址未填或探测无响应" : AgentRuntime.offlineReason}）'
+           ' —— DSH 跑在后端那侧，先去「我的 → 系统 → 连接资源库」把地址填上并确认能连通', bad: true);
       return;
     }
     setState(() => _busy = true);
     final ok = start ? await AgentDshClient.startDsh() : await AgentDshClient.stopDsh();
+    final err = AgentDshClient.lastDshError;
     final h = await AgentRuntime.refresh();
     if (h != null) _h = h;
     if (mounted) setState(() => _busy = false);
-    _say(ok
-        ? (start ? '已请求启动 DSH，正在重新检测…' : '已请求停止 DSH')
-        : '请求失败：后端未接受该操作（现象：接口无响应；原因：后端版本或权限不符；怎么办：看后端日志）',
+    _say(
+        ok
+            ? (start ? '已请求启动 DSH，正在重新检测…' : '已请求停止 DSH')
+            // 把服务端给的**真因**透出来。原来这里一律换成「后端版本或权限不符」，
+            // 而实测最常见的真因是「这台后端根本没装 DSH」，用户被引去查日志。
+            : 'DSH 启动失败：${err.isEmpty ? "后端未响应" : err}'
+              '${err.contains("未找到") ? "（后端机器上没装 DSH。装好后用环境变量 TH_DSH_CMD 或 TH_DSH_URL 指向它，详见后端 docs/AGENT-PROTOCOL.md §14）" : ""}',
         bad: !ok);
   }
 
@@ -569,7 +588,9 @@ class _TaskTabState extends State<_TaskTab> {
     final text = _input.text.trim();
     if (text.isEmpty) return;
     if (!_online) {
-      _say('未连接家庭后端 —— 轻量模式在这里不发任务，请到「AI 对话」页正常聊天（那边不受影响）', bad: true);
+      _say('还连不上家庭后端（${AgentRuntime.offlineReason.isEmpty ? "地址未填或探测无响应" : AgentRuntime.offlineReason}）'
+           ' —— 点上面的「去填后端地址」填上并确认能连通。'
+           '只想聊天的话直接去「AI 对话」页，那条路不依赖后端', bad: true);
       return;
     }
     if (_busy) return;
@@ -595,13 +616,194 @@ class _TaskTabState extends State<_TaskTab> {
     });
     _toBottom();
     if (r.full) {
-      _say('完整模式：已落账，正在订阅事件流…');
+      _say('完整模式：已落账，事件由后端的 DSH 产出，正在订阅事件流…');
       _subscribe(sid);
     } else {
-      _say(r.hint.isEmpty
-          ? '已落账（轻量模式）：本轮不调用工具，过程事件由客户端按轻量循环回填'
-          : r.hint);
+      // ★ 降级路径落地：后端在、但没有 DSH —— 由**本机模型**跑完这一轮，
+      //   过程事件回填到同一份事件流里（THA/1 的立场是「事件协议不变、
+      //   控制面不分叉」，循环在哪跑，记录都该是同一份）。
+      await _runLite(sid, text);
     }
+  }
+
+  /// 轻量循环：本机模型 + 本机/MCP 工具，按当前权限档位逐项判定，
+  /// confirm 级工具在本地弹确认，每一步都 appendEvent 回服务端。
+  ///
+  /// 为什么必须做回填：此前这里只落一条 user_message 就结束，界面上留下一句
+  /// 「过程事件由客户端按轻量循环回填」的承诺，而回填用的
+  /// `AgentDshClient.appendEvent` 全仓无人调用 —— 于是任务页永远表现为
+  /// 「发了没反应」，而降级模式是最常见的状态（大多数人没装 DSH）。
+  Future<void> _runLite(String sid, String text) async {
+    if (_liteRunning) return;
+    final (provId, lastModelId) = await AiRegistry.lastModel();
+    final prov = AiRegistry.byId(provId);
+    if (prov == null) {
+      _say('轻量模式需要一个本机模型：先去「AI 对话」页选一个模型'
+           '（本机记住的是「$provId」，它不在厂商表里）', bad: true);
+      return;
+    }
+    if ((await AiRegistry.keyOf(prov.id)).isEmpty) {
+      _say('模型「${prov.name}」还没填 API Key —— 在「AI 对话」页右上角设置里填上，回来就能用', bad: true);
+      return;
+    }
+    final model = lastModelId.isNotEmpty
+        ? lastModelId
+        : (prov.models.isEmpty ? '' : prov.models.first);
+    if (model.isEmpty) {
+      _say('厂商「${prov.name}」没有可用模型名，请到「AI 对话」页重新选一个', bad: true);
+      return;
+    }
+    setState(() { _liteRunning = true; _liteStream = ''; });
+    _say('轻量模式（后端没有 DSH）：本轮由本机「${prov.name} · $model」执行，过程会回填到下面的事件流');
+
+    final tools = <Map<String, dynamic>>[
+      ...Mcp.allTools(),
+      ...LocalTools.schemas(),
+    ];
+
+    Future<String> exec(String serverId, String name,
+        Map<String, dynamic> args) async {
+      final d = AgentRuntime.checkTool(name);
+      await AgentDshClient.appendEvent(sid, AgentEventType.toolCall, {
+        'tool': name, 'args': args, 'risk': d.risk,
+        'riskLabel': AgentPolicy.riskLabel(d.risk),
+        'decision': d.decision, 'reason': d.reason, 'serverId': serverId,
+      });
+      if (d.decision == AgentDecision.deny) {
+        final msg = '权限档位「$_profile」禁用该工具：${d.reason}';
+        await AgentDshClient.appendEvent(sid, AgentEventType.toolResult,
+            {'tool': name, 'ok': false, 'text': msg});
+        return msg;
+      }
+      if (d.decision == AgentDecision.confirm) {
+        if (!await _askLiteConfirm(name, args, d.reason)) {
+          final msg = '用户拒绝了本次工具调用「$name」，请换一种方式，或直接说明你做不到。';
+          await AgentDshClient.appendEvent(sid, AgentEventType.toolResult,
+              {'tool': name, 'ok': false, 'text': msg});
+          return msg;
+        }
+      }
+      var out = '';
+      try {
+        if (serverId == 'local') {
+          out = await LocalTools.call(name, args);
+        } else {
+          final res = await Mcp.callTool(serverId, name, args);
+          out = [
+            for (final c in (res['content'] as List? ?? [])) '${c['text'] ?? c}'
+          ].join('\n');
+          if (out.isEmpty) out = jsonEncode(res);
+        }
+      } catch (e) {
+        out = '工具执行失败: $e';
+      }
+      await AgentDshClient.appendEvent(sid, AgentEventType.toolResult,
+          {'tool': name, 'ok': true, 'text': out});
+      return out;
+    }
+
+    var full = '';
+    try {
+      final stack = await AiContext.systemStack(
+          pins: const [], toolManifest: true, tools: tools);
+      final msgs = <Map<String, String>>[
+        ...stack,
+        {'role': 'user', 'content': text},
+      ];
+      var pending = '';
+      Timer? flushT;
+      full = await AiChat.chat(
+        provider: prov, model: model, messages: msgs,
+        mcpTools: tools.isEmpty ? null : tools,
+        toolExecutor: exec,
+        maxRounds: 8,
+        textToolFallback: true,
+        onToolCall: (name) => _say('正在调用工具 $name'),
+        onDelta: (delta) {
+          pending += delta;
+          // 与 AI 对话页同款合帧：66ms 落一次 UI，避免逐 token 抖动
+          flushT ??= Timer(const Duration(milliseconds: 66), () {
+            flushT = null;
+            if (!mounted || pending.isEmpty) return;
+            final add = pending; pending = '';
+            setState(() => _liteStream += add);
+            _toBottom();
+          });
+        },
+      );
+      flushT?.cancel();
+      if (pending.isNotEmpty && mounted) {
+        setState(() => _liteStream += pending);
+        pending = '';
+      }
+      if (full.trim().isEmpty) full = '（模型没有返回内容）';
+      await AgentDshClient.appendEvent(
+          sid, AgentEventType.assistantMessage, {'text': full});
+      await AgentDshClient.appendEvent(sid, AgentEventType.done, {});
+      if (!mounted) return;
+      setState(() {
+        _liteRunning = false;
+        _liteStream = '';
+        _waiting = false;
+      });
+      await _pull();          // 把服务端落账的 assistant_message/done 拉回来
+      await _reloadAudit();
+      _say('本轮完成（轻量模式 · ${prov.name}）');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _liteRunning = false; _liteStream = ''; _waiting = false; });
+      _say('轻量循环失败: $e', bad: true);
+    }
+  }
+
+  /// 轻量循环里 confirm 级工具的确认弹窗（与控制面同一套语义：
+  /// 档位说「需确认」就一定要人点一下，绝不因为「本地跑」就自动放行）
+  Future<bool> _askLiteConfirm(
+      String name, Map<String, dynamic> args, String reason) async {
+    if (!mounted) return false;
+    var pretty = '';
+    try {
+      pretty = const JsonEncoder.withIndent('  ').convert(args);
+    } catch (_) {
+      pretty = '$args';
+    }
+    if (pretty.length > 900) pretty = '${pretty.substring(0, 900)}…';
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+              title: Row(children: const [
+                Icon(Icons.gpp_maybe_outlined, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('这轮任务想执行一个操作', style: TextStyle(fontSize: 15))),
+              ]),
+              content: SingleChildScrollView(
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                    if (reason.isNotEmpty)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('档位判定：$reason',
+                              style: const TextStyle(fontSize: 11, color: Colors.grey))),
+                    const SizedBox(height: 8),
+                    Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                            color: Theme.of(c).colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(8)),
+                        child: SelectableText(
+                            pretty.isEmpty ? '(无参数)' : pretty,
+                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
+                  ])),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('拒绝')),
+                FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('允许一次')),
+              ],
+            ));
+    return ok == true;
   }
 
   Future<void> _newSession() async {
@@ -669,11 +871,15 @@ class _TaskTabState extends State<_TaskTab> {
             for (final e in _h.capabilities.entries) _capChip(e.key, e.value),
           ]),
           const SizedBox(height: 8),
-          Row(children: [
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            if (!_online)
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => AgentRuntime.openConnector?.call(),
+                icon: const Icon(Icons.link, size: 16),
+                label: const Text('去填后端地址', style: TextStyle(fontSize: 12))),
             OutlinedButton.icon(onPressed: _busy ? null : _boot,
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('重新检测', style: TextStyle(fontSize: 12))),
-            const SizedBox(width: 8),
             if (!_h.dshRunning)
               OutlinedButton.icon(
                 onPressed: _busy || !_online ? null : () => _toggleDsh(true),
@@ -761,15 +967,21 @@ class _TaskTabState extends State<_TaskTab> {
     decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(12)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_online ? '任务栏会按顺序渲染四类事件' : '轻量模式下这一栏不会产出事件',
+      Text(!_online
+            ? '还连不上家庭后端'
+            : (_h.isFull ? '完整模式：事件由后端的 DSH 产出' : '轻量模式：这一轮由你手机上的模型执行'),
         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
       const SizedBox(height: 6),
-      Text(_online
-          ? '① 助手增量（流式正文）  ② 工具调用（工具名 + 风险等级 + 参数）\n'
-            '③ 确认请求（高危操作会停在这里等你点「允许一次 / 拒绝」）  ④ 工具结果与产物'
-          : '现象：事件流为空。原因：本机没检测到 DSH，Agent 循环不在后端跑。'
-            '怎么办：① 连上家庭后端后点「启动 DSH」；② 或直接在「AI 对话」页聊天 —— '
-            '那条路走轻量循环，不依赖 DSH。',
+      Text(!_online
+          ? '现象：发送按钮是灰的，任务发不出去。'
+            '原因：${AgentRuntime.offlineReason.isEmpty ? "还没填后端地址，或探测无响应" : AgentRuntime.offlineReason}。'
+            '怎么办：点上面「去填后端地址」把家庭后端地址填上并确认能连通。'
+            '不连后端也能用 —— 「AI 对话」页那条路本来就不依赖后端。'
+          : (_h.isFull
+              ? '发一条任务后，这一栏会按顺序出现：① 助手流式正文  ② 工具调用（工具名 + 风险等级 + 参数）\n'
+                '③ 确认请求（高危操作会停在这里等你点「允许一次 / 拒绝」）  ④ 工具结果与产物'
+              : '发一条任务后：后端负责落账与审计，具体执行由本机模型完成，过程和结果同样会回到这一栏。'
+                '需要确认的操作会当场弹窗 —— 档位判定与完整模式用的是同一套规则（确认弹窗两边都会弹）。'),
         style: const TextStyle(fontSize: 11, height: 1.6, color: Colors.grey)),
     ]));
 
@@ -801,12 +1013,19 @@ class _TaskTabState extends State<_TaskTab> {
       if (w != null) out.add(w);
     }
     flush();
-    if (_waiting) {
-      out.add(const Padding(padding: EdgeInsets.symmetric(vertical: 6),
+    // 轻量循环正在流式输出的正文（本地草稿，不混进 _events —— 那是服务端权威记录）
+    if (_liteStream.isNotEmpty) out.add(bubble(_liteStream));
+    if (_waiting || _liteRunning) {
+      out.add(Padding(padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(children: [
-          SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2)),
-          SizedBox(width: 8),
-          Text('等待 DSH 产出事件…', style: TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(width: 13, height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(
+            _liteRunning
+                ? (_liteStream.isEmpty ? '本机模型正在思考…' : '本机模型正在回答…')
+                : '等后端 DSH 产出事件…（若一直不动，多半是后端没装 DSH）',
+            style: const TextStyle(fontSize: 11, color: Colors.grey))),
         ])));
     }
     return out;
@@ -1168,7 +1387,7 @@ class _TaskTabState extends State<_TaskTab> {
 
   Widget _composer(ColorScheme cs) {
     final blocked = _tl.blockedByConfirm;
-    final canSend = _online && !_busy && !blocked;
+    final canSend = _online && !_busy && !blocked && !_liteRunning;
     return SafeArea(top: false, child: Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       decoration: BoxDecoration(color: cs.surface,
@@ -1185,13 +1404,15 @@ class _TaskTabState extends State<_TaskTab> {
             ])),
         Row(children: [
           Expanded(child: TextField(controller: _input,
-            enabled: _online && !_busy, minLines: 1, maxLines: 4,
+            enabled: _online && !_busy && !_liteRunning, minLines: 1, maxLines: 4,
             style: const TextStyle(fontSize: 13),
             onSubmitted: (_) { if (canSend) _send(); },
             decoration: InputDecoration(
               hintText: !_online
-                  ? '未连接后端：轻量模式不发任务'
-                  : (blocked ? '有待确认的操作，先处理上面的卡片' : '下达一条任务，例：把书架里这本书的简介整理成表格'),
+                  ? '先填上家庭后端地址（点上面的「去填后端地址」）'
+                  : (_liteRunning
+                      ? '本轮还在执行…'
+                      : (blocked ? '有待确认的操作，先处理上面的卡片' : '下达一条任务，例：把书架里这本书的简介整理成表格')),
               isDense: true, border: const OutlineInputBorder()))),
           const SizedBox(width: 8),
           IconButton.filled(onPressed: canSend ? _send : null,

@@ -591,8 +591,26 @@ class AgentRuntime {
   /// 后端地址/token 是否已配置（连上家庭后端才有值）
   static bool get backendConnected => AgentDshClient.configured;
 
+  /// 后端是否**真的连得上** —— 最近一次 /agent/health 探测成功。
+  ///
+  /// 为什么不能拿 [backendConnected] 当「已连接」用：它只表示「地址填过」。
+  /// 后端关机 / 换了网络之后，它照样是 true，于是界面上写着「已连接」、
+  /// 输入框照样能发任务，然后静默失败——用户看到的是一个说谎的状态灯。
+  static bool online = false;
+
+  /// 探测失败的原因（给 UI 一句话），成功时为空
+  static String offlineReason = '';
+
   /// 是否走完整 Agent（要有后端 **且** 后端那侧真接上了 DSH）
-  static bool get useFullAgent => AgentDshClient.configured && health.isFull;
+  static bool get useFullAgent => online && health.isFull;
+
+  /// 打开「连接资源库」页的钩子，由 main.dart 启动时注入。
+  ///
+  /// 为什么用钩子而不是直接 import main.dart：main.dart 反向依赖本文件，
+  /// 直接互引会绕成循环；而且本文件刻意零 Flutter 依赖，好让纯 Dart 自检能跑。
+  /// 存在的意义：后端地址唯一的填写入口藏在「我的 → 系统 → 连接资源库」，
+  /// 用户在任务页看到「连不上」时，得有一个按钮直接把他送过去。
+  static Future<void> Function()? openConnector;
 
   /// 给 UI 的一句话
   static String get modeLabel => useFullAgent ? '完整 Agent' : '轻量 Agent';
@@ -616,13 +634,25 @@ class AgentRuntime {
   static Future<AgentHealth?> bootstrap({bool probe = false}) async {
     await loadProfile();
     if (!AgentDshClient.configured) {
+      online = false;
+      offlineReason = '还没填家庭后端地址';
       health = const AgentHealth(dshError: '未连接家庭后端——轻量模式（本地工具仍可用）');
       _booted = true;
       return health;
     }
     await AgentDshClient.syncPolicy();
     final h = await AgentDshClient.health(probe: probe);
-    if (h != null) health = h;
+    if (h != null) {
+      health = h;
+      online = true;
+      offlineReason = '';
+    } else {
+      // 探测失败 → **必须改状态**。原来这里 `if (h != null)` 保留旧值，
+      // 于是一次都没连上过的后端会显示成「已降级为轻量模式」，看着像正常降级。
+      online = false;
+      offlineReason = '连不上家庭后端（地址已填，但探测无响应）';
+      health = AgentHealth(dshError: '$offlineReason —— 轻量模式：任务改由本机模型执行');
+    }
     _booted = true;
     return health;
   }
@@ -630,11 +660,21 @@ class AgentRuntime {
   /// 重新探测（用户在设置页点「重新检测」时用）
   static Future<AgentHealth?> refresh() async {
     if (!AgentDshClient.configured) {
+      online = false;
+      offlineReason = '还没填家庭后端地址';
       health = const AgentHealth(dshError: '未连接家庭后端');
       return health;
     }
     final h = await AgentDshClient.health(probe: true);
-    if (h != null) health = h;
+    if (h != null) {
+      health = h;
+      online = true;
+      offlineReason = '';
+    } else {
+      online = false;
+      offlineReason = '连不上家庭后端（地址已填，但探测无响应）';
+      health = AgentHealth(dshError: '$offlineReason —— 轻量模式：任务改由本机模型执行');
+    }
     return health;
   }
 
@@ -673,6 +713,8 @@ class AgentRuntime {
     health = const AgentHealth();
     _profile = AgentProfileId.normal;
     _booted = false;
+    online = false;
+    offlineReason = '';
     AgentDshClient.base = '';
     AgentDshClient.token = '';
     AgentPolicy.reset();

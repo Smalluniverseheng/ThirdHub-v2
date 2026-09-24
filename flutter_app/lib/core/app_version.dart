@@ -12,12 +12,16 @@
 // 也写在 pubspec 里，无法引用 Dart 常量）。
 //
 // ★ 发版改这里时，必须同步改：
-//   · `flutter_app/pubspec.yaml` 的 `version: x.y.z+code`
-//   · `server/mcp-registry.js` / `server/routes-data.js` 里上报给外部的 version
-//     字符串（Node 侧读不到 Dart 常量）
+//   · `flutter_app/pubspec.yaml` 的 `version: x.y.z+code`（Flutter 要求，引用不到常量）
+//   · 仓库根 `README.md` 里写死的当前版本号（文档面，仅影响可读性）
+//   Node 侧（`server/`）**不需要**再跟着改了：0.8.4 起后端版本号已收归
+//   `server/package.json` 单一来源，`routes-data.js`(ping/MCP serverInfo) 与
+//   `mcp-registry.js`(clientInfo) 全部改为运行时 `require` 读取。此前它们各自
+//   硬编码，跟着客户端版本手工同步 —— 于是同一个后端从 /v1/meta 问是一个数、
+//   从 /v1/ping 问是另一个数。凡"要手工同步的常量"迟早会漏，故彻底取消。
 // 且改完必须**重新出包** —— 这是 Dart 代码改动，不重新编译就不会生效。
-const String kAppVersion = '4.47.0';
+const String kAppVersion = '4.48.0';
 
-/// 安卓 versionCode。语义：4.47.0 → 50534（与 pubspec 的 `+50534` 必须一致）。
+/// 安卓 versionCode。语义：4.48.0 → 50535（与 pubspec 的 `+50535` 必须一致）。
 /// 只增不减；`Updater` 用它与云端清单的 versionCode 比对来判断"有没有新版"。
-const int kAppCode = 50534;
+const int kAppCode = 50535;
