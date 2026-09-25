@@ -4125,20 +4125,28 @@ class _Home extends State<SearchSection> {
   /// 停止 = `_seq++`（让所有在途请求回来时对不上代次、直接丢弃）+ `_autoPull=false`。
   /// **已收到的结果全部保留** —— 停止是「不要再拉了」，不是「清空」。
   Future<void> _askStop() async {
+    // ★计数源分模式：库模式结果在 agg 里（engItems 是 go() 恒置的 []，读它恒 0 ——
+    //   曾在模拟器上实测弹窗写「已收到 0 条」而屏幕上正铺着 15 条）；引擎模式读 engItems。
+    final received = agg != null ? _aggCount(agg) : (engItems?.length ?? 0);
     final ok = await showDialog<bool>(
         context: context,
         builder: (c2) => AlertDialog(
-                title: const Text('停止搜索？'),
-                content: Text('已收到 ${engItems?.length ?? 0} 条'
-                    '${_engTotal > 0 ? '（引擎共 $_engTotal 条）' : ''}。\n'
-                    '停止后已收到的不受影响，可以随时再点搜索继续。'),
+                title: Text(tr('停止搜索？')),
+                content: Text([
+                  _engTotal > 0
+                      ? tr('已收到 {{n}} 条（引擎共 {{m}} 条）。')
+                          .replaceAll('{{m}}', '$_engTotal')
+                          .replaceAll('{{n}}', '$received')
+                      : tr('已收到 {{n}} 条。').replaceAll('{{n}}', '$received'),
+                  tr('停止后已收到的不受影响，可以随时再点搜索继续。'),
+                ].join('\n')),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2, false),
-                      child: const Text('继续搜索')),
+                      child: Text(tr('继续搜索'))),
                   FilledButton(
                       onPressed: () => Navigator.pop(c2, true),
-                      child: const Text('确认停止')),
+                      child: Text(tr('确认停止'))),
                 ]));
     if (ok != true || !mounted) return;
     _seq++; // 在途请求全部作废
@@ -4411,27 +4419,34 @@ class _Home extends State<SearchSection> {
     final loaded = engItems?.length ?? 0;
     final sb = StringBuffer();
     if (EngineDirect.connected) {
-      sb.write(
-          '来自引擎「${EngineDirect.name.isEmpty ? 'THP 引擎' : EngineDirect.name}」');
+      sb.write(tr('来自引擎「{{n}}」').replaceAll(
+          '{{n}}',
+          EngineDirect.name.isEmpty
+              ? tr('THP 引擎')
+              : EngineDirect.name));
       if (EngineDirect.version.isNotEmpty)
         sb.write(' v${EngineDirect.version}');
-      sb.write(' · THP 直连 · 已返回 $loaded 条');
+      sb.write(' · ${tr('THP 直连')} · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '$loaded')}');
     } else {
       // 资源库（家庭后端）分支：后端每个分组自带条数与 latency，这里只报来源
-      sb.write('来自资源库『${Uri.tryParse(Api.base)?.host ?? Api.base}』');
-      sb.write(' · 已返回 ${_aggCount(agg)} 条');
+      sb.write(tr('来自资源库『{{n}}』')
+          .replaceAll('{{n}}', Uri.tryParse(Api.base)?.host ?? Api.base));
+      sb.write(' · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '${_aggCount(agg)}')}');
     }
     if (EngineDirect.connected &&
         EngineDirect.supportsPaging &&
         _engTotal > loaded) {
-      sb.write(' / 引擎共 $_engTotal 条${_autoPull ? '，继续拉取中…' : '（已停，可继续）'}');
+      sb.write(
+          ' / ${_autoPull ? tr('引擎共 {{n}} 条，继续拉取中…') : tr('引擎共 {{n}} 条（已停，可继续）')}'.replaceAll('{{n}}', '$_engTotal'));
     }
     if (EngineDirect.connected && !EngineDirect.supportsPaging) {
       final done = _done.length;
       if (done < _typeTotal && loading)
-        sb.write('（$done/$_typeTotal 类已回，其余搜索中…）');
+        sb.write(tr('（{{n}}/{{m}} 类已回，其余搜索中…）')
+            .replaceAll('{{n}}', '$done')
+            .replaceAll('{{m}}', '$_typeTotal'));
     } else if (EngineDirect.connected && _engTruncated) {
-      sb.write('（引擎扫描被时间预算截断，加载更多可扫得更深）');
+      sb.write(tr('（引擎扫描被时间预算截断，加载更多可扫得更深）'));
     }
     return sb.toString();
   }
@@ -4509,8 +4524,9 @@ class _Home extends State<SearchSection> {
                           onSubmitted: (_) => go(),
                           decoration: InputDecoration(
                               hintText: typeFilter == 0
-                                  ? '一次搜索: 书/漫画/视频/音乐'
-                                  : '搜索${typeNames[typeFilter]}',
+                                  ? tr('一次搜索: 书/漫画/视频/音乐')
+                                  : tr('搜索{{n}}')
+                                      .replaceAll('{{n}}', typeNames[typeFilter]),
                               prefixIcon: const Icon(Icons.search),
                               isDense: true,
                               filled: false,
@@ -4526,7 +4542,7 @@ class _Home extends State<SearchSection> {
                         backgroundColor: Colors.redAccent),
                     onPressed: _askStop,
                     icon: const Icon(Icons.stop_rounded, size: 18),
-                    label: const Text('停止'))
+                    label: Text(tr('停止')))
               else
                 FilledButton(onPressed: go, child: Text(tr('搜索')))
             ])),
@@ -4555,18 +4571,23 @@ class _Home extends State<SearchSection> {
                   final st = EngineDirect.state.value;
                   final (String txt, Color col) = switch (st.status) {
                     EngineStatus.connected => (
-                        'THP 引擎直连: ${st.name}',
+                        tr('THP 引擎直连: {{n}}').replaceAll('{{n}}', st.name),
                         Colors.green
                       ),
-                    EngineStatus.connecting => ('正在连接引擎…', Colors.orangeAccent),
+                    EngineStatus.connecting => (
+                        tr('正在连接引擎…'),
+                        Colors.orangeAccent
+                      ),
                     EngineStatus.failed => (
                         Api.base.isNotEmpty
-                            ? '资源库模式 · 引擎离线'
-                            : '引擎不可达 — 点此查看原因/重试',
+                            ? tr('资源库模式 · 引擎离线')
+                            : tr('引擎不可达 — 点此查看原因/重试'),
                         Colors.redAccent
                       ),
                     EngineStatus.idle => (
-                        Api.base.isNotEmpty ? '资源库模式' : '未连接引擎 — 点此连接',
+                        Api.base.isNotEmpty
+                            ? tr('资源库模式')
+                            : tr('未连接引擎 — 点此连接'),
                         Colors.redAccent
                       ),
                   };
@@ -4605,11 +4626,11 @@ class _Home extends State<SearchSection> {
             //   资源库明明有结果也顶着一句「没有找到相关内容」（engItems 在 go() 里
             //   恒被置成 []）。
             if (agg == null && engItems!.isEmpty && !loading)
-              const Padding(
-                  padding: EdgeInsets.all(32),
+              Padding(
+                  padding: const EdgeInsets.all(32),
                   child: Center(
-                      child: Text('没有找到相关内容',
-                          style: TextStyle(color: Colors.grey)))),
+                      child: Text(tr('没有找到相关内容'),
+                          style: const TextStyle(color: Colors.grey)))),
             for (final t in const ['novel', 'comic', 'video', 'music'])
               ..._engGroup(c, t),
             // 加载更多: 先画本地已拿到的(零网络)，本地画完了才向引擎翻页(引擎侧有缓存，秒回)
@@ -4620,7 +4641,9 @@ class _Home extends State<SearchSection> {
                       child: TextButton(
                           onPressed: () => setState(() => _shown += _pageSize),
                           child: Text(
-                              '显示更多（已显示 $_shown / 已加载 ${engItems!.length} 条）',
+                              tr('显示更多（已显示 {{n}} / 已加载 {{m}} 条）')
+                                  .replaceAll('{{n}}', '$_shown')
+                                  .replaceAll('{{m}}', '${engItems!.length}'),
                               style: const TextStyle(fontSize: 12))))),
             if (_engHasMore && engItems!.length <= _shown)
               Padding(
@@ -4637,14 +4660,18 @@ class _Home extends State<SearchSection> {
                                         strokeWidth: 2)),
                                 const SizedBox(width: 8),
                                 Text(
-                                    '正在继续拉取${_engTotal > 0 ? '（${engItems!.length}/$_engTotal 条）' : ''}…',
+                                    _engTotal > 0
+                                        ? tr('正在继续拉取（{{n}}/{{m}} 条）…')
+                                            .replaceAll('{{n}}', '${engItems!.length}')
+                                            .replaceAll('{{m}}', '$_engTotal')
+                                        : tr('正在继续拉取…'),
                                     style: const TextStyle(
                                         fontSize: 12, color: Colors.grey))
                               ]),
                               TextButton(
                                   onPressed: _askStop,
-                                  child: const Text('停止',
-                                      style: TextStyle(fontSize: 12))),
+                                  child: Text(tr('停止'),
+                                      style: const TextStyle(fontSize: 12))),
                             ])
                           : _more
                               ? const SizedBox(
@@ -4658,7 +4685,11 @@ class _Home extends State<SearchSection> {
                                     unawaited(_autoPullLoop(_seq));
                                   },
                                   child: Text(
-                                      '向引擎加载更多${_engTotal > 0 ? '（已 ${engItems!.length}/$_engTotal 条）' : ''}',
+                                      _engTotal > 0
+                                          ? tr('向引擎加载更多（已 {{n}}/{{m}} 条）')
+                                              .replaceAll('{{n}}', '${engItems!.length}')
+                                              .replaceAll('{{m}}', '$_engTotal')
+                                          : tr('向引擎加载更多'),
                                       style: const TextStyle(fontSize: 12))))),
           ],
           if (agg == null && engItems == null && history.isNotEmpty)
@@ -4670,8 +4701,9 @@ class _Home extends State<SearchSection> {
                       Row(children: [
                         const Icon(Icons.history, size: 15, color: Colors.grey),
                         const SizedBox(width: 4),
-                        const Text('搜索历史',
-                            style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        Text(tr('搜索历史'),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
                         const Spacer(),
                         GestureDetector(
                             onTap: () async {
@@ -4700,11 +4732,11 @@ class _Home extends State<SearchSection> {
           //   不再一次性 for 全渲染几千条。分组头只在它那组有条目露出来时才画。
           if (agg != null) ...[
             if (_aggRowCount == 0 && !loading)
-              const Padding(
-                  padding: EdgeInsets.all(32),
+              Padding(
+                  padding: const EdgeInsets.all(32),
                   child: Center(
-                      child: Text('没有找到相关内容',
-                          style: TextStyle(color: Colors.grey)))),
+                      child: Text(tr('没有找到相关内容'),
+                          style: const TextStyle(color: Colors.grey)))),
             for (final r in _aggRows().take(_shown))
               if (r.isHead)
                 Padding(
@@ -4729,16 +4761,19 @@ class _Home extends State<SearchSection> {
                   child: Center(
                       child: TextButton(
                           onPressed: () => setState(() => _shown += _pageSize),
-                          child: Text('显示更多（已显示 $_shown / 共 $_aggRowCount 行）',
+                          child: Text(
+                              tr('显示更多（已显示 {{n}} / 共 {{m}} 行）')
+                                  .replaceAll('{{n}}', '$_shown')
+                                  .replaceAll('{{m}}', '$_aggRowCount'),
                               style: const TextStyle(fontSize: 12))))),
           ],
           // 「开始搜索」提示只在还没搜过时出现（此前引擎搜完有结果了它还垫在列表尾部）
           if (agg == null && engItems == null && !loading)
-            const Padding(
-                padding: EdgeInsets.all(40),
-                child: Text('输入关键词开始搜索\n可全类型或按下方分类搜索',
+            Padding(
+                padding: const EdgeInsets.all(40),
+                child: Text(tr('输入关键词开始搜索\n可全类型或按下方分类搜索'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey))),
+                    style: const TextStyle(color: Colors.grey))),
         ])),
       ]);
 }
@@ -4798,7 +4833,7 @@ Widget _singleTile(int type, String sourceId, Map it, BuildContext context) {
 // 模块菜单入口: 底栏已取消 ⋯, 改放各模块页分段按钮行右侧(需要菜单的模块才有)
 Widget modMenuBtn(BuildContext c) => IconButton(
     icon: const Icon(Icons.more_vert, size: 20),
-    tooltip: '模块菜单',
+    tooltip: tr('模块菜单'),
     visualDensity: VisualDensity.compact,
     onPressed: () {
       HapticFeedback.selectionClick();
@@ -5176,13 +5211,13 @@ class _Sh extends State<ShelfPage> {
               Icon(Icons.auto_stories_outlined,
                   size: 56, color: Colors.grey.withValues(alpha: 0.5)),
               const SizedBox(height: 10),
-              const Text('书架为空',
-                  style: TextStyle(color: Colors.grey, fontSize: 14)),
+              Text(tr('书架为空'),
+                  style: const TextStyle(color: Colors.grey, fontSize: 14)),
               const SizedBox(height: 4),
               Text(
                   widget.kind == 'novel'
-                      ? '搜索后进入详情页点书签加入, 或从模块菜单导入本地小说'
-                      : '搜索后进入详情页, 点书签图标加入',
+                      ? tr('搜索后进入详情页点书签加入, 或从模块菜单导入本地小说')
+                      : tr('搜索后进入详情页, 点书签图标加入'),
                   style: const TextStyle(color: Colors.grey, fontSize: 11)),
             ]))
           : GridView.builder(
@@ -8477,7 +8512,7 @@ class _RootNavState extends State<RootNav> {
                 ? null
                 : IconButton(
                     icon: const Icon(Icons.more_vert),
-                    tooltip: '模块菜单',
+                    tooltip: tr('模块菜单'),
                     onPressed: openModuleMenu),
             destinations: [
               for (final k in enabled)
@@ -8587,7 +8622,7 @@ class _RootNavState extends State<RootNav> {
               ListTile(
                   dense: true,
                   leading: const Icon(Icons.history, size: 20),
-                  title: const Text('全部更新历史'),
+                  title: Text(tr('全部更新历史')),
                   onTap: () {
                     Navigator.pop(c2);
                     Navigator.push(context, smoothRoute(const ChangelogPage()));
@@ -8597,7 +8632,7 @@ class _RootNavState extends State<RootNav> {
                   leading: Icon(
                       fsNow ? Icons.fullscreen_exit : Icons.fullscreen,
                       size: 20),
-                  title: Text(fsNow ? '退出全屏' : '全屏'),
+                  title: Text(tr(fsNow ? '退出全屏' : '全屏')),
                   onTap: () {
                     Navigator.pop(c2);
                     RootNav.fullscreen.value = !fsNow;
@@ -11764,10 +11799,10 @@ class _Ape extends State<AppearancePage> {
             child: Column(children: [
           ListTile(
               leading: const Icon(Icons.language, size: 20),
-              title: const Text('语言', style: TextStyle(fontSize: 14)),
+              title: Text(tr('语言'), style: const TextStyle(fontSize: 14)),
               subtitle: Text(
                   AppSettings.locale == 'system'
-                      ? '跟随系统(默认中文)'
+                      ? tr('跟随系统(默认中文)')
                       : I18n.names[AppSettings.locale] ?? '中文',
                   style: const TextStyle(fontSize: 11)),
               onTap: () async {
@@ -11803,7 +11838,7 @@ class _Ape extends State<AppearancePage> {
           ListTile(
               leading: const Icon(Icons.brightness_6_outlined, size: 20),
               title: Text(tr('主题外观'), style: const TextStyle(fontSize: 14)),
-              subtitle: const Text('默认跟随系统', style: TextStyle(fontSize: 11)),
+              subtitle: Text(tr('默认跟随系统'), style: const TextStyle(fontSize: 11)),
               trailing: SegmentedButton<String>(
                   showSelectedIcon: false,
                   style: const ButtonStyle(
@@ -13096,13 +13131,13 @@ class _FsExitOrbState extends State<FsExitOrb> {
             if (!mounted) return;
             setState(() => _pos = Offset(-1, -1)); // 回默认右上角
             if (mounted) {
-              ScaffoldMessenger.maybeOf(c)?.showSnackBar(const SnackBar(
-                  content: Text('退出全屏按钮已复位到右上角'),
-                  duration: Duration(seconds: 2)));
+              ScaffoldMessenger.maybeOf(c)?.showSnackBar(SnackBar(
+                  content: Text(tr('退出全屏按钮已复位到右上角')),
+                  duration: const Duration(seconds: 2)));
             }
           },
           child: Tooltip(
-              message: '退出全屏（可拖动 · 长按复位）',
+              message: tr('退出全屏（可拖动 · 长按复位）'),
               child: AnimatedScale(
                   scale: _drag ? 1.12 : 1.0,
                   duration: const Duration(milliseconds: 120),
