@@ -392,6 +392,20 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     而 `await` 之后的赋值发生在 setState **之外**，**不会再安排重建**。14 处分布在
     `mini_modules{1..6}.dart`，写法统一改成「先 `await` 取值 → `if (!mounted) return;` → `setState`」。
     · 自查一行：`grep -rn "setState(() async" lib/` 必须为空。
+29. **★ 证明「这版 APK 里真的有我的修复」要解包 `lib/arm64-v8a/libapp.so` 做三向对照**（第十三轮，
+    与第八轮的纪律一脉相承：**digest 变了 ≠ 是你的修复**）：
+    · **阳性** = 新增的字符串（新源 URL / 新 prefs key / 新 UI 文案）在**新版命中、旧版为 0**；
+    · **对照** = 两版都该有的中立串（包名、桶前缀、后端包名）**两版都命中** —— 用来证明「搜索方法本身有效」，
+      否则「搜不到」会被误读成「没有」；
+    · **★ 编码坑（本轮实测踩到，会浪费半小时）**：**Dart AOT 快照对非 Latin-1 字符串按 UTF-16 存**。
+      `s.encode('utf-8')` 去搜中文必然 **0 命中**，看着像「这个功能没进包」。**中文串必须再按 `utf-16le` 搜一遍**
+      （实测 `在线找源` = u8:0 / u16:3）。ASCII 串两种编码都行。
+    · **别拿「变量名 / 函数名」当探针**：AOT 会剥掉符号（`builtinVer` 搜不到是正常的），
+      要搜**运行期真的存在的字符串字面量**（如 prefs 的 key `podcast_feeds_builtin_v`）。
+    · **别拿「插值拼接的字符串」当探针**：`'…latest-$channel.json'` 在快照里**从不存在完整串**。
+    · 反向探针要小心：4.50.0 把失效源 URL **保留在 `retiredBuiltin` 名单里**（靠运行期匹配摘掉、不删），
+      所以旧 URL 在新版**本来就该在** —— 写「新版应为 0」是错的预期。
+    · 脚本：`D:/ai/_probe/_symbol_ab_4500.py`（4.50.0 对 4.49.0，**16/16 PASS**）。
 
 ---
 
@@ -437,6 +451,14 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     - `sources-preset/README.md` 要随包更新（判据 / 溯源 / 发布纪律），它是源包的唯一权威说明。
 11. **前端「内置数据源」的闸门（第十三轮新增）**：
     - 静态自查：`grep -rn "setState(() async" flutter_app/lib/` **必须为 0**（该写法 = 首帧空且不刷新，见 §9.28）。
+    - 静态自查：`grep -rn "_detailOf\|_videoDetail" flutter_app/lib/main.dart` 应覆盖 comic / video / music
+      的 `ShelfPage`+`HistoryPage` 共 5 个 builder（见 §9.25）。
+    - 内置源体检：新增/替换内置源前，**逐条真拉 feed 数 item/enclosure**（资讯看 `<item|entry> > 0`，
+      播客**还要看 `enclosure url=` 或 `.mp3` > 0**），见 §9.27。
+12. **发布物「真含修复」的闸门（第十三轮新增，配合第八轮的「digest 变了 ≠ 是你的修复」）**：
+    出包后解包 `lib/arm64-v8a/libapp.so`，对本次新增的字符串做**阳性（新版命中/旧版 0）+ 对照（中立串两版都有）**
+    三向比对；**中文串必须按 `utf-16le` 再搜一遍**（AOT 快照对非 Latin-1 按 UTF-16 存）。
+    脚本 `D:/ai/_probe/_symbol_ab_4500.py`（4.50.0 vs 4.49.0 = **16/16 PASS**）。详见 §9.29。
     - 内置 RSS / feed 清单**逐条实测后才能写进去**（`_probe/_feed_candidates.cjs`）：
       资讯判据 = `HTTP 200 且 <item|entry> > 0`；播客判据 = **还要 `enclosure url=` 或 `.mp3` > 0**。
     - 凡改内置列表，**必须同时 +1 `builtinVer`**，否则老安装拿不到（见 §9.26）。
