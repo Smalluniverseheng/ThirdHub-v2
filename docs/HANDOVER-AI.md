@@ -51,12 +51,14 @@
 
 ## 2. 当前版本状态（2026-09-25）
 
-> **★ 最新一轮（第十三轮）**：**4.50.0 / 50537** —— 构建源提交 `4bf9466f`（10 files），
-> `dart-selfcheck` CI **success**；`build-apk` 见下方「发版批次记」。内容见 §6 #16。
+> **★ 最新一轮（第十三轮）**：**4.50.0 / 50537 已四通道发布并六项独立校验全 PASS** ——
+> 构建源提交 `4bf9466f`（10 files），CI `dart-selfcheck` + `build-apk #71`（**13 步全 success**）；
+> APK **29869450 B** / sha256 `88d9e32789341bf36087e82e06be3a1ae37831072c67c1c05a647f06121b465c`；
+> changelog 已上传（public 52 / admin 367，`latest` 均 4.50.0）。内容见 §6 #16。
 
 | 部件 | 版本 | 状态 | 下载通道 |
 |---|---|---|---|
-| V4 前端 APK | **4.50.0 / 50537** | 🚧 **第十三轮**：代码已推 `4bf9466f`（CI `dart-selfcheck` success）。APK 出包/发布以本行下方记录为准。上一版 4.49.0 已四通道发布 + 五通道独立校验全 PASS（`build-apk 36054417044` on `7bc57c73`，sha256 `50bba599…` / 29803914 B） | Supabase `latest-app.json` + 桶三通道 + Release |
+| V4 前端 APK | **4.50.0 / 50537** | ✅ **第十三轮已四通道发布 + 六项独立校验全 PASS**。APK **29869450 B** / sha256 `88d9e32789341bf36087e82e06be3a1ae37831072c67c1c05a647f06121b465c`（包内 `aapt2` = `com.thirdhub.app` / 50537 / 4.50.0；签名 `9b67f322…` **与 4.49.0 同一把钥匙**，可覆盖安装）。`_publish_v4450.mjs` **四通道 PASS** → `_verify_4500.mjs` **六项 PASS**（含版本化包与别名两处**真下载回算 sha256**、notes 正/反双向串版防护、下一版 `v4.51.0` 仍 404）。上一版 4.49.0：`build-apk 36054417044` on `7bc57c73`，sha256 `50bba599…` / 29803914 B | Supabase `latest-app.json` + 桶三通道 + Release |
 | 网页端主站 | **3.35.3** | 第十二轮发版（`tools/release.cjs 3.35.3`，六步全绿，`PUSHED 7d56a574`）：把下载中心的后端包指向 **0.8.7**。放行指针 `th_app_updates` id=47 → 3.35.3（`auto:true`，普通用户会收到通知） | — |
 | 家庭后端 | **0.8.7** | ✅ **已发三通道 + 解包冒烟 24/24 PASS**。zip 6037093 B / sha256 `bf153569f202427c03cb520f48ed199a0d6c93762ec27c7df06dff77e7310bdf`。内容：**15 条干净源 + 10 条撤销**（`rev:2`）+ 新增撤销通道（`preset-sync.js`） | ① `downloads/thirdhub-backend-0.8.7.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.7`（id `396181385`，资产下载回算 sha256 逐字节一致）** |
 | **家庭后端 APK**（`android/` 壳，包名 `com.thirdhub.backend`） | **0.8.7 / 42807** | ✅ **第十二轮重建并四通道发布**。APK 32633859 B / sha256 `b89cbdb92be3a87b97d6566238a296d928e097f08f3b112a2809a4a68f6a7a80`；内嵌 node-arm64 运行时 + server 0.8.7（含 `public/` `scripts/` `preset-sync.js`）+ **15 条干净源 + 10 条撤销** | ① `downloads/thirdhub-backend-0.8.7.apk` ② 别名 `downloads/thirdhub/thirdhub-backend.apk` ③ **`latest-backend.json`**（version 0.8.7 / code 42807 / sha 三项回读一致）④ Release `backend-v0.8.7` 资产。发布脚本 `_rel_backend_apk.mjs`（**8/8 PASS**） |
@@ -195,7 +197,7 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 
 | # | 事项 | 状态 | 下一步 / 阻塞 |
 |---|---|---|---|
-| 1 | V4 **4.49.0** 出包 | ✅ **已完成**：`build-apk 36054417044`（`7bc57c73`）success → 四通道发布 → `_verify_4490.mjs` **五通道全 PASS**（`publish_4490_out.txt` / `verify_4490_out.txt`）；changelog 亦已上传（public 51 / admin 366 条） | — |
+| 1 | V4 **4.50.0** 出包与发布 | ✅ **第十三轮已完成**：`build-apk #71`（`4bf9466f`）**13 步全 success** → `_publish_v4450.mjs` **四通道全 PASS** → changelog 上传 200（public 52 / admin 367）→ `_verify_4500.mjs` **六项独立校验全 PASS**。APK 29869450 B / sha256 `88d9e327…`。上一版 4.49.0 亦已四通道发布 + 五通道校验全 PASS（`36054417044` on `7bc57c73`） | — |
 | 2 | 4.48.0 发布（含别名通道） | ✅ **已完成并六项校验 PASS**（`publish_4480_out.txt` / `verify_4480_out.txt`） | — |
 | 3 | 两端数据同步端到端实测 | ✅ **已完成（本轮）**：`_probe/b3_e2e.cjs` 用 service role 建临时用户 → 换**真实 anon key 取真 `authenticated` JWT** → 6 表按客户端原样的 insert/upsert/读回，含 RLS、嵌套+中文载荷、`th_settings` 形状与合并语义、多行歧义；**0 FAIL（连跑两次）**，跑完 6 表行数回到基线（0/13/44/0/5/6）且既有行逐字节未变 | 真机那一段（改本机 → 换端看到）仍留在 #4 里一起做；本机无设备 |
 | 3b | **`th_settings` 取行缺陷（本轮新发现并修复）** | ✅ 代码已修并推 `7bc57c73`；自检 95 → **111**，八连 **PASS 1195 / FAIL 0** | 根因：`th_settings` 是「一用户多行」通用表，网页端把 `ai:key:<provider>` 也写进同一张表（`data` 是字符串/数组），而客户端 `select` 不带 `id` 且取 `list.first`，PostgREST 又不保证顺序 → 读空（「点了同步没反应」）+ 合并基线为空时覆盖掉云端其余 25 键与 `kv`。修法与网页端 `rows.find(r => r.id === u.id) \|\| rows[0]` 对齐 |
