@@ -7,6 +7,20 @@ name: build-apk
 #   直接 gradlew 出 `app/build/outputs/apk/release/app-release.apk` 是稳定路径。
 #   注意：必须先 `flutter pub get` ——它会生成 android/local.properties，
 #   而 settings.gradle.kts 里有 `require(sdk != null) { "flutter.sdk not set in local.properties" }`。
+#
+# ── 第十五轮（2026-09-25）改了三处，都是被真实事故逼出来的 ─────────────────────
+#  ①【半残包】此前恒定 `-Ptarget-platform=android-arm64`，于是包里 `lib/armeabi-v7a/`
+#    与 `lib/x86_64/` 两个目录**只有插件预编译的 .so、没有 libflutter.so/libapp.so**。
+#    实测后果：32 位 arm 手机与 x86_64 模拟器**能装上、启动即崩**
+#    （`UnsatisfiedLinkError: libflutter.so is for EM_AARCH64 (183) instead of EM_X86_64 (62)`）。
+#    → 默认改成 `android-arm,android-arm64`（覆盖全部真机 ABI），并加「每个 ABI 目录
+#      必须同时有 libflutter.so 与 libapp.so」的硬闸门；配套在 android/app/build.gradle.kts
+#      里按 target-platform 精确剔除未声明的 ABI 目录（宁可装不上，不可装上就崩）。
+#  ②【同版本号顶资产】4.49.0 出过两个 run，后完成的那个用新 digest 顶掉了已发布的 Release 资产，
+#    导致 Supabase 的 sha256 与 Release 资产对不上。→ 加「Release 已存在则跳过发布」的闸门。
+#  ③【能出测试包】加 workflow_dispatch 入参 `abis` / `publish`：可以出任意 ABI 的**测试包**
+#    （只上传 artifact、绝不发 Release），用于装进 Android 模拟器做真机级验证——
+#    本机 dart 因 `CreateFile failed 231` 无法 spawn 子进程，本地出不了包，CI 是唯一出路。
 permissions:
   contents: write
 
@@ -15,10 +29,23 @@ on:
     branches: [main]
     paths: ['flutter_app/**', '.github/workflows/build-apk.yml']
   workflow_dispatch:
+    inputs:
+      abis:
+        description: 'target-platform（逗号分隔）：正式 android-arm,android-arm64 ｜ 模拟器 android-x64'
+        required: false
+        default: 'android-arm,android-arm64'
+      publish:
+        description: '是否发 Release（测试包务必 false）'
+        required: false
+        default: 'false'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # push 到 main = 正式出包（默认覆盖全部真机 ABI）；手动触发默认只出测试包、不发 Release
+      TARGET_PLATFORMS: ${{ github.event_name == 'push' && 'android-arm,android-arm64' || github.event.inputs.abis }}
+      DO_PUBLISH: ${{ github.event_name == 'push' && 'true' || github.event.inputs.publish }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -55,7 +82,13 @@ jobs:
           echo "--- local.properties ---"
           cat android/local.properties
 
-      - name: build APK (arm64)
+      - name: abi tag
+        run: |
+          ABI_TAG=$(printf '%s' "$TARGET_PLATFORMS" | tr ',' '\n' | sed 's/^android-//' | paste -sd+ -)
+          echo "ABI_TAG=$ABI_TAG" >> "$GITHUB_ENV"
+          echo "target-platform = $TARGET_PLATFORMS  →  ABI_TAG = $ABI_TAG"
+
+      - name: build APK (${{ env.TARGET_PLATFORMS }})
         working-directory: flutter_app/android
         env:
           TH_STORE_FILE: ${{ runner.temp }}/thirdhub-release.jks
@@ -63,7 +96,7 @@ jobs:
           TH_KEY_PASSWORD: ${{ secrets.TH_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease -Ptarget-platform=android-arm64 --console=plain
+          ./gradlew assembleRelease -Ptarget-platform="$TARGET_PLATFORMS" --console=plain
           echo "--- release 目录 ---"
           ls -l app/build/outputs/apk/release/ || true
 
@@ -78,6 +111,41 @@ jobs:
           if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then echo "没有任何 APK 产物"; exit 1; fi
           echo "APK=$SRC" >> "$GITHUB_ENV"
           ls -l "$SRC"
+          sha256sum "$SRC" | tee /tmp/apk.sha256
+
+      # ★ 半残包闸门：每个 lib/<abi>/ 目录里都必须同时有 libflutter.so 与 libapp.so。
+      #   只检查「新版里有某串」是弱证据；这里检查的是**结构性完整**——
+      #   2026-09-25 实测 4.50.0/4.51.0/4.52.0 三版都过不了这道闸门（armeabi-v7a 与 x86_64 各缺两件）。
+      - name: 每个 ABI 目录都必须含 libflutter.so + libapp.so（半残包闸门）
+        run: |
+          python3 - <<'PY'
+          import zipfile, os, sys, re
+          apk = os.environ['APK']
+          want = {p.strip().replace('android-', '') for p in os.environ['TARGET_PLATFORMS'].split(',') if p.strip()}
+          alias = {'arm': 'armeabi-v7a', 'arm64': 'arm64-v8a', 'x64': 'x86_64'}
+          want_dirs = {alias.get(w, w) for w in want}
+          z = zipfile.ZipFile(apk)
+          dirs = {}
+          for n in z.namelist():
+              m = re.match(r'^lib/([^/]+)/(.+)$', n)
+              if m:
+                  dirs.setdefault(m.group(1), set()).add(m.group(2))
+          print('APK 内 lib/ 各 ABI 目录：')
+          for d in sorted(dirs):
+              print('   ', d, sorted(dirs[d]))
+          bad = []
+          for d in sorted(dirs):
+              miss = [f for f in ('libflutter.so', 'libapp.so') if f not in dirs[d]]
+              if miss:
+                  bad.append(f'{d} 缺 {miss}')
+          if bad:
+              print('::error::半残包（能装上、启动即崩）：' + '；'.join(bad))
+              sys.exit(1)
+          if want_dirs - set(dirs):
+              print('::error::target-platform 声明了但包里没有的 ABI：' + ','.join(sorted(want_dirs - set(dirs))))
+              sys.exit(1)
+          print(f'OK：{len(dirs)} 个 ABI 目录全部含 libflutter.so + libapp.so')
+          PY
 
       - name: read version
         id: v
@@ -107,14 +175,37 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ThirdHub-${{ steps.v.outputs.ver }}
+          name: ThirdHub-${{ steps.v.outputs.ver }}-${{ env.ABI_TAG }}
           path: ThirdHub-${{ steps.v.outputs.ver }}.apk
           if-no-files-found: error
 
+      # 同版本号重复出包会顶掉已发布资产的 digest（4.49.0 真实事故：两个 run 都 success，
+      # 后完成的把线上资产从 e7fb53dd 换成 50bba599，体积还一样）。这里直接拦住。
+      - name: 该版本是否已发过 Release
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ steps.v.outputs.ver }}"
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            echo "found=1" >> "$GITHUB_OUTPUT"
+            echo "::warning::Release v$VER 已存在 → 跳过发布。要出新包请递增版本号（版本号铁律：只增不减）。"
+          else
+            echo "found=0" >> "$GITHUB_OUTPUT"
+            echo "Release v$VER 不存在 → 允许发布。"
+          fi
+
       - name: publish release
+        if: ${{ steps.exists.outputs.found == '0' && env.DO_PUBLISH == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.ver }}
           name: ThirdHub v${{ steps.v.outputs.ver }}
           files: ThirdHub-${{ steps.v.outputs.ver }}.apk
           prerelease: false
+
+      - name: 发布被跳过的原因（可选阅读）
+        if: ${{ !(steps.exists.outputs.found == '0' && env.DO_PUBLISH == 'true') }}
+        run: |
+          echo "本轮没有发 Release。判据：Release(是否存在)=${{ steps.exists.outputs.found }} / DO_PUBLISH=$DO_PUBLISH"
+          echo "（手动触发的测试包一律不发 Release，避免用测试包顶掉线上资产。）"
