@@ -103,7 +103,7 @@
 | D2 core 对接 v2 后端 | 部分 | `Api`/`postEncrypted`(AES-256-GCM) `main.dart:241/249`、`pro_kit.dart:82`、`peer_hub.dart`、THP 信封拆包 `peer_hub_logic.dart:850`；**缺 WS 长连接**（`pubspec.yaml` 无 `web_socket_channel`，事件靠 HTTP 轮询） |
 | D2 模块对等表 | 完成 | 书架/阅读器/搜索/播放器(音乐+视频+直播)/AI chat/相册/work区 全部有对等页 |
 | D2 悬浮球 Dart 实现 | 完成 | `FsExitOrb` 全屏退出球 `main.dart:13071`（可拖动 · 长按复位，2026-09-26 起 tooltip/SnackBar 过 tr()）+ `NavOrb.showModuleGrid` 模块面板 `:8099/:8646`；位置持久化 `orbPos`；吸边开关；模块面板可拖排序 |
-| D2 低端机模式 + 7 语言 | **部分（1 真 1 残）** | 低端机模式：**完成**（`main.dart:470-501` `liteMode` 全套：`animFast/Mid/Slow` 压动画时长、`litePumpStep=120` 分帧步长、`liteAutoPullGap`、`imageCacheMB=60`；开关 UI 在「我的→个性化」实测存在并可切）。7 语言：**字典与验证路径完成**——`i18n_extra.dart` 6 语言各 ~260 键、`tr()` 三级回落、`tool/i18n_selfcheck.dart` 锁 **123 tr() 键 × 6 语言零回退**（2026-09-26 修复批次把引导页 14 键、停止弹窗、搜索页横幅/空态、个性化语言行等 56 键过 tr 并补 en/ja/fr/ru/es/ar）；**残**：全仓仍有 **492 处裸中文字面量**不过 tr()（回收站/下载弹窗/隐私协议/锁屏/设备发现等非验证路径），逐处清单见 `docs/i18n-裸字面量存量清单.md`，清扫后才算 7 语言全量。（2026-09-26 更新，旧判定「低端机零实现 / fr 仅 10 词」已过时） |
+| D2 低端机模式 + 7 语言 | **部分（1 真 1 残）** | 低端机模式：**完成**（`main.dart:470-501` `liteMode` 全套：`animFast/Mid/Slow` 压动画时长、`litePumpStep=120` 分帧步长、`liteAutoPullGap`、`imageCacheMB=60`；开关 UI 在「我的→个性化」实测存在并可切）。7 语言：**字典与验证路径完成**——`i18n_extra.dart` 6 语言各 ~260 键、`tr()` 三级回落、`tool/i18n_selfcheck.dart` 锁 **128 tr() 键 × 6 语言零回退**（2026-09-26 修复批次把引导页 14 键、停止弹窗、搜索页横幅/空态、个性化语言行等 56 键过 tr 并补 en/ja/fr/ru/es/ar；第二批再补 AccountTile 6 键）；**残**：全仓仍有 **482 处裸中文字面量**不过 tr()（回收站/下载弹窗/隐私协议/锁屏/设备发现等非验证路径），逐处清单见 `docs/i18n-裸字面量存量清单.md`，清扫后才算 7 语言全量。（2026-09-26 更新，旧判定「低端机零实现 / fr 仅 10 词」已过时） |
 | D2 CI 出包 | 完成 | `build-m1.yml:156` + `build-apk.yml`；**本轮又修掉两个出包缺陷**（见 §三） |
 
 ### 组E 内置引擎

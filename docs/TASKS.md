@@ -36,7 +36,7 @@ D2 Flutter 轨道(纯IR渲染器, 不碰引擎):
 - [x] 悬浮球 Dart 实现(对齐网页版行为基准) (FsExitOrb main.dart:13071 + NavOrb 模块面板, 位置持久化/吸边/拖排序)
 - [x] 低端机模式 (main.dart:470-501 liteMode: 动画时长/分帧步长/图片缓存, 开关 UI 实测可切, 2026-09-26)
 - [x] 7语言·核心链路 (i18n_extra 6 语言各 ~260 键 + tr() 三级回落 + i18n_selfcheck 锁 123 tr() 键 × 6 语言零回退; 引导页/停止弹窗/搜索页/个性化 2026-09-26 全过 tr)
-- [ ] 7语言·存量清扫: main.dart 仍有 **492 处裸中文字面量**不过 tr() (回收站/下载弹窗/隐私协议/锁屏/设备发现等), 逐处清单见 docs/i18n-裸字面量存量清单.md
+- [ ] 7语言·存量清扫: main.dart 仍有 **482 处裸中文字面量**不过 tr() (回收站/下载弹窗/隐私协议/锁屏/设备发现等), 逐处清单见 docs/i18n-裸字面量存量清单.md
 - [x] CI 出包(并入 tag 触发矩阵) (build-m1.yml v4*/v5* + build-apk.yml 支持 abis/publish 测试包入参)
 依赖: FRONTEND-MATRIX.md + FRONTEND-DUAL.md
 
