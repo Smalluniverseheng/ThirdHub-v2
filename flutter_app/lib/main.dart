@@ -22,7 +22,10 @@ import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import 'core/nav_swipe.dart';
+// ★4.52.0 起不再 import 'core/nav_swipe.dart' —— 模块间左右滑动切模块已被用户
+// 硬性禁止（见 AppSettings.navSwipe 的长注释），导航层不再注册任何横向识别器。
+// 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
+// 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/local_tools.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
@@ -260,6 +263,10 @@ class AppSettings {
   static SharedPreferences? _p;
   static void Function()? onChanged; // 主题变更回调
   static Future<void> init() async { _p = await SharedPreferences.getInstance();
+    // ★4.52.0 就地清掉历史 nav_swipe（用户硬性要求「严不允许」）。
+    // 放在 init() 里而不是 main() 里，是为了保证它**早于任何 sync/上传** ——
+    // 否则这台机器的 true 会先被推到云端，再同步到别的端，等于没禁掉。
+    await enforceNavSwipeOff();
     I18n.instance.locale = I18n.resolve(p.getString('locale') ?? 'system'); }
   // 身份码: 登录 ThirdHub 账号后才生成(与云端账号绑定)
   static Future<String> ensureIdentity() async {
@@ -318,13 +325,45 @@ class AppSettings {
       p.getBool('fs_mod_$modKey') ?? !fsOffByDefault.contains(modKey);
   static Future<void> setFsEnabledFor(String modKey, bool v) async {
     await p.setBool('fs_mod_$modKey', v); await sync(); }
-  // 左右滑动切换模块（★2026-09-20 默认改回 **开**）。
-  // 曾默认关(09-19): 担心"沿途构建中间模块"——那是 animateToPage 跳页的问题(已改 jumpToPage 根治);
-  // 物理拖拽一次只能过相邻一页, 相邻页本来就由 PageView 缓存构建, 不存在沿途加载。
-  // 模块内横向手势(游戏/歌词翻页等)都在 push 出来的子页或小热区里, 与本层拖拽不冲突。
-  // 不想横滑的人仍可在「我的 → 导航」关闭。
-  static bool get navSwipe => p.getBool('nav_swipe') ?? true;
-  static Future<void> setNavSwipe(bool v) async { await p.setBool('nav_swipe', v); await sync(); }
+  // ══ ★4.52.0【用户硬性要求 · 严不允许】模块之间**禁止**互相左右滑动切换 ══
+  //
+  // 用户原话（2026-09-24，当时就标注"严不允许"）：
+  //   「每一次滑动都是独立的模块，**不要让左右滑动变成左右切换模块**」
+  // 09-25 再次点名，且列为最优先级：
+  //   「各个模块之间不能左右滑动，切换到别的模块，这个功能应该是最优先级，你怎么也没有修好？」
+  //
+  // ★ 4.44.0 曾按**相反**理解实现了 NavSwipeRecognizer（带主方向判定），并把它**默认打开**
+  //   —— 等于把用户明令禁止的功能做成了默认行为。那是本条的真正病根，不是"手势算法不够好"。
+  //
+  // 本版彻底停用（三件事同时做，缺一条都等于没改）：
+  //   ① 导航层不再注册任何横向拖拽识别器（PageView 恒 NeverScrollableScrollPhysics）；
+  //   ② 盘里历史 `nav_swipe=true` **强制归零**（见 enforceNavSwipeOff，否则老安装继续滑）；
+  //   ③ 开关在 UI 上保留但**只读**，读出来恒 false —— 杜绝"某端写回 true 就又滑起来"。
+  //
+  // 边界说明（"每一次滑动都是独立的模块"正是此意）：各模块**内部**的横向手势
+  //   （封面翻页 / 分段行横滑 / 阅读器左右翻页 / 歌词滚动）完全不受影响 ——
+  //   滑动只在本模块内生效，永远不许"溢出"成切模块。
+  static bool get navSwipe => false;
+
+  /// 把盘里的 `nav_swipe` 清成 false。幂等，启动时调一次。
+  ///
+  /// 为什么不能只改 getter：老安装的盘里躺着 `nav_swipe=true`，
+  /// 哪天有人把 getter 的常量改回去（或者别的端同步回 true），功能就复活了。
+  /// 这是"改了但没生效"的老坑（见 HANDOVER §9 同名条目）在滑动这条上的复现。
+  static Future<void> enforceNavSwipeOff() async {
+    try {
+      if (p.getBool('nav_swipe') != false) await p.setBool('nav_swipe', false);
+    } catch (_) {}
+  }
+
+  /// 保留写入入口，但**恒不生效**：写盘一律落 false。
+  ///
+  /// 为什么保留而不是删掉：`setting nav_swipe` 是 AI 工具既有协议面（只增不减），
+  /// 直接删会让老 prompt 收到"未知设置项"。这里接受调用、丢弃入参、回写 false。
+  static Future<void> setNavSwipe(bool v) async {
+    await p.setBool('nav_swipe', false); // v 被有意忽略
+    await sync();
+  }
   static Offset get orbPos {
     final x = p.getDouble('orb_x'), y = p.getDouble('orb_y');
     return (x != null && y != null) ? Offset(x, y) : const Offset(-1, -1);
@@ -3534,7 +3573,8 @@ class ModuleHubPage extends StatelessWidget {
 
 // ═══ 模块骨架页 Template 已删除(所有模块都有真页面了) ═══
 
-// 底部导航壳(完全体同款): PageView 左右滑动切模块 + 底部"我的"固定最右, 其它模块横向自由滑动
+// 底部导航壳: 模块之间**禁止**左右滑动切换（★4.52.0 用户硬性要求, 见 AppSettings.navSwipe）。
+// 底部"我的"固定最右, 其余模块只靠底栏/悬浮球/宫格点按切换; 各模块内部的横向手势照旧自由。
 class RootNav extends StatefulWidget {
   const RootNav({super.key});
   // 导航设置变更时 +1, 触发 RootNav 即时重载(无需重启)
@@ -3551,12 +3591,9 @@ class _RootNavState extends State<RootNav> {
   int idx = 0;
   bool _navCollapsed = false; // 点按正文收起(去文字, 缩到 ~1/3 高, 点细条恢复)
   final PageController _page = PageController();
-  // ★4.44.0 左右滑动切模块: 手势改由 NavSwipeRecognizer 接管(带主方向判定)。
-  // 原实现直接用 PageView 的 PageScrollPhysics —— 内置识别器只看水平位移是否
-  // 超过 kTouchSlop(18), 不看垂直分量, 于是"斜着上滑"会被误判成切模块。
-  bool _swHand = false;    // 本手势正在被手工跟手驱动
-  int _swFrom = 0;         // 手势起始页(不随拖拽中的 idx 变化)
-  double _swBasePx = 0;    // 手势起始像素位置
+  // ★4.52.0 已删除 _swHand / _swFrom / _swBasePx 三个"手工跟手"字段。
+  // 它们只服务于 4.44.0 的 NavSwipeRecognizer（模块间横滑）——功能被用户硬性禁止后，
+  // 跟手驱动整条链路（_swDragTo / _swSettle）一并移除，导航层不再碰横向手势。
   final ScrollController _navScroll = ScrollController();
   // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
   static const _noAppBarModules = {'浏览器', '相册'};
@@ -3637,7 +3674,7 @@ class _RootNavState extends State<RootNav> {
         ..writeln('App: ThirdHub ${Updater.currentVersion} (build ${Updater.currentCode})')
         ..writeln('当前模块: $mod')
         ..writeln('导航栏: ${enabled.join(' · ')}')
-        ..writeln('全屏中: ${RootNav.fullscreen.value ? '是' : '否'} · 左右滑动切模块: ${AppSettings.navSwipe ? '开' : '关'}')
+        ..writeln('全屏中: ${RootNav.fullscreen.value ? '是' : '否'} · 模块间左右滑动: 禁止(用户设定, 见 nav_swipe)')
         ..writeln('本地时间: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}')
         ..writeln('家庭后端: ${AgentRuntime.backendConnected ? '已连接' : '未连接（离线能力仍可用）'}')
@@ -3684,7 +3721,10 @@ class _RootNavState extends State<RootNav> {
     final p = AppSettings.p;
     try {
       if (const {'nav_swipe', 'nav_autohide', 'orb_snap', 'splash_anim'}.contains(key)) {
-        final b = v == 'true' || v == '1' || v == 'on' || v == '开';
+        // ★4.52.0【严不允许】nav_swipe 的入参**直接丢弃**，写盘恒 false。
+        // 不加这一条的话，只要任何一端（AI 工具 / 老设置页 / 另一台设备的同步）
+        // 写回 true，被禁掉的功能就会复活 —— 那正是"改了但没生效"的典型。
+        final b = key == 'nav_swipe' ? false : (v == 'true' || v == '1' || v == 'on' || v == '开');
         await p.setBool(key, b);
       } else if (const {'auto_fs_sec', 'accent_color'}.contains(key)) {
         final n = int.tryParse(v.trim());
@@ -3699,6 +3739,8 @@ class _RootNavState extends State<RootNav> {
     AppSettings.onChanged?.call();
     RootNav.navTick.value++; // 让导航层/设置页重读
     if (mounted) setState(() {});
+    // 如实回报：别让模型/用户以为"设置成功了" —— nav_swipe 是只读的。
+    if (key == 'nav_swipe') return 'nav_swipe = false（用户已硬性关闭"模块间左右滑动切换"，不可开启）';
     return '已设置 $key = $v';
   }
   void _onNavChanged() { _load(); }
@@ -3819,43 +3861,10 @@ class _RootNavState extends State<RootNav> {
     }
     else { _page.jumpToPage(i); }
   }
-  /// ★4.44.0 跟手驱动：把 PageView 挪到 `起始页 - 累计手势位移` 处。
-  ///
-  /// PageView 的 physics 恒为 NeverScrollableScrollPhysics（它自己不碰手势），
-  /// 位置完全由这里驱动。用**绝对位移**而不是增量，天然幂等，不会累积漂移。
-  void _swDragTo(double dx) {
-    if (!_page.hasClients) return;
-    final p = _page.position;
-    final target = (_swBasePx - dx).clamp(p.minScrollExtent, p.maxScrollExtent);
-    if (target != p.pixels) p.jumpTo(target);
-  }
-  /// ★4.44.0 松手结算：按「位移比例 or 甩动速度」决定翻页还是回弹。
-  ///
-  /// [dx] 是累计手势位移（手指向左为负），[vx] 是手指水平速度。
-  /// 注意 `_swFrom` 是**手势起始页**而不是当前 idx —— 拖拽途中 onPageChanged
-  /// 可能已经把 idx 改掉，用 idx 会算错方向。
-  void _swSettle(double dx, double vx) {
-    if (!_page.hasClients) return;
-    final p = _page.position;
-    final t = SwipeSettleDecider.target(
-      from: _swFrom, count: enabled.length,
-      movedPx: -dx, pageWidth: p.viewportDimension, velocityDx: vx);
-    if (t == _swFrom) {
-      // 没滑够 → 弹回原页（不记日志、不震动，什么都没发生）
-      _page.animateToPage(_swFrom,
-        duration: const Duration(milliseconds: 160), curve: Curves.easeOut);
-      return;
-    }
-    // 落到目标页：副作用在这里显式补一次 —— 拖拽途中 onPageChanged 被静默处理了
-    HapticFeedback.selectionClick();
-    setState(() { idx = t; RootNav.currentModuleKey = enabled[t]; });
-    _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
-    AppLog.module('滑动切到模块', d: {'module': enabled[t]});
-    _armAutoFs();
-    _syncContext();
-    _page.animateToPage(t,
-      duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-  }
+  // ★4.52.0 这里原有 _swDragTo() / _swSettle() 两个方法（4.44.0 的"手工跟手驱动 +
+  // 松手结算"），随 NavSwipeRecognizer 一起移除。留这段说明是给未来的读者：
+  // 若哪天有人想"重新加上左右滑动切模块"，请先回去读 AppSettings.navSwipe 上面的
+  // 用户原话 —— 那是**明确禁止**，不是"待实现的愿望"。
   @override Widget build(BuildContext c) {
     ScreenFit.update(c);
     final key = enabled[idx];
@@ -3863,29 +3872,23 @@ class _RootNavState extends State<RootNav> {
     final hideBar = _noAppBarModules.contains(key);   // 沉浸: 该模块自带页头, 不补状态栏留白
     final hideNav = _noNavModules.contains(key);      // 底栏: 沉浸页不显示
     final kbOpen = MediaQuery.viewInsetsOf(c).bottom > 100; // 键盘弹出时底栏让位(网页端 kb-open 同款)
-    // 左右滑动切换模块(默认开): 关闭时退回"模块间手势完全隔离"
-    final swipe = AppSettings.navSwipe;
-    // PageView 防回跳兜底: 任何原因导致页面重建后停在第0页而 idx 不在0时, 帧末拉回当前模块。
-    // 只在**禁止滑动**时启用 —— 允许滑动时 `_page.page` 会在手势中途出现 2.5 这种值,
-    // 用 round() 判定会把用户正在拖的这一页硬拽回去, 正是"切换很别扭"的来源之一。
-    if (!swipe && _page.hasClients && !_animating && (_page.page?.round() ?? idx) != idx && idx < enabled.length) {
+    // ★4.52.0【严不允许】模块之间不做左右滑动切换（见 AppSettings.navSwipe 长注释）。
+    // 导航层**不注册任何横向拖拽识别器**；PageView 恒 NeverScrollableScrollPhysics，
+    // 于是横向手势只会被「当前模块内部」的横向滚动/翻页消费，永远溢不出去。
+    // 兜底：PageView 的偏移只由 _go()/jumpToPage 驱动，正常不会停在中途；
+    // 万一页面重建后停在第 0 页而 idx 不在 0，帧末拉回 —— 不这么做会"看着像被滑走了"。
+    if (_page.hasClients && !_animating && (_page.page?.round() ?? idx) != idx && idx < enabled.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_page.hasClients && !_animating && idx < enabled.length) _page.jumpToPage(idx);
       });
     }
-    // 点按正文→底栏收起为 1/3 细条(保持收起, 不再因松手/上滑弹回); 点细条恢复
-    // ── ★4.44.0 左右滑动切模块：PageView 不再自己处理手势 ──
-    // physics 恒定 NeverScrollableScrollPhysics ⇒ Scrollable 不注册内置识别器，
-    // 手势全部交给外层 NavSwipeRecognizer（要求"水平分量明确占主导"）。
-    // 这样"在模块内斜着上滑"会主动退场、让位给模块自己的滚动视图，永不误判成切模块。
     final pageView = PageView(
       controller: _page,
       physics: const NeverScrollableScrollPhysics(),
       onPageChanged: (i) {
-        // 手工跟手期间（或目标页已被 _swSettle 先行 setState）只同步状态：
-        // 避免"拖到一半就写日志/震动/重置自动全屏"这类半途副作用。
-        if (_swHand || i == idx) {
-          setState(() { idx = i; });
+        // _goNow() 会先 setState 再 jumpToPage ⇒ 这里 i == idx 是常态，
+        // 那种情况只同步一下即可，**不能**重复写日志 / moduleTick 多跳一次 / 重新计时自动全屏。
+        if (i == idx) {
           RootNav.currentModuleKey = enabled[i];
           _syncContext();
           return;
@@ -3894,11 +3897,12 @@ class _RootNavState extends State<RootNav> {
         RootNav.currentModuleKey = enabled[i];
         RootNav.moduleTick.value++;
         _fsSuppressed = false;
-        AppLog.module('滑动切到模块', d: {'module': enabled[i]});
+        AppLog.module('切换模块', d: {'module': enabled[i]});
         _armAutoFs();
         _syncContext();
       },
       children: [ for (final k in enabled) _KeepAlivePage(key: ValueKey(k), child: kModules[k]!.page) ]);
+    // 点按正文→底栏收起为 1/3 细条(保持收起, 不再因松手/上滑弹回); 点细条恢复
     final body = GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
@@ -3906,38 +3910,7 @@ class _RootNavState extends State<RootNav> {
         _fsTimer?.cancel(); // 点按正文 = 一次操作，本轮不再自动进入全屏
         setState(() => _navCollapsed = true);
       },
-      child: RawGestureDetector(
-        behavior: HitTestBehavior.opaque,
-        gestures: swipe ? <Type, GestureRecognizerFactory>{
-          NavSwipeRecognizer: GestureRecognizerFactoryWithHandlers<NavSwipeRecognizer>(
-            () => NavSwipeRecognizer(debugOwner: this),
-            (r) => r
-              ..onDown = (d) {
-                _swFrom = idx;
-                _swHand = false;
-                // 用「起始页 × 视口宽」定位基准，而不是 position.pixels ——
-                // 若上一次翻页动画还没跑完，pixels 是中间值，会让跟手起点偏移。
-                _swBasePx = _page.hasClients ? _swFrom * _page.position.viewportDimension : 0;
-              }
-              ..onStart = (_) { _swHand = true; _animating = true; }
-              ..onUpdate = (d) {
-                if (r.yieldedVertical) return; // 已让位给内层滚动
-                _swDragTo(r.totalDx(d.globalPosition.dx));
-              }
-              ..onEnd = (d) {
-                _swHand = false; _animating = false;
-                // 竞技场只剩本识别器时会被强制 accept，此时仍可能是垂直手势 ——
-                // 必须再查一次，否则"上滑也翻页"会从后门回来。
-                if (r.yieldedVertical) return;
-                _swSettle(r.totalDx(d.globalPosition.dx), d.velocity.pixelsPerSecond.dx);
-              }
-              ..onCancel = () {
-                _swHand = false; _animating = false;
-                if (_page.hasClients) _swSettle(0, 0); // 取消 → 回弹原页
-              },
-          ),
-        } : const <Type, GestureRecognizerFactory>{},
-        child: pageView));
+      child: pageView);
     // 顶栏已移除: 模块名由底栏高亮承担, 模块菜单收进各模块页分段行右侧 ⋯ / 悬浮球长按 (openModuleMenu)
     // body 始终位于 Stack 第 0 位且包裹类型恒定(SafeArea.top 开关), 全屏切换不再重建 PageView —— 修复"点全屏跳回搜索页"
     final bodyStack = Stack(children: [
@@ -5848,11 +5821,14 @@ class _Ns extends State<NavSettingsPage> {
           value: AppSettings.navAutoHide,
           onChanged: (v) => AppSettings.setNavAutoHide(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
         const Divider(height: 1, indent: 56),
-        SwitchListTile(secondary: const Icon(Icons.swipe_right_alt, size: 20),
+        // ★4.52.0 这里原本是「左右滑动切换模块」的开关。现按用户硬性要求**永久关闭**，
+        // 所以从 Switch 降级为一行只读说明 —— 保留这一行而不是整段删掉，是因为
+        // 用户找不到开关时会回来问"为什么不能滑了"；写在原地比藏在文档里好。
+        ListTile(leading: const Icon(Icons.swipe_right_alt, size: 20),
           title: const Text('左右滑动切换模块', style: TextStyle(fontSize: 14)),
-          subtitle: const Text('在正文区横向滑动即可换模块; 关掉可避免与模块内部的横向手势互相干扰', style: TextStyle(fontSize: 11)),
-          value: AppSettings.navSwipe,
-          onChanged: (v) => AppSettings.setNavSwipe(v).then((_) { RootNav.navTick.value++; setState(() {}); })),
+          subtitle: const Text('已按你的要求永久关闭：滑动只在当前模块内生效, 不会切到别的模块',
+            style: TextStyle(fontSize: 11)),
+          trailing: const Text('已关闭', style: TextStyle(fontSize: 12, color: Colors.grey))),
         const Divider(height: 1, indent: 56),
         // ── 自动全屏（D-11）──
         SwitchListTile(secondary: const Icon(Icons.fullscreen, size: 20),

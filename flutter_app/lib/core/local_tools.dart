@@ -305,7 +305,7 @@ class LocalTools {
         return l.isEmpty ? '(导航栏为空)' : l.join(' · ');
       } catch (e) { return '取模块列表失败: $e'; }
     }),
-    LocalTool('setting', '读取或修改 App 设置项(如 nav_swipe 左右滑动/auto_fs_sec 自动全屏秒数/nav_style 导航形态)',
+    LocalTool('setting', '读取或修改 App 设置项(如 auto_fs_sec 自动全屏秒数/nav_style 导航形态/nav_autohide 点正文收导航)。注意 nav_swipe(模块间左右滑动切换)已被用户硬性关闭, 只读不可改',
       _obj({'action': 'get|set', 'key': '设置键', 'value': 'set 时的值'}, ['action', 'key']), (a) async {
       final act = '${a['action'] ?? ''}'.trim().toLowerCase();
       final k = '${a['key'] ?? ''}'.trim();
