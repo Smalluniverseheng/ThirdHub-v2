@@ -20,8 +20,8 @@
 //   硬编码，跟着客户端版本手工同步 —— 于是同一个后端从 /v1/meta 问是一个数、
 //   从 /v1/ping 问是另一个数。凡"要手工同步的常量"迟早会漏，故彻底取消。
 // 且改完必须**重新出包** —— 这是 Dart 代码改动，不重新编译就不会生效。
-const String kAppVersion = '4.51.0';
+const String kAppVersion = '4.52.0';
 
-/// 安卓 versionCode。语义：4.51.0 → 50538（与 pubspec 的 `+50538` 必须一致）。
+/// 安卓 versionCode。语义：4.52.0 → 50539（与 pubspec 的 `+50539` 必须一致）。
 /// 只增不减；`Updater` 用它与云端清单的 versionCode 比对来判断"有没有新版"。
-const int kAppCode = 50538;
+const int kAppCode = 50539;

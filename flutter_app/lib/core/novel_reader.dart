@@ -1,5 +1,9 @@
-// 番茄小说风格的专业阅读器: 点按出菜单(目录/夜间/设置), 设置面板含
-// 亮度/护眼/字号/字体/字色/背景/翻页(仿真/覆盖/平移/上下/无动画)/间距
+// 番茄小说风格的专业阅读器(★4.52.0 对齐番茄的菜单结构):
+//   · 点按屏幕中央出菜单; 底栏只留高频 5 项: 目录 / 书签 / 搜索 / 夜间 / 更多
+//   · 次要项一律收进「更多」面板: 上一章·下一章 / 阅读设置 / 字体 / 间距 / 听书
+//     / 自动阅读(含翻页间隔) / 护眼 / 横屏 / 音量键翻页
+//   · 「听书」从底栏一格改为**可四处拖动的悬浮球**(位置持久化, 松手贴边)
+//   · 「阅读设置」面板含 亮度/护眼/字号/字体/字色/背景/翻页(仿真/覆盖/平移/上下/无动画)/皮肤
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -49,6 +53,11 @@ class ReaderCfg {
   static double get bgImageAlpha => p.getDouble('reader_bg_img_alpha') ?? 0.25;
   static bool get autoRead => p.getBool('reader_auto') ?? false;
   static double get autoReadSec => p.getDouble('reader_auto_sec') ?? 6.0;
+  // ── 听书悬浮球位置(★番茄式可四处拖动) ──
+  // 存**归一化**坐标(0~1)而不是像素: 换设备/旋转/换字号后仍停在相对同一位置,
+  // 不会因为屏幕宽度变了把球甩到屏幕外。
+  static double get ballX => (p.getDouble('reader_ball_x') ?? 1.0).clamp(0.0, 1.0);
+  static double get ballY => (p.getDouble('reader_ball_y') ?? 0.58).clamp(0.0, 1.0);
 
   // ── 书签(按书) ──
   static List<Map<String, dynamic>> bookmarks(String bookUrl) {
@@ -503,11 +512,6 @@ class _NovelReaderState extends State<NovelReaderPage> {
                 onSelected: (_) { p.setString('flip_mode', m.$1); save(); })),
           ]),
           const SizedBox(height: 8),
-          // 其他: 间距
-          Row(children: [ rowLabel('其他'),
-            TextButton(onPressed: () { Navigator.pop(c2); _spacingSheet(); },
-              child: const Text('间距设置', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F)))),
-          ]),
           // 自定义皮肤(背景图导入)
           Row(children: [ rowLabel('皮肤'),
             TextButton.icon(icon: const Icon(Icons.image_outlined, size: 16, color: Color(0xFF6B5D4F)),
@@ -528,27 +532,11 @@ class _NovelReaderState extends State<NovelReaderPage> {
             ] else
               const Expanded(child: Text('自定义图片做阅读背景', style: TextStyle(fontSize: 10, color: Colors.grey))),
           ]),
-          // 自动阅读
-          Row(children: [ rowLabel('自动'),
-            const Text('自动阅读', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
-            Switch(value: ReaderCfg.autoRead, activeColor: const Color(0xFFB59A6C),
-              onChanged: (v) { p.setBool('reader_auto', v); _syncAutoRead(); save(); }),
-            if (ReaderCfg.autoRead) Expanded(child: Slider(value: ReaderCfg.autoReadSec, min: 2, max: 20,
-              activeColor: const Color(0xFFB59A6C),
-              onChanged: (v) { p.setDouble('reader_auto_sec', v); _syncAutoRead(); save(); })),
-          ]),
-          Row(children: [ rowLabel('屏幕'),
-            const Text('横屏阅读', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
-            const Spacer(),
-            Switch(value: ReaderCfg.landscape, activeColor: const Color(0xFFB59A6C),
-              onChanged: (v) { p.setBool('reader_landscape', v); _applyOrientation(); save(); }),
-          ]),
-          Row(children: [ rowLabel('按键'),
-            const Text('音量键翻页', style: TextStyle(fontSize: 13, color: Color(0xFF6B5D4F))),
-            const Spacer(),
-            Switch(value: ReaderCfg.volTurn, activeColor: const Color(0xFFB59A6C),
-              onChanged: (v) { p.setBool('vol_turn', v); save(); }),
-          ]),
+          // ★ 间距 / 自动阅读 / 横屏 / 音量键 已统一移到「更多」面板(单一入口, 不两处各放一份)
+          const SizedBox(height: 4),
+          const Align(alignment: Alignment.centerLeft, child: Text(
+            '间距 / 自动阅读 / 横屏 / 音量键翻页 → 底栏「更多」',
+            style: TextStyle(fontSize: 10, color: Colors.grey))),
         ])));
       }));
   }
@@ -636,6 +624,120 @@ class _NovelReaderState extends State<NovelReaderPage> {
     setState(() {});
   }
 
+  // ── 听书悬浮球(★番茄式: 可四处拖动) ──────────────────────────────
+  // 为什么用悬浮球而不是底栏一格: 听书是**长时状态**(可能听半小时), 期间用户
+  // 还要翻页/调设置 —— 占着底栏一格不如浮一颗球, 且能拖到不挡字的地方。
+  // 位置持久化(归一化坐标), 松手自动贴到最近的左/右边缘。
+  static const double _ballD = 46;
+  bool _ballDrag = false;
+
+  Offset _ballPos(Size size) {
+    final d = _ballD;
+    final maxX = math.max(0.0, size.width - d - 16);
+    final maxY = math.max(0.0, size.height - d - 16);
+    return Offset(8 + ReaderCfg.ballX * maxX, 8 + ReaderCfg.ballY * maxY);
+  }
+
+  Widget _ttsBall(BuildContext c) {
+    final size = MediaQuery.of(c).size;
+    final pos = _ballPos(size);
+    final st = TtsManager.state;
+    final active = st != TtsState.idle;
+    final playing = st == TtsState.playing;
+    const d = _ballD;
+    return Positioned(left: pos.dx, top: pos.dy, child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) => setState(() => _ballDrag = true),
+      onPanUpdate: (e) {
+        final maxX = math.max(1.0, size.width - d - 16);
+        final maxY = math.max(1.0, size.height - d - 16);
+        final x = (pos.dx + e.delta.dx - 8).clamp(0.0, maxX);
+        final y = (pos.dy + e.delta.dy - 8).clamp(0.0, maxY);
+        ReaderCfg.p.setDouble('reader_ball_x', x / maxX);
+        ReaderCfg.p.setDouble('reader_ball_y', y / maxY);
+        setState(() {});
+      },
+      onPanEnd: (_) {
+        ReaderCfg.p.setDouble('reader_ball_x', ReaderCfg.ballX < 0.5 ? 0.0 : 1.0);
+        setState(() => _ballDrag = false);
+      },
+      onTap: _ttsSheet,
+      child: AnimatedOpacity(duration: const Duration(milliseconds: 180),
+        opacity: _ballDrag ? 1.0 : (active ? 1.0 : (chrome ? 0.95 : 0.5)),
+        child: Container(width: d, height: d, alignment: Alignment.center,
+          decoration: BoxDecoration(color: const Color(0xF2F7F3EA), shape: BoxShape.circle,
+            border: Border.all(color: active ? const Color(0xFFB59A6C) : const Color(0x66B59A6C),
+              width: active ? 1.6 : 1.0),
+            boxShadow: const [BoxShadow(color: Color(0x2E000000), blurRadius: 8, offset: Offset(0, 2))]),
+          child: Icon(playing ? Icons.graphic_eq : (active ? Icons.pause : Icons.headphones),
+            size: 22, color: const Color(0xFF6B5D4F))),
+      ),
+    ));
+  }
+
+  // ── 「更多」面板(★番茄式: 底栏只留高频项, 次要项一律收进这里) ──
+  // 收纳原则: 一次性调完就不再动的(字体/间距/皮肤/横屏/音量键)进「更多」;
+  // 阅读中反复用的(目录/书签/搜索/夜间/听书)留在底栏或悬浮球上。
+  void _moreSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true,
+      backgroundColor: const Color(0xFFF7F3EA),
+      builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+        final p = ReaderCfg.p;
+        void save() { setState(() {}); setD(() {}); }
+        void go(VoidCallback f) { Navigator.pop(c2); f(); }
+        Widget cell(IconData ic, String t, VoidCallback onTap) => GestureDetector(onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(width: 78, child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(ic, size: 24, color: const Color(0xFF6B5D4F)),
+            const SizedBox(height: 6),
+            Text(t, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF6B5D4F))),
+          ])));
+        Widget sw(String label, bool v, ValueChanged<bool> on) => SizedBox(height: 44,
+          child: Row(children: [
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF6B5D4F)))),
+            Switch(value: v, activeColor: const Color(0xFFB59A6C), onChanged: on),
+          ]));
+        return SafeArea(child: SingleChildScrollView(child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [ const Icon(Icons.more_horiz, size: 20, color: Color(0xFF6B5D4F)), const SizedBox(width: 8),
+            Expanded(child: Text('更多 · 第 ${idx + 1}/${widget.chapters.length} 章',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))) ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(icon: const Icon(Icons.skip_previous, size: 18),
+              label: const Text('上一章'), onPressed: hasPrev ? () => go(() => goChapter(idx - 1)) : null)),
+            const SizedBox(width: 10),
+            Expanded(child: OutlinedButton.icon(icon: const Icon(Icons.skip_next, size: 18),
+              label: const Text('下一章'), onPressed: hasNext ? () => go(() => goChapter(idx + 1)) : null)),
+          ]),
+          const Divider(height: 26),
+          Wrap(spacing: 4, runSpacing: 14, alignment: WrapAlignment.spaceEvenly, children: [
+            cell(Icons.text_fields, '阅读设置', () => go(_settingsSheet)),
+            cell(Icons.font_download_outlined, '字体', () => go(_fontSheet)),
+            cell(Icons.format_line_spacing, '间距', () => go(_spacingSheet)),
+            cell(Icons.headphones, TtsManager.state == TtsState.idle ? '听书' : '听书中', () => go(_ttsSheet)),
+          ]),
+          const SizedBox(height: 10),
+          const Divider(height: 1),
+          sw('自动阅读', ReaderCfg.autoRead, (v) { p.setBool('reader_auto', v); _syncAutoRead(); save(); }),
+          if (ReaderCfg.autoRead) Row(children: [
+            const SizedBox(width: 62, child: Text('翻页间隔', style: TextStyle(fontSize: 12, color: Color(0xFF6B5D4F)))),
+            Expanded(child: Slider(value: ReaderCfg.autoReadSec, min: 2, max: 20, activeColor: const Color(0xFFB59A6C),
+              label: '${ReaderCfg.autoReadSec.toInt()} 秒',
+              onChanged: (v) { p.setDouble('reader_auto_sec', v); _syncAutoRead(); save(); })),
+          ]),
+          sw('护眼模式', ReaderCfg.eyeCare, (v) { p.setBool('eye_care', v); save(); }),
+          sw('横屏阅读', ReaderCfg.landscape, (v) { p.setBool('reader_landscape', v); _applyOrientation(); save(); }),
+          sw('音量键翻页', ReaderCfg.volTurn, (v) { p.setBool('vol_turn', v); save(); }),
+          const SizedBox(height: 6),
+          const Align(alignment: Alignment.centerLeft,
+            child: Text('提示: 听书是屏幕上的圆形悬浮球, 按住可拖到任意位置, 点一下打开听书面板',
+              style: TextStyle(fontSize: 10, color: Colors.grey))),
+        ]))));
+      }));
+  }
+
   @override Widget build(BuildContext c) {
     // init 未完成前绝不碰 ReaderCfg（_p! 会抛 → release 下整页灰屏）
     if (!_cfgReady) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -680,7 +782,9 @@ class _NovelReaderState extends State<NovelReaderPage> {
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 14, color: Color(0xFF4A3F30)))),
             ]))),
-          // 底栏: 目录/夜间/设置
+          // 听书悬浮球(可四处拖动) —— 不受 chrome 显隐影响, 但隐藏菜单时会半透明
+          _ttsBall(c),
+          // 底栏: 只留阅读中反复用的高频项(★次要项一律收进「更多」)
           if (chrome) Positioned(bottom: 0, left: 0, right: 0, child: Container(
             color: const Color(0xFFF7F3EA),
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -688,11 +792,8 @@ class _NovelReaderState extends State<NovelReaderPage> {
               _barItem(Icons.list, '目录', _tocSheet),
               _barItem(Icons.bookmark_border, '书签', _bookmarkSheet),
               _barItem(Icons.search, '搜索', _searchSheet),
-              _barItem(Icons.headphones, TtsManager.state == TtsState.idle ? '听书' : '听书中', _ttsSheet),
-              _barItem(Icons.nightlight_round, '夜间', _toggleNight),
-              _barItem(Icons.settings_outlined, '设置', _settingsSheet),
-              _barItem(Icons.skip_previous, '上一章', hasPrev ? () => goChapter(idx - 1) : null),
-              _barItem(Icons.skip_next, '下一章', hasNext ? () => goChapter(idx + 1) : null),
+              _barItem(Icons.nightlight_round, ReaderCfg.bg == 0 ? '日间' : '夜间', _toggleNight),
+              _barItem(Icons.more_horiz, '更多', _moreSheet),
             ]))),
         ]))));
   }
