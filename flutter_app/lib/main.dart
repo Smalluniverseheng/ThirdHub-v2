@@ -2036,7 +2036,10 @@ class _Home extends State<SearchSection> {
     while (mounted && _autoPull && mySeq == _seq) {
       if (!_engHasMore || !EngineDirect.connected) break;
       if (_more) { await Future.delayed(const Duration(milliseconds: 80)); continue; }
-      await Future.delayed(const Duration(milliseconds: _autoPullGap));
+      // ★不能写 `const Duration(...)`：`_autoPullGap` 是 getter（读设置里的
+      //   低端机间隔），不是编译期常量。此前误加 `const` 直接让 release 编译
+      //   报 "Not a constant expression"（CI build #80 实测）。
+      await Future.delayed(Duration(milliseconds: _autoPullGap));
       if (!mounted || !_autoPull || mySeq != _seq) break;
       final before = engItems?.length ?? 0;
       await _loadMore();

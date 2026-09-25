@@ -8,6 +8,23 @@
 const PKG_VERSION = require('./package.json').version;
 //
 // ══════════════════════════════════════════════════════════════════════════
+// ★ 进程级护栏 —— 单条源不许把整个后端打死
+// ══════════════════════════════════════════════════════════════════════════
+// 背景（2026-09-25 实测）：LX 音源/书源是**第三方脚本**，在 vm 沙箱里跑。
+// `vm.runInContext` 只能拦住同步异常；源里一个 `(async()=>{...})()` 或者
+// `fetch(...).then(...)` 在**事件循环里**抛错，异常就脱离了任何 try/catch，
+// Node 22 对 unhandledRejection 的默认行为是**直接结束进程**。
+// 现场表现就是：用户搜一次，后端整个没了（日志里只剩一行 ReferenceError），
+// 而客户端看到的是"连接被拒绝"，完全联想不到是某条源干的。
+// 这里把它降级成一条日志：沙箱里落下的异常**只影响那一次请求**，进程活着。
+process.on('unhandledRejection', (e) => {
+  try { console.error('[guard] 未处理的 Promise 异常（已隔离，进程继续）:', String((e && e.message) || e).slice(0, 200)); } catch (_) { }
+});
+process.on('uncaughtException', (e) => {
+  try { console.error('[guard] 未捕获异常（已隔离，进程继续）:', String((e && e.message) || e).slice(0, 200)); } catch (_) { }
+});
+//
+// ══════════════════════════════════════════════════════════════════════════
 // ★ 依赖前置检查 —— 必须放在**任何业务 require 之前**
 // ══════════════════════════════════════════════════════════════════════════
 // 背景（2026-09-19 排障）：`node_modules` 因体积被 .gitignore 排除，于是
@@ -362,9 +379,33 @@ const contentCache = new Map(); // 正文缓存30分钟(重看同章不重复抓
 const aggCache = new Map();     // 聚合搜索缓存60s
 const health = new Map();   // sourceId → {ok, fail, totalLatency}
 function tocGet(k) { const e = tocCache.get(k); if (e && Date.now() - e.at < 600000) return e.data; return null; }
-function healthHit(id, ok, latency) {
+
+// ★第十六轮：观测日志（组C「短缓存 + request_log」的 request_log 那一半，
+// 此前**完全不存在**——见 docs/AI-任务总清单-逐项对账.md 组C C3）。
+// health 只累计"成功/失败次数"，回答不了"什么时候、哪个词、几毫秒、几条第几次"。
+const requestLog = require('./request-log.js');
+requestLog.init(DATA);
+
+// ★第十六轮：能力路由表 + 健康度自动摘除（组C C1 的 routes 表、C2 的自动禁用/恢复）。
+// 此前"该问哪些源、问几个"是写死在 routes-search.js 里的 5 处 `.slice(0, 3)/(0, 2)`，
+// 且健康度**只用于排序、从不摘除** —— 一个彻底死掉的源每次搜索都要再等它超时一遍。
+const routeTable = require('./routes.js');
+const healthGate = new routeTable.HealthGate();
+// 取源"探索位"的用量账本：某个源被选中过几次。用于保证新导入的源终有机会被问到。
+const srcUsage = new Map();
+const bumpUsage = (id) => srcUsage.set(id, (srcUsage.get(id) || 0) + 1);
+// 把观测日志挂到 health 记账的同一个入口上：**只要记了健康分，就同时留下痕迹**。
+// 这样不会出现"有的路径记了、有的路径忘了记"——那正是日志类功能最容易废掉的原因。
+function healthHit(id, ok, latency, extra) {
   const h = health.get(id) || { ok: 0, fail: 0, latency: 0 };
   ok ? h.ok++ : h.fail++; h.latency += latency || 0; health.set(id, h);
+  // 同步喂给「自动摘除」闸门：连续失败达阈值即静默一段时间，期满放一次探测、
+  // 成功即恢复。旧的 health Map 只做累计（不摘除），两者互补而非替代。
+  try { healthGate.note(id, !!ok, latency, (extra && extra.error) || ''); } catch (_) {}
+  if (requestLog && extra && extra.kind) {
+    requestLog.record({ kind: extra.kind, source: extra.source || id, target: extra.target,
+      ok: !!ok, ms: latency, count: extra.count, error: extra.error, extra: extra.meta });
+  }
 }
 
 // ─── 路由模块(2026-09 拆分: index.js 保留骨架+接线) ───
@@ -382,8 +423,8 @@ const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'abs
 const mediaCtx = { musicSources, saveMusic, comicSources, saveComic, drpySources, saveDrpy };
 const adminCtx = { health, devices, sources, musicSources, comicSources, drpySources, storageState };
 const dataCtx = { DATA, SECRET };
-const sourcesCtx = { sources, saveSources, drpySources, saveDrpy, comicSources, saveComic, musicSources, saveMusic, devices, health, DATA };
-const searchCtx = { aggCache, sources, engine, pool, comicSources, drpySources, musicSources, devices, thpOnline, thpCall, library, health, healthHit };
+const sourcesCtx = { sources, saveSources, drpySources, saveDrpy, comicSources, saveComic, musicSources, saveMusic, devices, health, DATA, requestLog };
+const searchCtx = { aggCache, sources, engine, pool, comicSources, drpySources, musicSources, devices, thpOnline, thpCall, library, health, healthHit, requestLog, routeTable, healthGate, srcUsage, bumpUsage };
 const libraryCtx = { sources, engine, devices, library, saveLib, LIB_DIR, tocCache, contentCache, tocGet, healthHit };
 const agentCtx = { DATA, SECRET };
 
@@ -620,6 +661,11 @@ function startStorage() {
   checks.push(['书源', sources.length + '条']);
   checks.push(['漫画源', comicSources.length + '条']);
   checks.push(['影视源', drpySources.length + '条']);
+  // ★第十六轮：BUILD-M1 验货清单里「自检横幅缺音源计数」—— 音源变量 `musicSources`
+  // 早就在（:344 加载、:386 已注入 searchCtx），只是这一行从来没被补上。
+  // 后果不是"少显示一行"，而是**音源为空时控制台完全不提示**：音乐模块点了没结果，
+  // 排查时看不出是"源没入库"还是"引擎坏了"，只能去猜。
+  checks.push(['音源', musicSources.length + '条']);
   console.log('─── 自检 ───');
   for (const [k, v] of checks) console.log(`  ${k}: ${v}`);
   const fails = checks.filter(c => String(c[1]).startsWith('fail'));

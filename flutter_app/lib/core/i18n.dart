@@ -313,3 +313,18 @@ class I18n extends ChangeNotifier {
 }
 
 String tr(String s) => I18n.tr(s);
+
+/// 分段控件（`SegmentedButton`）专用标签：**强制单行 + 超出省略**。
+///
+/// 为什么单独来一个：`Text(tr('书架'))` 在法语下是 `Bibliothèque`（12 字符）。
+/// 四个分段并排放在 360dp 宽的手机上，每段可用宽度只有 ~78dp，而 Flutter 的
+/// `Text` **默认允许换行** —— 于是一个按钮被折成 `Bibli` / `othè` / `que` 三行，
+/// 分段条从 40dp 被撑到 ~90dp，整页排版跟着往下跳（Android 模拟器实测，法语/俄语必现）。
+/// 分段按钮的语义是「若干并列的互斥选项」，**它不该换行**；放不下就省略。
+Widget segLabel(String zh, {double fontSize = 12.5}) => Text(
+      tr(zh),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+      style: TextStyle(fontSize: fontSize),
+    );

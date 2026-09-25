@@ -2,6 +2,10 @@
 // 依赖: cheerio (npm i)
 const cheerio = require('cheerio');
 const vm = require('vm');
+// ★第十六轮：书源规则里的 URL 是**外部输入**（导入的书源 JSON），
+// 所以引擎这一层也必须过出站地址准入 —— 否则一个恶意书源就能让后端去摸
+// `http://127.0.0.1:...` 或云元数据。见 ssrf-guard.js 顶部说明。
+const ssrf = require('./ssrf-guard.js');
 
 // ─── 迷你XPath → cheerio 选择器 ───
 function xpathToCheerio(xp) {
@@ -238,18 +242,22 @@ async function fetchPage(url, source, method, body) {
   // 失败重试1次(仅网络错误/5xx, 4xx不重试)
   for (let attempt = 0; attempt < 2; attempt++) {
     const r = await tryFetch(url, headers, method, body);
+    // 被地址准入门拦下的**不重试**：这是策略判定，不是网络抖动，重试只会白等 12s
+    if (r.blocked) return r;
     if (r.ok || (r.status && r.status < 500)) return r;
   }
   return { ok: false, url, html: '', json: null };
 }
 
 async function tryFetch(url, headers, method, body) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 12000);
+  // ★第十六轮：改成 ssrf.safeFetch —— 它把 `redirect` 从 `follow` 换成**手动逐跳**，
+  // 每一跳都重新跑地址准入。只判初始 URL 是不够的：源站回一个
+  // `302 Location: http://169.254.169.254/` 就能绕过（SSRF 最常见的绕过手法）。
+  // 超时仍由 safeFetch 的 timeoutMs 统一负责，故这里不再需要 AbortController。
   try {
-    const opts = { headers, signal: ctrl.signal, redirect: 'follow' };
+    const opts = { headers, timeoutMs: 12000, maxRedirects: 5 };
     if (method === 'POST') { opts.method = 'POST'; opts.body = body || ''; }
-    const resp = await fetch(url, opts);
+    const resp = await ssrf.safeFetch(url, opts);
     const buf = await resp.arrayBuffer();
     let text = new TextDecoder('utf-8').decode(buf);
     const m = text.match(/charset=["']?([\w-]+)/i);
@@ -260,7 +268,13 @@ async function tryFetch(url, headers, method, body) {
     let json = null;
     try { json = JSON.parse(text); } catch (e) {}
     return { ok: resp.ok, url: resp.url, html: text, json };
-  } finally { clearTimeout(timer); }
+  } catch (e) {
+    // 被地址准入门拦掉：**不让它冒泡**，而是当成"这一条源失败"返回。
+    // 理由：一个恶意/写错的源不该让整次聚合搜索 500，它只该被记一次失败、
+    // 然后在健康度里被摘掉（这条链路见 routes-search.js 的 health 记账）。
+    return { ok: false, url, html: '', json: null,
+      blocked: ssrf.isSsrfBlocked(e), error: String((e && e.message) || e) };
+  }
 }
 
 function absUrl(url, base) {
