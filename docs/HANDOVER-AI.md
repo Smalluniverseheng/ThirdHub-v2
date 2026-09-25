@@ -12,7 +12,7 @@
 
 | 产品线 | 仓 / 源码 | 包名 | 版本 | 体积 | 更新清单写在 |
 |---|---|---|---|---|---|
-| **★ 第三方聚合 V4（唯一主线）** | `ThirdHub-v2` → `flutter_app/` | `com.thirdhub.app` | **4.49.0 / 50536** | **~28 MB** | Supabase `latest-app.json` |
+| **★ 第三方聚合 V4（唯一主线）** | `ThirdHub-v2` → `flutter_app/` | `com.thirdhub.app` | **4.50.0 / 50537** | **~28 MB** | Supabase `latest-app.json` |
 | Android 轻壳版 | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 网页端 `app-versions.json` |
 | 完全体客户端（旁支·已搁置） | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | 网页端 `app-versions.json` |
 | 漫画稳定版（第二代） | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | — |
@@ -51,9 +51,12 @@
 
 ## 2. 当前版本状态（2026-09-25）
 
+> **★ 最新一轮（第十三轮）**：**4.50.0 / 50537** —— 构建源提交 `4bf9466f`（10 files），
+> `dart-selfcheck` CI **success**；`build-apk` 见下方「发版批次记」。内容见 §6 #16。
+
 | 部件 | 版本 | 状态 | 下载通道 |
 |---|---|---|---|
-| V4 前端 APK | **4.49.0 / 50536** | ✅ **已四通道发布 + 五通道独立校验全 PASS**。构建源提交 `7bc57c73`，CI `build-apk 36054417044` success；APK sha256 `50bba599c003d0ec7cfa9315f831cdfb1d960218f27c9a069da2d8cfa5bfe922` / 29803914 B；`pickSettingsRow` 符号已在二进制中（4.48.0 二进制为 0 命中，见 §6 #3b） | Supabase `latest-app.json` + 桶三通道 + Release |
+| V4 前端 APK | **4.50.0 / 50537** | 🚧 **第十三轮**：代码已推 `4bf9466f`（CI `dart-selfcheck` success）。APK 出包/发布以本行下方记录为准。上一版 4.49.0 已四通道发布 + 五通道独立校验全 PASS（`build-apk 36054417044` on `7bc57c73`，sha256 `50bba599…` / 29803914 B） | Supabase `latest-app.json` + 桶三通道 + Release |
 | 网页端主站 | **3.35.3** | 第十二轮发版（`tools/release.cjs 3.35.3`，六步全绿，`PUSHED 7d56a574`）：把下载中心的后端包指向 **0.8.7**。放行指针 `th_app_updates` id=47 → 3.35.3（`auto:true`，普通用户会收到通知） | — |
 | 家庭后端 | **0.8.7** | ✅ **已发三通道 + 解包冒烟 24/24 PASS**。zip 6037093 B / sha256 `bf153569f202427c03cb520f48ed199a0d6c93762ec27c7df06dff77e7310bdf`。内容：**15 条干净源 + 10 条撤销**（`rev:2`）+ 新增撤销通道（`preset-sync.js`） | ① `downloads/thirdhub-backend-0.8.7.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.7`（id `396181385`，资产下载回算 sha256 逐字节一致）** |
 | **家庭后端 APK**（`android/` 壳，包名 `com.thirdhub.backend`） | **0.8.7 / 42807** | ✅ **第十二轮重建并四通道发布**。APK 32633859 B / sha256 `b89cbdb92be3a87b97d6566238a296d928e097f08f3b112a2809a4a68f6a7a80`；内嵌 node-arm64 运行时 + server 0.8.7（含 `public/` `scripts/` `preset-sync.js`）+ **15 条干净源 + 10 条撤销** | ① `downloads/thirdhub-backend-0.8.7.apk` ② 别名 `downloads/thirdhub/thirdhub-backend.apk` ③ **`latest-backend.json`**（version 0.8.7 / code 42807 / sha 三项回读一致）④ Release `backend-v0.8.7` 资产。发布脚本 `_rel_backend_apk.mjs`（**8/8 PASS**） |
@@ -183,7 +186,8 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 
 > 当前进度：**P0 完成**；**P1 数据互通 —— 客户端侧代码已推 + 端到端实测已完成（真 JWT + 真 RLS，见 §6 #3/#3b）**；
 > **P2 AI 核心体验 —— Agent 控制面代码已接通（4.48.0）+ 缺件直达入口（4.49.0），真机那一轮待设备（#4）**；
-> **娱乐性/内容线 —— 后端侧开箱可用（0.8.5 搜索 + 0.8.6 逐页阅读）**。P3 未动。
+> **娱乐性/内容线 —— 后端侧开箱可用（0.8.5 搜索 + 0.8.6 逐页阅读 + 0.8.7 源包净化）；
+> 前端侧「娱乐线剩余缺陷」已在 4.50.0 收口（详情页引擎兜底 / 资讯·播客内置源与兜底 / 14 处首屏竞态，见 #16）**。P3 未动。
 
 ---
 
@@ -208,10 +212,14 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 | 14 | 后端 Android APK（内嵌 server）刷新 | ✅ **第十二轮已刷新** | 见 #20 + §2。APK 现为 **0.8.7 / 42807**，与 zip 同号，内嵌同一份源包（15 源 + 10 撤销） |
 | 15 | 网站静态清单部署 | ✅ **第九轮再做一次**：站点 3.35.0 → **3.35.1**（`tools/release.cjs` 六步，把 `server` 段指向 0.8.5） | 线上已核实 `server` = 0.8.5 / 6028828 |
 | 18 | **家庭后端 0.8.5 发布（第九轮新增）** | ✅ **已完成**：`_pack_backend.mjs`（打包脚本化 + 5 道包内硬闸门）→ `_smoke_backend_zip.mjs` **13/13 PASS** → 三通道（版本化桶 / 别名桶 / Release `backend-v0.8.5` id `396116826`，资产下载回算 sha256 一致）→ 网站清单同步 | 参见当天日志第九轮 A9-2 |
-| 16 | 娱乐线剩余缺陷 | 🚧 4.49.0 修掉 6 类（`positionStream` 泄漏、监听器不摘 + setState-after-dispose、共享清单静默失败、共享相册删除假成功、共享相册名实不符、论坛回帖裸时间戳） | **仍未做**：视频详情页无引擎兜底、资讯/播客硬编码源无兜底、14 处 `setState(() async ...)` 首屏竞态 |
+| 16 | 娱乐线剩余缺陷 | ✅ **第十三轮已收口**（4.50.0 / `4bf9466f`）—— 三项全做：
+**① 视频 / 漫画 / 音乐「详情页」补引擎兜底**：书架与历史里存着走引擎直连时收藏/浏览过的条目（`sourceId == 'engine'`），而 `VideoDetailPage` / `ComicDetailPage` / `MusicPlayPage` **只走后端接口** → 点进去必然失败（没配后端时 `Api.get` 直接抛异常一屏红字）。小说侧 `TocPage` 早有 `sourceId == 'engine'` 分支，这三种内容一直缺。新增 `_detailOf(book, type, backend)`：引擎条目**直接进 `EngineItemPage`**（它本来就是引擎内容的详情页），不重抄一份引擎取数逻辑。
+**② 资讯 / 播客内置源补兜底 + 修「开箱即空」**：实测播客两个内置源 —— `feed.xyzfm.space/9h8wkgvmq2f9` **HTTP 404**、`gcores.com/rss`（机核**图文**订阅）**`mp3=0 / enclosure=0`** ⇒ **播客开箱必然 0 集**，而界面只有一句「选一个播客源开始」。已换为逐条实测可用的内置源（播客 3 / 资讯 5，资讯由 3 补到 5）；新增 `builtinVer` **版本化迁移**（老判据 `if (saved.isEmpty)` 对老安装恒假 → 新内置源永远进不来，与第十二轮「预置源包改了不生效」同一类坑）；播客新增**「在线找源」**（按节目名搜公开播客目录取 `feedUrl`，实测可用）；两者空态改为**可操作空态**（说清原因 + 重试 / 换个源 / 加 RSS）。
+**③ 14 处 `setState(() async …)` 首屏竞态**：`setState(() async => items = await X)` 会让 setState 那一帧用**旧值**重建，而 `await` 之后的赋值在 setState **之外**、不会再安排重建 ⇒ **首帧空且一直不更新**（待办/笔记/记账/剪贴板/日历/日记/速记/提醒/课表/代码片段/文档/背诵卡/翻译历史/健康记录）。全部改为「先 await，再 setState」+ `mounted` 守卫。 | 真机点一遍留 #4（本机无设备） |
 | 17 | 网页端 `updated` 日期比本地日期早一天 | ✅ **第十轮已修** | `tools/release.cjs` 与 `_upd_av_server.mjs` 原来用 `new Date().toISOString().slice(0,10)`（**UTC**）写 `updated`/`releaseDate`，本地上午发布会被写成前一天。已改为按本地时区取 YYYY-MM-DD；3.35.2 实测 `updated=2026-09-25`（UTC 当时还是 09-24） |
 | 19 | 内容线源级缺陷（非引擎） | ✅ **第十二轮已完成** | 按**引擎双闸门**重挑源包：闸门①`engine.search()` 真解析出「书名+链接」；闸门②`detail→catalog→content` 取**首章 + 中段章**（目录>0、条目 name/url 齐备 ≥90%、url 绝对、正文 ≥200 字、**已分段 ≥3 段**、非脚本残留、开头非页面杂质、单章 ≤2 万字）。**12 条源 → 15 条干净源 / 14 个独立书库**（大源包 2703 条按社区权重取前 1326 候选，17 条过闸门 → 归一化去重后 15 条）。取证证明瓶颈在源不在引擎：抽 20 条「搜索 0 条」分类 **DEAD 6 / BLOCKED 7 / STALE 4 / NOURL 2 / RULE_GAP 1 → 19/20 是源侧失效**。**并发现必须同步解决的根因**（见 #21）。随包 0.8.7 / APK 0.8.7 发布 | 剩余「真机打开阅读」留 #4 |
 | 20 | 后端 Android APK（内嵌 server）落后更多 | ✅ **第十一轮已完成** | 本机 Gradle 重建 → APK **32626957 B** / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`，包名 `com.thirdhub.backend`，**0.8.6 / 42806**。四通道：① 版本化桶 `thirdhub-backend-0.8.6.apk` ② 别名桶 `thirdhub/thirdhub-backend.apk` ③ `latest-backend.json`（version 0.8.6 / code 42806 / sha 一致）④ Release `backend-v0.8.6` 资产（下载回算 sha256 一致）。**8/8 PASS**，客户端「下载中心」会显示「最新 v0.8.6」 |
+| 22 | **`changelog` 的 `latest` / `updated` 是手写常量（第十三轮新发现）** | ✅ **第十三轮已修** | `_build_changelog.mjs` 里 `latest: '4.49.0'` 与 `updated` 都是**手写常量** → 升 4.50.0 时漏改，落盘 `entries[0].v = "4.50.0"` 而 `latest = "4.49.0"`，**同一份文件自相矛盾**；而该字段被客户端 `changelog.dart` 的 `ClogDoc.latest` **真读**，不是死字段。改法（与铁律 9「版本号单一来源」同思路）：`latest` 一律从 `gen4[0].v` **派生**、`updated` 按**本地时区**取（同 #17）；另加 **3 道硬闸门** —— `gen4` 非空 / `latest` 必须 == `entries[0].v` / 可选命令行期望值（`node _build_changelog.mjs 4.50.0` 不符即 `exit 6`）。重跑输出 `latest=4.50.0 updated=2026-09-25（派生，非手写）` | 上传前仍必须先 `_dump_changelog_backup.mjs` + `_verify_changelog_delta.mjs`（证明只有新增） |
 | 21 | **「改了但没生效」——预置源包只增不减（第十二轮新发现，P0 级）** | ✅ **已修并随 0.8.7 发布** | 旧的 `importPreset()` 判据只有 `if (url && !sources.some(x => x.bookSourceUrl === url)) push` → **把烂源从 `health-book.json` 里剔掉，对老安装完全无效**（老装的 `data/sources.json` 里那条烂源还在且 `enabled:true`，换包只是又追加新源）。修法：新增 `server/preset-sync.js`（纯函数 `planPresetSync`）+ **撤销通道** —— `enabled:false` + 组名改 `已停用·双闸门未通过`（**不删除**，用户可手动再启用）；标记文件由「条目数」升级为「源包内容 sha1 前缀」；**包没变则一律不动**（尊重用户删改，手动删除的源不会被每启一次塞回来）；源回到白名单时自动恢复 `enabled` 与**原组名**。簿记只写标记文件，`sources.json` 只被改 Legado 原有字段 | 验证：纯函数单测 **34 断言全过** / 真服务端到端 **12 断言全过** / 解包冒烟 **24/24 PASS**（含「老安装升级 → 撤销真跑一次」）|
 
 > **第十二轮新增的硬闸门（别再靠人眼）**：
@@ -246,6 +254,7 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 | ④ Release | GitHub `v<ver>` | |
 
 **`changelog` 也是发版面**：改 `_build_changelog.mjs` 的 NEWS → 构建 → `_up_changelog.mjs`（整行覆盖写）→ **必须先 `_dump_changelog_backup.mjs` 存证 + `_verify_changelog_delta.mjs` 证明「只有新增」**，否则静默丢历史。
+**★ 第十三轮起 `latest` 不再手写**：由 `gen4[0].v` 派生，构建脚本自带 3 道闸门（`gen4` 非空 / `latest == entries[0].v` / 可传期望版本号做断言：`node _build_changelog.mjs 4.50.0`）。**别再回去写常量**。
 
 ### 工具路径（本机）
 ```
@@ -348,6 +357,39 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
 24. **源包净化器按 `searchUrl` host 去重会漏**（第十二轮）：两条既有源共用 host，或
     `bookSourceUrl` 只差结尾斜杠（`http://m.rulianshi.la` vs `...la/`）时会被静默丢掉一条。
     → 收口脚本要加**归一化键**（去 scheme / 结尾斜杠 / host 小写，但保留 `##xxx` 尾巴）。17 → 15 条。
+25. **★「书架 / 历史里引擎条目点进去打不开」不是引擎坏了，是详情页少了一条路由分支**（第十三轮）：
+    `EngineItemPage._addShelf()` / `_markOpened()` 会把引擎内容以 `sourceId == 'engine'` 记进
+    `shelf_*` / `history_*`（`main.dart` 的 `Book`）。而 `VideoDetailPage` / `ComicDetailPage` /
+    `MusicPlayPage` 三个详情页**只走后端接口**（`/v1/video/detail`、`/v1/comic/info`、`/v1/music/url`）
+    → 引擎条目点进去必然失败（无后端时 `Api.get` 抛异常直接一屏红字；有后端时 `sourceId=engine`
+    不是后端认识的源）。**小说侧 `TocPage` 一直有 `sourceId == 'engine'` 分支，所以只有小说没这毛病** ——
+    这类「四种内容里三种缺同一条分支」的不一致，靠读单页永远发现不了，要**顺着 `Book.sourceId` 的来源反查**。
+    · 修法是 `main.dart` 的 `_detailOf(book, type, backend)`：引擎条目直接进 `EngineItemPage`。
+    **别在详情页里再抄一遍引擎取数逻辑**（目录/正文/直链播放 EngineItemPage 全有）。
+    · **★ 前端有两个不同的「引擎」标记，别只认一个**（第十三轮顺手厘清）：
+      **搜索 / 发现结果**用 `g['engine'] == true`（标记在那个 group map 上，`main.dart` 的
+      2217 / 2467 / 2658 / 3048 / 3116 五处**本来就有** `EngineItemPage` 分支，没问题）；
+      **书架 / 历史条目**用 `Book.sourceId == 'engine'`（标记在 Book 上）。**少的是后一个**。
+      改动前先 `grep -rn "'engine'" lib/` 把两类标记都过一遍，否则会误判成「已修过」。自查一行：
+      `grep -rn "_detailOf\|_videoDetail" lib/main.dart`（应覆盖 `ShelfPage`/`HistoryPage` 的
+      comic / video / music 共 5 个 builder，小说侧由 `TocPage` 自己分支）。
+26. **★ 前端「内置源 / 内置列表」也必须带版本标记，否则老安装永远拿不到新的**（第十三轮）：
+    `if (saved.isEmpty) { saved = builtin; save(); }` 这个判据对**已有数据的机器恒假** ——
+    改内置列表对老用户**完全无效**。这与第十二轮「预置书源包只增不减」是同一类坑，只是对象从
+    「服务端预置源包」换成了「前端的 RSS 内置源」。修法：`builtinVer` 常量 + `SharedPreferences`
+    存标记，升级时只**追加缺失的内置项 / 摘掉已下线的内置项**，**用户自己加的一律不动**。
+    （`mini_modules4.dart` 播客 / `mini_modules6.dart` 资讯均已落地。）
+27. **★ 内置源要逐条实测再写进去，不能凭印象**（第十三轮）：播客原内置两个源，
+    一个 **HTTP 404**、一个（机核 `/rss` 是**图文**订阅）**没有音频 enclosure** ⇒ 模块**开箱即空**。
+    体检判据按模块分：资讯 = `HTTP 200 且 <item|entry> > 0`；播客 = **还必须 `enclosure url=` 或 `.mp3` > 0**。
+    · 另：「资讯 RSS 能取到文章」≠「能当播客源」—— 同一个 URL 在两个模块里结论可以相反。
+    · 兜底通道：`https://itunes.apple.com/search?media=podcast&limit=20&term=<kw>` 返回体带 `feedUrl`，
+    无需密钥，实测可用（播客「在线找源」就是它）。
+28. **★ `setState(() async …)` 是「首帧空、数据到了也不刷新」，不是风格问题**（第十三轮）：
+    `setState` 同步调用该闭包 → 闭包到 `await` 就挂起并返回 Future → setState 那一帧**用旧值**标脏重建，
+    而 `await` 之后的赋值发生在 setState **之外**，**不会再安排重建**。14 处分布在
+    `mini_modules{1..6}.dart`，写法统一改成「先 `await` 取值 → `if (!mounted) return;` → `setState`」。
+    · 自查一行：`grep -rn "setState(() async" lib/` 必须为空。
 
 ---
 
@@ -355,9 +397,11 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
 
 1. `dart format --output=none`（挡语法错误；注意 `--set-exit-if-changed` 是 flag，不能带值）
 2. 纯 Dart 自检**八连**（`_probe/run_checks.sh`）：`nav_swipe 57 / local_tools 135 / agent_proto 191 / modules 202 / agent_selfcheck 120 / peer_hub_selfcheck 327 / changelog_selfcheck 52 / settings_bridge_selfcheck 111` → 合计 **PASS 1195 / FAIL 0**
-   （`settings_bridge` 95 → 111 是本轮为「`th_settings` 取行」加的 16 条断言；基线数字随断言增长会变，**以脚本实际输出为准**，别把这里的数字当成不可变的阈值。）
+   （`settings_bridge` 95 → 111 是第八轮为「`th_settings` 取行」加的 16 条断言；基线数字随断言增长会变，**以脚本实际输出为准**，别把这里的数字当成不可变的阈值。
+   ★ 第十三轮实测确认：**1195 / 111 是当前真实基线**；automation prompt 里写的「1179 / settings_bridge 95」是第八轮之前的旧值，**不要按旧值判定回归**。`agent_proto` 用 `✓` 而非 `PASS n` 输出，需单独数 `✓` 个数（应为 191、`✗` 为 0）。）
 3. 服务端：`test_agent_proto.cjs`（118/118）、`test_chat_proto.cjs`、`scripts/selftest-peer-hub.js`（174/0）；改动 `server/*.js` 后再加一遍 `node --check`
-4. 插件：`selftest-plugin-e2e.js`（78/0）
+4. 插件：**`plugins/selftest-plugin-e2e.js`**（78/0）—— ⚠ 注意路径是 `plugins/`，**不在 `server/scripts/` 下**
+   （第十三轮实际踩过：按 `server/scripts/` 去找会 `MODULE_NOT_FOUND`，看着像「插件自检坏了」）。
 5. **版本号残留 grep**（前端 `kAppVersion/kAppCode` + `pubspec.yaml` + `README.md`；**Node 侧自 0.8.4 起不再需要跟着改**）
 6. **新增/改动依赖 flutter 的 lib 文件时，以上全绿也 ≠ 能编译 → 必须推 CI 真编译一轮。**
    **★ 无法本地类型检查时的替代闸门**：逐个把新增调用点对到定义处（签名 + 参数名逐项核对），因为 `dart analyze` 在本机必死（见 §9.2）。
@@ -389,6 +433,12 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     - **判据：凡改动「预置源包 / 导入逻辑」，必须同时过 单测 + 真启动 e2e + 解包冒烟** ——
       单靠「新装能导入」是不够的，第十一轮那类「改了但没生效」正是漏在这一步。
     - `sources-preset/README.md` 要随包更新（判据 / 溯源 / 发布纪律），它是源包的唯一权威说明。
+11. **前端「内置数据源」的闸门（第十三轮新增）**：
+    - 静态自查：`grep -rn "setState(() async" flutter_app/lib/` **必须为 0**（该写法 = 首帧空且不刷新，见 §9.28）。
+    - 内置 RSS / feed 清单**逐条实测后才能写进去**（`_probe/_feed_candidates.cjs`）：
+      资讯判据 = `HTTP 200 且 <item|entry> > 0`；播客判据 = **还要 `enclosure url=` 或 `.mp3` > 0**。
+    - 凡改内置列表，**必须同时 +1 `builtinVer`**，否则老安装拿不到（见 §9.26）。
+    - `_probe/_pod_discover_probe.cjs`：验「在线找源」通道（`itunes.apple.com/search` 是否返回 `feedUrl`）。
 
 ---
 
