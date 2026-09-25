@@ -238,13 +238,67 @@ Future<void> main() async {
     base: prefs.getString('base') ?? '', token: prefs.getString('token') ?? '', locked: pin.isNotEmpty, fresh: !onboarded));
 }
 
+/// 鉴权被后端拒绝（HTTP 401 / `authentication_error`）。
+///
+/// ★为什么必须是**独立异常类型**（2026-09-25 模拟器实测发现）：
+/// 后端在 `index.js` 里统一用 `x-th-token` 头校验，只有 `/v1/meta`（指纹探测）
+/// 是免鉴权的。于是「密钥错了/没填」这件事在客户端的表现是：
+///   ① 连接页 `connect()` 拿 `/v1/meta` 探指纹 → **必然成功**（它免鉴权）
+///      → 界面显示"连接成功"、密钥被原样存进 prefs；
+///   ② 之后每一次搜索/列目录/取正文都 401，而 `Api.get` 只做
+///      `jsonDecode` 不查状态码 → 返回体是
+///      `{"object":"error","data":{"type":"authentication_error",...}}`，
+///      调用方读 `r['data']` 拿到的是一个 Map 而非列表 → 被当成"空结果"。
+/// 用户看到的就是「搜索永远 0 条 / 没有找到相关内容」，
+/// 根本无从判断是"源里没内容"还是"密钥没生效" —— 这是最贵的一类 bug：
+/// **它把配置错误伪装成内容缺失**。所以这里把它显式化。
+class ApiAuthError implements Exception {
+  final String message;
+  const ApiAuthError(this.message);
+  @override String toString() => message;
+}
+
+/// 后端返回了非 2xx 且不是鉴权问题时抛这个，避免把 HTML 错误页喂给 jsonDecode。
+class ApiHttpError implements Exception {
+  final int status; final String body;
+  const ApiHttpError(this.status, this.body);
+  @override String toString() => '后端返回 HTTP $status';
+}
+
 class Api {
   static String base = ''; static String token = '';
   static http.Client client() { final c = HttpClient()..badCertificateCallback = (_, __, ___) => true; return IOClient(c); }
+
+  /// 统一的响应闸门：**先判状态码与错误体，再交给调用方**。
+  /// 30+ 个调用点全部走 `get`/`postEncrypted`，所以修在这里等于全盘生效
+  /// （否则要在每个页面各写一遍 401 判断 —— 那正是"改一处漏三处"的来源）。
+  static Map<String, dynamic> _unwrap(http.Response r, String path) {
+    final text = utf8.decode(r.bodyBytes);
+    Map<String, dynamic> j;
+    try { j = jsonDecode(text) as Map<String, dynamic>; }
+    catch (_) { throw ApiHttpError(r.statusCode, text.isEmpty ? '(空响应)' : text.substring(0, text.length > 200 ? 200 : text.length)); }
+    final err = j['data'] is Map ? (j['data'] as Map)['type'] : null;
+    if (r.statusCode == 401 || err == 'authentication_error') {
+      throw ApiAuthError('资源库拒绝了请求：密钥无效或未设置\n请到「我的 → 系统 → 连接资源库」填写后端打印的访问密钥后重连');
+    }
+    if (r.statusCode >= 400) throw ApiHttpError(r.statusCode, text.substring(0, text.length > 200 ? 200 : text.length));
+    return j;
+  }
+
   static Future<Map<String, dynamic>> get(String path) async {
     final r = await client().get(Uri.parse('$base$path'), headers: {'X-TH-Token': token});
-    return jsonDecode(utf8.decode(r.bodyBytes)); }
+    return _unwrap(r, path); }
   static String img(String u) => '$base/v1/img?url=${Uri.encodeComponent(u)}';
+
+  /// 探针：确认「地址可达 **且** 密钥被接受」。
+  /// 连接页专用 —— `/v1/meta` 免鉴权，光靠它连不出"密钥对不对"。
+  /// 连接页此时还没把值写进 `Api.base/Api.token`，所以允许显式传入。
+  static Future<Map<String, dynamic>> probeAuth({String? base, String? token}) async {
+    final b = (base ?? Api.base).trim(), t = token ?? Api.token;
+    final r = await client().get(Uri.parse('$b/v1/status'), headers: {'X-TH-Token': t});
+    return _unwrap(r, '/v1/status');
+  }
+
   // AES-256-GCM 加密POST(密钥=sha256(token), 头 X-TH-Enc: aes-gcm, body=base64(nonce‖cipher‖tag))
   static Future<Map<String, dynamic>> postEncrypted(String path, Map<String, dynamic> body) async {
     final alg = AesGcm.with256bits();
@@ -254,7 +308,7 @@ class Api {
     final payload = base64Encode([...nonce, ...box.cipherText, ...box.mac.bytes]);
     final r = await client().post(Uri.parse('$base$path'),
       headers: {'X-TH-Token': token, 'X-TH-Enc': 'aes-gcm', 'Content-Type': 'text/plain'}, body: payload);
-    return jsonDecode(utf8.decode(r.bodyBytes));
+    return _unwrap(r, path);
   }
 }
 
@@ -302,6 +356,40 @@ class AppSettings {
   static Future<void> setThemeMode(String v) async { await p.setString('theme_mode', v); await sync(); onChanged?.call(); }
   static Future<void> setAccent(int v) async { await p.setInt('accent_color', v); await sync(); onChanged?.call(); }
   static Future<void> setSplashAnim(bool v) async { await p.setBool('splash_anim', v); await sync(); }
+
+  // ══ ★第十六轮：低端机模式（liteMode）—— 清单里的「零实现」项 ══
+  //
+  // 为什么必须有：`docs/TASKS.md` 组D2 与《功能规划-v3.0》都列了「低端机模式」，
+  // 而全仓此前**只有 `engine_direct.dart:433` 一句注释**，属典型"假完成"。
+  // 更关键的是它本来就踩在本项目的核心场景上：定位里写着"旧手机变服务器"，
+  // 那台旧手机同时还要当客户端用 —— 低端机卡不卡，是这个产品能不能落地的硬条件。
+  //
+  // 设计取舍（两条，都是为了不把事情做歪）：
+  //   · **local-only，不进 sync()**：性能档位是"这台设备"的属性，不是账号偏好。
+  //     从高端机同步到低端机会把低端机拖死，反向又白浪费高端机 —— 只落本地盘。
+  //   · **只降开销、不删功能**：低端机模式只压"动画时长 / 分帧步长 / 图片缓存"
+  //     三类纯开销，功能集与高端机完全一致。绝不让用户觉得"低端机是阉割版"。
+  static bool get liteMode => p.getBool('lite_mode') ?? false;
+  static Future<void> setLiteMode(bool v) async {
+    await p.setBool('lite_mode', v);
+    onChanged?.call(); // 让全树重建一次，动画时长立即生效
+  }
+
+  /// 过渡动画时长三档。低端机压到 ~60%：掉帧最集中的就是过渡段。
+  static Duration get animFast =>
+      Duration(milliseconds: liteMode ? 90 : 160);
+  static Duration get animMid =>
+      Duration(milliseconds: liteMode ? 140 : 250);
+  static Duration get animSlow =>
+      Duration(milliseconds: liteMode ? 170 : 300);
+
+  /// 搜索列表分帧铺开的步长。
+  /// 低端机**加大**步长（一次多挂几条、少走几帧）——低端机上"帧数"比"每帧条数"更贵。
+  static int get litePumpStep => liteMode ? 120 : 40;
+  /// 自动续拉的间隔。低端机拉长到 320ms，给渲染留出时间片。
+  static int get liteAutoPullGap => liteMode ? 320 : 200;
+  /// 图片解码缓存上限（MB）。
+  static int get imageCacheMB => liteMode ? 60 : 200;
 
   // ── 导航(网页版-手表端导航栏位置) ──
   static String get navSide => p.getString('nav_side') ?? 'right'; // left|right(悬浮球默认吸附侧)
@@ -818,8 +906,17 @@ class OnboardingPage extends StatefulWidget { const OnboardingPage({super.key});
 class _Ob extends State<OnboardingPage> {
   int step = 0; final ctrl = PageController();
   final Set<String> _mods = kModules.keys.toSet();
-  static const _titles = ['选择语言', '外观偏好', '选择模块', '账号'];
-  static const _subs = ['Choose your language', '主题与强调色, 之后随时可改', '勾选底部导航要显示的模块(我的固定保留)', '登录可云端同步并远程连接; 游客模式仅用本地与局域网'];
+  // ★第十六轮：这两行以前是 `const` 中文字面量，**整页不过 tr()**。后果在模拟器上
+  // 一眼可见：选了 Français，标题还写「选择语言」、按钮还写「下一步」——
+  // 引导页是全应用第一个界面，"选了外语还是中文"的第一印象就坏在这里。
+  // 现在只留 key（中文原文），取值在 build() 里走 tr()，译文补进 i18n_extra.dart。
+  static const _titleKeys = ['选择语言', '外观偏好', '选择模块', '账号'];
+  static const _subKeys = [
+    '选择你的语言',
+    '主题与强调色, 之后随时可改',
+    '勾选底部导航要显示的模块(我的固定保留)',
+    '登录可云端同步并远程连接; 游客模式仅用本地与局域网',
+  ];
   Future<void> finish() async { final p = await SharedPreferences.getInstance();
     final list = kModules.keys.where((k) => _mods.contains(k)).toList();
     if (!list.contains('我的')) list.add('我的');
@@ -829,7 +926,7 @@ class _Ob extends State<OnboardingPage> {
   void next() { if (step < 3) { ctrl.nextPage(duration: const Duration(milliseconds: 280), curve: Curves.easeOut); } else { finish(); } }
 
   Widget _langStep() => ListView(padding: const EdgeInsets.symmetric(horizontal: 24), children: [
-    RadioListTile<String>(value: 'system', groupValue: AppSettings.locale, title: const Text('跟随系统 / System'),
+    RadioListTile<String>(value: 'system', groupValue: AppSettings.locale, title: Text(tr('跟随系统')),
       onChanged: (v) => AppSettings.setLocale(v!).then((_) => setState(() {}))),
     for (final lc in I18n.supported)
       RadioListTile<String>(value: lc, groupValue: AppSettings.locale, title: Text(I18n.names[lc] ?? lc),
@@ -839,7 +936,7 @@ class _Ob extends State<OnboardingPage> {
   Widget _lookStep() {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return ListView(padding: const EdgeInsets.all(24), children: [
-      const Text('主题', style: TextStyle(fontWeight: FontWeight.bold)),
+      Text(tr('主题'), style: const TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 10),
       SegmentedButton<String>(segments: [
         ButtonSegment(value: 'system', icon: const Icon(Icons.settings_suggest_outlined, size: 16), label: Text(tr('跟随系统'))),
@@ -848,7 +945,7 @@ class _Ob extends State<OnboardingPage> {
       ], selected: {AppSettings.themeModeStr},
         onSelectionChanged: (s) => AppSettings.setThemeMode(s.first).then((_) => setState(() {}))),
       const SizedBox(height: 28),
-      const Text('强调色', style: TextStyle(fontWeight: FontWeight.bold)),
+      Text(tr('强调色'), style: const TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 12),
       Wrap(spacing: 12, runSpacing: 12, children: [ for (final col in [0xFF3B5BFD, 0xFF7C6CFF, 0xFF4ADE80, 0xFFF472B6, 0xFFFBBF24, 0xFFFF6B4A, 0xFF22D3EE])
         GestureDetector(onTap: () => AppSettings.setAccent(col).then((_) => setState(() {})),
@@ -859,7 +956,7 @@ class _Ob extends State<OnboardingPage> {
       Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
         color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
         child: Row(children: [Icon(Icons.auto_awesome, color: Color(AppSettings.accentColor)),
-          const SizedBox(width: 12), const Expanded(child: Text('预览: 卡片、按钮、进度条都会使用强调色', style: TextStyle(fontSize: 12)))])),
+          const SizedBox(width: 12), Expanded(child: Text(tr('预览: 卡片、按钮、进度条都会使用强调色'), style: const TextStyle(fontSize: 12)))])),
     ]);
   }
 
@@ -867,34 +964,34 @@ class _Ob extends State<OnboardingPage> {
     for (final e in kModules.entries)
       CheckboxListTile(value: _mods.contains(e.key),
         secondary: Icon(e.value.icon),
-        title: Text(e.key),
-        subtitle: e.key == '我的' ? const Text('固定保留', style: TextStyle(fontSize: 11)) : null,
+        title: Text(tr(e.key)),
+        subtitle: e.key == '我的' ? Text(tr('固定保留'), style: const TextStyle(fontSize: 11)) : null,
         onChanged: e.key == '我的' ? null : (v) => setState(() { v == true ? _mods.add(e.key) : _mods.remove(e.key); })),
   ]);
 
   Widget _accountStep() => ListView(padding: const EdgeInsets.all(24), children: [
     Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
       color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
-      child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(Icons.cloud_outlined, size: 20), SizedBox(width: 8),
-          Text('登录账号', style: TextStyle(fontWeight: FontWeight.bold))]),
-        SizedBox(height: 6),
-        Text('· 前后端自动配对(局域网 / IPv6 / 内网穿透三路竞速)\n· 书架、阅读进度云端同步\n· 远程(外出)也能连家里的资源库', style: TextStyle(fontSize: 12, height: 1.7)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [const Icon(Icons.cloud_outlined, size: 20), const SizedBox(width: 8),
+          Text(tr('登录账号'), style: const TextStyle(fontWeight: FontWeight.bold))]),
+        const SizedBox(height: 6),
+        Text(tr('· 前后端自动配对(局域网 / IPv6 / 内网穿透三路竞速)\n· 书架、阅读进度云端同步\n· 远程(外出)也能连家里的资源库'), style: const TextStyle(fontSize: 12, height: 1.7)),
       ])),
     const SizedBox(height: 8),
     const AccountTile(),
     const SizedBox(height: 16),
     Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
       color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(18)),
-      child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(Icons.person_outline, size: 20), SizedBox(width: 8),
-          Text('游客模式', style: TextStyle(fontWeight: FontWeight.bold))]),
-        SizedBox(height: 6),
-        Text('不登录也能用: 本地播放 + 局域网内手动连接/自动发现资源库。\n云端同步与远程连接需登录后解锁。', style: TextStyle(fontSize: 12, height: 1.7)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [const Icon(Icons.person_outline, size: 20), const SizedBox(width: 8),
+          Text(tr('游客模式'), style: const TextStyle(fontWeight: FontWeight.bold))]),
+        const SizedBox(height: 6),
+        Text(tr('不登录也能用: 本地播放 + 局域网内手动连接/自动发现资源库。\n云端同步与远程连接需登录后解锁。'), style: const TextStyle(fontSize: 12, height: 1.7)),
       ])),
     const SizedBox(height: 12),
     OutlinedButton.icon(onPressed: finish, icon: const Icon(Icons.arrow_forward, size: 16),
-      label: const Text('以游客身份进入')),
+      label: Text(tr('以游客身份进入'))),
   ]);
 
   @override Widget build(BuildContext c) {
@@ -902,11 +999,11 @@ class _Ob extends State<OnboardingPage> {
     return Scaffold(body: SafeArea(child: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(24, 20, 12, 0), child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_titles[step], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Text(tr(_titleKeys[step]), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(_subs[step], style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(tr(_subKeys[step]), style: const TextStyle(fontSize: 12, color: Colors.grey)),
         ])),
-        TextButton(onPressed: finish, child: const Text('跳过')),
+        TextButton(onPressed: finish, child: Text(tr('跳过'))),
       ])),
       const SizedBox(height: 8),
       Expanded(child: PageView(controller: ctrl, physics: const NeverScrollableScrollPhysics(),
@@ -920,9 +1017,9 @@ class _Ob extends State<OnboardingPage> {
               color: i == step ? accent : Colors.grey.withValues(alpha: 0.35))) ]),
         const Spacer(),
         if (step > 0) TextButton(onPressed: () => ctrl.previousPage(duration: const Duration(milliseconds: 280), curve: Curves.easeOut),
-          child: const Text('上一步')),
+          child: Text(tr('上一步'))),
         const SizedBox(width: 8),
-        FilledButton(onPressed: next, child: Text(step < 3 ? '下一步' : '完成')),
+        FilledButton(onPressed: next, child: Text(tr(step < 3 ? '下一步' : '完成'))),
       ])),
     ])));
   }
@@ -971,20 +1068,37 @@ class _Conn extends State<ConnectLibraryPage> {
   Future<void> connect() async {
     setState(() { busy = true; err = null; });
     try {
+      // ① 地址是否可达 + 拿指纹。★这一步用的是 /v1/meta，而它**免鉴权**
+      //    —— 所以"能连上"跟"密钥对不对"是两件独立的事，必须分开验。
       final r = await Api.client().get(Uri.parse('${baseC.text.trim()}/v1/meta'));
       fp = jsonDecode(r.body)['data']?['fingerprint']?.toString();
+      if (fp == null || fp!.isEmpty) throw const ApiHttpError(0, '该地址没有返回资源库指纹（可能不是 ThirdHub 后端）');
+
+      // ② ★关键闸门：密钥必须先被后端接受，才允许保存并进入应用。
+      //   历史缺陷（模拟器实测留存）：密钥留空也一路"连接成功"，
+      //   因为免鉴权的 /v1/meta 探通了 → 存盘 → 之后每次搜索都 401，
+      //   而 401 被 `Api.get` 当正常 body 解析 → 界面显示"没有找到相关内容"。
+      //   用户以为"引擎搜不到内容"，其实是密钥没生效 —— 必须在这里挡住。
+      await Api.probeAuth(base: baseC.text.trim(), token: tokenC.text.trim());
+
       final p = await SharedPreferences.getInstance();
       await p.setString('base', baseC.text.trim()); await p.setString('token', tokenC.text.trim());
       if (!mounted) return; setState(() => busy = false);
       final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
-        title: const Text('确认资源库指纹'), content: SelectableText('SHA256:\n$fp'),
+        title: Text(tr('确认资源库指纹')), content: SelectableText('SHA256:\n$fp'),
         actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('信任'))]));
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('信任')))]));
       if (ok == true && mounted) { Api.base = baseC.text.trim(); Api.token = tokenC.text.trim();
         TtsBackend.base = Api.base; TtsBackend.token = Api.token;
         AgentDshClient.base = Api.base; AgentDshClient.token = Api.token;
         PeerHubClient.base = Api.base; PeerHubClient.token = Api.token;
         runApp(ThApp(ready: true, base: baseC.text.trim(), token: tokenC.text.trim())); }
+    } on ApiAuthError catch (e) {
+      setState(() { busy = false; err = '密钥无效：后端拒绝了这次校验。\n'
+        '请用后端启动日志里打印的「访问密钥(前端配置用)」（形如 thsec_…），或被授权设备上的同一份密钥。\n'
+        '（已阻止保存：留着错误密钥进来，之后每次搜索都会静默返回 0 条，比连不上更难查）'; });
+      // ignore: avoid_print
+      print('connect auth failed: $e');
     } catch (e) { setState(() { busy = false; err = '连接失败: $e'; }); } }
   @override Widget build(BuildContext c) => Scaffold(body: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
     child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1823,9 +1937,14 @@ class _Home extends State<SearchSection> {
   // 又不会一次性构建上千个 ListTile 把首帧卡死。
   bool _autoPull = false;                  // 正在自动续拉
   /// 逐帧铺开的步长（条/帧）。40 条/帧 ≈ 60fps 下每 0.1s 冒一批，观感是「持续在出」。
-  static const _pumpStep = 40;
+  ///
+  /// ★第十六轮：从 `static const 40` 改成走 `AppSettings.litePumpStep` ——
+  ///   低端机模式下会变成 120（一次多挂几条、少走几帧，因为低端机上"帧数"比
+  ///   "每帧条数"更贵）。同时**保留了可调性**：想要真正"肉眼一条一条"的用户，
+  ///   打开低端机模式的反面（即关掉）不是答案，这里留的是行内注释级的改法。
+  int get _pumpStep => AppSettings.litePumpStep;
   /// 自动续拉的页间最小间隔（毫秒）：别把引擎打得太狠，也让结果"一点点来"。
-  static const _autoPullGap = 200;
+  int get _autoPullGap => AppSettings.liteAutoPullGap;
   final ScrollController _scroll = ScrollController();
   @override void initState() {
     super.initState();
@@ -2022,34 +2141,85 @@ class _Home extends State<SearchSection> {
         throw Exception('未连接引擎或资源库\n引擎启动后会自动发现；'
           '若长时间未发现，请到「我的 → 引擎直连」查看具体原因');
       }
+    } on ApiAuthError catch (e) {
+      // ★不准再把"密钥不对"显示成"没搜到"。给出可操作的下一步。
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$e'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(label: '去连接', onPressed: () =>
+            Navigator.push(context, smoothRoute(const ConnectLibraryPage())))));
+      }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
     if (mounted) { setState(() => loading = false); unawaited(_pumpShown()); } }
   /// 是否「正在搜索」——含首屏请求中与自动续拉中两段。
   /// 搜索键的形态由它决定：搜索中转圈 → 变方块停止键（用户点名要的交互）。
   bool get _searching => loading || _autoPull;
-  Widget group(String title, List items, Widget Function(Map) tile, [IconData? ic]) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget group(String title, List items, Widget Function(Map) tile, [IconData? ic, int? latency]) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       child: Row(children: [
         if (ic != null) ...[ Icon(ic, size: 16, color: Colors.blueAccent), const SizedBox(width: 6) ],
-        Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))])),
+        Text('$title (${items.length})', style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+        // ★第十六轮：补上「源延迟 ms」。后端每个分组本来就带 `latency`
+        //   （`server/routes-search.js` 里 `latency: Date.now() - t0`），
+        //   而前端从来只渲染条数—— 于是 BUILD-M1 验货清单的
+        //   「搜索结果显示延迟 ms」长期挂在"部分"里、也是"清单做了但看不见"的一例。
+        //   对用户的实际价值：哪个源慢一眼可见，就知道该去「源健康」摘谁。
+        if (latency != null) ...[ const SizedBox(width: 8),
+          Text('${latency}ms', style: const TextStyle(fontSize: 11, color: Colors.grey)) ],
+      ])),
     for (final it in items) tile(it),
   ]);
   String _typeLabel(String t) =>
     const {'novel': '小说', 'comic': '漫画', 'video': '视频', 'music': '音乐'}[t] ?? t;
   int get _typeTotal => typeFilter == 0 ? 4 : 1;
+  /// 资源库聚合结果里的总条目数。
+  /// 形状对齐 `server/routes-search.js`：
+  ///   · `/v1/search/all`   → `{q, books, comics, videos, musics, stats}`，
+  ///                         每个类目是 `[{source, sourceId, ok, items|books}]`
+  ///   · `/v1/search?type=` → 单类目，前端包成 `{'single': [...], 'q': q}`
+  /// 每个分组里，书源用 `books`、影视/音乐/漫画用 `items`（后端字段不统一，这里都认）。
+  static int _aggCount(Object? agg) {
+    if (agg is! Map) return 0;
+    if (agg['single'] is List) return _aggGroups(agg['single'] as List);
+    var n = 0;
+    for (final k in const ['books', 'comics', 'videos', 'musics']) {
+      if (agg[k] is List) n += _aggGroups(agg[k] as List);
+    }
+    return n;
+  }
+  static int _aggGroups(List groups) => groups.fold<int>(0, (a, g) {
+    if (g is! Map) return a;
+    final l = g['books'] is List ? g['books'] as List : (g['items'] is List ? g['items'] as List : const []);
+    return a + l.length;
+  });
   // 顶部汇总: 逐类上屏过程中也能看出「已回几类 / 还在搜 / 引擎一共多少条」
+  //
+  // ★2026-09-25 模拟器实测修正：这里此前**无条件**渲染"来自引擎「…」· THP 直连"，
+  //   但它被调用的时机只看 `engItems != null` —— 而 `go()` 一开始就把 `engItems = []`
+  //   （非 null），于是**走资源库（家庭后端）分支时也照样顶着"THP 直连"的标签**，
+  //   引擎名还是空的 → 屏幕上出现「来自引擎「」· THP 直连 · 已返回 0 条」。
+  //   用户明明连的是资源库，却被告知在用直连引擎、还是 0 条 ——
+  //   既误导排查方向，又让人以为"后端一点活没干"。所以按**实际来源**分流。
   String _engSummary() {
     final loaded = engItems?.length ?? 0;
-    final sb = StringBuffer('来自引擎「${EngineDirect.name}」');
-    if (EngineDirect.version.isNotEmpty) sb.write(' v${EngineDirect.version}');
-    sb.write(' · THP 直连 · 已返回 $loaded 条');
-    if (EngineDirect.supportsPaging && _engTotal > loaded) {
+    final sb = StringBuffer();
+    if (EngineDirect.connected) {
+      sb.write('来自引擎「${EngineDirect.name.isEmpty ? 'THP 引擎' : EngineDirect.name}」');
+      if (EngineDirect.version.isNotEmpty) sb.write(' v${EngineDirect.version}');
+      sb.write(' · THP 直连 · 已返回 $loaded 条');
+    } else {
+      // 资源库（家庭后端）分支：后端每个分组自带条数与 latency，这里只报来源
+      sb.write('来自资源库『${Uri.tryParse(Api.base)?.host ?? Api.base}』');
+      sb.write(' · 已返回 ${_aggCount(agg)} 条');
+    }
+    if (EngineDirect.connected && EngineDirect.supportsPaging && _engTotal > loaded) {
       sb.write(' / 引擎共 $_engTotal 条${_autoPull ? '，继续拉取中…' : '（已停，可继续）'}');
     }
-    if (!EngineDirect.supportsPaging) {
+    if (EngineDirect.connected && !EngineDirect.supportsPaging) {
       final done = _done.length;
       if (done < _typeTotal && loading) sb.write('（$done/$_typeTotal 类已回，其余搜索中…）');
-    } else if (_engTruncated) {
+    } else if (EngineDirect.connected && _engTruncated) {
       sb.write('（引擎扫描被时间预算截断，加载更多可扫得更深）');
     }
     return sb.toString();
@@ -2189,20 +2359,20 @@ class _Home extends State<SearchSection> {
         for (final g in (agg!['books'] as List? ?? []))
           group('小说', (g['books'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['author'] ?? ''),
-            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b))))))),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => TocPage(book: Book.from(Map<String, dynamic>.from(b)))))), null, g['latency'] as int?),
         for (final g in (agg!['comics'] as List? ?? []))
           group('漫画', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['title'] ?? ''),
-            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? ''))))),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => ComicDetailPage(sourceId: g['sourceId'] ?? '', comicId: b['id'] ?? '', title: b['title'] ?? '')))), null, g['latency'] as int?),
         for (final g in (agg!['videos'] as List? ?? []))
           group('视频', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, title: Text(b['name'] ?? ''), subtitle: Text(b['type'] ?? ''),
-            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? ''))))),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => VideoDetailPage(sourceId: g['sourceId'] ?? '', vodId: b['id'] ?? '', title: b['name'] ?? '')))), null, g['latency'] as int?),
         for (final g in (agg!['musics'] as List? ?? []))
           group('音乐', (g['items'] as List? ?? []).cast<Map>(), (b) => ListTile(
             dense: true, leading: const Icon(Icons.music_note, size: 20),
             title: Text(b['name'] ?? ''), subtitle: Text(b['artist'] ?? ''),
-            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(b), sourceId: g['sourceId'] ?? ''))))),
+            onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => MusicPlayPage(item: Map<String, dynamic>.from(b), sourceId: g['sourceId'] ?? '')))), null, g['latency'] as int?),
         if (((agg!['books'] as List?) ?? []).isEmpty && ((agg!['comics'] as List?) ?? []).isEmpty && ((agg!['videos'] as List?) ?? []).isEmpty)
           const Padding(padding: EdgeInsets.all(32), child: Text('没有找到相关内容', style: TextStyle(color: Colors.grey))),
       ],
@@ -2233,7 +2403,7 @@ Widget modMenuBtn(BuildContext c) => IconButton(icon: const Icon(Icons.more_vert
 class NovelSection extends StatefulWidget { const NovelSection({super.key}); @override State<NovelSection> createState() => _Nv(); }
 class _Nv extends State<NovelSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: segLabel('书架')), ButtonSegment(value: 1, label: segLabel('历史')), ButtonSegment(value: 2, label: segLabel('发现')), ButtonSegment(value: 3, label: segLabel('搜索'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)),
       HistoryPage(kind: 'novel', builder: (b) => TocPage(book: b)),
@@ -2565,7 +2735,7 @@ class NovelReadPage extends StatelessWidget {
 class ComicSection extends StatefulWidget { const ComicSection({super.key}); @override State<ComicSection> createState() => _Cs(); }
 class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: segLabel('书架')), ButtonSegment(value: 1, label: segLabel('历史')), ButtonSegment(value: 2, label: segLabel('发现')), ButtonSegment(value: 3, label: segLabel('搜索'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => _detailOf(b, 'comic',
         () => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name))),
@@ -2715,7 +2885,7 @@ class _Cr extends State<ComicReaderPage> {
 class MusicSection extends StatefulWidget { const MusicSection({super.key}); @override State<MusicSection> createState() => _Ms(); }
 class _Ms extends State<MusicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: segLabel('歌单')), ButtonSegment(value: 1, label: segLabel('历史')), ButtonSegment(value: 2, label: segLabel('发现')), ButtonSegment(value: 3, label: segLabel('搜索'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [const _MusicPlaylist(),
       HistoryPage(kind: 'music', builder: (b) => _detailOf(b, 'music',
@@ -3140,7 +3310,7 @@ class _MPlay extends State<MusicPlayPage> {
 class VideoSection extends StatefulWidget { const VideoSection({super.key}); @override State<VideoSection> createState() => _Vs(); }
 class _Vs extends State<VideoSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
-    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('片库'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
+    Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: segLabel('片库')), ButtonSegment(value: 1, label: segLabel('历史')), ButtonSegment(value: 2, label: segLabel('发现')), ButtonSegment(value: 3, label: segLabel('搜索'))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [const ShelfPage(kind: 'video', builder: _videoDetail),
       HistoryPage(kind: 'video', builder: _videoDetail),
@@ -5772,6 +5942,15 @@ class _Ape extends State<AppearancePage> {
             }
             await AppSettings.setSplashAnim(v); if (mounted) setState(() {});
           }),
+        const Divider(height: 1, indent: 56),
+        // ★第十六轮：低端机模式开关（此前只有一句注释，属"假完成"）。
+        // 默认关闭 —— 不能因为"省点性能"就去改老用户的既有手感；由用户自己按需开。
+        SwitchListTile(secondary: const Icon(Icons.speed_outlined, size: 20),
+          title: Text(tr('低端机模式'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text(tr('压缩过渡动画、加大列表分帧步长、降低图片缓存；功能一个不少'),
+            style: const TextStyle(fontSize: 11)),
+          value: AppSettings.liteMode,
+          onChanged: (v) async { await AppSettings.setLiteMode(v); if (mounted) setState(() {}); }),
       ])),
     ]));
 }
