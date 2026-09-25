@@ -2071,7 +2071,14 @@ class _Home extends State<SearchSection> {
           child: Image.network('${it['coverUrl']}', width: 40, height: 56, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 56))) : null,
         title: Text('${it['name'] ?? it['title'] ?? ''}'),
-        subtitle: Text('${it['author'] ?? it['subTitle'] ?? it['type'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
+        // ★4.51.0 副标题补全：此前只显示 author，把引擎一起送来的 **标签(kind)** 与
+        // **来源(sourceName)** 全丢了 —— 用户那句"前端和引擎之间丢失了太多信息"指的就是这里。
+        // 三者用 · 连接，空的自动跳过（引擎可以不发这两个扩展字段，不能显示成空白或 null）。
+        subtitle: Text([
+          '${it['author'] ?? it['subTitle'] ?? it['type'] ?? ''}'.trim(),
+          '${it['kind'] ?? it['tags'] ?? ''}'.trim(),
+          '${it['sourceName'] ?? it['source'] ?? ''}'.trim(),
+        ].where((e) => e.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: () => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: t, item: it)))),
     ];
   }
@@ -5968,6 +5975,41 @@ class _Ei extends State<EngineItemPage> {
   String get authorS => '${widget.item['author'] ?? ''}';
   String get introS => '${widget.item['intro'] ?? ''}';
   bool shelved = false;
+
+  // ── ★4.51.0 详情页信息补全（用户：「前端和引擎之间丢失了太多信息了」）──
+  //
+  // 背景：引擎的搜索条目本来就带了 **标签 / 来源 / 简介**，但前端此前只取了
+  //   id/name/coverUrl/author/intro 五项，其余全部丢掉 —— 这是"信息丢失"的**主要来源**，
+  //   用户在搜索页看不到标签、进详情页看不到来源，也换不了源。
+  //
+  // 协议口径（重要）：THP/1.0 的 `/search` 正式 schema 只定义了
+  //   `{id, name, author, coverUrl, intro, ref}`；`kind` / `sourceName` 是**引擎侧扩展**。
+  //   所以下面一律"有则用、无则降级"，绝不允许因为缺字段而渲染出空白或 "null"。
+  bool introOpen = false;  // 简介是否展开
+  bool chapOpen = false;   // 目录是否全展开（默认只列前 _chapPreview 条）
+  static const _chapPreview = 30;
+
+  /// 标签原文（引擎扩展字段；`tags` 是部分引擎的别名）。
+  String get kindS => '${widget.item['kind'] ?? widget.item['tags'] ?? ''}'.trim();
+
+  /// 来源名（引擎扩展字段）。取不到就退回引擎自己的名字 —— 至少比"来自"后面空着强。
+  String get sourceS {
+    final s = '${widget.item['sourceName'] ?? widget.item['source'] ?? ''}'.trim();
+    return s.isEmpty ? EngineDirect.name : s;
+  }
+
+  /// 把标签原文拆成若干 chip。
+  /// Legado 侧的分隔符没有统一规定（逗号 / 顿号 / 斜杠 / 空格都见过），所以全拆。
+  /// 去重 + 最多 6 个：再多会把标题行挤爆，反而看不到书名。
+  List<String> get tags {
+    final raw = kindS;
+    if (raw.isEmpty) return const [];
+    final seen = <String>{};
+    return [
+      for (final p in raw.split(RegExp(r'[,，、/|\s]+')))
+        if (p.trim().isNotEmpty && seen.add(p.trim())) p.trim(),
+    ].take(6).toList();
+  }
   @override void initState() { super.initState(); _load(); _markOpened(); }
 
   /// 把「引擎直连看的内容」也写进书架历史，并查一下它是否已在书架。
@@ -6001,6 +6043,82 @@ class _Ei extends State<EngineItemPage> {
     setState(() => shelved = true);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('已加入书架')));
+  }
+
+  /// 换源只对"同一本书可能存在于多个源"的模块有意义。
+  bool get _canSwitch =>
+      id.isNotEmpty && const {'novel', 'comic', 'video', 'music'}.contains(widget.type);
+
+  /// 当前要列出的章节条数：折叠时前 [_chapPreview] 条，展开时全部。
+  /// 不用 `int.clamp` 是有意的 —— 那玩意儿在旧 SDK 上返回 num，改起来容易踩。
+  int get _chapCount => chapOpen
+      ? chapters.length
+      : (chapters.length < _chapPreview ? chapters.length : _chapPreview);
+
+  /// 从条目里取"来源标识"：优先扩展字段 sourceName，没有就退回 id/ref 的 host。
+  /// 后者保证"引擎没给 sourceName"时换源列表仍然能把不同站分开，而不是全挤成一条。
+  static String _srcOf(Map<String, dynamic> it) {
+    final s = '${it['sourceName'] ?? it['source'] ?? ''}'.trim();
+    if (s.isNotEmpty) return s;
+    final u = '${it['id'] ?? it['ref'] ?? ''}';
+    try {
+      final h = Uri.parse(u).host;
+      if (h.isNotEmpty) return h;
+    } catch (_) {}
+    return '未知来源';
+  }
+
+  /// ★4.51.0「换源」：拿书名回引擎重搜一遍，列出**别的来源**的同一本书。
+  ///
+  /// 为什么在客户端做而不是加引擎端点：THP/1.0 没有"同书多源"接口，而引擎的
+  /// search 天然是**跨源聚合**的（条目的 sourceName 就是源名）。客户端重搜 + 按源
+  /// 去重，语义上等价于换源，且**不新增协议面**（协议只增不减，能不加快不加）。
+  ///
+  /// 失败也不影响原页面：这里只是一张弹出表，出错就在表里说明。
+  Future<void> _switchSource() async {
+    final q = name.trim();
+    if (q.isEmpty) return;
+    final cur = id;
+    final h = MediaQuery.of(context).size.height;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true, builder: (_) => SafeArea(
+      child: SizedBox(height: h * 0.6, child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: EngineDirect.search(widget.type, q),
+        builder: (c2, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(child: Padding(padding: const EdgeInsets.all(24),
+              child: Text('换源失败: ${snap.error}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent))));
+          }
+          // 排除当前这本；同一来源只留第一条（引擎一次搜索会给同一源的多个镜像）
+          final seen = <String>{};
+          final list = <Map<String, dynamic>>[];
+          for (final it in snap.data ?? const <Map<String, dynamic>>[]) {
+            final idd = '${it['id'] ?? ''}'.trim();
+            if (idd.isEmpty || idd == cur) continue;
+            if (!seen.add(_srcOf(it))) continue;
+            list.add(it);
+          }
+          if (list.isEmpty) {
+            return const Center(child: Padding(padding: EdgeInsets.all(24),
+              child: Text('引擎里没有搜到这本书的其它来源\n（换源依赖源侧收录，不是前端能补的）',
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))));
+          }
+          return ListView(shrinkWrap: true, children: [
+            Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Text('换源 · 同一本书的其它来源（${list.length}）', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+            for (final it in list) ListTile(dense: true,
+              leading: const Icon(Icons.swap_horiz, size: 20),
+              title: Text(_srcOf(it), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+              subtitle: Text('${it['name'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(c2); // 先关掉这张表
+                Navigator.pushReplacement(context, MaterialPageRoute(
+                  builder: (_) => EngineItemPage(type: widget.type, item: Map<String, dynamic>.from(it))));
+              }),
+          ]);
+        }))));
   }
   Future<void> _load() async {
     try { chapters = await EngineDirect.chapters(widget.type, id); }
@@ -6049,6 +6167,9 @@ class _Ei extends State<EngineItemPage> {
   }
   @override Widget build(BuildContext c) => Scaffold(appBar: AppBar(title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
     actions: [
+      // ★4.51.0 换源（用户点名"来源 + 换源"）
+      if (_canSwitch) IconButton(icon: const Icon(Icons.swap_horiz, size: 21),
+        tooltip: '换源', onPressed: _switchSource),
       // 引擎条目此前没有任何收藏入口 —— 而「片库 / 历史」的空态正是叫用户
       // 来这里点书签。补上它，那句引导才成立。
       if (widget.type == 'novel' || widget.type == 'comic' || widget.type == 'video' || widget.type == 'music')
@@ -6059,26 +6180,67 @@ class _Ei extends State<EngineItemPage> {
     ]),
     body: loading ? const Center(child: CircularProgressIndicator())
       : err.isNotEmpty ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('加载目录失败: $err', style: const TextStyle(color: Colors.redAccent))))
-      : ListView(children: [
-        // 信息头
-        Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 72, height: 96,
-            child: cover.isNotEmpty ? Image.network(cover, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26)) : const ColoredBox(color: Colors.black26))),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            if (authorS.isNotEmpty) Text(authorS, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            if (introS.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4),
-              child: Text(introS, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey))),
-            Padding(padding: const EdgeInsets.only(top: 6), child: Text('${chapters.length} 个章节/选集 · 来自 ${EngineDirect.name}',
-              style: const TextStyle(fontSize: 10, color: Colors.grey))),
+      // ★4.51.0 由 ListView(children:[...]) 改 CustomScrollView + SliverList.builder：
+      // 老写法**非懒加载** —— 引擎里最长的一本书有 1926 章，"展开全部"会一次性铺
+      // 1926 个 ListTile，首帧直接卡住（这个坑本项目踩过）。懒加载后展开多少都不卡。
+      : CustomScrollView(slivers: [
+        SliverToBoxAdapter(child: Column(children: [
+          // ── 信息头 ──
+          Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 72, height: 96,
+              child: cover.isNotEmpty ? Image.network(cover, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black26)) : const ColoredBox(color: Colors.black26))),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              if (authorS.isNotEmpty) Text(authorS, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              // ★4.51.0 标签行：引擎给了 kind 就显示（此前前端直接丢掉了这个字段）
+              if (tags.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 5),
+                child: Wrap(spacing: 4, runSpacing: 2, children: [
+                  for (final t in tags) Chip(
+                    label: Text(t, style: const TextStyle(fontSize: 10)),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 3)),
+                ])),
+              // ★4.51.0 来源行：此前只写"来自 <引擎名>"，把**源名**丢了；换源入口挂在同一行
+              Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: [
+                Expanded(child: Text('来源 $sourceS', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10, color: Colors.grey))),
+                if (_canSwitch) GestureDetector(onTap: _switchSource,
+                  child: const Padding(padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Text('换源', style: TextStyle(fontSize: 10, color: Colors.blueAccent)))),
+              ])),
+              Padding(padding: const EdgeInsets.only(top: 2), child: Text('${chapters.length} 个章节/选集',
+                style: const TextStyle(fontSize: 10, color: Colors.grey))),
+            ])),
+          ])),
+          // ★4.51.0 简介：默认 4 行 + 点按展开（此前硬截 3 行，长简介永远读不全）
+          if (introS.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: GestureDetector(onTap: () => setState(() => introOpen = !introOpen),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(introS, maxLines: introOpen ? null : 4,
+                  overflow: introOpen ? null : TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.35)),
+                Text(introOpen ? '收起' : '展开简介', style: const TextStyle(fontSize: 10, color: Colors.blueAccent)),
+              ]))),
+          const Divider(height: 1),
+          // ── 目录标题行（用户：「目录不应该是直接展开的」→ 默认只列前 30 章）──
+          Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 2), child: Row(children: [
+            const Icon(Icons.list_alt, size: 15, color: Colors.grey), const SizedBox(width: 5),
+            const Text('目录', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)), const SizedBox(width: 6),
+            Text('共 ${chapters.length} 章', style: const TextStyle(fontSize: 10, color: Colors.grey)),
           ])),
         ])),
-        const Divider(height: 1),
-        for (var i = 0; i < chapters.length; i++)
-          ListTile(dense: true, title: Text(() { final n = '${chapters[i]['name'] ?? ''}'; return n.isNotEmpty ? n : '第${i + 1}集'; }(), style: const TextStyle(fontSize: 13)),
-            onTap: () => _open(i)),
+        SliverList.builder(itemCount: _chapCount, itemBuilder: (_, i) => ListTile(dense: true,
+          title: Text(() { final n = '${chapters[i]['name'] ?? ''}'; return n.isNotEmpty ? n : '第${i + 1}集'; }(),
+            style: const TextStyle(fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => _open(i))),
+        if (chapters.length > _chapPreview) SliverToBoxAdapter(child: ListTile(dense: true,
+          title: Center(child: Text(chapOpen ? '收起目录' : '展开全部 ${chapters.length} 章',
+            style: const TextStyle(fontSize: 12, color: Colors.blueAccent))),
+          onTap: () => setState(() => chapOpen = !chapOpen))),
       ]));
 }
 
