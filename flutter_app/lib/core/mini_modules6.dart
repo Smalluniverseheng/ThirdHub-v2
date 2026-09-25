@@ -27,7 +27,11 @@ class _He extends State<HealthPage> {
   static const units = {'体重': 'kg', '血压': 'mmHg', '睡眠': '小时'};
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => records = await _Store6.list('health_records'));
+  Future<void> _load() async {
+    final v = await _Store6.list('health_records');
+    if (!mounted) return;
+    setState(() => records = v);
+  }
 
   Future<void> _add() async {
     final v1 = TextEditingController(); final v2 = TextEditingController();
@@ -112,18 +116,40 @@ class _News extends State<NewsPage> {
   bool loading = false;
   String err = '';
 
+  /// 内置源版本：**改了内置源必须 +1**，配合 `_load()` 里的迁移。
+  /// 老判据是 `if (saved.isEmpty)` —— 用户机器上已有旧列表时恒假，**新增的内置源永远进不来**。
+  /// （第十二轮「预置书源包改了但老安装不生效」是同一类坑，只是对象换成了内置 RSS 源。）
+  static const builtinVer = 2;
+  /// 每一条都是**实测过**的（2026-09-25 逐条拉起核对：HTTP 200 且能解析出条目）。
+  /// 注意机核的 `/rss` 是**图文**订阅 —— 放资讯合适，放播客则会永远 0 集。
   static const builtin = [
     {'title': '少数派', 'url': 'https://sspai.com/feed'},
     {'title': 'Solidot', 'url': 'https://www.solidot.org/index.rss'},
     {'title': '机核', 'url': 'https://www.gcores.com/rss'},
+    {'title': '阮一峰周刊', 'url': 'https://www.ruanyifeng.com/blog/atom.xml'},
+    {'title': 'InfoQ中文', 'url': 'https://www.infoq.cn/feed'},
   ];
 
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
-    var saved = await _Store6.list('news_feeds');
-    if (saved.isEmpty) { saved = builtin.map((e) => Map<String, dynamic>.from(e)).toList(); await _Store6.save('news_feeds', saved); }
-    setState(() => feeds = saved);
-    if (saved.isNotEmpty) _openFeed(saved.first);
+    final saved = await _Store6.list('news_feeds');
+    final p = await SharedPreferences.getInstance();
+    final seen = p.getInt('news_feeds_builtin_v') ?? 0;
+    List<Map<String, dynamic>> list = saved;
+    if (saved.isEmpty) {
+      list = builtin.map((e) => Map<String, dynamic>.from(e)).toList();
+    } else if (seen < builtinVer) {
+      // 老安装升级：补上缺失的内置源；**用户自加/删改的源一律不动**（只按 url 去重追加）。
+      list = List<Map<String, dynamic>>.from(saved);
+      for (final b in builtin) {
+        if (!list.any((f) => f['url'] == b['url'])) list.add(Map<String, dynamic>.from(b));
+      }
+    }
+    await p.setInt('news_feeds_builtin_v', builtinVer);
+    await _Store6.save('news_feeds', list);
+    if (!mounted) return;
+    setState(() => feeds = list);
+    if (list.isNotEmpty) _openFeed(list.first);
   }
 
   static List<Map<String, String>> _parse(String src) {
@@ -172,6 +198,38 @@ class _News extends State<NewsPage> {
     _openFeed(feeds.last);
   }
 
+  /// 空态兜底：旧版这一块是**真的空白**（`ListView` 条目 0 条就什么都不画），
+  /// 只在顶部留一行小红字 `加载失败: …`。用户看到的是「模块坏了」，而不是「这个源失效了，
+  /// 你可以换个源」。这里补成可操作空态：说清原因 + 重试 / 换源 / 加源三个出口。
+  Widget _emptyBox() {
+    final failed = curFeed.isNotEmpty;
+    return Center(child: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(24), child: Column(children: [
+      Icon(failed ? Icons.wifi_off : Icons.newspaper, size: 42, color: Colors.grey),
+      const SizedBox(height: 10),
+      Text(failed ? '这个源没能取到内容' : '还没有资讯源', style: const TextStyle(fontSize: 14)),
+      const SizedBox(height: 6),
+      Text(failed
+          ? '「$curFeed」没有返回可解析的文章。内置源会随时间失效，可以重试、换一个源，或自己添加一个 RSS 地址。'
+          : '可以添加一个 RSS 地址（例如 https://example.com/feed）。',
+        textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      if (failed && err.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6),
+        child: Text('原因: $err', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.redAccent))),
+      const SizedBox(height: 14),
+      Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+        if (failed) FilledButton.tonalIcon(
+          onPressed: () { final f = feeds.firstWhere((x) => x['title'] == curFeed, orElse: () => const {}); if (f.isNotEmpty) _openFeed(f); },
+          icon: const Icon(Icons.refresh, size: 16), label: const Text('重试')),
+        if (failed && feeds.length > 1) FilledButton.tonalIcon(
+          onPressed: () {
+            final i = feeds.indexWhere((x) => x['title'] == curFeed);
+            _openFeed(feeds[(i < 0 ? 0 : i + 1) % feeds.length]);
+          },
+          icon: const Icon(Icons.skip_next, size: 16), label: const Text('换个源')),
+        TextButton.icon(onPressed: _addFeed, icon: const Icon(Icons.add, size: 16), label: const Text('加 RSS')),
+      ]),
+    ]))));
+  }
+
   @override Widget build(BuildContext c) => Column(children: [
     SizedBox(height: 46, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       children: [
@@ -183,10 +241,12 @@ class _News extends State<NewsPage> {
         ActionChip(avatar: const Icon(Icons.add, size: 14), label: const Text('加源', style: TextStyle(fontSize: 11)),
           onPressed: _addFeed),
       ])),
-    if (err.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
+    if (err.isNotEmpty && articles.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
     Expanded(child: loading
       ? const Center(child: CircularProgressIndicator())
-      : ListView.builder(itemCount: articles.length, itemBuilder: (_, i) {
+      : articles.isEmpty
+        ? _emptyBox()
+        : ListView.builder(itemCount: articles.length, itemBuilder: (_, i) {
           final a = articles[i];
           return ListTile(dense: true,
             title: Text(a['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),

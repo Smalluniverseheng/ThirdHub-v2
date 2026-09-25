@@ -2419,8 +2419,10 @@ class _Cs extends State<ComicSection> { int sub = 0;
   @override Widget build(BuildContext c) => Column(children: [
     Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('书架'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
-    Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
-      HistoryPage(kind: 'comic', builder: (b) => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name)),
+    Expanded(child: [ShelfPage(kind: 'comic', builder: (b) => _detailOf(b, 'comic',
+        () => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name))),
+      HistoryPage(kind: 'comic', builder: (b) => _detailOf(b, 'comic',
+        () => ComicDetailPage(sourceId: b.sourceId, comicId: b.bookUrl, title: b.name))),
       EngineDiscoverView(type: 'comic', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'comic', item: it)))),
       const ModuleSearchTab(tab: 2)][sub]),
   ]); }
@@ -2568,7 +2570,8 @@ class _Ms extends State<MusicSection> { int sub = 0;
     Row(children: [ const SizedBox(width: 40), Expanded(child: Center(child: SegmentedButton<int>(segments: [ButtonSegment(value: 0, label: Text(tr('歌单'))), ButtonSegment(value: 1, label: Text(tr('历史'))), ButtonSegment(value: 2, label: Text(tr('发现'))), ButtonSegment(value: 3, label: Text(tr('搜索')))],
       selected: {sub}, onSelectionChanged: (s) => setState(() => sub = s.first)))), SizedBox(width: 40, child: modMenuBtn(c)) ]),
     Expanded(child: [const _MusicPlaylist(),
-      HistoryPage(kind: 'music', builder: (b) => MusicPlayPage(item: {'name': b.name, 'url': b.bookUrl, 'artist': b.author, 'coverUrl': b.coverUrl}, sourceId: b.sourceId)),
+      HistoryPage(kind: 'music', builder: (b) => _detailOf(b, 'music',
+        () => MusicPlayPage(item: {'name': b.name, 'url': b.bookUrl, 'artist': b.author, 'coverUrl': b.coverUrl}, sourceId: b.sourceId))),
       EngineDiscoverView(type: 'music', onOpen: (it) => Navigator.push(c, MaterialPageRoute(builder: (_) => EngineItemPage(type: 'music', item: it)))),
       const ModuleSearchTab(tab: 4)][sub]),
   ]); }
@@ -3053,7 +3056,25 @@ class _Live extends State<LivePage> {
               Padding(padding: const EdgeInsets.all(4), child: Text(ch['name'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
             ])); })),
   ]); }
-Widget _videoDetail(Book b) => VideoDetailPage(sourceId: b.sourceId, vodId: b.bookUrl, title: b.name);
+// ★ 书架 / 历史的「详情页」此前一律走后端接口（`/v1/video/detail`、`/v1/comic/info`、
+//   `/v1/music/url`），但走引擎直连的用户把内容加入书架或浏览过之后，书架里存的是
+//   `sourceId == 'engine'` 的条目（见 `EngineItemPage._addShelf` / `_markOpened`）——
+//   详情页**没有引擎分支**，点进去只会得到「失败」或播不出来：
+//   · 没配家庭后端时：`Api.get` 直接抛异常 → 一屏红字；
+//   · 配了后端时：`sourceId=engine` 不是后端的源 → 后端返回 error。
+//   小说侧早就没这个问题（`TocPage.load()` 有 `book.sourceId == 'engine'` 分支走 EngineDirect），
+//   视频 / 漫画 / 音乐三种内容一直缺这条兜底 —— 这正是「娱乐线」里最容易被当成
+//   「引擎坏了」的一处（其实是路由少了一条分支）。
+//   修法：**不在这里重抄一遍引擎取数逻辑**，而是对引擎条目直接进 `EngineItemPage`。
+//   它本来就**是**引擎内容的详情页：目录取章（含「无目录直出条目」兜底）、正文、直链播放
+//   全已实现并经真机路径验证。少一份重复实现，就少一处将来会漂移的地方。
+Widget _detailOf(Book b, String type, Widget Function() backend) => b.sourceId == 'engine'
+    ? EngineItemPage(type: type, item: {
+        'id': b.bookUrl, 'name': b.name, 'coverUrl': b.coverUrl,
+        'author': b.author, 'intro': b.intro})
+    : backend();
+Widget _videoDetail(Book b) => _detailOf(b, 'video',
+    () => VideoDetailPage(sourceId: b.sourceId, vodId: b.bookUrl, title: b.name));
 
 class VideoSearchResults extends StatefulWidget { final String query; const VideoSearchResults({super.key, required this.query}); @override State<VideoSearchResults> createState() => _VSR(); }
 class _VSR extends State<VideoSearchResults> {

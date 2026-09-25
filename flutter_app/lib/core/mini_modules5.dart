@@ -23,7 +23,11 @@ class MarkdownPage extends StatefulWidget { const MarkdownPage({super.key}); @ov
 class _Md extends State<MarkdownPage> {
   List<Map<String, dynamic>> docs = [];
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => docs = await _Store5.list('md_docs'));
+  Future<void> _load() async {
+    final v = await _Store5.list('md_docs');
+    if (!mounted) return;
+    setState(() => docs = v);
+  }
 
   @override Widget build(BuildContext c) => Column(children: [
     Padding(padding: const EdgeInsets.all(12), child: SizedBox(width: double.infinity,
@@ -156,7 +160,11 @@ class _Study extends State<StudyPage> {
   bool showBack = false;
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => cards = await _Store5.list('study_cards'));
+  Future<void> _load() async {
+    final v = await _Store5.list('study_cards');
+    if (!mounted) return;
+    setState(() => cards = v);
+  }
 
   Future<void> _add() async {
     final frontC = TextEditingController(); final backC = TextEditingController();
@@ -351,7 +359,11 @@ class _Tr extends State<TranslatePage> {
     '法语': 'fr-FR', '德语': 'de-DE', '西班牙语': 'es-ES', '俄语': 'ru-RU'};
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => history = await _Store5.list('translate_history'));
+  Future<void> _load() async {
+    final v = await _Store5.list('translate_history');
+    if (!mounted) return;
+    setState(() => history = v);
+  }
 
   Future<void> _translate() async {
     final s = input.text.trim();

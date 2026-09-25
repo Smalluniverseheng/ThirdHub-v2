@@ -33,7 +33,11 @@ class _Rm extends State<RemindersPage> {
     if (!tzReady) { tzdata.initializeTimeZones(); tz.setLocalLocation(tz.getLocation('Asia/Shanghai')); tzReady = true; }
     Notify.init();
   }
-  Future<void> _load() async => setState(() async => items = await _Store3.list('reminders'));
+  Future<void> _load() async {
+    final v = await _Store3.list('reminders');
+    if (!mounted) return;
+    setState(() => items = v);
+  }
 
   Future<void> _schedule(Map<String, dynamic> e) async =>
     Notify.schedule(e['id'], e['title'] ?? '', DateTime.fromMillisecondsSinceEpoch(e['at']));
@@ -118,7 +122,11 @@ class _Ttb extends State<TimetablePage> {
   static const palette = [0xFF5B8DEF, 0xFF4CAF50, 0xFFFF9800, 0xFF9C27B0, 0xFFE91E63, 0xFF00BCD4, 0xFFFFC107];
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => courses = await _Store3.list('timetable'));
+  Future<void> _load() async {
+    final v = await _Store3.list('timetable');
+    if (!mounted) return;
+    setState(() => courses = v);
+  }
 
   Map<String, dynamic>? _at(int day, int sec) {
     for (final e in courses) {

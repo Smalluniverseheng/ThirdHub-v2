@@ -283,7 +283,11 @@ class _Todo extends State<TodoPage> {
   static const groups = ['默认', '工作', '生活', '购物'];
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => items = await _Store.list('todos'));
+  Future<void> _load() async {
+    final v = await _Store.list('todos');
+    if (!mounted) return;
+    setState(() => items = v);
+  }
   Future<void> _save() async { await _Store.save('todos', items); setState(() {}); }
 
   @override Widget build(BuildContext c) {
@@ -339,7 +343,11 @@ class _Notes extends State<NotesPage> {
   String query = '';
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => notes = await _Store.list('notes'));
+  Future<void> _load() async {
+    final v = await _Store.list('notes');
+    if (!mounted) return;
+    setState(() => notes = v);
+  }
 
   @override Widget build(BuildContext c) {
     final shown = query.isEmpty ? notes
@@ -470,7 +478,11 @@ class _Ledger extends State<LedgerPage> {
   static const incomeCats = {'工资', '其他收入'};
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => entries = await _Store.list('ledger'));
+  Future<void> _load() async {
+    final v = await _Store.list('ledger');
+    if (!mounted) return;
+    setState(() => entries = v);
+  }
 
   Future<void> _add() async {
     final amtC = TextEditingController(); final noteC = TextEditingController();
@@ -549,7 +561,11 @@ class _Clip extends State<ClipboardPage> {
   List<Map<String, dynamic>> items = [];
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => items = await _Store.list('clipboard_history'));
+  Future<void> _load() async {
+    final v = await _Store.list('clipboard_history');
+    if (!mounted) return;
+    setState(() => items = v);
+  }
 
   Future<void> _grab() async {
     final d = await Clipboard.getData('text/plain');

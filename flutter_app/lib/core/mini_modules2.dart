@@ -136,7 +136,9 @@ class _Cal extends State<CalendarPage> {
 
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
-    setState(() async => events = await _Store2.list(widget.storageKey));
+    final v = await _Store2.list(widget.storageKey);
+    if (!mounted) return;
+    setState(() => events = v);
     if (widget.storageKey == 'family_calendar_events') _pullCloud();
   }
 
@@ -256,7 +258,11 @@ class _Diary extends State<DiaryPage> {
   static const moods = ['😄', '🙂', '😐', '😔', '😤'];
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => entries = await _Store2.list('diary'));
+  Future<void> _load() async {
+    final v = await _Store2.list('diary');
+    if (!mounted) return;
+    setState(() => entries = v);
+  }
 
   Future<void> _edit([Map<String, dynamic>? e]) async {
     final contentC = TextEditingController(text: e?['content'] ?? '');
@@ -418,7 +424,11 @@ class _Qn extends State<QuickNotePage> {
   }
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => items = await _Store2.list('quick_notes'));
+  Future<void> _load() async {
+    final v = await _Store2.list('quick_notes');
+    if (!mounted) return;
+    setState(() => items = v);
+  }
 
   Future<void> _add() async {
     final t = input.text.trim();

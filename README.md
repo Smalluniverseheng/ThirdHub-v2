@@ -1,7 +1,7 @@
 # ThirdHub v4 — 安卓主客户端 + 家庭后端
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.49.0**（versionCode 50536），安装包约 **28 MB**。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.50.0**（versionCode 50537），安装包约 **28 MB**。
 > 仓库名里的 `-v2` 是历史遗留（第二代聚合平台 OmniHub 之后的第二个仓），与版本号 `4.x` 无关 —— 不要按仓名推断版本。
 
 ---
@@ -13,7 +13,7 @@
 
 | 产品线 | 源码位置 | 仓库 | 包名 | 当前版本 | 体积 | 谁是主力 |
 |---|---|---|---|---|---|---|
-| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.49.0** | ~28 MB | **★ 用户在用的主线** |
+| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.50.0** | ~28 MB | **★ 用户在用的主线** |
 | Android 轻壳版 | `ThirdHub-Android` | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 备用 |
 | 完全体客户端（旁支） | `D:/ai/thirdhub-flutter` | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | **旁支，已搁置** |
 | 漫画稳定版（第二代） | `OmniHub-Android` | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | 历史存档 |

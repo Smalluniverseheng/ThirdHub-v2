@@ -251,17 +251,46 @@ class _Pod extends State<PodcastPage> {
   String? playingUrl;
   String playingTitle = '';
 
+  /// 内置源版本。**改了内置源就必须 +1** —— 见 `_load()` 里的迁移：
+  /// 老代码的判据是 `if (saved.isEmpty)`，一旦用户机器上已有旧列表，新内置源
+  /// **永远进不来**。这与第十二轮「预置书源包改了但老安装不生效」是同一类坑，
+  /// 只是对象换成了「内置 RSS 源」。
+  static const builtinVer = 2;
+  /// 只写**实测可用**的源（本次逐条拉起核对：HTTP 200 且含音频 enclosure）。
   static const builtin = [
-    {'title': '小宇宙精选 · 声东击西', 'url': 'https://feed.xyzfm.space/9h8wkgvmq2f9'},
-    {'title': '机核 GCORES', 'url': 'https://www.gcores.com/rss'},
+    {'title': '故事FM', 'url': 'https://feeds.storyfm.cn/storyfm.xml'},
+    {'title': '声东击西', 'url': 'https://feeds.fireside.fm/shengdongjixi/rss'},
+    {'title': '忽左忽右', 'url': 'https://feed.xyzfm.space/cv4bkgpuglwp'},
+  ];
+  /// 已下线的旧内置源。**只清理内置项，用户自己加的源一律保留。**
+  /// · `feed.xyzfm.space/9h8wkgvmq2f9` 是「小宇宙精选·声东击西」的旧 token，实测 **HTTP 404**；
+  /// · `www.gcores.com/rss` 是机核的**图文** RSS，实测 `mp3=0 / enclosure=0`
+  ///   → 在播客模块里永远解析出 0 集（它不是播客源，之前被误当播客源内置）。
+  static const retiredBuiltin = [
+    'https://feed.xyzfm.space/9h8wkgvmq2f9',
+    'https://www.gcores.com/rss',
   ];
 
   @override void initState() { super.initState(); _load(); }
   @override void dispose() { _player.dispose(); super.dispose(); }
   Future<void> _load() async {
-    var saved = await _Store4.list('podcast_feeds');
-    if (saved.isEmpty) { saved = builtin.map((e) => Map<String, dynamic>.from(e)).toList(); await _Store4.save('podcast_feeds', saved); }
-    setState(() => feeds = saved);
+    final saved = await _Store4.list('podcast_feeds');
+    final p = await SharedPreferences.getInstance();
+    final seen = p.getInt('podcast_feeds_builtin_v') ?? 0;
+    List<Map<String, dynamic>> list = saved;
+    if (saved.isEmpty) {
+      list = builtin.map((e) => Map<String, dynamic>.from(e)).toList();
+    } else if (seen < builtinVer) {
+      // 老安装升级：① 摘掉已下线的**内置**源；② 补齐缺失的内置源；③ 用户自加的原样保留。
+      list = saved.where((f) => !retiredBuiltin.contains('${f['url']}')).toList();
+      for (final b in builtin) {
+        if (!list.any((f) => f['url'] == b['url'])) list.add(Map<String, dynamic>.from(b));
+      }
+    }
+    await p.setInt('podcast_feeds_builtin_v', builtinVer);
+    await _Store4.save('podcast_feeds', list);
+    if (!mounted) return;
+    setState(() => feeds = list);
   }
 
   Future<void> _addFeed() async {
@@ -276,6 +305,60 @@ class _Pod extends State<PodcastPage> {
     await _Store4.save('podcast_feeds', feeds);
     _load();
     _openFeed(feeds.last);
+  }
+
+  /// 在线找源（**兜底**）。
+  ///
+  /// 为什么需要它：内置 RSS 会随时间腐烂 —— 本次实测就发现两个内置源一个 **HTTP 404**、
+  /// 一个**根本没有音频**，也就是**开箱即空**。而界面上此前只有一个「添加 RSS」，
+  /// 等于要用户自己去别处找一个 feed 地址贴进来（多数人做不到，于是这个模块等于废掉）。
+  /// 这里改用 Apple Podcasts 的**公开搜索接口**按关键词找真实可用的 feed（返回体带 `feedUrl`），
+  /// 搜到即可一键加入源列表。接口无需密钥，实测 `HTTP 200` 且能拿到 `feedUrl`。
+  Future<void> _discover() async {
+    final qc = TextEditingController();
+    final term = await showDialog<String>(context: context, builder: (c2) => AlertDialog(
+      title: const Text('在线找播客源'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('按节目名或关键词搜索（Apple Podcasts 公开目录）', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 10),
+        TextField(controller: qc, autofocus: true, decoration: const InputDecoration(hintText: '例如：故事FM / 忽左忽右', isDense: true)),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(c2, qc.text.trim()), child: const Text('搜索'))]));
+    if (term == null || term.isEmpty) return;
+    setState(() { loading = true; err = ''; });
+    try {
+      final r = await http.get(Uri.parse('https://itunes.apple.com/search?media=podcast&limit=20&term=${Uri.encodeComponent(term)}'))
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final found = <Map<String, dynamic>>[];
+      for (final it in (j['results'] as List? ?? [])) {
+        final url = '${it['feedUrl'] ?? ''}';
+        if (url.isEmpty) continue;
+        if (feeds.any((f) => f['url'] == url) || found.any((f) => f['url'] == url)) continue;
+        found.add({'title': '${it['collectionName'] ?? url}', 'url': url});
+      }
+      if (!mounted) return;
+      setState(() => loading = false);
+      if (found.isEmpty) {
+        setState(() => err = '没搜到带 RSS 的节目，换个关键词试试');
+        return;
+      }
+      final pick = await showDialog<Map<String, dynamic>>(context: context, builder: (c2) => SimpleDialog(
+        title: Text('找到 ${found.length} 个源'),
+        children: [for (final f in found.take(12)) SimpleDialogOption(
+          onPressed: () => Navigator.pop(c2, f),
+          child: Text('${f['title']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)))]));
+      if (pick == null) return;
+      feeds.add(pick);
+      await _Store4.save('podcast_feeds', feeds);
+      if (!mounted) return;
+      setState(() {});
+      _openFeed(pick);
+    } catch (e) {
+      if (mounted) setState(() { loading = false; err = '在线找源失败: $e'; });
+    }
   }
 
   // 极简 RSS 解析(正则够用): title + enclosure url + pubDate
@@ -327,6 +410,40 @@ class _Pod extends State<PodcastPage> {
     }
   }
 
+  /// 空态兜底：无论是「还没选源」还是「选了但一条都取不到」，都必须给得出**出口**。
+  /// 旧版这里只有一句「选一个播客源开始 / 也可以添加自己的 RSS」—— 在「内置源全都失效」
+  /// 的情况下，这句话既没说明原因、也没给任何可点的操作，模块看起来就是坏的。
+  Widget _emptyBox() {
+    final failed = curFeed.isNotEmpty && episodes.isEmpty;
+    return Center(child: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(24), child: Column(children: [
+      Icon(failed ? Icons.podcasts : Icons.rss_feed, size: 42, color: Colors.grey),
+      const SizedBox(height: 10),
+      Text(failed ? '这个源没能取到节目' : '选一个播客源开始', style: const TextStyle(fontSize: 14)),
+      const SizedBox(height: 6),
+      Text(failed
+          ? '「$curFeed」没有返回可播放的音频。内置源会随时间失效，可以重试、换一个源，或在线找一个能用的。'
+          : '也可以点「在线找源」按节目名搜，或直接添加自己的 RSS 地址。',
+        textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      if (failed && err.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6),
+        child: Text('原因: $err', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.redAccent))),
+      const SizedBox(height: 14),
+      Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+        if (failed) FilledButton.tonalIcon(
+          onPressed: () { final f = feeds.firstWhere((x) => x['title'] == curFeed, orElse: () => const {}); if (f.isNotEmpty) _openFeed(f); },
+          icon: const Icon(Icons.refresh, size: 16), label: const Text('重试')),
+        if (failed && feeds.length > 1) FilledButton.tonalIcon(
+          onPressed: () {
+            final i = feeds.indexWhere((x) => x['title'] == curFeed);
+            _openFeed(feeds[(i < 0 ? 0 : i + 1) % feeds.length]);
+          },
+          icon: const Icon(Icons.skip_next, size: 16), label: const Text('换个源')),
+        FilledButton.tonalIcon(onPressed: _discover,
+          icon: const Icon(Icons.travel_explore, size: 16), label: const Text('在线找源')),
+        TextButton.icon(onPressed: _addFeed, icon: const Icon(Icons.add, size: 16), label: const Text('加 RSS')),
+      ]),
+    ]))));
+  }
+
   @override Widget build(BuildContext c) => Column(children: [
     if (playingTitle.isNotEmpty) Container(color: Theme.of(c).colorScheme.primaryContainer,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -343,11 +460,11 @@ class _Pod extends State<PodcastPage> {
         ActionChip(avatar: const Icon(Icons.add, size: 14), label: const Text('添加 RSS', style: TextStyle(fontSize: 11)),
           onPressed: _addFeed),
       ])),
-    if (err.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
+    if (err.isNotEmpty && episodes.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
     Expanded(child: loading
       ? const Center(child: CircularProgressIndicator())
       : episodes.isEmpty
-        ? const Center(child: Text('选一个播客源开始\n也可以添加自己的 RSS', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
+        ? _emptyBox()
         : ListView.builder(itemCount: episodes.length, itemBuilder: (_, i) {
             final ep = episodes[i];
             final on = playingUrl == ep['audio'];
@@ -448,7 +565,11 @@ class _Snip extends State<SnippetsPage> {
   String filter = '全部';
 
   @override void initState() { super.initState(); _load(); }
-  Future<void> _load() async => setState(() async => items = await _Store4.list('snippets'));
+  Future<void> _load() async {
+    final v = await _Store4.list('snippets');
+    if (!mounted) return;
+    setState(() => items = v);
+  }
 
   Future<void> _edit([Map<String, dynamic>? exist]) async {
     final titleC = TextEditingController(text: exist?['title'] ?? '');
