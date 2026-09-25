@@ -1,8 +1,20 @@
 // ThirdHub v4 轻量 i18n: 中文为key, 切换语言全树立即重建
-// 用法: tr('搜索') —— 字典缺失时回落原文(中文)
-// 语言: zh/en/ja 完整; fr/ru/es/ar 核心词(逐步补全)
+// 用法: tr('搜索')
+//
+// ★ 第十五轮改动（在此之前这里是「假完成」）：
+//   旧注释写「zh/en/ja 完整; fr/ru/es/ar 核心词(逐步补全)」，而实际是
+//   **fr/ru/es/ar 每语言只有 8 个词**（只有模块名旁边那几句），缺词回落中文 ——
+//   于是切到法语/俄语/西语/阿语，屏幕上除少数几个词以外**全是中文**。
+//   现在改成：
+//     ① 译文集中在 `i18n_extra.dart`（fr/ru/es/ar 各 186 条，与 en 的键集逐条对齐），
+//        在这里合并进来 —— 不动下面那个大 literal，避免碰坏既有 5 种语言；
+//     ② 查找链改成 **当前语言 → 英文 → 中文原文**。加「英文」这一跳之后，
+//        以后新增中文 key 即使忘了补译文，最差也只是显示英文，
+//        不会再出现"选了外语还是满屏中文"的割裂感。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+
+import 'i18n_extra.dart';
 
 class I18n extends ChangeNotifier {
   static final I18n instance = I18n._();
@@ -37,7 +49,7 @@ class I18n extends ChangeNotifier {
     }
   }
 
-  static final Map<String, Map<String, String>> dict = {
+  static final Map<String, Map<String, String>> dict = _mergeExtra({
     'en': {
       '搜索': 'Search', '书架': 'Shelf', '小说': 'Novels', '漫画': 'Comics',
       '视频': 'Videos',
@@ -271,9 +283,33 @@ class I18n extends ChangeNotifier {
       '取消': 'إلغاء',
       '保存': 'حفظ'
     },
-  };
+  });
 
-  static String tr(String zh) => dict[instance.locale]?[zh] ?? zh;
+  /// 把 `i18n_extra.dart` 的补充译文合并进基础字典（补充的覆盖基础的）。
+  ///
+  /// 单独抽这一步而不是把译文直接写进上面那个 literal，理由：上面那个 literal 是
+  /// 5 种语言混在一起的大块数据，直接改容易碰坏已有译文；这里只做一次浅合并，
+  /// `dict` 的类型与所有既有用法完全不变。
+  static Map<String, Map<String, String>> _mergeExtra(
+      Map<String, Map<String, String>> base) {
+    final out = <String, Map<String, String>>{
+      for (final e in base.entries) e.key: Map<String, String>.from(e.value),
+    };
+    i18nExtra.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
+    return out;
+  }
+
+  /// 查找链：**当前语言 → 英文 → 中文原文**。
+  ///
+  /// 中间那跳「英文」是第十五轮加的：此前缺词直接落回中文，而 fr/ru/es/ar
+  /// 只有 8 个词，切过去就是满屏中文（用户体感：选了外语根本没生效）。
+  /// 加上英文兜底后，最差是英文，不会再有"半屏中文"的割裂感。
+  static String tr(String zh) {
+    final d = dict[instance.locale];
+    return d?[zh] ?? dict['en']?[zh] ?? zh;
+  }
 }
 
 String tr(String s) => I18n.tr(s);
