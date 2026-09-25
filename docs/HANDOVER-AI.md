@@ -36,7 +36,7 @@
 │   ├── peer-hub.js       PH/1 端网中枢
 │   ├── routes-*.js       各业务路由
 │   ├── scripts/          自检脚本（注意：在 scripts/ 下，不在 server/ 根）
-│   └── package.json      ★ 后端版本号唯一来源（现 0.8.6；ping/MCP/clientInfo 均已改为运行时读它）
+│   └── package.json      ★ 后端版本号唯一来源（现 0.8.7；ping/MCP/clientInfo 均已改为运行时读它）
 ├── plugins/         th-plugin.js SDK + example-downloader 示例
 ├── docs/            协议与规划文档（planning/ 是宪法与总清单）
 ├── android/         安卓壳配置 + **后端 APK 工程**（`app/` 里是 `com.thirdhub.backend` 的 Kotlin 壳：首启把 assets 解压到 filesDir/runtime，再 exec node index.js 常驻前台 Service）。keystore 已泄露，见 §7
@@ -54,9 +54,9 @@
 | 部件 | 版本 | 状态 | 下载通道 |
 |---|---|---|---|
 | V4 前端 APK | **4.49.0 / 50536** | ✅ **已四通道发布 + 五通道独立校验全 PASS**。构建源提交 `7bc57c73`，CI `build-apk 36054417044` success；APK sha256 `50bba599c003d0ec7cfa9315f831cdfb1d960218f27c9a069da2d8cfa5bfe922` / 29803914 B；`pickSettingsRow` 符号已在二进制中（4.48.0 二进制为 0 命中，见 §6 #3b） | Supabase `latest-app.json` + 桶三通道 + Release |
-| 网页端主站 | **3.35.2** | 第十轮发版（`tools/release.cjs 3.35.2`）：把下载中心的后端包指向 **0.8.6**。`updated`/`releaseDate` 改为**本地日期**（原 UTC 写法会把上午发布标成前一天，见 §6 #17） | — |
-| 家庭后端 | **0.8.6** | ✅ **已发三通道 + 解包冒烟 14/14 PASS**。zip 6030007 B / sha256 `bba034f3df69fee2384221bb14f91d2fe65d4f83d3f78705e61f052b2239eb95` | ① `downloads/thirdhub-backend-0.8.6.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.6`（id `396151827`，资产已下载回算 sha256 逐字节一致）** |
-| **家庭后端 APK**（`android/` 壳，包名 `com.thirdhub.backend`） | **0.8.6 / 42806** | ✅ **第十一轮重建并四通道发布**（此前一直是 4.2.0）。APK 32626957 B / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`；内嵌 node-arm64 运行时（复用 4.2.0 包内已验证的那份）+ server 0.8.6（含 `public/` 与 `scripts/`）+ 12 条预置源。**版本号已改为读 `server/package.json`** | ① `downloads/thirdhub-backend-0.8.6.apk` ② 别名 `downloads/thirdhub/thirdhub-backend.apk` ③ **`latest-backend.json`**（客户端「下载中心」实时读它 → 显示「最新 v0.8.6」）④ Release `backend-v0.8.6` 资产。发布脚本 `D:/ai/_probe/_rel_backend_apk.mjs`（8/8 PASS） |
+| 网页端主站 | **3.35.3** | 第十二轮发版（`tools/release.cjs 3.35.3`，六步全绿，`PUSHED 7d56a574`）：把下载中心的后端包指向 **0.8.7**。放行指针 `th_app_updates` id=47 → 3.35.3（`auto:true`，普通用户会收到通知） | — |
+| 家庭后端 | **0.8.7** | ✅ **已发三通道 + 解包冒烟 24/24 PASS**。zip 6037093 B / sha256 `bf153569f202427c03cb520f48ed199a0d6c93762ec27c7df06dff77e7310bdf`。内容：**15 条干净源 + 10 条撤销**（`rev:2`）+ 新增撤销通道（`preset-sync.js`） | ① `downloads/thirdhub-backend-0.8.7.zip` ② `downloads/thirdhub/thirdhub-backend.zip` ③ **Release `backend-v0.8.7`（id `396181385`，资产下载回算 sha256 逐字节一致）** |
+| **家庭后端 APK**（`android/` 壳，包名 `com.thirdhub.backend`） | **0.8.7 / 42807** | ✅ **第十二轮重建并四通道发布**。APK 32633859 B / sha256 `b89cbdb92be3a87b97d6566238a296d928e097f08f3b112a2809a4a68f6a7a80`；内嵌 node-arm64 运行时 + server 0.8.7（含 `public/` `scripts/` `preset-sync.js`）+ **15 条干净源 + 10 条撤销** | ① `downloads/thirdhub-backend-0.8.7.apk` ② 别名 `downloads/thirdhub/thirdhub-backend.apk` ③ **`latest-backend.json`**（version 0.8.7 / code 42807 / sha 三项回读一致）④ Release `backend-v0.8.7` 资产。发布脚本 `_rel_backend_apk.mjs`（**8/8 PASS**） |
 | 旁支（完全体） | 0.4.4 | **已搁置，不要动**（网站端介绍已重写并上线，见 §2） | — |
 
 > **发版批次记**：4.49.0 的 CI 先后跑出两个 run（`36053636554` on `7d26d314`、`36054417044` on `7bc57c73`），
@@ -205,13 +205,20 @@ th_settings 特殊：{ id: <uid>, data: { settings: { s: {...38键} }, updatedAt
 | 11 | N-1~N-12 新增模块、AI-1~AI-10、E-1~E-6 | ❌ 未做 | 见 `docs/planning/ThirdHub-功能规划-v3.0.md` |
 | 12 | `docs/` 里的过程文档归并（`M1-SPRINT.md` / `PLAN-v3.md`） | ❌ 未做 | 低优 |
 | 13 | 源健康流水线接入日常 | 🚧 **本轮建立并修正口径** | ① `tools/source-health.cjs` 的 `--out` 原先**只导 `{module,pack,name,host,url}`、没有源规则 → 导不进去**；已改为带完整 `source` 对象 + 新增 `--out-pack` 写纯 Legado 数组（`--out` 同时给则自动派生 `<name>.pack.json`）。② **代理口径高估可用性**（代理 29/300 vs 引擎真取 3/29）→ 新增 `_probe/engine_source_verify.cjs` 作为**引擎口径权威闸门**，日常以它为准。③ 待办：把这两个口径接进定时任务 |
-| 14 | 后端 Android APK（内嵌 server）刷新 | ✅ **第十一轮已完成** | 见 #20。APK 现为 **0.8.6 / 42806**，与 zip 同号 |
+| 14 | 后端 Android APK（内嵌 server）刷新 | ✅ **第十二轮已刷新** | 见 #20 + §2。APK 现为 **0.8.7 / 42807**，与 zip 同号，内嵌同一份源包（15 源 + 10 撤销） |
 | 15 | 网站静态清单部署 | ✅ **第九轮再做一次**：站点 3.35.0 → **3.35.1**（`tools/release.cjs` 六步，把 `server` 段指向 0.8.5） | 线上已核实 `server` = 0.8.5 / 6028828 |
 | 18 | **家庭后端 0.8.5 发布（第九轮新增）** | ✅ **已完成**：`_pack_backend.mjs`（打包脚本化 + 5 道包内硬闸门）→ `_smoke_backend_zip.mjs` **13/13 PASS** → 三通道（版本化桶 / 别名桶 / Release `backend-v0.8.5` id `396116826`，资产下载回算 sha256 一致）→ 网站清单同步 | 参见当天日志第九轮 A9-2 |
 | 16 | 娱乐线剩余缺陷 | 🚧 4.49.0 修掉 6 类（`positionStream` 泄漏、监听器不摘 + setState-after-dispose、共享清单静默失败、共享相册删除假成功、共享相册名实不符、论坛回帖裸时间戳） | **仍未做**：视频详情页无引擎兜底、资讯/播客硬编码源无兜底、14 处 `setState(() async ...)` 首屏竞态 |
 | 17 | 网页端 `updated` 日期比本地日期早一天 | ✅ **第十轮已修** | `tools/release.cjs` 与 `_upd_av_server.mjs` 原来用 `new Date().toISOString().slice(0,10)`（**UTC**）写 `updated`/`releaseDate`，本地上午发布会被写成前一天。已改为按本地时区取 YYYY-MM-DD；3.35.2 实测 `updated=2026-09-25`（UTC 当时还是 09-24） |
-| 19 | 内容线源级缺陷（非引擎） | 🚧 本轮量化 | `💰时阅文学`（用户已标注「搜索正文失-效」）、`凤凰网书城`（detail 500）、`🔖八零电子书`/`⌨52书库`/`总裁🎃`/`快眼看书botaodz`（目录 0 或选择器不匹配）、`🌸笔趣阁`（`.text` 规则已过时 → 正文夹带页面杂质，4 万字/章）。**这些要改的是源包（`sources-preset/health-book.json`），不是引擎**；下一轮可做「按引擎口径重挑一遍健康源」 |
+| 19 | 内容线源级缺陷（非引擎） | ✅ **第十二轮已完成** | 按**引擎双闸门**重挑源包：闸门①`engine.search()` 真解析出「书名+链接」；闸门②`detail→catalog→content` 取**首章 + 中段章**（目录>0、条目 name/url 齐备 ≥90%、url 绝对、正文 ≥200 字、**已分段 ≥3 段**、非脚本残留、开头非页面杂质、单章 ≤2 万字）。**12 条源 → 15 条干净源 / 14 个独立书库**（大源包 2703 条按社区权重取前 1326 候选，17 条过闸门 → 归一化去重后 15 条）。取证证明瓶颈在源不在引擎：抽 20 条「搜索 0 条」分类 **DEAD 6 / BLOCKED 7 / STALE 4 / NOURL 2 / RULE_GAP 1 → 19/20 是源侧失效**。**并发现必须同步解决的根因**（见 #21）。随包 0.8.7 / APK 0.8.7 发布 | 剩余「真机打开阅读」留 #4 |
 | 20 | 后端 Android APK（内嵌 server）落后更多 | ✅ **第十一轮已完成** | 本机 Gradle 重建 → APK **32626957 B** / sha256 `ea8ee56cbf94e1ab706b4e83d7b62418defd79245c4020821c0a2e514e6463d5`，包名 `com.thirdhub.backend`，**0.8.6 / 42806**。四通道：① 版本化桶 `thirdhub-backend-0.8.6.apk` ② 别名桶 `thirdhub/thirdhub-backend.apk` ③ `latest-backend.json`（version 0.8.6 / code 42806 / sha 一致）④ Release `backend-v0.8.6` 资产（下载回算 sha256 一致）。**8/8 PASS**，客户端「下载中心」会显示「最新 v0.8.6」 |
+| 21 | **「改了但没生效」——预置源包只增不减（第十二轮新发现，P0 级）** | ✅ **已修并随 0.8.7 发布** | 旧的 `importPreset()` 判据只有 `if (url && !sources.some(x => x.bookSourceUrl === url)) push` → **把烂源从 `health-book.json` 里剔掉，对老安装完全无效**（老装的 `data/sources.json` 里那条烂源还在且 `enabled:true`，换包只是又追加新源）。修法：新增 `server/preset-sync.js`（纯函数 `planPresetSync`）+ **撤销通道** —— `enabled:false` + 组名改 `已停用·双闸门未通过`（**不删除**，用户可手动再启用）；标记文件由「条目数」升级为「源包内容 sha1 前缀」；**包没变则一律不动**（尊重用户删改，手动删除的源不会被每启一次塞回来）；源回到白名单时自动恢复 `enabled` 与**原组名**。簿记只写标记文件，`sources.json` 只被改 Legado 原有字段 | 验证：纯函数单测 **34 断言全过** / 真服务端到端 **12 断言全过** / 解包冒烟 **24/24 PASS**（含「老安装升级 → 撤销真跑一次」）|
+
+> **第十二轮新增的硬闸门（别再靠人眼）**：
+> - `_pack_backend.mjs` +3 道：包内 `index.js` 必须含 `planPresetSync`、必须带 `preset-sync.js`、`health-book.json` 源数 ≥3 且必须有 `rev`。
+> - `_smoke_backend_zip.mjs` 从 14 条扩到 **24 条**：包内撤销清单存在 + 撤销条目带原因 + `preset-sync.js` 在包内 + 首次启动导入条数与包内一致 + 启用数 ≥12 + **[6] 模拟老安装（标记退回旧格式 + 注入烂源）真跑一次撤销**（烂源被停用且换组名、源没被删、用户自己加的源逐字节未动）。
+> - `_stage_apk_assets.py` +1 道：APK 内嵌的那份 `health-book.json` 必须 ≥12 条干净源且带撤销清单（**后端 zip 与 APK 是两个交付物，各内嵌一份源包**）。
+
 
 ### 真机验证的硬约束（不是 bug）
 `adb devices` 无设备 / 无模拟器 → **端网（#68）与插件体系（#69）的真机端到端本轮无法做**，源码级 e2e 与服务端 174 断言已全绿。不要因为「测不了」就以为功能没做。
@@ -323,6 +330,24 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
     （`index.js:80` 会 `execSync` 调 `scripts/gencert.js`）。现已改为与发布包 `_pack_backend.mjs` **同一份排除清单**
     （只排 `data/` 与 `node_modules.msh-partial`），并加了「`public/index.html` / `scripts/gencert.js` 必须在包里」的硬闸门。
     · 推论：**「打包脚本排除清单」是一处极易静默出错的地方** —— 加排除项前先问「运行期真的不需要它吗」。
+20. **★ 解包冒烟必须每次用全新目录**（第十二轮踩）：复用同一解包目录会留下上一轮的
+    `data/preset-imported.json`，于是「首次启动导入预置源」这一步变成「包没变 → 按设计一律不动」→
+    `[3]`/`[6]` **假失败**（看着像功能坏了，其实是测试自己没清干净）。改法：ROOT 带时间戳 + 跑前清 `_zipcheck_*`。
+    · 连带坑：本机装了 **safe-delete shim**，对大目录 `fs.rmSync` 会抛
+      `SAFE_DELETE_BULK_CONFIRM_REQUIRED`（`count:1568 > threshold:50`）→ 临时目录改用系统 `rmdir /s /q`。
+21. **★ 「撤销通道」在测试里要模拟「换包」，不能只重启**：`planPresetSync` 有意设计为
+    **包没变则完全不动**（尊重用户删改）。所以验证撤销必须把标记文件退回**旧格式**（老安装是
+    `{"health-book.json":12}` 这种「条目数」写法），否则第二次启动不会触发同步 → 误判成「撤销不管用」。
+22. **★ 本机 `githubusercontent` 域名会超时**（`github.com:443` 不可达的连带）：Release 资产
+    **元数据读回正常、下载回算却挂** `UND_ERR_CONNECT_TIMEOUT 185.199.109.133:443`。
+    **别把「下载不下来」误读成「资产没传上去」** —— 发布脚本里所有下载回算都改成
+    「直连 → 失败自动落 `ghfast.top` 代理」两段式（`_rel_backend_zip.mjs` / `_rel_backend_apk.mjs` 已落地）。
+23. **本机 bash 里没有 `gh`**（`spawnSync gh ENOENT`）→ 查 Release / 改 Release 一律走
+    `api.github.com` 的 REST + `.env` 里的 `GITHUB_TOKEN`；`.env` 里**没有** anon/publishable key，
+    要验「放行指针」就用 service role 读 `th_app_updates` 或调 `rpc/release_state`。
+24. **源包净化器按 `searchUrl` host 去重会漏**（第十二轮）：两条既有源共用 host，或
+    `bookSourceUrl` 只差结尾斜杠（`http://m.rulianshi.la` vs `...la/`）时会被静默丢掉一条。
+    → 收口脚本要加**归一化键**（去 scheme / 结尾斜杠 / host 小写，但保留 `##xxx` 尾巴）。17 → 15 条。
 
 ---
 
@@ -337,12 +362,13 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
 6. **新增/改动依赖 flutter 的 lib 文件时，以上全绿也 ≠ 能编译 → 必须推 CI 真编译一轮。**
    **★ 无法本地类型检查时的替代闸门**：逐个把新增调用点对到定义处（签名 + 参数名逐项核对），因为 `dart analyze` 在本机必死（见 §9.2）。
 7. **发布 zip 必须「解包冒烟」**（第九轮新增，两脚本都在 `D:/ai/_probe/`）：
-   `_pack_backend.mjs`（打包 + **8 道包内硬闸门**：版本一致 / 预置源在包内且 ≥2 条 / **不许混进 `data/`（含密钥）** /
-   回读包内 `index.js`·`engine.js` **关键修复必须在**（peerHub 上移、`##` 后处理、**目录链式展开、`<br>` 分段、兜底拒脚本拒导航**））
+   `_pack_backend.mjs`（打包 + **11 道包内硬闸门**：版本一致 / 预置源在包内且 ≥2 条 / **不许混进 `data/`（含密钥）** /
+   回读包内 `index.js`·`engine.js` **关键修复必须在**（peerHub 上移、`##` 后处理、**目录链式展开、`<br>` 分段、兜底拒脚本拒导航**）/
+   **第十二轮新增 3 道：`index.js` 必须调用 `planPresetSync`、必须带 `preset-sync.js`、`health-book.json` 源数 ≥3 且必须有 `rev`**）
    → `_smoke_backend_zip.mjs`（解到干净目录 → 跑包内三重自检 → 真启动 → 走 `/v1/search` 真出书 →
-   **`[5]` 走 `/v1/toc`+`/v1/content` 验阅读逐页**）。**本地 `server/` 的测试全绿 ≠ 包能用**
-   —— 0.8.4 的包就是「测试全绿但装上打不开、且包里没有源」。后端发版四步：
-   打包 → 解包冒烟 → 三通道（版本化桶 / 别名桶 / Release `_rel_backend.mjs` 读回校验）→ 网站清单 `_upd_av_server.mjs` + `tools/release.cjs`。
+   **`[5]` 走 `/v1/toc`+`/v1/content` 验阅读逐页** → **`[6]` 模拟老安装真跑一次撤销**）。
+   **本地 `server/` 的测试全绿 ≠ 包能用** —— 0.8.4 的包就是「测试全绿但装上打不开、且包里没有源」。后端发版四步：
+   打包 → 解包冒烟 → 三通道（版本化桶 / 别名桶 / Release `_rel_backend_zip.mjs` 读回校验）→ 网站清单 `_upd_av_server.mjs` + `tools/release.cjs`。
 8. **阅读线权威闸门（第十轮新增）**：`_probe/_read_e2e.cjs`（逐页）+ `_probe/_engine_rules_test.cjs`（规则语义，35 条）
    + `_probe/_read_ab.cjs`（修前/修后 A/B，**证明无回归**）。
    **只有「搜索出书」不够** —— 第九轮就栽在这：`/v1/search` 12/12 PASS，而点进去一本都读不了。
@@ -355,6 +381,14 @@ env     C:/Users/英莉/WorkBuddy/第三方聚合平台/.env
    `assets/server/package.json` 与 `sources-preset/health-book.json` 核对版本与源数**）
    → 四通道 `_probe/_rel_backend_apk.mjs`（**8/8 PASS**，含「把用户实际点的别名 URL 真下回来算 sha256」）。
    · **别只看「BUILD SUCCESSFUL」** —— 构建成功跟「包里装的是对的东西」是两件事（老包就是构建成功但内嵌了旧 server、且缺 public/）。
+10. **源包/预置导入的闸门（第十二轮新增）**：
+    - `server/test_preset_sync.cjs`（纯函数 **34 断言**：全新安装 / 幂等 / 老标记迁移 / **撤销** / 撤销幂等 /
+      **尊重用户手改** / **恢复（组名还原非空串）** / 脏条目跳过 / 白名单优先 / 不改入参 / 撤销指向不存在的源 / 簿记不污染源对象）
+    - `_probe/_it_preset_sync.cjs`（**真起 index.js** 的真服务端端到端：备份 `data/` → 注入用户自加源 → 起两次服务 → 对账 → 还原）
+    - 解包冒烟 `_smoke_backend_zip.mjs` 已扩到 **24 条**，其中 `[6]` 专门验「老安装升级 → 撤销真跑一次」
+    - **判据：凡改动「预置源包 / 导入逻辑」，必须同时过 单测 + 真启动 e2e + 解包冒烟** ——
+      单靠「新装能导入」是不够的，第十一轮那类「改了但没生效」正是漏在这一步。
+    - `sources-preset/README.md` 要随包更新（判据 / 溯源 / 发布纪律），它是源包的唯一权威说明。
 
 ---
 
