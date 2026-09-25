@@ -1,6 +1,6 @@
 name: dart-selfcheck
 
-# 纯 Dart 自检「八连」——这是本仓改动后端到端的**最低成本闸门**。
+# 纯 Dart 自检「九连」——这是本仓改动后端到端的**最低成本闸门**。
 #
 # 为什么要有这个 workflow（此前是空白）：
 #   · 本机 `dart analyze` / `dart compile` / `flutter test` 全部因
@@ -11,13 +11,32 @@ name: dart-selfcheck
 #   · 本 workflow 不做类型检查（那是 build-apk 的活），只跑自检断言：
 #     秒级完成，失败信息比编译器直白得多，能一次说清是哪条契约破了。
 #
-# 八连（与 docs/HANDOVER-AI.md §10 的基线数字一一对应）：
+# 九连（2026-09-25 本机实测，九条全部按直调 VM 方式跑出）：
 #   nav_swipe 57 · local_tools 135 · agent_proto 191 · modules 202
-#   agent 120 · peer_hub 327 · changelog 52 · settings_bridge 95   → PASS 1179 / FAIL 0
+#   agent 120 · peer_hub 327 · changelog 52 · settings_bridge 111 · i18n 17
+#   → PASS 1212 / FAIL 0
+#   注：settings_bridge 此前文档记的是 95，实测已是 111（该自检 09-25 扩过），
+#       这里以实测为准。agent_proto 的 PASS 行格式是「全部通过 191/191」，
+#       不是「PASS n FAIL n」，脚本汇总时要单独认。
+#
+# ★本机也能跑这套（此前误以为"本地 dart 全废"）：
+#   `dart analyze` 会 spawn analysis_server 而被管道池耗尽挡住，但**直调 VM 可以**：
+#     D:/ai/flutter/bin/cache/dart-sdk/bin/dart.exe \
+#       --disable-dart-dev --packages=.dart_tool/package_config.json \
+#       tool/i18n_selfcheck.dart
+#   在 flutter_app 目录下运行即可（注意必须带 --packages，否则 pub 会因
+#   objective_c 的 native assets 校验直接退出）。本地 57 与 CI 57 一致，可信。
+#
+# 为什么第 9 条是 i18n（2026-09-25 加）：
+#   缺键回退是**静默的** —— 目标语言没有就悄悄显示英文，连 en 都没有就悄悄
+#   显示中文，不报错不崩不留日志。实测有 18 个键在**全部 6 种语言都缺**
+#   （含刚从硬编码改成 tr() 的「确认资源库指纹」「信任」），任何语言都显示
+#   中文。靠人眼在 200 键 × 6 语言里查等于没查，所以做成闸门。
 #
 # 注意：这些脚本必须 `working-directory: flutter_app` 下运行 ——
 # agent_proto_selfcheck 要读 `../server/agent-profiles.json` 做逐工具对拍，
-# changelog_selfcheck 要读 `lib/main.dart` 做双向核对。
+# changelog_selfcheck 要读 `lib/main.dart` 做双向核对，
+# i18n_selfcheck 要读 `lib/core/i18n*.dart` 并遍历 `lib/**` 收集 tr() 用法。
 permissions:
   contents: read
 
@@ -75,3 +94,7 @@ jobs:
       - name: settings_bridge（设置 38 键两端一致）
         working-directory: flutter_app
         run: dart run tool/settings_bridge_selfcheck.dart
+
+      - name: i18n（6 语言 × tr() 全键覆盖，防静默回退中文/英文）
+        working-directory: flutter_app
+        run: dart run tool/i18n_selfcheck.dart

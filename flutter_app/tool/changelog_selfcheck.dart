@@ -16,11 +16,17 @@ int _pass = 0, _fail = 0;
 final List<String> _fails = <String>[];
 
 void _ok(bool c, String m) {
-  if (c) { _pass++; } else { _fail++; _fails.add(m); print('  ✗ $m'); }
+  if (c) {
+    _pass++;
+  } else {
+    _fail++;
+    _fails.add(m);
+    print('  ✗ $m');
+  }
 }
 
-void _eq(Object? a, Object? b, String m) =>
-    _ok(a == b, m + '（期望 ${b is String ? '"$b"' : b}，实际 ${a is String ? '"$a"' : a}）');
+void _eq(Object? a, Object? b, String m) => _ok(a == b,
+    m + '（期望 ${b is String ? '"$b"' : b}，实际 ${a is String ? '"$a"' : a}）');
 
 ClogRow _row(String v, List<String> items, [String date = '2026-01-01']) =>
     ClogRow(v: v, date: date, items: items);
@@ -37,12 +43,18 @@ void main() {
     final List<String> missing = <String>[];
     for (final String m in ClogModules.all) {
       // main.dart 的注册表长这样：  '端网': const ModuleDef('端网', …
-      // 用"键名 + 引号"双重锚定，避免子串误命中（'日历' ⊂ '家庭日历'）
-      if (!src.contains("'$m': ModuleDef") && !src.contains("'$m': const ModuleDef")) {
+      // 用"键名 + ModuleDef"双重锚定，避免子串误命中（'日历' ⊂ '家庭日历'）。
+      // ★第二十一轮：匹配改用容忍空白的正则 —— dart format 会把超长注册行折成
+      //   `'键':\n      const ModuleDef(…)`，原来的单行 contains 直接失配
+      //   （与下方反向检查的正则不一致，属自检自身缺陷）。
+      final RegExp reg =
+          RegExp("'${RegExp.escape(m)}':\\s*(?:const\\s+)?ModuleDef\\(");
+      if (!reg.hasMatch(src)) {
         missing.add(m);
       }
     }
-    _ok(missing.isEmpty, 'ClogModules.all 里每个模块名都能在 main.dart 找到注册项；缺：$missing');
+    _ok(missing.isEmpty,
+        'ClogModules.all 里每个模块名都能在 main.dart 找到注册项；缺：$missing');
     // 反向：main.dart 里注册了、但我们表里没有的模块（会让那个模块永远没有公告）
     final RegExp re = RegExp(r"'([^']{1,12})':\s*(?:const\s+)?ModuleDef\(");
     final Set<String> declared = <String>{};
@@ -53,8 +65,10 @@ void main() {
       for (final String d in declared)
         if (!ClogModules.all.contains(d)) d,
     ]..sort();
-    _ok(notCovered.isEmpty, 'main.dart 里注册的模块都进过 ClogModules.all；漏：$notCovered');
-    print('  · main.dart 注册模块 ${declared.length} 个 / 本表 ${ClogModules.all.length} 个');
+    _ok(notCovered.isEmpty,
+        'main.dart 里注册的模块都进过 ClogModules.all；漏：$notCovered');
+    print(
+        '  · main.dart 注册模块 ${declared.length} 个 / 本表 ${ClogModules.all.length} 个');
   }
   _ok(!ClogModules.all.contains(ClogModules.global), '兜底专题名「全局」不混在模块清单里');
 
@@ -104,11 +118,13 @@ void main() {
 
   print('\n== 6. 多模块归属（不强行二选一）==');
   final Set<String> both = ClogModules.modulesOf('AI 助手支持调用插件');
-  _ok(both.contains('AI') && both.contains('端网'), '★一条同时动 AI 与端网的改动，两个模块都要能看到它');
+  _ok(both.contains('AI') && both.contains('端网'),
+      '★一条同时动 AI 与端网的改动，两个模块都要能看到它');
 
   print('\n== 7. pick：按模块切流水账 ==');
   final List<ClogRow> rows = <ClogRow>[
-    _row('4.44.0', <String>['端网模块新增插件体系', 'AI 支持指挥插件', 'LICENSE 换成 MIT', '小说书架批量管理']),
+    _row('4.44.0',
+        <String>['端网模块新增插件体系', 'AI 支持指挥插件', 'LICENSE 换成 MIT', '小说书架批量管理']),
     _row('4.43.0', <String>['Agent 协议清账', '漫画自动识别']),
     _row('4.42.0', <String>['书源导入提速']),
   ];
@@ -161,7 +177,9 @@ void main() {
   print('PASS $_pass   FAIL $_fail');
   if (_fail > 0) {
     print('\n失败项:');
-    for (final String f in _fails) { print('  · $f'); }
+    for (final String f in _fails) {
+      print('  · $f');
+    }
     exit(1);
   }
   print('\n✅ 全部通过');
