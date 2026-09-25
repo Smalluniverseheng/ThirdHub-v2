@@ -109,7 +109,7 @@
 ### 组E 内置引擎
 | 项 | 判定 | 证据 / 缺口 |
 |---|---|---|
-| E1 EnginePlugin 统一接口 | **未完成** | 全仓无 `EnginePlugin`；各引擎各自为政（`engine.js` 导出 search/detail/catalog/content；`engine-drpy.js` 等各导出 `runSource/runPlugin` + `ir*`），无统一接口/注册表 |
+| E1 EnginePlugin 统一接口 | 完成（2026-09-25） | `server/engine-plugin.js:59` `class EnginePlugin`（统一 `search/detail/catalog/content` 契约）+ `:206` `registry` 注册表 + `:239` 导出；四个引擎经注册表适配，`routes-media.js` 9 处 `registry.run` 真跑；单测 `test_engine_plugin.cjs` **pass=21 fail=0**（含 drpy 真源冒烟 20 条） |
 | E2 drpy 沙箱 | 部分 | 用的是 **Node `vm` 不是 QuickJS**（`engine-drpy.js:3,29,42,57`）；且 `server/data/drpy-sources.json` **不存在** → "真实源点播跑通"不成立 |
 | E3 venera/musicfree 沙箱 | 部分 | 兼容层已写（`engine-comic.js:13,93`、`engine-music.js:6,14`、`engine-lx.js:54,62`）；但 `data/comic-sources.json`、`data/music-sources.json` **都不存在** → 无实例源 |
 | E4 首启导入 + sync | 完成 | `index.js:302-326`（内容哈希判据 + 撤销通道）、纯函数 `preset-sync.js:59-120` + 单测 `test_preset_sync.cjs`、预置包 `sources-preset/health-book.json`（15 源 / 10 撤销）、导入脚本 4 个 |
@@ -163,7 +163,7 @@
 | 5 | **`C1` routes 表** | 源数被 `slice(0,3)` 写死 | 落 routes 表 + 按权重取前 N，替换硬编码 |
 | 6 | **`C2` 自动禁用/恢复** | 只排序不摘 | 健康度低于阈值自动摘除，恢复期回填 |
 | 7 | **F-1 真后台备份** | 前台才跑 | 接 WorkManager/ContentObserver，做到被杀照跑 |
-| 8 | **`E1` EnginePlugin 接口** | 无统一接口 | 定义接口 + 注册表，四个引擎适配 |
+| 8 | ~~**`E1` EnginePlugin 接口**~~ | ✅ 完成（2026-09-25） | `engine-plugin.js` 接口 + 注册表落地，四引擎适配，`test_engine_plugin.cjs` 21/0 |
 | 9 | **`E2/E3` 实例源入库** | `data/{drpy,comic,music}-sources.json` 不存在 | 入库真实源并补端到端验收 |
 
 **"假完成"四项（最容易骗过看板，须优先纠正）**：7 语言 / F-1 后台备份（前台触发冒充）/ F-5 人脸归档（手动标记冒充本地模型）/ OCR（明确占位未接）。
@@ -175,6 +175,6 @@
 - **批 1（本轮收尾）**：模拟器实测 6 件事 + 半残包修复验证（§一.7 / §三.①）
 - **批 2（前端体感）**：7 语言补齐 · 低端机模式 · `_pumpStep` 粒度可选 · M1 两条延迟显示
 - **批 3（后端契约）**：SSRF 防护 · `request_log` · routes 表 · 健康度自动摘除
-- **批 4（引擎与源）**：`EnginePlugin` 接口 · 真实影视/漫画/音源入库 · 组B 文档 + fixtures + 对拍
+- **批 4（引擎与源）**：~~`EnginePlugin` 接口~~（✅ 2026-09-25 完成） · 真实影视/漫画/音源入库 · 组B 文档 + fixtures + 对拍
 - **批 5（轨道决策，需你拍板）**：组D 的 web/Electron/Capacitor 是做还是从看板移除；
   WS 长连接要不要上；`E2` 是否真上 QuickJS 替换 Node `vm`。

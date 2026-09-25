@@ -39,7 +39,7 @@ D2 Flutter 轨道(纯IR渲染器, 不碰引擎):
 依赖: FRONTEND-MATRIX.md + FRONTEND-DUAL.md
 
 ## 组E: 内置引擎
-- [ ] EnginePlugin 统一接口落地
+- [x] EnginePlugin 统一接口落地 ✅ 2026-09-25：`server/engine-plugin.js`（`:59` EnginePlugin / `:206` registry），四引擎注册表适配，`routes-media.js` 9 处 `registry.run`；`test_engine_plugin.cjs` pass=21 fail=0
 - [ ] drpy QuickJS 沙箱跑通(真实源点播)
 - [ ] venera/musicfree 沙箱兼容
 - [ ] sources 数据包首启导入 + sync 脚本
