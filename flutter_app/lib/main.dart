@@ -4125,21 +4125,35 @@ class _Home extends State<SearchSection> {
   /// 停止 = `_seq++`（让所有在途请求回来时对不上代次、直接丢弃）+ `_autoPull=false`。
   /// **已收到的结果全部保留** —— 停止是「不要再拉了」，不是「清空」。
   Future<void> _askStop() async {
-    // ★计数源分模式：库模式结果在 agg 里（engItems 是 go() 恒置的 []，读它恒 0 ——
-    //   曾在模拟器上实测弹窗写「已收到 0 条」而屏幕上正铺着 15 条）；引擎模式读 engItems。
-    final received = agg != null ? _aggCount(agg) : (engItems?.length ?? 0);
+    // ★计数源分模式 + 实时刷新：库模式结果在 agg 里（engItems 是 go() 恒置的 []，
+    //   读它恒 0 —— 曾在模拟器上实测弹窗写「已收到 0 条」而屏幕上正铺着 15 条）；
+    //   引擎模式读 engItems。
+    // ★第二十二轮续修：计数不能在开弹窗那一刻算死 —— 弹窗常开在请求途中，
+    //   响应/续拉会在弹窗背后继续灌（`_pumpShown` 逐帧铺屏），静态 Text 冻结
+    //   在 0 就是「弹窗 0 条、屏上 15 条」假象的根因。所以弹窗开着期间按
+    //   120ms tick 重算计数，条目一到弹窗数字跟着涨。
+    final tick = ValueNotifier<int>(0);
+    final ticker =
+        Timer.periodic(const Duration(milliseconds: 120), (_) => tick.value++);
+    String body() {
+      final received = agg != null ? _aggCount(agg) : (engItems?.length ?? 0);
+      return [
+        _engTotal > 0
+            ? tr('已收到 {{n}} 条（引擎共 {{m}} 条）。')
+                .replaceAll('{{m}}', '$_engTotal')
+                .replaceAll('{{n}}', '$received')
+            : tr('已收到 {{n}} 条。').replaceAll('{{n}}', '$received'),
+        tr('停止后已收到的不受影响，可以随时再点搜索继续。'),
+      ].join('\n');
+    }
+
     final ok = await showDialog<bool>(
         context: context,
         builder: (c2) => AlertDialog(
                 title: Text(tr('停止搜索？')),
-                content: Text([
-                  _engTotal > 0
-                      ? tr('已收到 {{n}} 条（引擎共 {{m}} 条）。')
-                          .replaceAll('{{m}}', '$_engTotal')
-                          .replaceAll('{{n}}', '$received')
-                      : tr('已收到 {{n}} 条。').replaceAll('{{n}}', '$received'),
-                  tr('停止后已收到的不受影响，可以随时再点搜索继续。'),
-                ].join('\n')),
+                content: ValueListenableBuilder<int>(
+                    valueListenable: tick,
+                    builder: (_, __, ___) => Text(body())),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2, false),
@@ -4148,6 +4162,8 @@ class _Home extends State<SearchSection> {
                       onPressed: () => Navigator.pop(c2, true),
                       child: Text(tr('确认停止'))),
                 ]));
+    ticker.cancel();
+    tick.dispose();
     if (ok != true || !mounted) return;
     _seq++; // 在途请求全部作废
     setState(() {
