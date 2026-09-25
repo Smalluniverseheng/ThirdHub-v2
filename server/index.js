@@ -288,37 +288,41 @@ function loadSources() { try { return JSON.parse(fs.readFileSync(SOURCES_FILE, '
 function saveSources(s) { fs.writeFileSync(SOURCES_FILE, JSON.stringify(s, null, 2)); }
 let sources = loadSources();
 
-// 首启自动导入预置书源包(server/sources-preset/*.json, CI/手动放入)
+// 首启自动同步预置书源包(server/sources-preset/*.json, CI/手动放入)
 // ★2026-09-25 修复「预置源包一次也进不来」（内容线「能搜、但永远没有结果」的机械成因之一）：
 //   旧判据是 `sources.length > 0 return` —— 而首启就会从本目录导入一份**占位演示源**
 //   (demo.json)，sources 立刻非空，于是此后无论往本目录补多少真实源包都**永久不再导入**。
 //   实测后果：家庭后端 sources 只有 1 条演示源，engine.search() 对它 **0 条结果**（可用率 0%）。
-//   新判据：按「包文件名 + 条目数」记标记（data/preset-imported.json），包**有变化**才增量导入；
-//   包没变就不动 —— 用户自己删掉的源不会被每次重启塞回来。
+//   改法一：按包**内容哈希**记标记（data/preset-imported.json），包有变化才同步；包没变就不动
+//          —— 用户自己删掉的源不会被每次重启塞回来。
+//  ★改法二（同一轮补的，否则上一改变形同虚设）：**加撤销通道**。
+//   导入原本「只增不减」→ 把烂源从包里剔掉后，老安装里那条烂源**照样 enabled**，
+//   换包只是又追加几条新源。净化源包必须同时能**停用**被剔掉的源，否则等于没改。
+//   纯逻辑在 ./preset-sync.js（可单测：test_preset_sync.cjs），这里只负责读写文件。
 (function importPreset() {
   const presetDir = path.join(__dirname, 'sources-preset');
   if (!fs.existsSync(presetDir)) return;
   const MARK_FILE = path.join(DATA, 'preset-imported.json');
   let mark = {};
   try { mark = JSON.parse(fs.readFileSync(MARK_FILE, 'utf8')); } catch (e) {}
-  let added = 0;
   try {
     const files = fs.readdirSync(presetDir).filter(f => f.endsWith('.json'));
+    const entries = [];
     for (const f of files) {
-      const arr = JSON.parse(fs.readFileSync(path.join(presetDir, f), 'utf8'));
+      const text = fs.readFileSync(path.join(presetDir, f), 'utf8');
+      const arr = JSON.parse(text);
       const list = Array.isArray(arr) ? arr : (arr.sources || []);
-      if (mark[f] === list.length) continue;          // 包未变化 → 跳过，尊重用户删改
-      for (const item of list) {
-        if (item.bookSourceUrl && item.bookSourceName && !sources.some(x => x.bookSourceUrl === item.bookSourceUrl)) {
-          sources.push({ ...item, enabled: true });
-          added++;
-        }
-      }
-      mark[f] = list.length;
+      entries.push({ file: f, text, list, revoked: (arr && arr.revoked) || [] });
+    }
+    const plan = require('./preset-sync').planPresetSync(sources, entries, mark);
+    if (plan.changed.length) {
+      sources = plan.sources;
+      saveSources(sources);
+      for (const n of plan.notes || []) console.log('[preset] ' + n);
+      console.log(`[preset] 同步 ${plan.changed.join(', ')}: +${plan.added} 条, 停用 ${plan.disabled} 条, 恢复 ${plan.restored} 条, 现有 ${sources.length} 条`);
+      try { fs.writeFileSync(MARK_FILE, JSON.stringify(plan.state)); } catch (e) {}
     }
   } catch (e) { console.log('[preset] 导入跳过:', e.message); }
-  if (added) { saveSources(sources); console.log(`[preset] 预置书源导入: +${added} 条，现有 ${sources.length} 条`); }
-  try { fs.writeFileSync(MARK_FILE, JSON.stringify(mark)); } catch (e) {}
 })();
 
 // ─── 内置演示书源(若空则提示导入; 不内置具体源, 见 sources/ 目录导入) ───
