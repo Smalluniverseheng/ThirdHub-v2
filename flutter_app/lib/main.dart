@@ -2402,8 +2402,8 @@ class _Pf extends State<ProfilePage> {
                               backgroundColor: Colors.white,
                               foregroundColor: scheme.primary),
                           icon: const Icon(Icons.login, size: 17),
-                          label: const Text('登录 / 注册',
-                              style: TextStyle(
+                          label: Text(tr('登录 / 注册'),
+                              style: const TextStyle(
                                   fontSize: 13, fontWeight: FontWeight.w600)),
                           onPressed: () => Navigator.push(context,
                                       smoothRoute(const ProfileSubPage()))
@@ -9384,8 +9384,9 @@ class _At extends State<AccountTile> {
           await PeerHubRuntime.refresh();
         } catch (_) {}
         if (mounted)
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('已通过${winner.key}自动连接后端')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(tr('已通过{{n}}自动连接后端')
+                  .replaceAll('{{n}}', winner.key))));
       }
     } catch (_) {}
   }
@@ -9397,9 +9398,9 @@ class _At extends State<AccountTile> {
         ListTile(
             dense: true,
             leading: const Icon(Icons.login, size: 20),
-            title: const Text('登录 / 注册', style: TextStyle(fontSize: 13)),
-            subtitle: const Text('ThirdHub 账号 · 与网页版同一体系',
-                style: TextStyle(fontSize: 10)),
+            title: Text(tr('登录 / 注册'), style: const TextStyle(fontSize: 13)),
+            subtitle: Text(tr('ThirdHub 账号 · 与网页版同一体系'),
+                style: const TextStyle(fontSize: 10)),
             trailing: busy
                 ? const SizedBox(
                     width: 18,
@@ -9413,8 +9414,8 @@ class _At extends State<AccountTile> {
                 alignment: Alignment.centerLeft,
                 child: GestureDetector(
                     onTap: busy ? null : () => _auth(false),
-                    child: const Text('没有账号？点这里注册',
-                        style: TextStyle(
+                    child: Text(tr('没有账号？点这里注册'),
+                        style: const TextStyle(
                             fontSize: 11, color: Colors.blueAccent))))),
         Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -9422,16 +9423,16 @@ class _At extends State<AccountTile> {
             decoration: BoxDecoration(
                 color: Colors.blueAccent.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(10)),
-            child: const Row(
+            child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.person_outline,
+                  const Icon(Icons.person_outline,
                       size: 16, color: Colors.blueAccent),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                       child: Text(
-                          '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)',
-                          style: TextStyle(
+                          tr('当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)'),
+                          style: const TextStyle(
                               fontSize: 10,
                               height: 1.6,
                               color: Colors.blueAccent))),

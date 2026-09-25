@@ -157,6 +157,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'Système (chinois par défaut)',
     '默认跟随系统': 'Suit le système par défaut',
     '全部更新历史': 'Tout l\'historique des mises à jour',
+    '端网': 'Hub de pairs',
+    '登录 / 注册': 'Connexion / Inscription',
+    'ThirdHub 账号 · 与网页版同一体系': 'Compte ThirdHub · même système que la version web',
+    '没有账号？点这里注册': 'Pas de compte ? Touchez ici pour vous inscrire',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Mode invité : lecture locale + bibliothèque LAN disponibles.\nConnectez-vous pour débloquer la synchro cloud et l\'accès distant (IPv6/tunnel).',
+    '已通过{{n}}自动连接后端': 'Connexion automatique au serveur via {{n}}',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -303,6 +309,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'Система (по умолчанию китайский)',
     '默认跟随系统': 'По умолчанию следует системе',
     '全部更新历史': 'Вся история обновлений',
+    '端网': 'Хаб узлов',
+    '登录 / 注册': 'Вход / Регистрация',
+    'ThirdHub 账号 · 与网页版同一体系': 'Аккаунт ThirdHub · та же система, что и в вебе',
+    '没有账号？点这里注册': 'Нет аккаунта? Нажмите, чтобы зарегистрироваться',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Гостевой режим: локальное воспроизведение + библиотека в LAN.\nВойдите, чтобы открыть облачную синхронизацию и удалённый доступ (IPv6/туннель).',
+    '已通过{{n}}自动连接后端': 'Автоподключение к серверу через {{n}}',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -450,6 +462,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'Sistema (chino por defecto)',
     '默认跟随系统': 'Sigue el sistema por defecto',
     '全部更新历史': 'Todo el historial de actualizaciones',
+    '端网': 'Hub de pares',
+    '登录 / 注册': 'Iniciar sesión / Registrarse',
+    'ThirdHub 账号 · 与网页版同一体系': 'Cuenta ThirdHub · mismo sistema que la web',
+    '没有账号？点这里注册': '¿Sin cuenta? Toca aquí para registrarte',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Modo invitado: reproducción local + biblioteca LAN disponibles.\nInicia sesión para desbloquear la sincronización en la nube y el acceso remoto (IPv6/túnel).',
+    '已通过{{n}}自动连接后端': 'Conexión automática al servidor vía {{n}}',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -597,6 +615,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'النظام (الصينية افتراضيًا)',
     '默认跟随系统': 'يتبع النظام افتراضيًا',
     '全部更新历史': 'كل سجل التحديثات',
+    '端网': 'مِحوّل الأقران',
+    '登录 / 注册': 'تسجيل الدخول / إنشاء حساب',
+    'ThirdHub 账号 · 与网页版同一体系': 'حساب ThirdHub · نفس نظام نسخة الويب',
+    '没有账号？点这里注册': 'ليس لديك حساب؟ اضغط هنا للتسجيل',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'وضع الضيف: تشغيل محلي + مكتبة الشبكة المحلية متاحة.\nسجّل الدخول لفتح المزامنة السحابية والوصول عن بُعد (IPv6/نفق).',
+    '已通过{{n}}自动连接后端': 'تم الاتصال التلقائي عبر {{n}}',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -654,6 +678,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'System (Chinese by default)',
     '默认跟随系统': 'Follows the system by default',
     '全部更新历史': 'All update history',
+    '端网': 'Peer hub',
+    '登录 / 注册': 'Sign in / Sign up',
+    'ThirdHub 账号 · 与网页版同一体系': 'ThirdHub account · same system as the web app',
+    '没有账号？点这里注册': 'No account? Tap here to sign up',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Guest mode: local playback + LAN library available.\nSign in to unlock cloud sync and remote access (IPv6/tunnel).',
+    '已通过{{n}}自动连接后端': 'Auto-connected to the backend via {{n}}',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -712,6 +742,12 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '跟随系统(默认中文)': 'システム（既定は中国語）',
     '默认跟随系统': '既定でシステムに従う',
     '全部更新历史': '全更新履歴',
+    '端网': 'ピアハブ',
+    '登录 / 注册': 'ログイン / 登録',
+    'ThirdHub 账号 · 与网页版同一体系': 'ThirdHubアカウント · Web版と共通体系',
+    '没有账号？点这里注册': 'アカウントなし？ここをタップして登録',
+    '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': '現在ゲストモード：ローカル再生 + LANライブラリが利用可能。\nログインでクラウド同期とリモート接続(IPv6/トンネル)を解放。',
+    '已通过{{n}}自动连接后端': '{{n}}でバックエンドに自動接続しました',
   },
 
 };
