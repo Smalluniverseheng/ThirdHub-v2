@@ -1772,6 +1772,21 @@ class _Home extends State<SearchSection> {
   bool _more = false;                      // 正在取下一页
   String _engType = 'all';                 // 当前搜索的引擎类型（all / novel / …）
   String _engQuery = '';
+  // ── ★本轮新增：自动续拉 + 可中断（用户反馈「引擎几千本，前端只收到二十几本」）──
+  //
+  // 旧行为有两处叠加，导致引擎明明扫到几千条、前端只显示几十条：
+  //   ① 首屏只取 page=1（`_pageSize`=40 条），**不会自己继续** —— 必须用户滑到底、
+  //      再点一次「向引擎加载更多」，取一页停一次；
+  //   ② 渲染窗口 `_shown` 初始 40，`_engGroup` 里 `all.take(_shown)` →
+  //      就算拉回来 3000 条，也只画 40 条，看起来还是「只有二十几本」。
+  // 现在改成：首屏回来就**自动连续翻页**直到 `_engHasMore` 为假或用户停止，
+  // 并把结果**逐帧铺开**（每次 +_pumpStep 条）——既是用户要的「一条一条蹦出来」，
+  // 又不会一次性构建上千个 ListTile 把首帧卡死。
+  bool _autoPull = false;                  // 正在自动续拉
+  /// 逐帧铺开的步长（条/帧）。40 条/帧 ≈ 60fps 下每 0.1s 冒一批，观感是「持续在出」。
+  static const _pumpStep = 40;
+  /// 自动续拉的页间最小间隔（毫秒）：别把引擎打得太狠，也让结果"一点点来"。
+  static const _autoPullGap = 200;
   final ScrollController _scroll = ScrollController();
   @override void initState() {
     super.initState();
@@ -1835,6 +1850,65 @@ class _Home extends State<SearchSection> {
       engItems = [...?engItems, {...it, '_type': t}];
     }
   }
+  /// 把渲染窗口 `_shown` 逐帧撑到「已加载条数」—— 这就是用户要的「一条一条蹦出来」。
+  ///
+  /// 为什么不在 `_appendEng` 里直接把 `_shown` 设成 total：
+  /// 列表用的是 `ListView(children: [...])`（**非懒加载**），一次铺 3000 个 ListTile
+  /// 会把首帧卡死。分帧铺开既保住了观感，也保住了流畅度。
+  bool _pumping = false;
+  Future<void> _pumpShown() async {
+    if (_pumping) return;
+    _pumping = true;
+    try {
+      while (mounted) {
+        final total = engItems?.length ?? 0;
+        if (_shown >= total) break;
+        _shown = (_shown + _pumpStep).clamp(0, total);
+        setState(() {});
+        await Future.delayed(const Duration(milliseconds: 16)); // 一帧
+      }
+    } finally { _pumping = false; }
+  }
+  /// 自动续拉：首屏拿到后不等用户操作，自己把 `_engHasMore` 翻到没有为止。
+  ///
+  /// 退出条件有四个，缺一不可 —— 否则用户点了停止还会继续往上灌：
+  ///   ① 用户停止（`_autoPull` 被置假）；② 代次变了（`_seq` 不等 = 又发起了新搜索）；
+  ///   ③ 引擎说没有更多了；④ 组件已卸载。
+  Future<void> _autoPullLoop(int mySeq) async {
+    while (mounted && _autoPull && mySeq == _seq) {
+      if (!_engHasMore || !EngineDirect.connected) break;
+      if (_more) { await Future.delayed(const Duration(milliseconds: 80)); continue; }
+      await Future.delayed(const Duration(milliseconds: _autoPullGap));
+      if (!mounted || !_autoPull || mySeq != _seq) break;
+      final before = engItems?.length ?? 0;
+      await _loadMore();
+      if (!mounted || !_autoPull || mySeq != _seq) break;
+      // `_loadMore` 失败会把 `_engHasMore` 置假 → 下一轮 while 自然退出；
+      // 但引擎返回空页也会让 hasMore 变假，这里再兜一层「一条都没新增」就收工。
+      if ((engItems?.length ?? 0) == before) break;
+      unawaited(_pumpShown());
+    }
+    if (mounted && mySeq == _seq) setState(() => _autoPull = false);
+  }
+  /// 用户按「停止」：先确认再停（误触一次就不用重搜一整轮）。
+  ///
+  /// 停止 = `_seq++`（让所有在途请求回来时对不上代次、直接丢弃）+ `_autoPull=false`。
+  /// **已收到的结果全部保留** —— 停止是「不要再拉了」，不是「清空」。
+  Future<void> _askStop() async {
+    final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
+      title: const Text('停止搜索？'),
+      content: Text('已收到 ${engItems?.length ?? 0} 条'
+          '${_engTotal > 0 ? '（引擎共 $_engTotal 条）' : ''}。\n'
+          '停止后已收到的不受影响，可以随时再点搜索继续。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('继续搜索')),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('确认停止')),
+      ]));
+    if (ok != true || !mounted) return;
+    _seq++; // 在途请求全部作废
+    setState(() { _autoPull = false; _more = false; loading = false; _engHasMore = false; });
+    unawaited(_pumpShown()); // 把已经拿到的条目铺完（否则会停在半截）
+  }
   static String _typeKeyFromInt(Object? v) {
     final n = v is int ? v : int.tryParse('${v ?? ''}');
     return const {0: 'novel', 1: 'music', 2: 'comic', 4: 'video'}[n] ?? '';
@@ -1852,6 +1926,7 @@ class _Home extends State<SearchSection> {
     setState(() { loading = true; agg = null; engItems = []; _shown = _pageSize;
       _done.clear(); _failed.clear(); _ids.clear();
       _engPage = 0; _engTotal = 0; _engHasMore = false; _engTruncated = false;
+      _autoPull = false;   // 新一轮先停掉上一轮的续拉
       _engQuery = q; _engType = typeFilter == 0 ? 'all' : typeKeys[typeFilter]; });
     try {
       if (EngineDirect.connected) {
@@ -1869,7 +1944,10 @@ class _Home extends State<SearchSection> {
             _appendEng(p.items);
             _engPage = p.page; _engTotal = p.total;
             _engHasMore = p.hasMore; _engTruncated = p.truncated;
+            if (p.hasMore) _autoPull = true;   // ← 首屏之后自己接着拉，不等用户滑到底
           });
+          unawaited(_pumpShown());              // 首屏逐帧铺开
+          if (p.hasMore) unawaited(_autoPullLoop(mySeq));
         } else {
           final types = typeFilter == 0
               ? const ['novel', 'comic', 'video', 'music']
@@ -1906,7 +1984,10 @@ class _Home extends State<SearchSection> {
           '若长时间未发现，请到「我的 → 引擎直连」查看具体原因');
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('错误: $e'))); }
-    if (mounted) setState(() => loading = false); }
+    if (mounted) { setState(() => loading = false); unawaited(_pumpShown()); } }
+  /// 是否「正在搜索」——含首屏请求中与自动续拉中两段。
+  /// 搜索键的形态由它决定：搜索中转圈 → 变方块停止键（用户点名要的交互）。
+  bool get _searching => loading || _autoPull;
   Widget group(String title, List items, Widget Function(Map) tile, [IconData? ic]) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       child: Row(children: [
@@ -1923,7 +2004,9 @@ class _Home extends State<SearchSection> {
     final sb = StringBuffer('来自引擎「${EngineDirect.name}」');
     if (EngineDirect.version.isNotEmpty) sb.write(' v${EngineDirect.version}');
     sb.write(' · THP 直连 · 已返回 $loaded 条');
-    if (EngineDirect.supportsPaging && _engTotal > loaded) sb.write(' / 引擎共 $_engTotal 条');
+    if (EngineDirect.supportsPaging && _engTotal > loaded) {
+      sb.write(' / 引擎共 $_engTotal 条${_autoPull ? '，继续拉取中…' : '（已停，可继续）'}');
+    }
     if (!EngineDirect.supportsPaging) {
       final done = _done.length;
       if (done < _typeTotal && loading) sb.write('（$done/$_typeTotal 类已回，其余搜索中…）');
@@ -1963,9 +2046,16 @@ class _Home extends State<SearchSection> {
             prefixIcon: const Icon(Icons.search),
             isDense: true, filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none)))),
       const SizedBox(width: 8),
-      FilledButton(onPressed: loading ? null : go, child: loading
-        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-        : Text(tr('搜索')))])),
+      // ★搜索中 → 变成「停止」方块键（用户给的参照：像 AI 对话框那样，转圈变方块，
+      //   点一下先弹确认再停）。不按停止就一直把引擎拉到的东西往前端灌。
+      if (_searching)
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+          onPressed: _askStop,
+          icon: const Icon(Icons.stop_rounded, size: 18),
+          label: const Text('停止'))
+      else
+        FilledButton(onPressed: go, child: Text(tr('搜索')))])),
     Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 4), child: Align(alignment: Alignment.centerLeft,
       child: Wrap(spacing: 6, children: [
         for (var i = 0; i < typeNames.length; i++) ChoiceChip(
@@ -1992,7 +2082,7 @@ class _Home extends State<SearchSection> {
             Icon(Icons.circle, size: 8, color: col), const SizedBox(width: 5),
             Text(txt, style: TextStyle(fontSize: 10, color: col)) ]));
       }))),
-    if (loading) const LinearProgressIndicator(),
+    if (_searching) const LinearProgressIndicator(),
     Expanded(child: ListView(controller: _scroll, children: [
       if (engItems != null) ...[
         Padding(padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
@@ -2014,11 +2104,23 @@ class _Home extends State<SearchSection> {
                 style: const TextStyle(fontSize: 12))))),
         if (_engHasMore && engItems!.length <= _shown)
           Padding(padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Center(child: _more
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : TextButton(onPressed: _loadMore,
-                  child: Text('向引擎加载更多${_engTotal > 0 ? '（已 $_shown/${_engTotal} 条）' : ''}',
-                    style: const TextStyle(fontSize: 12))))),
+            child: Center(child: _autoPull
+              // 自动续拉中：显示进度 + 就地给一个停止出口（不必回顶栏找）
+              ? Column(mainAxisSize: MainAxisSize.min, children: [
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 8),
+                    Text('正在继续拉取${_engTotal > 0 ? '（${engItems!.length}/$_engTotal 条）' : ''}…',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)) ]),
+                  TextButton(onPressed: _askStop,
+                    child: const Text('停止', style: TextStyle(fontSize: 12))),
+                ])
+              : _more
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(
+                    onPressed: () { setState(() => _autoPull = true); unawaited(_autoPullLoop(_seq)); },
+                    child: Text('向引擎加载更多${_engTotal > 0 ? '（已 ${engItems!.length}/$_engTotal 条）' : ''}',
+                      style: const TextStyle(fontSize: 12))))),
       ],
       if (agg == null && engItems == null && history.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
