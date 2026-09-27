@@ -29,6 +29,8 @@ import 'package:path_provider/path_provider.dart';
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/local_tools.dart';
+import 'core/manual_book.dart';
+import 'core/module_shell.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
 import 'core/recents.dart';
@@ -46,6 +48,7 @@ import 'core/mini_modules11.dart';
 import 'core/neu.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/module_registry.dart';
 import 'core/changelog.dart';
 import 'core/media_formats.dart';
 import 'core/local_import.dart';
@@ -1565,9 +1568,7 @@ class _Ob extends State<OnboardingPage> {
   ];
   Future<void> finish() async {
     final p = await SharedPreferences.getInstance();
-    final list = kModules.keys.where((k) => _mods.contains(k)).toList();
-    if (!list.contains('我的')) list.add('我的');
-    await p.setStringList('nav_modules', list);
+    await saveNavModules(kModules.keys.where((k) => _mods.contains(k)).toList());
     await p.setBool('first_run', true);
     if (mounted)
       runApp(ThApp(
@@ -5170,6 +5171,10 @@ class _Sh extends State<ShelfPage> {
   List<Book> items = [];
   List<Map<String, dynamic>> local = [];
   bool loading = true;
+
+  /// 内置《使用说明书》种子条目（仅小说书架）：每次都注入、不持久化、不可删除。
+  /// 用户需求(2026-09-27)：「书架那里默认进去就拥有的使用说明书」。
+  Book? manual;
   @override
   void initState() {
     super.initState();
@@ -5178,6 +5183,10 @@ class _Sh extends State<ShelfPage> {
 
   Future<void> load() async {
     items = await Book.shelf(widget.kind);
+    if (widget.kind == 'novel') {
+      manual = Book(ManualBook.title, ManualBook.author, '', ManualBook.intro,
+          ManualBook.bookUrl, ManualBook.sourceId);
+    }
     // 本地导入的书直接进书架(点按即读, 不经过后端/引擎)
     if (widget.kind == 'novel') {
       try {
@@ -5219,35 +5228,39 @@ class _Sh extends State<ShelfPage> {
 
   // 番茄式网格书架: 封面大图 + 书名 + 阅读进度
   @override
-  Widget build(BuildContext c) => loading
-      ? const Center(child: CircularProgressIndicator())
-      : (items.isEmpty && local.isEmpty)
-          ? Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.auto_stories_outlined,
-                  size: 56, color: Colors.grey.withValues(alpha: 0.5)),
-              const SizedBox(height: 10),
-              Text(tr('书架为空'),
-                  style: const TextStyle(color: Colors.grey, fontSize: 14)),
-              const SizedBox(height: 4),
-              Text(
-                  widget.kind == 'novel'
-                      ? tr('搜索后进入详情页点书签加入, 或从模块菜单导入本地小说')
-                      : tr('搜索后进入详情页, 点书签图标加入'),
-                  style: const TextStyle(color: Colors.grey, fontSize: 11)),
-            ]))
-          : GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 0.52,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12),
-              itemCount: local.length + items.length,
-              itemBuilder: (_, i) {
-                // 前段: 本地导入的书(仅小说模块)
-                if (i < local.length) {
-                  final lb = local[i];
+  Widget build(BuildContext c) {
+    final mOff = manual != null ? 1 : 0; // 说明书占第一格
+    return loading
+        ? const Center(child: CircularProgressIndicator())
+        : (mOff == 0 && items.isEmpty && local.isEmpty)
+            ? Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.auto_stories_outlined,
+                    size: 56, color: Colors.grey.withValues(alpha: 0.5)),
+                const SizedBox(height: 10),
+                Text(tr('书架为空'),
+                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(
+                    widget.kind == 'novel'
+                        ? tr('搜索后进入详情页点书签加入, 或从模块菜单导入本地小说')
+                        : tr('搜索后进入详情页, 点书签图标加入'),
+                    style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              ]))
+            : GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.52,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12),
+                itemCount: mOff + local.length + items.length,
+                itemBuilder: (_, i) {
+                  // 第一格: 内置使用说明书(不可删除, 点开即读)
+                  if (mOff == 1 && i == 0) return _manualCell(c);
+                  // 中段: 本地导入的书(仅小说模块)
+                  if (i < mOff + local.length) {
+                    final lb = local[i - mOff];
                   final prog =
                       AppSettings.p.getInt('progress_local_${lb['path']}') ??
                           -1;
@@ -5350,7 +5363,7 @@ class _Sh extends State<ShelfPage> {
                                     fontSize: 10, color: Colors.grey)),
                           ]));
                 }
-                final b = items[i - local.length];
+                final b = items[i - mOff - local.length];
                 final prog =
                     AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
                 return GestureDetector(
@@ -5449,6 +5462,88 @@ class _Sh extends State<ShelfPage> {
                                   fontSize: 10, color: Colors.grey)),
                         ]));
               });
+  }
+
+  /// 内置《使用说明书》格子：点开即读，长按只做说明（无删除）。
+  Widget _manualCell(BuildContext c) {
+    final b = manual!;
+    return GestureDetector(
+        onTap: () => Navigator.push(
+                c,
+                MaterialPageRoute(
+                    builder: (_) => NovelReadPage(
+                        sourceId: ManualBook.sourceId,
+                        chapters: ManualBook.chapters(),
+                        index: 0,
+                        bookName: b.name,
+                        bookUrl: ManualBook.bookUrl)))
+            .then((_) => load()),
+        onLongPress: () => showDialog<void>(
+            context: c,
+            builder: (c2) => AlertDialog(
+                    title: const Text('内置说明书'),
+                    content: const Text('这本《使用说明书》随应用内置，'
+                        '介绍本站的用法与常见问题。\n\n它永远在书架第一位，不可删除。'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(c2),
+                          child: const Text('知道了'))
+                    ])),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+              child: Container(
+                  decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.14),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3))
+                      ]),
+                  child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Stack(fit: StackFit.expand, children: [
+                        Container(
+                            decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [Color(0xFF2EBD85), Color(0xFF56C6A9)])),
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.menu_book,
+                                size: 40, color: Colors.white)),
+                        Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 3),
+                                decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                      Colors.transparent,
+                                      Colors.black54
+                                    ])),
+                                child: const Text('内置 · 使用说明',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.white)))),
+                      ])))),
+          const SizedBox(height: 4),
+          Text(b.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w500, height: 1.2)),
+          const Text('点开即读 · 不可删除',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: Colors.grey)),
+        ]));
+  }
+
   Widget _coverFallback(Book b) {
     const palette = [
       [0xFF5B7FFF, 0xFF8E5BFF],
@@ -5620,6 +5715,11 @@ class NovelReadPage extends StatelessWidget {
       bookName: bookName,
       bookUrl: bookUrl,
       fetchContent: (sid, url) async {
+        // 内置使用说明书: 正文在包里, 不走网络
+        if (sourceId == ManualBook.sourceId) {
+          final t = ManualBook.textOf(url);
+          return {'text': t, 'content': t};
+        }
         if (sourceId == 'engine') {
           // 引擎直连书: 正文走 THP /thp/content (text/content 字段归一)
           final d = await EngineDirect.content('novel', bookUrl, url);
@@ -5638,6 +5738,7 @@ class NovelReadPage extends StatelessWidget {
         return Map<String, dynamic>.from(r['data'] ?? {});
       },
       onProgress: (i, name) async {
+        if (sourceId == ManualBook.sourceId) return; // 内置书不上报进度
         try {
           await http.post(Uri.parse('${Api.base}/v1/reading-progress'),
               headers: {
@@ -7956,15 +8057,7 @@ final Map<String, ModuleDef> kModules = {
           children: ['通讯录备份', '短信备份'])),
 };
 
-// ═══ 模块改名映射(旧键 → 新键) ═══
-// ★为什么必须有这张表：nav_modules 里存的是**模块键**。直接改键会让老用户
-//   底部导航里那个模块被 `where(kModules.containsKey)` 过滤掉 —— 表现为
-//   "升级后模块凭空消失"。所有键改名都必须在这里登记，读取时先迁移再校验。
-const Map<String, String> kModuleRenames = {
-  '作业中心': '自动化任务',
-  '学习工具': '记忆卡',
-  '天气快递': '天气与快递',
-};
+// ═══ 模块改名映射(旧键 → 新键) —— 已移入 core/module_registry.dart（键域规范化归注册表管）═══
 
 // ═══ 模块分类(导航栏管理树状分组用) ═══
 const kCatOrder = ['核心', '内容', '生活', '效率', '家庭', '实验室'];
@@ -7989,18 +8082,35 @@ const Map<String, String> kModuleCats = {
 };
 String moduleCat(String k) => kModuleCats[k] ?? '其他';
 
-/// 把持久化的模块键列表迁到当前键名（改过名的模块不会丢）。
-List<String> migrateModuleKeys(Iterable<String> raw) {
-  final out = <String>[];
-  for (final k in raw) {
-    final n = kModuleRenames[k] ?? k;
-    if (!out.contains(n)) out.add(n);
-  }
-  return out;
+/// 模块布局唯一写入口（第二十三轮互通层）：写 nav_modules + 维护 read 组子集记忆
+/// （网页「阅读」板块 ⇄ App 五个内容模块的组开关语义靠它展开）+ 通知根导航重载
+/// + 触发云上行（防抖 800ms，见 Cloud.navLayoutChanged）。所有改导航布局的地方
+/// 都必须走这里 —— 直接 setStringList('nav_modules') 会漏掉上行与子集记忆，
+/// 表现为「本机改了、网页端看不到」。
+Future<void> saveNavModules(List<String> raw) async {
+  final list = migrateModuleKeys(raw);
+  if (!list.contains('我的')) list.add('我的');
+  final p = await SharedPreferences.getInstance();
+  await p.setStringList('nav_modules', list);
+  await p.setStringList(
+      'nav_read_group', list.where(kReadGroupAppKeys.contains).toList());
+  RootNav.navTick.value++;
+  Cloud.navLayoutChanged();
 }
 
-// ═══ 聚合模块页: 一个入口装一类子模块, 点进子模块单独开页 ═══
-class ModuleHubPage extends StatelessWidget {
+// ═══ 聚合模块页（★R17 升级：一个入口 = 一个小应用，自带独立导航栏）═══
+//
+// 用户原话（2026-09-27）：「很多模块应该做到同一个大模块里面，而不是分成特别小
+// 的那种根本没有用的模块」「他们里面还可以有他们独立的导航栏」。
+//
+// 改造前：聚合页只是一个"宫格跳板" —— 点一个子功能就 push 一个带 AppBar 的新页，
+//   视觉上等于"又开了一个新模块"，用户完全感觉不到"我还在同一个模块里"。
+// 改造后：聚合页自己就是一个小应用 ——
+//   · 顶部一排**模块自己的导航栏**（总览 / 子功能 A / 子功能 B …）
+//   · 子功能就地作为标签页展开，不再 push 新页；来回切都在同一模块内
+//   · 子功能页面里再 push 出来的更深页面，仍由模块自己的 Navigator 栈承接
+//     （见 core/module_shell.dart），返回也是先回本模块、再谈换模块/退出
+class ModuleHubPage extends StatefulWidget {
   final String name;
   final IconData icon;
   final String desc;
@@ -8012,41 +8122,85 @@ class ModuleHubPage extends StatelessWidget {
       required this.desc,
       required this.children});
   @override
+  State<ModuleHubPage> createState() => _HubState();
+}
+
+class _HubState extends State<ModuleHubPage> {
+  int _i = 0;
+  // 懒建：把 10 个子功能一次性塞进 IndexedStack，会让"打开工具箱"这一下
+  // 立刻初始化 10 个页面（天气/传感器那类会马上发网络请求、申请权限）。
+  // 只建"访问过的" —— 与 PageView 的 keep-alive 是同一个道理。
+  final Set<int> _built = <int>{0};
+
+  List<String> get _ks => [
+        for (final k in widget.children)
+          if (kModules.containsKey(k)) k
+      ];
+
+  void _jump(int i) {
+    if (i == _i) return;
+    setState(() {
+      _i = i;
+      _built.add(i);
+    });
+  }
+
+  @override
   Widget build(BuildContext c) {
     final accent = Theme.of(c).colorScheme.primary;
-    return ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
-      Card(
-          child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(children: [
-                Icon(icon, size: 22, color: accent),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Text(desc,
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.grey))),
-              ]))),
-      const SizedBox(height: 10),
-      GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount:
-              (MediaQuery.of(c).size.width / 110).floor().clamp(3, 6),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1.15,
-          children: [
-            for (final k in children)
-              if (kModules.containsKey(k))
+    final ks = _ks;
+    final labels = <String>[
+      tr('总览'),
+      for (final k in ks) tr(kModules[k]!.name)
+    ];
+    final icons = <IconData?>[
+      widget.icon,
+      for (final k in ks) kModules[k]!.icon
+    ];
+    return Column(children: [
+      ModuleNavBar(
+          labels: labels, icons: icons, index: _i, onTap: _jump),
+      Expanded(
+          child: IndexedStack(index: _i, children: [
+        _overview(c, ks, accent),
+        for (var n = 0; n < ks.length; n++)
+          _built.contains(n + 1)
+              ? kModules[ks[n]]!.page
+              : const SizedBox.shrink(),
+      ])),
+    ]);
+  }
+
+  Widget _overview(BuildContext c, List<String> ks, Color accent) =>
+      ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(children: [
+                  Icon(widget.icon, size: 22, color: accent),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: Text(widget.desc,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey))),
+                ]))),
+        const SizedBox(height: 10),
+        GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount:
+                (MediaQuery.of(c).size.width / 110).floor().clamp(3, 6),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.15,
+            children: [
+              for (var n = 0; n < ks.length; n++)
                 () {
-                  final m = kModules[k]!;
+                  final m = kModules[ks[n]]!;
                   return InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.push(
-                          c,
-                          smoothRoute(Scaffold(
-                              appBar: AppBar(title: Text(tr(m.name))),
-                              body: m.page))),
+                      // 就地切标签，不再 push 新页 —— 这就是"合进同一个大模块"
+                      onTap: () => _jump(n + 1),
                       child: Card(
                           margin: EdgeInsets.zero,
                           child: Column(
@@ -8060,9 +8214,8 @@ class ModuleHubPage extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis),
                               ])));
                 }()
-          ]),
-    ]);
-  }
+            ]),
+      ]);
 }
 
 // ★2026-09-19 「敬请期待」占位页与模块骨架页(ModuleScaffoldPage)已全部退役:
@@ -8096,6 +8249,13 @@ class _RootNavState extends State<RootNav> {
   // 它们只服务于 4.44.0 的 NavSwipeRecognizer（模块间横滑）——功能被用户硬性禁止后，
   // 跟手驱动整条链路（_swDragTo / _swSettle）一并移除，导航层不再碰横向手势。
   final ScrollController _navScroll = ScrollController();
+  // ★R17（2026-09-27）「模块即独立应用」的两个字段。
+  //   _modNav    : 当前模块自己的 Navigator 栈（见 core/module_shell.dart）。
+  //   _modHistory: 模块**访问历史**（不是模块列表顺序）。用户在「小说」里侧滑返回，
+  //                期望回到"上一个打开过的模块"，而不是列表里的前一个 —— 这两者在
+  //                底栏顺序被用户自定义过之后完全不是一回事。
+  final GlobalKey<NavigatorState> _modNav = GlobalKey<NavigatorState>();
+  final List<int> _modHistory = <int>[];
   // 沉浸式模块: 自带页头(浏览器=地址栏, 相册=相册条), 隐藏系统顶栏
   static const _noAppBarModules = {'浏览器', '相册'};
   // 全沉浸模块: 连底部导航也隐藏(屏幕留给正文, 通过模块宫格返回)
@@ -8289,9 +8449,7 @@ class _RootNavState extends State<RootNav> {
     if (i < 0) {
       // 该模块还没在用户导航栏里 → 自动加入(排在"我的"之前)并持久化
       try {
-        final p = await SharedPreferences.getInstance();
-        final list = [...enabled.where((e) => e != '我的'), k, '我的'];
-        await p.setStringList('nav_modules', list);
+        await saveNavModules([...enabled.where((e) => e != '我的'), k]);
       } catch (_) {}
       await _load();
       if (!mounted) return;
@@ -8427,12 +8585,23 @@ class _RootNavState extends State<RootNav> {
   void _goNow(int i, {bool animate = false}) {
     HapticFeedback.selectionClick(); // 切换模块轻微震动
     if (i == idx) return;
+    // 记模块访问历史（供侧滑返回"回到上一个模块"用）。放在 setState 之前：
+    // 一旦这里抛异常也不该把"历史已写、idx 未变"这种自相矛盾的状态留下来。
+    _modHistory.add(idx);
+    if (_modHistory.length > 20) _modHistory.removeAt(0);
     setState(() {
       idx = i;
       RootNav.currentModuleKey = enabled[i];
     });
     _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
     AppLog.module('打开模块', d: {'module': enabled[i]});
+    // ★R17 切模块时把模块栈收回到底：否则「AI 调 goto_module 切模块」之类的
+    //   程序化切换会把上一个模块里 push 的子页面留在栈上，新模块的首页被压在
+    //   它下面 —— 用户看到的是"切过去了但页面还是旧的"。
+    final mn = _modNav.currentState;
+    if (mn != null && mn.canPop()) {
+      mn.popUntil((Route<dynamic> r) => r.isFirst);
+    }
     _armAutoFs();
     _syncContext(); // 上下文注入：模块变了，快照跟着变
     if (!_page.hasClients) return;
@@ -8452,8 +8621,67 @@ class _RootNavState extends State<RootNav> {
   // 松手结算"），随 NavSwipeRecognizer 一起移除。留这段说明是给未来的读者：
   // 若哪天有人想"重新加上左右滑动切模块"，请先回去读 AppSettings.navSwipe 上面的
   // 用户原话 —— 那是**明确禁止**，不是"待实现的愿望"。
+
+  // ═══ ★R17 返回语义（"我明明是要返回上一步，你却退出整个软件"的正面修复）═══
+  //
+  // 顺序**必须**是这个顺序，换一下就退回老行为：
+  //   ① 模块自己的 Navigator 栈能 pop   → pop（模块内回上一级）
+  //   ② 模块注册的 ModuleBackHook 能消费 → 消费（分段行/子标签这类"非路由的上一级"）
+  //   ③ 模块访问历史非空                → 回到上一个打开过的模块
+  //   ④ 到了「我的」/首个模块            → 才允许真正退出 App
+  // ①②③ 任何一步成功都不该退出 App —— 这正是用户抱怨的那件事。
+  bool _backOne() {
+    final mn = _modNav.currentState;
+    if (mn != null && mn.canPop()) {
+      mn.pop();
+      return true;
+    }
+    final key = enabled.isEmpty ? '' : enabled[idx.clamp(0, enabled.length - 1)];
+    if (key.isNotEmpty && ModuleBackHook.tryBack(key)) return true;
+    while (_modHistory.isNotEmpty) {
+      final prev = _modHistory.removeLast();
+      if (prev == idx) continue;
+      if (prev < 0 || prev >= enabled.length) continue;
+      _goNow(prev);
+      return true;
+    }
+    // 历史用尽：退到「我的」（用户把它当作"App 首页"），没有「我的」就退到第 0 个。
+    var home = enabled.indexOf('我的');
+    if (home < 0) home = 0;
+    if (enabled.length > 1 && idx != home) {
+      _goNow(home);
+      return true;
+    }
+    return false; // 真到根部：交给系统退出
+  }
+
+  /// 每个模块的宿主外壳：独立 Navigator 栈 + 根路由上的返回拦截。
+  ///
+  /// PopScope 写在**嵌套 Navigator 之外**是刻意的 —— 它必须注册在 MaterialApp
+  /// 那条根路由上，才能收到系统侧滑/返回键；写进嵌套栈里就只能拦到模块内部。
+  Widget _moduleHost(Widget scaffold) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_backOne()) return;
+        SystemNavigator.pop(); // 只有走到这一步才是"用户真的要退出 App"
+      },
+      child: ModuleHost(navKey: _modNav, child: scaffold),
+    );
+  }
+
+  /// 唯一的出口：把模块主页整个放进「独立 Navigator 栈 + 根返回拦截」里。
   @override
-  Widget build(BuildContext c) {
+  Widget build(BuildContext c) => _moduleHost(_buildScaffold(c));
+
+  /// ★R17 原来的 build 原样搬到这里，一个字没改。
+  ///
+  /// 之所以不逐个给 build 里那 4 个 return 套 `_moduleHost(...)`：它们分散在
+  /// 「宽屏 NavigationRail / 悬浮球 / 折叠细条 / 普通底栏」四条分支上，
+  /// 逐个补右括号极易漏掉一个 —— **漏掉的那条分支就会退化成原来的
+  /// "侧滑直接退掉整个 App"**。改成"只有一个出口"，从结构上就不可能漏。
+  Widget _buildScaffold(BuildContext c) {
     ScreenFit.update(c);
     final key = enabled[idx];
     final fs = RootNav.fullscreen.value;
