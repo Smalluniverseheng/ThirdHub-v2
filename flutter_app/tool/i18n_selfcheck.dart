@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 为什么必须有这条闸门：**缺键回退是静默的**。
 //
-// 查找链是 `dict[当前语言][k] ?? dict['en'][k] ?? k`（i18n.dart 的 tr()）。
+// 查找链是 `zh 短路 → dict[当前语言][k] ?? dict['en'][k] ?? k`（i18n.dart 的 tr()）。
 // 也就是说：键在目标语言里没有 → 悄悄显示英文；目标语言和 en 都没有 → 悄悄
 // 显示中文原文。**两种都不报错、不崩、不留日志**，只有用户切了语言才发现
 // "怎么还是中文"。靠人眼在 200 个键 × 6 种语言里查，等于没查。
@@ -13,6 +13,13 @@
 // 2026-09-25 实测：有 18 个键（含本轮刚从硬编码改成 tr() 的
 // 「确认资源库指纹」「信任」）在**全部 6 种语言连 en 都缺** → 任何语言都显示
 // 中文；ja 另缺 29 个键。已全部补齐，本自检把结论钉死，防止再退化。
+//
+// ★2026-09-28 第二课（用户实测「选中文，界面全是英文」）：上面那条链**当时没有
+//   第一跳**（不是 `zh 短路 →`，而是直接从 `dict[当前语言]` 开始），而字典里
+//   没有 'zh' 块 ⇒ `dict['zh']` 为 null ⇒ 中文用户掉进 en 兜底。
+//   本自检当时**全绿**，因为它只断言字典形状（"zh 不作为字典块存在"），
+//   从没断言过"locale=zh 时 tr() 的输出是什么"。→ 已新增 §3.5 行为断言。
+//   结论：**形状断言不能替代行为断言**；"字典里有什么" ≠ "界面上显示什么"。
 //
 // 为什么不直接 `import '../lib/core/i18n.dart'`：
 //   i18n.dart 里有 `Widget segLabel(...) => Text(...)`，即**依赖 Flutter**；
@@ -33,7 +40,32 @@ void ck(String name, bool ok) {
 }
 
 /// 语言列表必须与 I18n.supported 一致（zh 是原文，不作为字典块存在）。
+///
+/// ★2026-09-28：这句「zh 是原文，不作为字典块存在」**既是事实、也正是那场事故的成因**——
+/// 当时把它当成"所以缺词会回落中文"，却没意识到兜底链会先撞上 en。详见 §3.5。
 const kLocales = ['en', 'ja', 'fr', 'ru', 'es', 'ar'];
+
+/// 取出 `i18n.dart` 里 `tr()` 的函数体原文（源码级断言用）。
+///
+/// 用**花括号配对**而不是正则 —— 函数体里有注释和嵌套块，贪婪正则会跨过函数尾巴。
+/// （因此往 `tr()` 的注释里写 `{` `}` 会干扰本函数，别写。）
+String? extractTrBody(String src) {
+  final i = src.indexOf('static String tr(');
+  if (i < 0) return null;
+  final b = src.indexOf('{', i);
+  if (b < 0) return null;
+  var depth = 0;
+  for (var j = b; j < src.length; j++) {
+    final ch = src[j];
+    if (ch == '{') {
+      depth++;
+    } else if (ch == '}') {
+      depth--;
+      if (depth == 0) return src.substring(b, j + 1);
+    }
+  }
+  return null;
+}
 
 /// 各语言字典键数的下限 —— 低于它说明**解析漏了整块**，而非"译文少"。
 /// 教训：第一版用 `'xx': {` 匹配，没认 `<String, String>{` 写法，
@@ -194,8 +226,54 @@ void main() {
     ck('$l 覆盖全部 ${used.length} 个 key', miss.isEmpty);
   }
 
-  // ── 4. 反向检查：字典里的键必须在源码里用过（防拼写漂移） ──
+  // ── 3.5 ★行为断言：查找链对每种语言必须给出**正确结果** ──
   //
+  // 为什么单列一段：上面 §3 查的是「字典里有没有这条译文」——那是**形状**，
+  // **查不出"查表逻辑本身把某种语言打穿了"**。2026-09-28 的线上真实缺陷正是后者：
+  //   字典里没有 'zh' 块 → `dict['zh']` 为 null → 兜底链掉到 `dict['en']`
+  //   → **用户选「中文」，整个界面显示英文**。
+  // 而当时本自检（含下面那条「zh 不作为字典块存在」）**全绿**：它只描述了形状，
+  // 从没描述过行为。教训：**形状断言不能替代行为断言。**
+  print('== 3.5 查找行为（zh 必须逐字回原文；其余语言不得静默空串） ==');
+
+  /// 复刻 `tr()` 的**期望语义**（不是实现）：原文语言直接回 key。
+  String expectTr(String locale, String k) {
+    if (locale == 'zh') return k;
+    final d = dict[locale];
+    return d?[k] ?? dict['en']?[k] ?? k;
+  }
+
+  // (a) 源码级：`tr()` 必须**显式短路中文**。删掉它 = 立刻回到"中文显示英文"。
+  final trBody = extractTrBody(mainSrc);
+  ck('能定位到 tr() 函数体（解析没跑偏）', trBody != null);
+  ck(
+      "tr() 里有中文短路（locale == 'zh' 且 return zh）",
+      trBody != null &&
+          RegExp(r"locale\s*==\s*'zh'").hasMatch(trBody) &&
+          RegExp(r'return\s+zh\s*;').hasMatch(trBody));
+
+  // (b) 反证：没有短路时中文必然被英文截胡 —— 证明 (a) 不是形式主义。
+  ck("反证：字典里确实没有 'zh' 块（所以只能靠短路，靠查表一定会拿到英文）",
+      !dict.containsKey('zh') && !d1.containsKey('zh') && !d2.containsKey('zh'));
+  final enHits = used.where((k) => dict['en']![k] != null).length;
+  ck('反证：en 能给 $enHits/${used.length} 个 key 出英文译文（缺短路时中文就会拿到这些）',
+      enHits >= used.length ~/ 2);
+
+  // (c) 行为矩阵：7 种语言 × 每个 key，结果都不得为空串
+  for (final l in ['zh', ...kLocales]) {
+    final blank = used.where((k) => expectTr(l, k).trim().isEmpty).toList()..sort();
+    if (blank.isNotEmpty) print('  [$l] 结果为空：${blank.take(8).join(' / ')}');
+    ck('$l：${used.length} 个 key 均有非空结果', blank.isEmpty);
+  }
+
+  // (d) 中文必须**逐字**等于 key（这是"选中文就该看到中文"的形式化表述）
+  final zhBad = used.where((k) => expectTr('zh', k) != k).toList()..sort();
+  if (zhBad.isNotEmpty) {
+    print('  [zh] 未逐字回原文，例：${zhBad.take(8).join(' / ')}');
+  }
+  ck('zh：全部 ${used.length} 个 key 逐字回中文原文', zhBad.isEmpty);
+
+  // ── 4. 反向检查：字典里的键必须在源码里用过（防拼写漂移） ──
   // 只对 en 做（en 是最全的基准）。字典里有、源码从来不用 → 多半是
   // key 拼错或源码那句文案被删了，属可清理项；这里只报告不判负。
   print('== 4. 反向检查（仅报告） ==');
@@ -210,5 +288,11 @@ void main() {
 
   print('');
   print('PASS $pass   FAIL $fail');
-  if (fail == 0) print('\n✅ i18n 字典完整：6 语言 × ${used.length} 键，无静默回退');
+  if (fail == 0) {
+    print('\n✅ i18n 字典完整：zh(原文短路) + 6 语言 × ${used.length} 键，无静默回退');
+  }
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (fail > 0) exit(1);
 }

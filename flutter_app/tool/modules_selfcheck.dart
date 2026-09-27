@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:thirdhub_app/core/lab_logic.dart';
+import 'dart:io';
 
 int _pass = 0;
 int _fail = 0;
@@ -596,4 +597,8 @@ void _print() {
   final fj = PrintJob(id: 'k', title: 'T', content: 'C', filePath: 'D:/a.pdf', ts: 9);
   final fj2 = PrintJob.from(jsonDecode(jsonEncode(fj.toJson())) as Map<String, dynamic>);
   _eq(fj2.filePath, 'D:/a.pdf', '本机文件路径往返');
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (_fail > 0) exit(1);
 }

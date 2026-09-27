@@ -10,6 +10,7 @@
 // 特别是**反向用例**（后端离线时必须直连、rev 小者不许覆盖、自己发的不该回收）。
 // ═══════════════════════════════════════════════════════════════════════════
 import 'package:thirdhub_app/core/peer_hub_logic.dart';
+import 'dart:io';
 
 int _pass = 0;
 int _fail = 0;
@@ -781,4 +782,8 @@ void main() {
   } else {
     print('\n✅ 全部通过');
   }
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (_fail > 0) exit(1);
 }

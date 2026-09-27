@@ -6,6 +6,7 @@
 // 覆盖：方向判定矩阵 / 一次性方向锁 / 松手结算 / 边界与夹取。
 // 重点回归用户报告的场景：在模块内**向上滑动**时被误判为左右切换模块。
 import '../lib/core/nav_swipe_logic.dart';
+import 'dart:io';
 
 int pass = 0, fail = 0;
 void ck(String name, bool ok) {
@@ -130,4 +131,8 @@ void main() {
   print('');
   print('PASS $pass   FAIL $fail');
   if (fail == 0) print('\n✅ 全部通过');
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (fail > 0) exit(1);
 }

@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:thirdhub_app/core/ai_agent.dart';
 import 'package:thirdhub_app/core/local_tools_logic.dart';
+import 'dart:io';
 
 int _pass = 0;
 int _fail = 0;
@@ -326,4 +327,8 @@ Future<void> main() async {
     for (final f in _fails) { print('  - $f'); }
   }
   print(_fail == 0 ? '\n\u2705 全部通过' : '\n\u274c 有失败');
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (_fail > 0) exit(1);
 }

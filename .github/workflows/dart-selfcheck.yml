@@ -19,6 +19,23 @@ name: dart-selfcheck
 #       这里以实测为准。agent_proto 的 PASS 行格式是「全部通过 191/191」，
 #       不是「PASS n FAIL n」，脚本汇总时要单独认。
 #
+# ★★2026-09-28 重大加固：这些自检此前**只会打印、不会拦**。
+#   本 workflow 跑的是 `dart run tool/x.dart`，**只看退出码**；而 10 个自检里
+#   有 8 个从不调用 `exit()` —— 于是 `print('FAIL 1')` 之后仍然 `return 0`，
+#   CI 一律 success。等于前九条闸门全是装饰。
+#   （怎么发现的：给 i18n 加行为断言后做**反证** —— 故意把 `tr()` 改回缺陷版，
+#     输出 `PASS 28 FAIL 1`，可 `$?` 仍是 0。若不看退出码，这次中文回退的
+#     真实缺陷会**再次被放行**。）
+#   已给 8 个脚本补 `if (<fail> > 0) exit(1);`，并逐条实测：
+#     绿 → exit 0；故意造一条失败 → exit 1。
+#   ⇒ 结论：**"打印了 FAIL" ≠ "闸门拦住了"**，判据必须是退出码。
+#
+#   十连实测（2026-09-28，全部 exit 0）：
+#     nav_swipe 57 · local_tools 135 · agent_proto 191 · modules 202 · agent 120
+#     · peer_hub 327 · changelog 52 · settings_bridge 111 · i18n **29** · module_registry 38
+#     → PASS 1262 / FAIL 0
+#   i18n 从 17 → 29：新增 §3.5「查找行为」断言（见下条说明）。
+#
 # 第 10 条 module_registry（2026-09-27 加）：
 #   为什么必须进 CI —— 09-27 实测 CI `build-apk` 红了整整一轮，
 #   根因是 `lib/core/module_registry.dart` **根本不在远端仓库**（main.dart 第 51 行
@@ -108,6 +125,6 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/settings_bridge_selfcheck.dart
 
-      - name: i18n（6 语言 × tr() 全键覆盖，防静默回退中文/英文）
+      - name: i18n（zh 短路 + 6 语言 × tr() 全键覆盖 + 查找行为断言）
         working-directory: flutter_app
         run: dart run tool/i18n_selfcheck.dart

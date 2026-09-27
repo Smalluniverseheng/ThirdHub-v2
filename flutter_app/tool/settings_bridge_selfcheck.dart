@@ -7,6 +7,7 @@
 //       覆盖率自洽，以及**一条反例回归**：证明"直接拿 38 个云端键读本机 prefs"必然全空
 //       —— 这正是「设置同步点了没反应」的机械成因。
 import '../lib/core/settings_bridge.dart';
+import 'dart:io';
 
 int pass = 0, fail = 0;
 void ck(String name, bool ok) {
@@ -336,4 +337,8 @@ void main() {
   print('');
   print('PASS $pass   FAIL $fail');
   if (fail == 0) print('\n✅ 全部通过');
+  /* ★失败必须让进程**非零退出**：CI 的 dart-selfcheck 只看退出码，
+     只打印 FAIL 而 return 0 的话，闸门形同虚设（2026-09-28 实测：
+     8/10 个自检都没有 exit()，打印 FAIL 但 CI 一律绿灯）。*/
+  if (fail > 0) exit(1);
 }
