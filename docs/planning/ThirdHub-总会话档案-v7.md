@@ -1,6 +1,6 @@
 # ThirdHub 总会话档案（终极详细版 v7）
 
-> 版本：v7.1 · 2026-09-27 · 由本会话全部讨论+两次全项目审计合并而成
+> 版本：v7.2 · 2026-09-27 · 由本会话全部讨论+两次全项目审计合并而成
 > 定位：**本文件是ThirdHub一切决策的最详细存档**。任何AI进场先读本文件；任何变更追加"变更日志"节，不改写历史节。
 > 姊妹文件（均在 docs/planning/）：项目宪法与执行手册-给AI.md / ThirdHub-完全规格书-v1.0.md（已被本文件吸收合并，后续以本文件为准）
 
@@ -359,3 +359,40 @@ v4.0.0-draft 编排架构定型(三大铁律/IR归一/编排非集成) → v4.3-
 
 ## 变更日志（追加）
 - v7.1(09-27)：新增第十九部分（版本全史+文档全录+完整性核查修正）；修正"9文档消失"误报；legado-patch入隔离白名单登记。
+
+---
+
+# 第二拾部分 · 版本全史补遗（v7.2完整性终版）
+
+## 20.1 GEN1 aiBeta 完整叙事（58版全文读完）
+内部原编号v4.x-5.x（即记忆中的"aiBeta v5.7-v5.8会员体系"），gen1日志统一改编号为v1.x。
+关键节点：v1.0.0(06-10,项目起点:AI对话/联网/上下文管理) → v1.4-v1.6(技能注入) → v1.7.0-v1.7.8(Kimi式底部工具抽屉/悬浮返回按钮/三端导航设置/Mermaid渲染/SSE30秒熔断) → v1.8.0(模型库272个/tool_calls工具卡片/Token用量统计/翻译独立空间) → v1.9.0(小说+漫画阅读器上线:书源导入/书架/搜索/章节阅读) → v1.10.0(书源智能识别混杂JSON/粘贴链接自动下载/可用性验证) → v1.11-v1.19.2(持续迭代至7月末)。
+**性质定论：第一代=AI助手+书源阅读器的合体应用，悬浮球/抽屉/tool_cards等今天仍用的交互全部诞生于此。**
+
+## 20.2 GEN2 OmniHub 完整叙事（20版全文读完）
+v2.0.0(07-30,模块化重构:悬浮球导航/我的模块/阅读模块Venera引擎/Gallery+连续滚动) → v2.0.2(AI对话10厂商/绘画/Kimi左滑历史) → v2.0.3(Legado书源引擎全流程) → v2.0.6(五种翻页/番茄式目录) → v2.0.8(会员中心:六级宇宙等级/卡密激活) → v2.1.0(阅读模块全面升级/发现页/会员三档按年8折/头像系统/设备日志) → v2.2.x-v2.2.8(设备管理10/20上限/EventBus+Store防抖500ms/三端DeviceDetector/悬浮球扇形分页FLIP排序/RTL/后端三件套:**CF omnihub-proxy+Supabase error_logs/user_devices+Neon omnihub-ops运营库**)。
+**性质定论：第二代=模块化+悬浮球+会员体系定型；后端三件套(CF+Supabase+Neon)在二代就已确立——本次规划中的Neon不是新引入，是回归二代格局。**
+
+## 20.3 GEN4 末段精确化（v4.45-4.52提交正文全文核出）
+v4.45.0(09-24 sync:打通"软件↔网页"数据互通) → v4.46.0/v4.47.0(设置同步+5处不可用修复+Agent降级路径落地+服务端版本号收归) → v4.48.0(修"点了同步没反应/云端设置被抹") → v4.49.0-v4.51.0(**APK半残包三连修**:armeabi-v7a/x86_64缺Flutter引擎) → v4.52.0(补齐23个漏推文件+CI真编译失败根因)。
+注：v4.45"打通互通"与9-25的同步bug并存——首次打通做的是"能跑"，契约层(changes/tombstone/LWW)仍未实施，印证R0②的必要性。
+
+## 20.4 发布资产全录
+GitHub Releases共20个：主线v4.45.0-4.52.0(8个,各1资产) + flutter旁支v0.4.3/0.4.4 + backend-v0.8.6/0.8.7(各2资产) + 更早的v4.37-4.44系列。
+版本号单一来源核实：flutter_app/pubspec.yaml=4.52.0 / server/package.json=0.8.7 ✅与附六一致。
+
+## 20.5 老站仓（ThirdHub）86文档分布全录
+- docs/reports: **51个**（历轮报告堆积——建议定期归档收敛）
+- docs/: 16个（含"消失的9文档"实在此处的DEVICE-PROTOCOL/CAPABILITY-ROUTER/BUILTIN-ENGINES/ADAPTER-LEGADO/FRONTEND-MATRIX/FRONTEND-DUAL + CONNECTOR/M1-SPRINT/MIGRATION/ROLLBACK/PROJECT-INTRO）
+- root: 9个（README/ARCHITECTURE-V2/PROJECT_MEMORY/REPO_SCOPE/REQUIREMENTS_TRACKING/STYLE_GUIDE/HANDOFF/**Yao-Agents-调研与互鉴.md**/**ThirdHub-升级规划报告.md**）
+- backend/family-server+local-server: 5个（家庭后端文档）
+
+## 20.6 编号混乱史存档（防未来考古翻车）
+- 一代内部曾用v4.x-5.x编号（后改v1.x存档）
+- 二代内部曾用v7.x-8.x编号（后改v2.x存档）
+- 三代v3.x与四代v4.x并存期间，flutter旁支用0.4.x、后端包用0.8.x——**三条版本线并行**
+- v4.43起版本号收归单一来源(42000+minor*100+patch)，此后混乱终结
+结论：当前唯一真相源=flutter_app pubspec + server package.json + GitHub Releases tag。
+
+## 变更日志（追加）
+- v7.2(09-27)：GEN1/GEN2全文读完补叙事；v4.45-4.52精确化；Releases 20个入录；版本号单一来源核实；老站仓86文档分布全录；Neon更正为"回归二代格局"；编号混乱史存档。
