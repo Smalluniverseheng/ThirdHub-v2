@@ -32,6 +32,22 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'discover.dart';
 
+/// 连到的是「资源库」而不是「引擎」。
+///
+/// ★2026-09-28 新增：`/thp/meta` 在**引擎**和**资源库**上都会返回 200，光靠
+/// "握手成功"分不出这两者。而两者的内容端点完全不同：引擎实现旧兼容端点
+/// `/thp/search|chapters|content`，资源库只实现规范端点 `/thp/m/{module}/{op}`
+/// 且需要 `x-th-token`。旧行为是握手成功即声明 connected → 之后每次搜索都
+/// 拿不到东西，用户看到「连上了引擎却搜不到任何内容」，且无法判断是协议不合
+/// 还是源里真没内容 —— 这正是用户反馈的「引擎调用不通」的形状之一。
+/// 文案直接面向用户，故 `toString()` 不带异常类名前缀（`_describe` 会原样透出）。
+class NotAnEngineException implements Exception {
+  final String message;
+  const NotAnEngineException(this.message);
+  @override
+  String toString() => message;
+}
+
 /// 连接状态（供 UI 直接展示，不要用布尔值表达四态）
 enum EngineStatus {
   /// 从未连接过，也没在尝试
@@ -393,6 +409,16 @@ class EngineDirect {
       final nm = '${m['name'] ?? 'THP 引擎'}';
       final cp = [for (final x in (m['caps'] as List? ?? [])) '$x'];
       final ver = '${m['version'] ?? ''}';
+      // ★2026-09-28：握手成功后先判"这到底是引擎还是资源库"，再落 connected。
+      //   判定口径与 discover.dart 的 `ThpDevice.isLibrary` 逐字一致（caps 含 'library'），
+      //   避免同一件事在两处各写一遍判定规则（历史教训：口径散落多处必然分叉）。
+      //   资源库也带 m:novel/m:comic… 这些能力标签，所以不能只看 m:* —— 必须看 library 标记。
+      if ('${m['role'] ?? ''}' == 'library' || cp.contains('library')) {
+        throw const NotAnEngineException(
+            '这个地址是「资源库」(:9527)，不是「引擎」(:1234)\n'
+            '· 资源库请到「我的 → 系统 → 连接资源库」里填（它管的是源清单与账号）；\n'
+            '· 「引擎直连」要填引擎 App 的地址（引擎装在手机上时通常是 127.0.0.1:1234）。');
+      }
       final p = await SharedPreferences.getInstance();
       await p.setString('engine_direct_url', u);
       await p.setString('engine_direct_name', nm);

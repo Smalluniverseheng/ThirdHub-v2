@@ -190,7 +190,17 @@ async function handle(req, res, body, u) {
       protocol: 'THP/1.0', instanceId: INSTANCE_ID, role: 'library',
       name: 'ThirdHub 资源库', version: '1.0.0', vendor: 'thirdhub',
       caps: CAPS, auth: ['none', 'tls'], remote: false,
-      endpoints: ['search', 'toc', 'content', 'extra', 'items', 'blob', 'changes', 'events', 'jobs'],
+      // ★2026-09-28 修正：自述必须与实现一致（本仓历史病：口径散落多处 → 必然分叉）。
+      //   本资源库实现的是**规范端点** `/thp/m/{module}/{op}`（见本文件 line 306 的正则），
+      //   外加 meta/events/changes/blob/jobs。**旧兼容短名端点** —— `/thp/search`、
+      //   `/thp/chapters`、`/thp/content` —— 在资源库上**是 404**，它们只由「独立阅读引擎
+      //   App」实现（role=engine）。
+      //   旧文案把 'search'/'toc'/'content' 写进 endpoints：客户端读到的字面量恰好等于
+      //   那三个 404 的旧路径 → 照着自述调必失败，且失败形状是「握手成功、搜索没结果」，
+      //   几乎无法归因（用户原话即「不知道是协议的问题还是什么的问题」）。
+      //   现改为只列真实实现的端点，并显式声明「本端不提供旧兼容短名端点」。
+      endpoints: ['m/{module}/{search,toc,content,extra,items}', 'blob', 'changes', 'events', 'jobs'],
+      legacyEndpoints: [],
       deprecated: [], ext: {},
     }, { source: 'library' }, rid);
     return true;
