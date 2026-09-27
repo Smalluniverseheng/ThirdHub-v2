@@ -4,6 +4,8 @@
 //   /thp/meta · /thp/search · /thp/chapters · /thp/content · /thp/discover · /thp/explore
 //   (docs/THP.md 的 /thp/m/{module}/... 是规范端点；本 App 走旧草稿端点，
 //    两者由引擎同时提供，服务端降级链负责互通)
+//   ★例外: /thp/content 兼容端点**只实现 novel** —— comic/music/video 的正文
+//    必须走规范端点 /thp/m/{module}/content，故 content() 按类型分流(见下)。
 //
 // ══════════════════════════════════════════════════════════════════════════
 // ★ 2026-09-19 修复「连上了却一直显示未连接引擎 / 搜索什么都搜不到」
@@ -87,16 +89,21 @@ class EngineState {
   }
 
   EngineState copyWith({
-    EngineStatus? status, String? url, String? name,
-    List<String>? caps, String? version, String? message,
-  }) => EngineState(
-    status: status ?? this.status,
-    url: url ?? this.url,
-    name: name ?? this.name,
-    caps: caps ?? this.caps,
-    version: version ?? this.version,
-    message: message ?? this.message,
-  );
+    EngineStatus? status,
+    String? url,
+    String? name,
+    List<String>? caps,
+    String? version,
+    String? message,
+  }) =>
+      EngineState(
+        status: status ?? this.status,
+        url: url ?? this.url,
+        name: name ?? this.name,
+        caps: caps ?? this.caps,
+        version: version ?? this.version,
+        message: message ?? this.message,
+      );
 
   @override
   String toString() =>
@@ -128,7 +135,8 @@ class SearchPage {
     final raw = r['raw'];
     final items = <Map<String, dynamic>>[];
     final d = r['data'];
-    final list = (d is Map) ? (d['items'] as List? ?? []) : (d is List ? d : const []);
+    final list =
+        (d is Map) ? (d['items'] as List? ?? []) : (d is List ? d : const []);
     for (final e in list) {
       if (e is Map) items.add(Map<String, dynamic>.from(e));
     }
@@ -138,6 +146,7 @@ class SearchPage {
       if (v is int) return v;
       return int.tryParse('${v ?? ''}') ?? dv;
     }
+
     bool boolOf(String k) => (raw is Map) && raw[k] == true;
     return SearchPage(
       items: items,
@@ -179,6 +188,7 @@ class EngineDirect {
   static String get name => s.name;
   static List<String> get caps => s.caps;
   static String get version => s.version;
+
   /// 引擎是否支持 /thp/search 分页 + type=all（1.5.5+）
   static bool get supportsPaging => s.supportsPaging;
   static String get lastError => s.message;
@@ -211,8 +221,12 @@ class EngineDirect {
     final savedVer = p.getString('engine_direct_version') ?? '';
     if (savedUrl.isNotEmpty) {
       state.value = EngineState(
-        status: EngineStatus.connecting, url: savedUrl, name: savedName,
-        caps: savedCaps, version: savedVer, message: '正在校验引擎连接…');
+          status: EngineStatus.connecting,
+          url: savedUrl,
+          name: savedName,
+          caps: savedCaps,
+          version: savedVer,
+          message: '正在校验引擎连接…');
     }
     // 启动 THP 发现监听(全局常驻, 模块页随时可读设备列表)
     unawaited(ThpDiscovery.start());
@@ -237,16 +251,20 @@ class EngineDirect {
         final j = await _probeMeta(u, _probeTimeout);
         final m = (j['data'] is Map ? j['data'] : j) as Map;
         final nm = '${m['name'] ?? ''}';
-        final cp = m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : c;
+        final cp =
+            m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : c;
         final ver = '${m['version'] ?? ''}';
         final p = await SharedPreferences.getInstance();
         await p.setString('engine_direct_name', nm.isEmpty ? n : nm);
         await p.setStringList('engine_direct_caps', cp);
         await p.setString('engine_direct_version', ver);
         state.value = EngineState(
-          status: EngineStatus.connected, url: u,
-          name: nm.isEmpty ? (n.isEmpty ? 'THP 引擎' : n) : nm, caps: cp,
-          version: ver, message: '');
+            status: EngineStatus.connected,
+            url: u,
+            name: nm.isEmpty ? (n.isEmpty ? 'THP 引擎' : n) : nm,
+            caps: cp,
+            version: ver,
+            message: '');
         return;
       } catch (e) {
         err = e;
@@ -255,14 +273,16 @@ class EngineDirect {
     }
     // 两次都失败：保留地址但标注不可达，同时后台找找有没有新地址的引擎
     state.value = EngineState(
-      status: EngineStatus.failed, url: u,
-      name: n.isEmpty ? 'THP 引擎' : n, caps: c,
-      message: '引擎当前不可达（${_describe(err)}）· 正在后台重试发现…');
+        status: EngineStatus.failed,
+        url: u,
+        name: n.isEmpty ? 'THP 引擎' : n,
+        caps: c,
+        message: '引擎当前不可达（${_describe(err)}）· 正在后台重试发现…');
     final found = await autoConnect(force: true);
-    if (found && state.value.url != u) return;   // 找到别的引擎，已切换
+    if (found && state.value.url != u) return; // 找到别的引擎，已切换
     if (!found) {
-      state.value = state.value.copyWith(
-        message: '引擎不可达：${_describe(err)}\n请确认引擎 App 已启动且与本机同一局域网');
+      state.value = state.value
+          .copyWith(message: '引擎不可达：${_describe(err)}\n请确认引擎 App 已启动且与本机同一局域网');
     }
   }
 
@@ -279,8 +299,8 @@ class EngineDirect {
     if (connected && !force) return true;
     _autoConnecting = true;
     if (!connected) {
-      state.value = state.value.copyWith(
-        status: EngineStatus.connecting, message: '正在发现局域网引擎…');
+      state.value = state.value
+          .copyWith(status: EngineStatus.connecting, message: '正在发现局域网引擎…');
     }
     try {
       await ThpDiscovery.start();
@@ -293,7 +313,8 @@ class EngineDirect {
         final completer = Completer<void>();
         late final StreamSubscription sub;
         sub = ThpDiscovery.onChange.listen((_) {
-          if (!completer.isCompleted && available().isNotEmpty) completer.complete();
+          if (!completer.isCompleted && available().isNotEmpty)
+            completer.complete();
         });
         await Future.any([
           completer.future,
@@ -307,8 +328,8 @@ class EngineDirect {
         //   引擎侧广播被 Doze 挂起 —— 这四种情况下广播一定收不到，但 TCP 是通的）。
         if (!connected) {
           state.value = state.value.copyWith(
-            status: EngineStatus.connecting,
-            message: '广播未收到引擎，正在主动扫描本机与局域网…');
+              status: EngineStatus.connecting,
+              message: '广播未收到引擎，正在主动扫描本机与局域网…');
         }
         final hits = await ThpDiscovery.scan(
           subnetSweep: true,
@@ -317,8 +338,8 @@ class EngineDirect {
             // 进度回填（扫描可能 2–4s，界面要动，否则像卡死）
             if (!connected && d % 24 == 0) {
               state.value = state.value.copyWith(
-                status: EngineStatus.connecting,
-                message: '正在扫描本机与局域网…（$d/$t）');
+                  status: EngineStatus.connecting,
+                  message: '正在扫描本机与局域网…（$d/$t）');
             }
           },
         );
@@ -327,17 +348,18 @@ class EngineDirect {
       if (devs.isEmpty) {
         if (!connected) {
           state.value = state.value.copyWith(
-            status: EngineStatus.failed,
-            message: '未发现引擎（已尝试广播 + 主动扫描）。请确认：\n'
-                '① 引擎 App 已打开并显示在运行（同机引擎也可）\n'
-                '② 两台设备在同一局域网(WiFi)\n'
-                '③ 路由器未开启「AP 隔离」\n'
-                '④ 已知地址可直接到「我的 → 引擎直连 → 手动填写地址」');
+              status: EngineStatus.failed,
+              message: '未发现引擎（已尝试广播 + 主动扫描）。请确认：\n'
+                  '① 引擎 App 已打开并显示在运行（同机引擎也可）\n'
+                  '② 两台设备在同一局域网(WiFi)\n'
+                  '③ 路由器未开启「AP 隔离」\n'
+                  '④ 已知地址可直接到「我的 → 引擎直连 → 手动填写地址」');
         }
         return false;
       }
       // 优先连上次用过的那个，其次列表首个
-      final prefer = devs.firstWhere((d) => d.url == state.value.url, orElse: () => devs.first);
+      final prefer = devs.firstWhere((d) => d.url == state.value.url,
+          orElse: () => devs.first);
       try {
         await connect(prefer.url);
         return true;
@@ -345,11 +367,14 @@ class EngineDirect {
         // 换一个再试
         for (final d in devs) {
           if (d.url == prefer.url) continue;
-          try { await connect(d.url); return true; } catch (_) {}
+          try {
+            await connect(d.url);
+            return true;
+          } catch (_) {}
         }
         state.value = state.value.copyWith(
-          status: EngineStatus.failed,
-          message: '发现 ${devs.length} 个引擎但都连不上：${_describe(e)}');
+            status: EngineStatus.failed,
+            message: '发现 ${devs.length} 个引擎但都连不上：${_describe(e)}');
         return false;
       }
     } finally {
@@ -360,7 +385,8 @@ class EngineDirect {
   /// 手动/自动连接指定地址。成功后写入偏好并广播状态。
   static Future<void> connect(String u) async {
     final from = state.value.status;
-    state.value = state.value.copyWith(status: EngineStatus.connecting, message: '正在连接 $u …');
+    state.value = state.value
+        .copyWith(status: EngineStatus.connecting, message: '正在连接 $u …');
     try {
       final j = await _probeMeta(u, Duration(seconds: _metaTimeoutSec));
       final m = (j['data'] is Map ? j['data'] : j) as Map;
@@ -373,14 +399,22 @@ class EngineDirect {
       await p.setStringList('engine_direct_caps', cp);
       await p.setString('engine_direct_version', ver);
       state.value = EngineState(
-          status: EngineStatus.connected, url: u, name: nm, caps: cp, version: ver);
+          status: EngineStatus.connected,
+          url: u,
+          name: nm,
+          caps: cp,
+          version: ver);
     } catch (e) {
       state.value = EngineState(
-        status: EngineStatus.failed, url: '', name: '', caps: const [],
-        message: '连接失败：${_describe(e)}');
+          status: EngineStatus.failed,
+          url: '',
+          name: '',
+          caps: const [],
+          message: '连接失败：${_describe(e)}');
       // 保留上一状态的可读性：若之前是已连接，提示更明确
       if (from == EngineStatus.connected) {
-        state.value = state.value.copyWith(message: '与引擎的连接已断开：${_describe(e)}');
+        state.value =
+            state.value.copyWith(message: '与引擎的连接已断开：${_describe(e)}');
       }
       rethrow;
     }
@@ -415,16 +449,20 @@ class EngineDirect {
       return '系统拦截了明文 HTTP（需更新到修复版 App）';
     }
     if (t.contains('Connection refused')) return '连接被拒绝（引擎未在运行）';
-    if (t.contains('Network is unreachable') || t.contains('No route to host')) {
+    if (t.contains('Network is unreachable') ||
+        t.contains('No route to host')) {
       return '网络不可达（检查是否同一 WiFi）';
     }
     if (t.contains('Failed host lookup')) return '地址解析失败';
     if (t.contains('HandshakeException')) return 'TLS 握手失败';
-    return t.replaceFirst(RegExp(r'^(SocketException|ClientException|HttpException):\s*'), '');
+    return t.replaceFirst(
+        RegExp(r'^(SocketException|ClientException|HttpException):\s*'), '');
   }
 
   static bool _isNetErr(Object e) =>
-      e is SocketException || e is http.ClientException || e is TimeoutException;
+      e is SocketException ||
+      e is http.ClientException ||
+      e is TimeoutException;
 
   /// ★响应体硬上限（4MB）。为什么必须有：
   ///   旧实现 `jsonDecode(utf8.decode(r.bodyBytes))` 会把**整个响应**一次性读进内存。
@@ -444,17 +482,22 @@ class EngineDirect {
       if (done.isCompleted) return;
       b.add(c);
       if (b.length > cap) done.complete(false);
-    },
-      onDone: () { if (!done.isCompleted) done.complete(true); },
-      onError: (Object e) { if (!done.isCompleted) done.completeError(e); },
-      cancelOnError: true);
+    }, onDone: () {
+      if (!done.isCompleted) done.complete(true);
+    }, onError: (Object e) {
+      if (!done.isCompleted) done.completeError(e);
+    }, cancelOnError: true);
     bool ok;
-    try { ok = await done.future; } finally { await sub.cancel(); }
+    try {
+      ok = await done.future;
+    } finally {
+      await sub.cancel();
+    }
     return ok ? b.takeBytes() : null;
   }
 
-  static Future<Map<String, dynamic>> _get(
-    String path, [bool retried = false, int timeoutSec = 30]) async {
+  static Future<Map<String, dynamic>> _get(String path,
+      [bool retried = false, int timeoutSec = 30]) async {
     if (url.isEmpty) throw Exception('未连接引擎');
     final cli = _client();
     try {
@@ -463,7 +506,9 @@ class EngineDirect {
       // ① 有 Content-Length 时先拒（连下载都不下载）
       final cl = res.contentLength;
       if (cl != null && cl > _maxRespBytes) {
-        try { await res.stream.drain<void>(); } catch (_) {}
+        try {
+          await res.stream.drain<void>();
+        } catch (_) {}
         throw Exception('引擎响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > 4MB），'
             '已中止以免内存溢出。请缩小关键词或加类型过滤');
       }
@@ -480,7 +525,8 @@ class EngineDirect {
         try {
           final ej = jsonDecode(utf8.decode(bytes));
           if (ej is Map) {
-            detail = '${ej['data']?['message'] ?? (ej['error'] is Map ? ej['error']['message'] ?? ej['error']['code'] : ej['error']) ?? detail}';
+            detail =
+                '${ej['data']?['message'] ?? (ej['error'] is Map ? ej['error']['message'] ?? ej['error']['code'] : ej['error']) ?? detail}';
           }
         } catch (_) {}
         throw HttpException('$detail（HTTP ${res.statusCode}）');
@@ -523,12 +569,17 @@ class EngineDirect {
     // 补默认端口
     try {
       final u0 = Uri.parse(t);
-      if (!u0.hasPort) t = '${u0.scheme}://${u0.host}:${ThpDiscovery.kEnginePort}${u0.path}';
-    } catch (_) { return '地址格式无法解析'; }
+      if (!u0.hasPort)
+        t = '${u0.scheme}://${u0.host}:${ThpDiscovery.kEnginePort}${u0.path}';
+    } catch (_) {
+      return '地址格式无法解析';
+    }
     try {
       await connect(t.replaceAll(RegExp(r'/+$'), ''));
       return null;
-    } catch (e) { return _describe(e); }
+    } catch (e) {
+      return _describe(e);
+    }
   }
 
   /// 逐项自检（诊断页用）。返回一组 (名称, 通过?, 说明) 结果。
@@ -537,15 +588,22 @@ class EngineDirect {
   static Future<List<DiagItem>> diagnose({String? probeHost}) async {
     final out = <DiagItem>[];
     // ① 回环引擎（同机引擎 App）
-    final loopOk = await ThpDiscovery.probeTcp('127.0.0.1', ThpDiscovery.kEnginePort, 500);
-    out.add(DiagItem('本机回环引擎 127.0.0.1:${ThpDiscovery.kEnginePort}',
-        loopOk, loopOk ? '通（本机跑着引擎 App）' : '未监听（本机没跑引擎，属正常）'));
+    final loopOk =
+        await ThpDiscovery.probeTcp('127.0.0.1', ThpDiscovery.kEnginePort, 500);
+    out.add(DiagItem('本机回环引擎 127.0.0.1:${ThpDiscovery.kEnginePort}', loopOk,
+        loopOk ? '通（本机跑着引擎 App）' : '未监听（本机没跑引擎，属正常）'));
     // ② UDP 发现端口能否绑定（被占用 → 广播永远收不到）
-    var udpOk = false; String udpMsg = '';
+    var udpOk = false;
+    String udpMsg = '';
     try {
-      final s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 19527, reuseAddress: true);
-      s.close(); udpOk = true; udpMsg = '可监听 19527';
-    } catch (e) { udpMsg = '无法监听 19527：$e'; }
+      final s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 19527,
+          reuseAddress: true);
+      s.close();
+      udpOk = true;
+      udpMsg = '可监听 19527';
+    } catch (e) {
+      udpMsg = '无法监听 19527：$e';
+    }
     out.add(DiagItem('UDP 发现端口 19527', udpOk, udpMsg));
     // ③ 广播/扫描已知设备
     final known = available();
@@ -553,8 +611,11 @@ class EngineDirect {
         known.isEmpty ? '暂无（可点「主动扫描」）' : known.map((d) => d.url).join('、')));
     // ④ 主动扫描
     final hits = await ThpDiscovery.scan(
-        subnetSweep: probeHost == null, extra: [if (probeHost != null) probeHost]);
-    out.add(DiagItem('主动扫描', hits.isNotEmpty,
+        subnetSweep: probeHost == null,
+        extra: [if (probeHost != null) probeHost]);
+    out.add(DiagItem(
+        '主动扫描',
+        hits.isNotEmpty,
         hits.isEmpty
             ? '扫了 ${ThpDiscovery.lastScanProbed} 项、${ThpDiscovery.lastScanMs}ms，未发现 THP 服务'
             : '发现 ${hits.length} 个：${hits.map((d) => '${d.url}(${d.name})').join('、')}'));
@@ -571,11 +632,14 @@ class EngineDirect {
       // ⑥ 试搜：用"斗破"这种常见的双字词，避开单字（单字最吃内存）
       try {
         final sw = Stopwatch()..start();
-        final p = await searchPage('all', '测试', page: 1, limit: 5, budgetSec: 8);
+        final p =
+            await searchPage('all', '测试', page: 1, limit: 5, budgetSec: 8);
         sw.stop();
-        out.add(DiagItem('试搜 /thp/search', true,
+        out.add(DiagItem(
+            '试搜 /thp/search',
+            true,
             '${p.items.length} 条 / 共 ${p.total} · ${sw.elapsedMilliseconds}ms'
-            '${p.truncated ? ' · 被预算截断(引擎源较多)' : ''}'));
+                '${p.truncated ? ' · 被预算截断(引擎源较多)' : ''}'));
         // ⑦ 源数量（引擎没装源 = 搜得到但永远 0 结果）
         final cnt = await sourceCount();
         out.add(DiagItem('引擎书源数量', cnt > 0,
@@ -616,13 +680,18 @@ class EngineDirect {
 
   static List<Map<String, dynamic>> _items(Map<String, dynamic> r) {
     final d = r['data'];
-    final raw = (d is Map) ? (d['items'] as List? ?? []) : (d is List ? d : const []);
-    return [for (final e in raw) if (e is Map) Map<String, dynamic>.from(e)];
+    final raw =
+        (d is Map) ? (d['items'] as List? ?? []) : (d is List ? d : const []);
+    return [
+      for (final e in raw)
+        if (e is Map) Map<String, dynamic>.from(e)
+    ];
   }
 
   /// 搜索: type = novel/comic/video/music，或 'all'（引擎一次扫描返回全部类型）。
   /// 引擎侧一轮要跑全部书源，耗时可达 20s+（返回的是预算内的部分结果）。
-  static Future<List<Map<String, dynamic>>> search(String type, String q) async {
+  static Future<List<Map<String, dynamic>>> search(
+      String type, String q) async {
     final p = await searchPage(type, q);
     return p.items;
   }
@@ -640,26 +709,87 @@ class EngineDirect {
     int limit = 40,
     int budgetSec = 25,
   }) async {
-    final r = await _get(
-      '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
-      '&page=$page&limit=$limit&budget=$budgetSec',
-      false, _searchTimeoutSec);
-    return SearchPage.from(r);
+    final path = '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
+        '&page=$page&limit=$limit&budget=$budgetSec';
+    try {
+      final r = await _get(path, false, _searchTimeoutSec);
+      return SearchPage.from(r);
+    } catch (e) {
+      // ★「加载更多」翻页时引擎端缓存已过期(10 分钟) → HTTP 409 no_cache。
+      //   引擎对 page>1 且无缓存直接拒绝（避免白等 25s 重扫）；恢复办法：
+      //   先重取第 1 页让引擎重建缓存，再取目标页（网页端 thp-direct.js 同款恢复）。
+      //   不恢复的话，用户隔 10 分钟按「加载更多」就永远报错——"调用困难"之一。
+      final t = '$e';
+      if (page <= 1 || !(t.contains('HTTP 409') || t.contains('no_cache'))) {
+        rethrow;
+      }
+      await _get(
+          '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
+          '&page=1&limit=$limit&budget=$budgetSec',
+          false,
+          _searchTimeoutSec);
+      final r = await _get(path, false, _searchTimeoutSec);
+      return SearchPage.from(r);
+    }
   }
 
   /// 目录/选集
-  static Future<List<Map<String, dynamic>>> chapters(String type, String id) async {
-    final r = await _get('/thp/chapters?type=$type&id=${Uri.encodeComponent(id)}', false, 30);
+  static Future<List<Map<String, dynamic>>> chapters(
+      String type, String id) async {
+    final r = await _get(
+        '/thp/chapters?type=$type&id=${Uri.encodeComponent(id)}', false, 30);
     return _items(r);
   }
 
-  /// 正文/图片/播放地址
-  static Future<Map<String, dynamic>> content(String type, String id, String chapter) async {
-    final r = await _get(
-      '/thp/content?type=$type&id=${Uri.encodeComponent(id)}&chapter=${Uri.encodeComponent(chapter)}',
-      false, 30);
+  /// 正文/图片/播放地址。
+  ///
+  /// ★必须按类型分流（2026-09-27 修「引擎调用困难」的根因）：
+  ///   引擎的兼容端点 /thp/content **只实现 novel**（恒回 data.text）；
+  ///   comic/music/video 只有规范端点 /thp/m/{module}/content 才有实现
+  ///   （comic 回 data.images，music/video 回 data.url + data.header）。
+  ///   旧实现对全部类型恒打 /thp/content → 漫画/音乐/视频正文永远取不到
+  ///   （小说不受影响，所以问题表现为"部分能用、部分调不动"）。
+  ///   网页端 thp-direct.js 早已按此分流，本文件对齐它。
+  ///
+  /// 返回统一归一成调用方契约：text/content、images/pages、header/headers
+  /// 各键都补齐（NovelReaderPage 要 text、EngineComicReader 要 images+headers、
+  /// 播放器要 url+headers）。
+  static Future<Map<String, dynamic>> content(
+      String type, String id, String chapter) async {
+    final mod = moduleOf(type);
+    final eid = Uri.encodeComponent(id);
+    // 空章节引用(音乐单曲/视频直链这类无目录条目)退化为第 0 章，
+    // 否则引擎回 400「缺参数 chapterId」，用户只看到一句取内容失败。
+    final ch = Uri.encodeComponent(chapter.trim().isEmpty ? '0' : chapter);
+    final r = mod == 'novel'
+        ? await _get('/thp/content?type=novel&id=$eid&chapter=$ch', false, 30)
+        : await _get('/thp/m/$mod/content?id=$eid&chapter=$ch', false, 30);
     final d = r['data'];
-    return Map<String, dynamic>.from(d is Map ? d : {'text': '$d'});
+    final m = Map<String, dynamic>.from(d is Map ? d : {'text': '$d'});
+    if (m['images'] == null && m['pages'] != null) m['images'] = m['pages'];
+    if (m['text'] == null && m['content'] != null) m['text'] = m['content'];
+    if (m['headers'] == null && m['header'] is Map) {
+      m['headers'] = {
+        for (final e in (m['header'] as Map).entries) '${e.key}': '${e.value}'
+      };
+    }
+    return m;
+  }
+
+  /// 前端类型 → 引擎模块名。引擎只注册了 novel/comic/music/video 四个模块
+  ///（没有 audio 模块，audio 归 music —— 与网页端 ENGINE_MODULE 一致）。
+  static String moduleOf(String type) {
+    switch (type) {
+      case 'comic':
+        return 'comic';
+      case 'music':
+      case 'audio':
+        return 'music';
+      case 'video':
+        return 'video';
+      default:
+        return 'novel';
+    }
   }
 
   /// 发现页结构: 各书源的分类标签 [{source, sourceName, tags:[{name,url}]}]
@@ -688,19 +818,23 @@ class EngineDirect {
     if (tags is! List) return const [];
     return [
       for (final t in tags)
-        if (t is Map && '${t['url'] ?? ''}'.trim().isNotEmpty) Map<String, dynamic>.from(t),
+        if (t is Map && '${t['url'] ?? ''}'.trim().isNotEmpty)
+          Map<String, dynamic>.from(t),
     ];
   }
 
   /// 发现列表(按 源+分类URL+页码 取条目, 字段与 search 一致)
   static Future<List<Map<String, dynamic>>> explore(
-    String type, String source, String tagUrl, [int page = 1]) async {
+      String type, String source, String tagUrl,
+      [int page = 1]) async {
     if (source.trim().isEmpty || tagUrl.trim().isEmpty) {
       throw Exception('该分类没有可用的列表地址');
     }
     final r = await _get(
-      '/thp/explore?type=$type&source=${Uri.encodeComponent(source)}'
-      '&url=${Uri.encodeComponent(tagUrl)}&page=$page', false, _searchTimeoutSec);
+        '/thp/explore?type=$type&source=${Uri.encodeComponent(source)}'
+        '&url=${Uri.encodeComponent(tagUrl)}&page=$page',
+        false,
+        _searchTimeoutSec);
     return _items(r);
   }
 
