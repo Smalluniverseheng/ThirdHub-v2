@@ -1,6 +1,6 @@
 name: dart-selfcheck
 
-# 纯 Dart 自检「九连」——这是本仓改动后端到端的**最低成本闸门**。
+# 纯 Dart 自检「十连」——这是本仓改动后端到端的**最低成本闸门**。
 #
 # 为什么要有这个 workflow（此前是空白）：
 #   · 本机 `dart analyze` / `dart compile` / `flutter test` 全部因
@@ -18,6 +18,15 @@ name: dart-selfcheck
 #   注：settings_bridge 此前文档记的是 95，实测已是 111（该自检 09-25 扩过），
 #       这里以实测为准。agent_proto 的 PASS 行格式是「全部通过 191/191」，
 #       不是「PASS n FAIL n」，脚本汇总时要单独认。
+#
+# 第 10 条 module_registry（2026-09-27 加）：
+#   为什么必须进 CI —— 09-27 实测 CI `build-apk` 红了整整一轮，
+#   根因是 `lib/core/module_registry.dart` **根本不在远端仓库**（main.dart 第 51 行
+#   import 它），连带 migrateModuleKeys / kReadGroupAppKeys / Cloud.navLayoutChanged
+#   全部未定义。而 dart-selfcheck 却是 success —— 因为它跑的是 `dart run tool/x.dart`，
+#   只编译该入口的传递依赖，而自检脚本是把 main.dart 当**文本**读的，永远看不见
+#   「main.dart import 的文件不存在」。这条自检直接 import 那个 lib，一旦文件再缺，
+#   本 workflow 立刻变红 —— 把「漏推文件」从「只有真编译能发现」提前到秒级。
 #
 # ★本机也能跑这套（此前误以为"本地 dart 全废"）：
 #   `dart analyze` 会 spawn analysis_server 而被管道池耗尽挡住，但**直调 VM 可以**：
@@ -78,6 +87,10 @@ jobs:
       - name: modules（与 main.dart 的模块注册双向核对）
         working-directory: flutter_app
         run: dart run tool/modules_selfcheck.dart
+
+      - name: module_registry（共享注册表：上行压缩/下行展开/旧 id 兼容/两端往返，并 import 该 lib 本身防漏推）
+        working-directory: flutter_app
+        run: dart run tool/module_registry_selfcheck.dart
 
       - name: agent
         working-directory: flutter_app

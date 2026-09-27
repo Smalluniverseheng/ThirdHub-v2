@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'settings_bridge.dart';
+import 'module_registry.dart';
 
 class Cloud {
   static const String base = 'https://mxvxlgjzeboktufumxbp.supabase.co';
@@ -257,8 +258,16 @@ class Cloud {
   static Future<bool> settingsUp() async {
     if (!loggedIn) return false;
     try {
-      final mine = SettingsBridge.toCloud(await _localSnapshot());
-      if (mine.isEmpty) return false; // 本机一个可映射设置都没有 → 不拿空对象去盖云端
+      final snapshot = await _localSnapshot();
+      final mine = SettingsBridge.toCloud(snapshot);
+      // ★ 模块布局互通（第二十三轮）：nav_modules → canonical id → 合并写
+      //   kv['nav:tabs-mobile']。网页端 loadEnabledTabs 直接读这个键；
+      //   合并写保证 App 不认识的网页板块 id（tavern/grade/…）原样留云端。
+      //   先 migrateModuleKeys：旧键（作业中心/学习工具/天气快递）不迁移会
+      //   查不到注册表映射被静默丢弃。
+      final navKeys = migrateModuleKeys(
+          (snapshot['nav_modules'] as List?)?.cast<String>() ?? const <String>[]);
+      if (mine.isEmpty && navKeys.isEmpty) return false; // 没有可推内容 → 不拿空对象盖云端
 
       // ① 读回云端现状，做真合并
       final row = await _settingsRow();
@@ -274,6 +283,15 @@ class Cloud {
       }
       cloudS.addAll(mine); // 认识的键以本机为准；不认识的键原样留在云端
 
+      if (navKeys.isNotEmpty) {
+        final cloudNav = cloudKv['nav:tabs-mobile'];
+        cloudKv['nav:tabs-mobile'] = ModuleRegistry.mergeNavIds(
+          ModuleRegistry.navIdsOf(navKeys),
+          cloudNav is List ? List<String>.from(cloudNav) : null,
+          knownIds: ModuleRegistry.appKnownIds,
+        );
+      }
+
       final now = DateTime.now().millisecondsSinceEpoch;
       final r = await http.post(Uri.parse('$base/rest/v1/th_settings'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
@@ -288,14 +306,33 @@ class Cloud {
       if (r.statusCode >= 200 && r.statusCode < 300) {
         final p = await SharedPreferences.getInstance();
         await p.setInt(_syncedAtKey, now);
+        await p.setInt('nav_dirty_at', 0); // 布局脏标随推送清零
         return true;
       }
       return false;
     } catch (_) { return false; }
   }
 
+  /// 模块布局改动后的上行入口（第二十三轮）：记脏标 + 防抖推。
+  /// 脏标参与 syncAll 的方向判据（localAt 取 max）——否则「本机改了模块布局、
+  /// 云端没推上去」会被 LWW 判成 same/pull，本机改动被云端旧布局盖掉。
+  static Timer? _navUpTimer;
+  static void navLayoutChanged() {
+    _navUpTimer?.cancel();
+    _navUpTimer = Timer(const Duration(milliseconds: 800), () async {
+      try {
+        final p = await SharedPreferences.getInstance();
+        await p.setInt('nav_dirty_at', DateTime.now().millisecondsSinceEpoch);
+        if (loggedIn) await settingsUp();
+      } catch (_) {}
+    });
+  }
+
   /// 从云端拉设置写回本机，返回写入的键数（0 = 云端没有或读取失败）。
   /// 只写双方共识的键 —— 云端多出来的 25 个键与 kv **一律忽略**，不猜、不覆盖本机独有项。
+  /// ★ 唯一例外（第二十三轮）：kv['nav:tabs-mobile']（及旧键 ui:tabs 回退）是
+  ///   模块布局互通键，按注册表投影成本机 nav_modules（网页独有 id 跳过——
+  ///   不认识≠删除，下次上行 merge 会原样带回去）。
   static Future<int> settingsDown() async {
     if (!loggedIn) return 0;
     try {
@@ -318,6 +355,29 @@ class Cloud {
         else if (v is double) { await p.setDouble(e.key, v); n++; }
         else if (v is String) { await p.setString(e.key, v); n++; }
       }
+
+      // ★ 模块布局下行：kv['nav:tabs-mobile']（回退 ui:tabs）→ nav_modules
+      final kv = st['kv'];
+      if (kv is Map) {
+        dynamic navArr = kv['nav:tabs-mobile'];
+        if (navArr is! List) navArr = kv['ui:tabs'];
+        if (navArr is List) {
+          // read 组内子集记忆：无记忆的老安装从当前 nav_modules 推导（保持用户现状，
+          // 不给塞没开过的模块）；空列表 = 记忆为全关，与「无记忆」严格区分。
+          var readGroup = p.getStringList('nav_read_group');
+          readGroup ??= (p.getStringList('nav_modules') ?? const <String>[])
+              .where(kReadGroupAppKeys.contains)
+              .toList();
+          final navList = ModuleRegistry.applyNavIds(
+              List<String>.from(navArr), readGroup: readGroup);
+          final old = p.getStringList('nav_modules') ?? <String>[];
+          if (old.join(',') != navList.join(',')) {
+            await p.setStringList('nav_modules', navList);
+            n++;
+          }
+        }
+      }
+
       final at = _cloudUpdatedAt(row);
       if (at > 0) await p.setInt(_syncedAtKey, at);
       return n;
@@ -371,7 +431,10 @@ class Cloud {
       final row = await _settingsRow();
       final cloudAt = _cloudUpdatedAt(row);
       final p = await SharedPreferences.getInstance();
-      final localAt = p.getInt(_syncedAtKey) ?? 0;
+      // 布局脏标也算「本机有未推的改动」（navLayoutChanged 记的）
+      final localAt = (p.getInt(_syncedAtKey) ?? 0) > (p.getInt('nav_dirty_at') ?? 0)
+          ? (p.getInt(_syncedAtKey) ?? 0)
+          : (p.getInt('nav_dirty_at') ?? 0);
 
       if (row == null || cloudAt == 0) {
         // 云端还没有这一行（首次同步）→ 以本机为准推上去
