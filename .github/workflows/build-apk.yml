@@ -21,6 +21,25 @@ name: build-apk
 #  ③【能出测试包】加 workflow_dispatch 入参 `abis` / `publish`：可以出任意 ABI 的**测试包**
 #    （只上传 artifact、绝不发 Release），用于装进 Android 模拟器做真机级验证——
 #    本机 dart 因 `CreateFile failed 231` 无法 spawn 子进程，本地出不了包，CI 是唯一出路。
+#
+# ── ★2026-09-28 回改：push 默认从 `android-arm,android-arm64` 改回 `android-arm64` ──────
+#   为什么（都是实测，不是推测）：
+#   ① 双 ABI 通用包体积 **54,371,575B（51.85 MiB）**，而**分发通道装不下**：
+#      Supabase `downloads` 桶的 `file_size_limit = 52428800`（50 MiB，项目套餐硬上限，
+#      试过 PUT /bucket/downloads 调高 → 直接 400 `EntityTooLarge`）。
+#      实测后果：三条桶通道里 ①版本化包 与 ③无版本别名 上游 **全部 HTTP 400**，
+#      而 ②`latest-app.json` 却写成功了 —— 于是**清单指向一个不存在的文件**，
+#      用户点「检查更新」拿到的下载地址是 404。这比发不出去更糟（surface 上是"有更新"）。
+#   ② 分发面要求 digest 一致：清单 sha256 / 别名文件 / Release 资产必须是**同一个包**，
+#      否则网页显示的校验值与实际下载不符（4.49.0 出过这个事故）。
+#      既然桶放不下 54MB，就没有"Release 发通用包、桶发单 ABI 包"这种折中。
+#   ⇒ 结论：**push 默认只打 `android-arm64`（约 29 MB，塞得进桶）**。
+#      32 位（armeabi-v7a）改为按需出包：`workflow_dispatch` 传 `abis=android-arm`。
+#      要恢复"一个包覆盖全部真机"，必须先解决通道（开 R2 / 升级套餐 / 让端内更新按 ABI 取包），
+#      在此之前**不要再把 push 默认改回双 ABI** —— 会让下一次发版静默发不出去。
+#   注：`android/app/build.gradle.kts` 会按 target-platform **精确剔除未声明的 ABI 目录**，
+#      所以单 ABI 包是**干净的**（包里不再有"只有插件 .so、没有 libflutter.so"的残目录）；
+#      32 位机器得到的是「应用与您的手机不兼容」这种明确拒绝，而不是装上就崩。
 permissions:
   contents: write
 
@@ -31,9 +50,9 @@ on:
   workflow_dispatch:
     inputs:
       abis:
-        description: 'target-platform（逗号分隔）：正式 android-arm,android-arm64 ｜ 模拟器 android-x64'
+        description: 'target-platform（逗号分隔）：正式 android-arm64（默认，约29MB）｜32位老机型 android-arm ｜ 模拟器 android-x64'
         required: false
-        default: 'android-arm,android-arm64'
+        default: 'android-arm64'
       publish:
         description: '是否发 Release（测试包务必 false）'
         required: false
@@ -43,8 +62,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # push 到 main = 正式出包（默认覆盖全部真机 ABI）；手动触发默认只出测试包、不发 Release
-      TARGET_PLATFORMS: ${{ github.event_name == 'push' && 'android-arm,android-arm64' || github.event.inputs.abis }}
+      # push 到 main = 正式出包（**只打 arm64**，见上方 2026-09-28 回改说明：双 ABI 54MB 塞不进桶）；
+      # 手动触发默认只出测试包、不发 Release
+      TARGET_PLATFORMS: ${{ github.event_name == 'push' && 'android-arm64' || github.event.inputs.abis }}
       DO_PUBLISH: ${{ github.event_name == 'push' && 'true' || github.event.inputs.publish }}
     steps:
       - uses: actions/checkout@v4
