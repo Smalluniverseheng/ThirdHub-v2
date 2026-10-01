@@ -18,6 +18,9 @@ import 'read_stats.dart';
 import 'tts.dart';
 import 'tts_presets.dart';
 import 'tts_engines_page.dart';
+import 'tts_online.dart';
+import 'tts_settings_page.dart';
+import 'tts_vendors.dart';
 import 'ai.dart';
 import 'motion.dart';
 
@@ -196,9 +199,27 @@ class _NovelReaderState extends State<NovelReaderPage> {
         const SizedBox(height: 8),
         const Align(alignment: Alignment.centerLeft, child: Text('朗读引擎', style: TextStyle(fontSize: 13))),
         const SizedBox(height: 8),
-        FutureBuilder<String>(future: TtsManager.engine(), builder: (_, snap) {
-          final cur = snap.data ?? 'system';
-          final ttsProviders = AiRegistry.providers.where((p) => p.models.any((m) => m.contains('tts') || m.contains('speech'))).toList();
+        FutureBuilder<({String cur, List<TtsVendor> ready})>(
+          future: () async {
+            final cur = await TtsManager.engine();
+            final vs = await TtsOnline.allVendors();
+            final ready = <TtsVendor>[];
+            for (final v in vs) {
+              if ((await TtsOnline.configOf(v.id)).readyFor(v)) ready.add(v);
+            }
+            return (cur: cur, ready: ready);
+          }(),
+          builder: (_, snap) {
+          final cur = snap.data?.cur ?? 'system';
+          // ★ 厂商列表来自 **TTS 自己的注册表**（内置 + 用户自定义）。
+          //   旧实现是从 AI 厂商表里筛"模型名带 tts 的" —— 只能捞到
+          //   OpenAI 兼容的那几家，而且要求用户先去「AI 模块」把它配成一个
+          //   AI 厂商才能在这里出现，配的地方和用的地方不在一处。
+          final ready = snap.data?.ready ?? const <TtsVendor>[];
+          final curMissing = cur != 'system' &&
+              cur != 'backend' &&
+              cur != 'opensource' &&
+              !ready.any((v) => v.id == cur);
           return Wrap(spacing: 8, runSpacing: 8, children: [
             ChoiceChip(label: const Text('系统离线朗读'), selected: cur == 'system',
               onSelected: (_) { TtsManager.setEngine('system'); setD(() {}); }),
@@ -225,9 +246,25 @@ class _NovelReaderState extends State<NovelReaderPage> {
                 TtsManager.setEngine('opensource');
                 setD(() {});
               }),
-            for (final p in ttsProviders)
-              ChoiceChip(label: Text(p.name), selected: cur == p.id,
-                onSelected: (_) { TtsManager.setEngine(p.id); setD(() {}); }),
+            // 只列**已经配好 Key / 地址**的在线厂商：没配的摆出来也点不动，
+            // 反而让人以为"这些都能用"。想接新的走下面的「语音厂商设置」。
+            if (curMissing)
+              ChoiceChip(
+                label: Text('$cur（未配置）'),
+                selected: true, onSelected: (_) {}),
+            for (final v in ready)
+              ChoiceChip(label: Text(v.name), selected: cur == v.id,
+                onSelected: (_) { TtsManager.setEngine(v.id); setD(() {}); }),
+            ActionChip(
+              avatar: const Icon(Icons.settings_outlined, size: 16),
+              label: const Text('语音厂商设置'),
+              onPressed: () async {
+                if (c2.mounted) Navigator.pop(c2);
+                if (context.mounted) {
+                  await Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const TtsSettingsPage()));
+                }
+              }),
           ]);
         }),
         if (TtsManager.backendError.isNotEmpty)
@@ -236,32 +273,34 @@ class _NovelReaderState extends State<NovelReaderPage> {
         if (TtsManager.openSourceError.isNotEmpty)
           Padding(padding: const EdgeInsets.only(top: 6),
             child: Text('开源引擎不可用已降级系统朗读: ${TtsManager.openSourceError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
+        // 在线厂商失败也要说出来。全句来自 TtsOnline.synthesize 抛出的可读文案
+        // （Key 被拒 / 返回结构变了 / 连不上），比"朗读失败"四个字有用得多。
+        if (TtsManager.onlineError.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 6),
+            child: Text('在线语音不可用已降级系统朗读:\n${TtsManager.onlineError}',
+              style: const TextStyle(fontSize: 10, color: Colors.orange))),
         const SizedBox(height: 6),
-        GestureDetector(onTap: () => showModalBottomSheet(context: context, builder: (c3) => SafeArea(child: ListView(shrinkWrap: true, children: [
-          ListTile(dense: true, leading: const Icon(Icons.memory, size: 20),
-            title: const Text('开源 TTS 引擎（自己跑引擎直连）', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            subtitle: const Text('Piper / sherpa-onnx / GPT-SoVITS / ChatTTS / Kokoro / edge-tts\n装在哪台机器上都能连；本应用不内置、不分发模型',
-              style: TextStyle(fontSize: 10)),
-            trailing: const Icon(Icons.chevron_right, size: 16),
-            onTap: () {
-              Navigator.pop(c3);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const TtsEnginesPage()));
-            }),
-          const Divider(height: 1),
-          const Padding(padding: EdgeInsets.all(12), child: Text('在线 TTS 厂商预设', style: TextStyle(fontWeight: FontWeight.bold))),
-          for (final tp in kTtsPresets)
-            ListTile(dense: true, leading: const Icon(Icons.record_voice_over_outlined, size: 20),
-              title: Text(tp.name, style: const TextStyle(fontSize: 13)),
-              subtitle: Text('${tp.base}\n${tp.note}', style: const TextStyle(fontSize: 10)),
-              trailing: const Icon(Icons.chevron_right, size: 16),
-              onTap: () { Navigator.pop(c3);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('到 AI 模块配置 ${tp.name} 的 API Key 后即可选用'))); }),
-          for (final n in kTtsNotes) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: Text(n, style: const TextStyle(fontSize: 11, color: Colors.grey))),
-          const SizedBox(height: 12),
-        ]))),
-          child: const Row(children: [ Icon(Icons.hub_outlined, size: 14, color: Colors.grey), SizedBox(width: 4),
-            Text('查看 TTS 厂商预设 / 开源引擎接入指引', style: TextStyle(fontSize: 11, color: Colors.grey)) ])),
+        GestureDetector(
+          onTap: () async {
+            if (c2.mounted) Navigator.pop(c2);
+            if (context.mounted) {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const TtsSettingsPage()));
+            }
+          },
+          child: Row(children: [
+            const Icon(Icons.hub_outlined, size: 14, color: Colors.grey),
+            const SizedBox(width: 4),
+            // 旧文案写的是「查看 TTS 厂商预设」，而那张表里的地址有一半是错的
+            // （阿里/火山/MiniMax 都不对），点进去也只是提示"去 AI 模块配置"。
+            // 现在直接把人送到真正能填 Key 的那一页。
+            Expanded(
+                child: Text(
+                    '语音厂商设置 · 内置 ${kTtsVendors.length} 家可填 Key 即用 / 自定义接口 / 开源引擎指引',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey))),
+            const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
+          ]),
+        ),
         const SizedBox(height: 6),
         const Text('系统朗读离线免费; 后端合成走自己的后端(piper离线/edge-tts在线); 在线引擎需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
       ])));

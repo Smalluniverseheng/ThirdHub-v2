@@ -4,16 +4,13 @@
 //   backend    —— 家庭后端合成(/v1/tts，后端决定 piper / edge)
 //   opensource —— **用户自己跑的开源引擎**直连（TTS/1 协议，D-C3）
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'ai.dart';
 import 'tts_presets.dart';
 import 'tts_direct.dart';
+import 'tts_online.dart';
+import 'tts_vendors.dart';
 import 'play_tag.dart';
 
 enum TtsState { idle, playing, paused }
@@ -42,6 +39,25 @@ class TtsManager {
   // 当前引擎: system | backend | opensource | 在线厂商id
   static Future<String> engine() async => (await SharedPreferences.getInstance()).getString('tts_engine') ?? 'system';
   static Future<void> setEngine(String v) async => (await SharedPreferences.getInstance()).setString('tts_engine', v);
+
+  /// 给界面看的引擎显示名。
+  /// ★ 不能把内部 id 直接摆给用户 —— `siliconflow` / `opensource` 这种字符串
+  ///   在界面上等于没说，用户无从判断"现在到底用哪个在念"。
+  static Future<String> engineLabel() async {
+    final e = await engine();
+    if (e == 'system') return '系统离线朗读';
+    if (e == 'backend') return '家庭后端合成';
+    if (e == 'opensource') return '开源引擎直连';
+    final v = await TtsOnline.vendorOf(e);
+    return v?.name ?? '未配置（$e）';
+  }
+
+  /// 自动朗读 AI 回复的开关（AI 对话里用）。
+  static Future<bool> autoRead() async =>
+      (await SharedPreferences.getInstance()).getBool('tts_auto_read') ?? false;
+  static Future<void> setAutoRead(bool v) async =>
+      (await SharedPreferences.getInstance()).setBool('tts_auto_read', v);
+
   static Future<double> rate() async => (await SharedPreferences.getInstance()).getDouble('tts_rate') ?? 0.5;
   static Future<void> setRate(double v) async { (await SharedPreferences.getInstance()).setDouble('tts_rate', v); await _sys.setSpeechRate(v); }
 
@@ -152,28 +168,45 @@ class TtsManager {
     if (!_stop) _set(TtsState.idle);
   }
 
-  static Future<void> _speakOnline(String providerId, int sess) async {
-    final prov = AiRegistry.byId(providerId);
-    if (prov == null) { _set(TtsState.idle); return; }
-    final key = await AiRegistry.keyOf(providerId);
-    if (key.isEmpty) { _set(TtsState.idle); return; }
-    final model = (await SharedPreferences.getInstance()).getString('tts_model_$providerId') ??
-        (prov.models.firstWhere((m) => m.contains('tts'), orElse: () => prov.models.isNotEmpty ? prov.models.first : 'tts-1'));
-    final dir = await getTemporaryDirectory();
+  // 在线厂商（D-C1，走 `tts_vendors.dart` 注册表 + `tts_online.dart` 执行层）。
+  //
+  // ★ 与旧实现的差别（这是"填了 Key 却没声音"的根因）：
+  //   过去这里是从 **AI 厂商注册表** 取 base_url 与 key，再自行拼上
+  //   `/audio/speech` —— 后果有两个：
+  //     ① 想用某个 TTS 厂商，必须先去「AI 模块」把它当成一个 AI 厂商配进去，
+  //        配的地方与用的地方不在一处，用户根本找不到；
+  //     ② 只能接 OpenAI 兼容的那一小撮，MiniMax 的 hex、阿里的"返回音频地址"、
+  //        火山的 base64 分块、百度要换 token 的表单，一个都接不了。
+  //   现在 TTS 有自己的厂商表、自己的 Key 存储、自己的请求构造。
+  static String onlineError = '';
+  static Future<void> _speakOnline(String vendorId, int sess) async {
+    onlineError = '';
+    final vendor = await TtsOnline.vendorOf(vendorId);
+    if (vendor == null) {
+      onlineError = '找不到这个语音厂商（配置可能已被删除）';
+      await setEngine('system');
+      _speakSystem(sess);
+      return;
+    }
     while (!_stop && sess == _session && chunkIdx < _chunks.length) {
       try {
-        final r = await http.post(Uri.parse('${prov.base}/audio/speech'),
-          headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},
-          body: jsonEncode({'model': model, 'input': _chunks[chunkIdx], 'voice': 'alloy', 'response_format': 'mp3'}))
-          .timeout(const Duration(seconds: 30));
-        if (r.statusCode != 200) { chunkIdx++; continue; }
-        final f = File('${dir.path}/tts_$chunkIdx.mp3');
-        await f.writeAsBytes(r.bodyBytes);
-        await _player.setAudioSource(tagFile(f.path, title: '听书 · 第 ${chunkIdx + 1}/$chunkTotal 段', album: 'ThirdHub 听书'));
+        final f = await TtsOnline.synthesize(vendor, _chunks[chunkIdx]);
+        await _player.setAudioSource(tagFile(f,
+            title: '听书 · 第 ${chunkIdx + 1}/$chunkTotal 段',
+            album: 'ThirdHub 听书'));
         await _player.play();
-        await _player.playerStateStream.firstWhere((s) => s.processingState == ProcessingState.completed)
-            .timeout(const Duration(minutes: 3), onTimeout: () => _player.playerState);
-      } catch (_) {}
+        await _player.playerStateStream
+            .firstWhere((s) => s.processingState == ProcessingState.completed)
+            .timeout(const Duration(minutes: 3),
+                onTimeout: () => _player.playerState);
+      } catch (e) {
+        // 失败逐段降级到系统朗读，并把**原因**留给界面显示 ——
+        // 静默降级的话用户只会觉得"听书坏了"，永远不知道该去改 Key。
+        onlineError = '$e';
+        await setEngine('system');
+        _speakSystem(sess);
+        return;
+      }
       if (state == TtsState.paused) return;
       chunkIdx++;
       _stateC.add(state);

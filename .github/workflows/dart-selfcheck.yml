@@ -181,3 +181,7 @@ jobs:
       - name: tts_engines（开源 TTS 引擎 TTS/1 契约：地址归一化 + 五类失败分开报）
         working-directory: flutter_app
         run: dart run tool/tts_engines_selfcheck.dart
+
+      - name: tts_vendors（在线 TTS 厂商契约：请求构建 + 四种响应形态 + 自定义厂商往返）
+        working-directory: flutter_app
+        run: dart run tool/tts_vendors_selfcheck.dart

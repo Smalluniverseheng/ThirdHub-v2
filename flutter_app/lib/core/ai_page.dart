@@ -21,6 +21,7 @@ import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
 import 'tts.dart';
+import 'tts_settings_page.dart';
 import 'ui_icons.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -113,6 +114,8 @@ class AiSection extends StatefulWidget {
   static final ValueNotifier<int> newSessionTick = ValueNotifier(0); const AiSection({super.key}); @override State<AiSection> createState() => _AiSec(); }
 class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   AiSession? session; bool sending = false; String streaming = '';
+  bool _autoRead = false; // 语音：自动朗读回复
+  String _ttsLabel = '…'; // 语音：当前引擎显示名
   // 思考链 + 工具步骤(当前正在生成的消息)
   String _reasoning = ''; final List<Map<String, String>> _steps = [];
   // 消息排队(Kimi 同款): 生成中继续发消息进入队列
@@ -138,6 +141,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
   @override void initState() { super.initState(); _boot();
+    _loadTtsLabel(); // 语音：把当前引擎名读出来显示，别让设置项写着"当前：…"
+    TtsManager.autoRead().then((v) { if (mounted) setState(() => _autoRead = v); });
     _regSub = AiRegistry.onChange.listen((_) { if (mounted) setState(() {}); });
     // 切模块时静默收起抽屉(修复: 切模块回来侧边栏莫名展开/遮罩残留)
     RootNav.moduleTick.addListener(_onModuleTick);
@@ -451,6 +456,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     AiStore.save();
     setState(() { sending = false; _reasoning = ''; _steps.clear(); });
     _jumpBottom();
+    _maybeAutoRead();
     // 队列下一条自动发送
     if (!queuePaused && _queue.isNotEmpty) { input.text = _queue.removeAt(0); _send(); }
   }
@@ -767,19 +773,50 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           style: TextStyle(fontSize: 14, color: _listening ? Colors.white : Colors.grey)),
       ])));
 
-  // 长按消息: 复制 / 朗读(系统离线 TTS)
+  // 长按消息: 复制 / 朗读 / 停止 / 语音设置
+  //
+  // ★ 副标题原来写死"系统离线语音引擎, 无需联网" —— 但 TtsManager 实际走的是
+  //   用户在「语音朗读设置」里选定的引擎（可能是某个在线厂商）。写死会让人
+  //   以为自己配的 Key 没生效，于是反复去改 Key。这里改成显示**真实**引擎。
   void _msgActions(BuildContext c, String text) {
     if (text.isEmpty) return;
     showModalBottomSheet(context: c, builder: (c2) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('复制'),
         onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(c2);
           ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); }),
-      ListTile(leading: const Icon(Icons.record_voice_over_outlined), title: const Text('朗读'),
-        subtitle: const Text('系统离线语音引擎, 无需联网', style: TextStyle(fontSize: 11)),
-        onTap: () { Navigator.pop(c2); TtsManager.speak(text); }),
+      FutureBuilder<String>(future: TtsManager.engineLabel(), builder: (_, snap) => ListTile(
+        leading: const Icon(Icons.record_voice_over_outlined), title: const Text('朗读这条'),
+        subtitle: Text('当前引擎：${snap.data ?? '…'}', style: const TextStyle(fontSize: 11)),
+        onTap: () { Navigator.pop(c2); TtsManager.speak(text); })),   // 走当前引擎，不再强制系统朗读
       ListTile(leading: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent), title: const Text('停止朗读'),
         onTap: () { Navigator.pop(c2); TtsManager.stop(); }),
+      ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('语音朗读设置'),
+        subtitle: const Text('换引擎 / 给厂商填 Key / 试听', style: TextStyle(fontSize: 11)),
+        onTap: () async { Navigator.pop(c2);
+          await Navigator.push(c, MaterialPageRoute(builder: (_) => const TtsSettingsPage())); }),
     ])));
+  }
+
+  /// 收到回复后自动朗读（开关在 TtsManager.autoRead）。
+  ///
+  /// ★ 默认**关**，只认用户手动打开。默认开的话每次问答都突然出声，
+  ///   在开会/坐地铁时是灾难，而且用户不知道怎么关。
+  Future<void> _maybeAutoRead() async {
+    if (!await TtsManager.autoRead()) return;
+    if (!mounted) return;
+    final msgs = session?.messages ?? const [];
+    if (msgs.isEmpty) return;
+    final last = msgs.last;
+    if ('${last['role']}' != 'assistant') return;
+    final text = '${last['content'] ?? ''}'.trim();
+    if (text.isEmpty) return;
+    await TtsManager.speak(text);
+  }
+
+  /// 读当前引擎显示名（用户在语音设置里改了之后要能刷新）。
+  Future<void> _loadTtsLabel() async {
+    final s = await TtsManager.engineLabel();
+    if (mounted) setState(() => _ttsLabel = s);
   }
 
   Widget _inputBar(BuildContext c, bool dark) => SafeArea(child: Padding(
@@ -816,6 +853,22 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
               Text(e.$1, style: const TextStyle(fontSize: 11))]),
         ]),
         const Divider(height: 24),
+        // 语音朗读：开关 + 设置入口。放这里是因为"朗读回复"属于对话行为的一部分，
+        // 用户在会话页就该找到，不必去别处翻设置。
+        StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
+          secondary: const Icon(Icons.record_voice_over_outlined),
+          title: const Text('自动朗读回复', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('每条回答生成后自动念出来（默认关）', style: TextStyle(fontSize: 11)),
+          value: _autoRead, onChanged: (v) async {
+            setState(() => _autoRead = v); setS(() {});
+            await TtsManager.setAutoRead(v);
+            if (!v) await TtsManager.stop(); })),
+        ListTile(dense: true, leading: const Icon(Icons.graphic_eq), title: const Text('语音朗读设置', style: TextStyle(fontSize: 14)),
+          subtitle: Text('当前：$_ttsLabel', style: const TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async { Navigator.pop(c2);
+            await Navigator.push(c, MaterialPageRoute(builder: (_) => const TtsSettingsPage()));
+            if (mounted) _loadTtsLabel(); }),
         StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
           secondary: Icon(Icons.travel_explore, color: _webSearchOn ? Colors.blueAccent : null),
           title: const Text('联网搜索', style: TextStyle(fontSize: 14)),
