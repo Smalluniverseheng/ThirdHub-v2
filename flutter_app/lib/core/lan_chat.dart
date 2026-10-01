@@ -584,7 +584,10 @@ class ChatHub {
   }
 
   /// 发送文件。返回 null 表示成功，否则返回错误说明（三段式里的"怎么办"）。
-  Future<String?> sendFile(String path, {required String to}) async {
+  /// 发送一个本机文件。传输链路与种类无关 —— `kind` 只决定两端怎么显示
+  /// （普通文件 / 应用安装包），以及接收端"待接收"列表里的图标。
+  Future<String?> sendFile(String path,
+      {required String to, String kind = ChatKind.file}) async {
     final file = File(path);
     if (!await file.exists()) return '文件不存在或已被移动，请重新选择';
     final size = await file.length();
@@ -624,6 +627,9 @@ class ChatHub {
         'host': addr,
         'port': port,
         'sha256': await _sha256Of(file),
+        // 种类随报文一起走：接收端据此区分「应用」与普通文件。
+        // 老版本会忽略这个字段、仍按文件处理（协议只增不减，不会丢消息）。
+        'kind': kind,
       },
       'ts': ts,
     }, toHost: peers.where((p) => p.id == to).firstOrNull?.host);
@@ -634,7 +640,7 @@ class ChatHub {
       fromName: name,
       to: to,
       toAll: false,
-      kind: ChatKind.file,
+      kind: kind,
       text: file.uri.pathSegments.last,
       enc: ChatEnc.none,
       ts: ts,

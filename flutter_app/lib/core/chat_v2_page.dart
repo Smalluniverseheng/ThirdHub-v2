@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'app_bridge.dart';
 import 'chat.dart' show ChatApi, ChatRoomPage, ChatSession, ChatStore;
 import 'chat_crypto.dart';
 import 'chat_logic.dart';
@@ -905,6 +906,32 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
     }
   }
 
+  /// 发送应用：挑一个本机已安装的 App，把它的安装包（APK）直接发过去。
+  ///
+  /// 用户需求(2026-10-01)：「像 QQ 那样可以提取应用然后发送 APK」。
+  /// 传输完全复用 `file` 那套（offer / token / 回执 / 断点信息），
+  /// 只是把种类标成 `ChatKind.app`，好让两端都显示成「应用」而不是普通文件。
+  /// 对方接收后点开即触发系统安装流程（应用内已声明 REQUEST_INSTALL_PACKAGES）。
+  Future<void> _sendApp() async {
+    if (!AppBridge.supported) {
+      ProUI.toast(context, '只有安卓端支持提取应用安装包，当前平台用不了这个功能。');
+      return;
+    }
+    final app = await Navigator.push<InstalledApp>(
+        context, MaterialPageRoute(builder: (_) => const AppPickerPage()));
+    if (app == null || !mounted) return;
+    final err = await ChatHub.instance
+        .sendFile(app.path, to: widget.peerId, kind: ChatKind.app);
+    _jump();
+    if (!mounted) return;
+    if (err != null) {
+      ProUI.toast(context,
+          _err3('应用没能发出去', err, '确认两台设备连的是同一个 WiFi，然后重试'));
+    } else {
+      ProUI.toast(context, '已发起传输，等对方点「接收」后即可安装。');
+    }
+  }
+
   /// 打开文件气泡：本机有的直接开；对方发来的先下载再开。
   Future<void> _open(LanMessage2 m) async {
     final meta = m.file;
@@ -1015,6 +1042,7 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
           onSend: _send,
           onPickImage: () => _sendFile(imagesOnly: true),
           onPickFile: () => _sendFile(imagesOnly: false),
+          onPickApp: _sendApp,
           onTyping: () {
             if (_typingThrottle?.isActive ?? false) return;
             _typingThrottle = Timer(const Duration(seconds: 2), () {});
@@ -1040,6 +1068,7 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext c) {
     final mine = msg.mine;
     final isPoke = msg.kind == ChatKind.poke;
+    final isApp = msg.kind == ChatKind.app;
     final isFile = msg.kind == ChatKind.file || msg.file != null;
     final col = Theme.of(c).colorScheme;
 
@@ -1070,10 +1099,15 @@ class _Bubble extends StatelessWidget {
           InkWell(
             onTap: () => onOpen?.call(msg),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.attach_file, size: 15),
+              // 应用与普通文件走同一条传输链路，这里只换图标与文案前缀，
+              // 让收到的人一眼看出"这是个能装的包"。
+              Icon(isApp ? Icons.android_outlined : Icons.attach_file, size: 15),
               const SizedBox(width: 6),
               Flexible(
-                child: Text((msg.file?['name'] as String?) ?? msg.text,
+                child: Text(
+                    isApp
+                        ? '应用 · ${(msg.file?['name'] as String?) ?? msg.text}'
+                        : ((msg.file?['name'] as String?) ?? msg.text),
                     style: const TextStyle(fontSize: 13),
                     overflow: TextOverflow.ellipsis),
               ),
@@ -1128,6 +1162,9 @@ class _Composer extends StatelessWidget {
   final VoidCallback? onTyping;
   final VoidCallback? onPickImage;
   final VoidCallback? onPickFile;
+
+  /// 「发送应用」：列出本机已安装应用，把它的安装包（APK）发给对方。
+  final VoidCallback? onPickApp;
   const _Composer({
     required this.controller,
     required this.hint,
@@ -1135,6 +1172,7 @@ class _Composer extends StatelessWidget {
     this.onTyping,
     this.onPickImage,
     this.onPickFile,
+    this.onPickApp,
   });
 
   /// 快捷短语而不是 emoji —— STYLE_GUIDE 第 1 条禁用 emoji 字符。
@@ -1169,6 +1207,11 @@ class _Composer extends StatelessWidget {
               ),
             ),
           Row(children: [
+            if (onPickApp != null)
+              IconButton(
+                  tooltip: '应用',
+                  onPressed: onPickApp,
+                  icon: const Icon(Icons.android_outlined)),
             if (onPickImage != null)
               IconButton(
                   tooltip: '图片',

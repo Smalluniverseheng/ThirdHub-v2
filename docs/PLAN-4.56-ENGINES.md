@@ -323,16 +323,27 @@
   （`manual_hidden`）—— 否则每次进来又要删一次；
   想找回到**小说模块 ⋯ 菜单 →「放回使用说明书」**（菜单文案随状态变）。
 
-### ④ 聊天：发送应用（APK）与语音通话（**未做，下一版**）
-- 现状：消息种类 `ChatKind` 已有 `text / image / file / voice / video / poke`，**缺应用类型**；
-  UI（`core/chat_v2_page.dart` ← 由 `main.dart` 引用的 `ChatHomePage`）输入区有
-  「发图片 / 发文件」，**没有「发送应用」、没有通话**。
-- 需新增：`ChatKind.app`；原生方法通道（`MainActivity.kt` 已有
-  `thirdhub/volume_keys`、`thirdhub/eq`、`thirdhub/net`、`thirdhub/intent`、`thirdhub/pip`
-  多条先例）列出已安装应用 + 取 `ApplicationInfo.sourceDir` 得到 APK 路径；
-  权限需加 `QUERY_ALL_PACKAGES`（Android 11+ 查已安装列表）；
-  发送复用既有 file 传输链路（`ChatHub.attachLocalPath`）。
-- 语音通话：需 `record`（已在依赖里）双向流 + 信令，属独立子系统。
+### ④ 聊天：发送应用（APK）（**4.62.0 已做**）｜语音通话（**未做**）
+- 原状：`ChatKind` 有 `text / image / file / voice / video / poke`，**缺应用类型**；
+  输入区只有「发图片 / 发文件」，没有「发送应用」。
+- **已做**（四层都接通，缺一层就是"点不到/点了没反应"）：
+  1. `chat_logic.dart` → `ChatKind.app = 'app'`（协议只增不减：老版本收到它，
+     因 file 元数据齐全仍按文件处理，不会丢消息）；
+  2. `lan_chat.dart` → `sendFile(path, {to, kind})` 新增 `kind` 参数，
+     写进报文与本地记录 —— **复用** file 的 offer/token/回执链路，不另起一套；
+  3. `core/app_bridge.dart`（新）→ `AppBridge.list()` 走 `MethodChannel('thirdhub/apps')`
+     + `AppPickerPage`（搜索 + 点选，第三方应用排前）；
+  4. `chat_v2_page.dart` → 输入区加「应用」按钮、`_sendApp()`、
+     气泡对 `ChatKind.app` 显示 `Icons.android_outlined` 与「应用 · 文件名」前缀；
+  5. 原生 `MainActivity.kt` → 注册 `thirdhub/apps` 通道 + `installedApps()`
+     （只列"有启动入口"的应用，取 `ApplicationInfo.sourceDir` 作为 APK 路径）；
+  6. `AndroidManifest.xml` → 加 `QUERY_ALL_PACKAGES`（**Android 11+ 没有它列表恒为空**，
+     表现为"点发送应用一个应用都没有"）。
+- **闸门**：`chat_proto_selfcheck` 101 → **118 项**，四层全查（协议常量 / 桥通道 /
+  界面按钮与实现 / 传输层 kind / 原生通道与 sourceDir / Manifest 权限），
+  并含"复用了 file 链路"的反证。
+- **语音消息**（按住说话发语音条）与**实时语音通话**属于独立子系统：
+  前者可用已有 `record` 依赖做；后者需双向流 + 信令，单独排期。
 
 ### ⑤ 网页端与前端/后端统一（**未做，需先定口径**）
 - 现状核实：网页端**已经有**引擎一整套 ——

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -7,6 +8,14 @@
     <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- ═══ 聊天「发送应用」（★勿删）═══
+         用户需求：像 QQ 那样把本机应用提取成安装包发给对方。
+         Android 11(30) 起，没有 QUERY_ALL_PACKAGES 时 getInstalledApplications
+         只返回「自己」，列表会是空的 —— 表现为"点发送应用，一个应用都没有"。
+         本 App 不经应用商店分发，不受 Google Play 该项政策限制。
+         原生取列表见 MainActivity 的 thirdhub/apps 通道。 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- ═══ 局域网发现（★必需，勿删）═══
          引擎靠 UDP 19527 广播自报(THP/1 HELLO)。Android 的 WiFi 固件在省电模式下

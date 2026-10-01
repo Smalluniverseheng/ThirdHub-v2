@@ -36,6 +36,7 @@ Future<void> main() async {
   await cryptoSession();
   await cryptoIntegrity();
   await hashing();
+  sendApp();
 
   print('');
   print('PASS $pass   FAIL $fail');
@@ -375,4 +376,81 @@ Future<void> hashing() async {
   final b = await ChatCrypto.sha256B64([1, 2, 4]);
   ck('★改 1 字节 → 摘要不同', a != b);
   ck('同内容 → 摘要相同', a == await ChatCrypto.sha256B64([1, 2, 3]));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 11. 发送应用（把本机 App 的安装包发给对方）
+//
+// 用户需求(2026-10-01)：「像 QQ 那样可以提取应用然后发送 APK」。
+// 这条链路横跨四层：协议种类 → 传输层 → 界面 → 原生通道 + 权限。
+// **只断言协议常量是不够的** —— 常量加好了但界面没挂按钮、原生没注册通道，
+// 用户那边就是"点不到"或"点了没反应"。所以四层都查，缺一层就红。
+// ═══════════════════════════════════════════════════════════════════
+void sendApp() {
+  print('');
+  print('== 11. 发送应用（APK）==');
+
+  // ── (1) 协议层 ──
+  ck('ChatKind.app 常量存在且值为 app', ChatKind.app == 'app');
+  final kinds = <String>[
+    ChatKind.text,
+    ChatKind.image,
+    ChatKind.file,
+    ChatKind.voice,
+    ChatKind.video,
+    ChatKind.poke,
+    ChatKind.app,
+  ];
+  ck('★ 消息种类互不重复（共 ${kinds.length} 种）',
+      kinds.toSet().length == kinds.length);
+  ck('app 与 file 是两个种类（两端要能区分显示）',
+      ChatKind.app != ChatKind.file);
+
+  // ── (2) 源码层：四层是否都真的接上了 ──
+  String? src(String rel) {
+    for (final p in [rel, 'flutter_app/$rel', '../$rel']) {
+      final f = File(p);
+      if (f.existsSync()) return f.readAsStringSync();
+    }
+    return null;
+  }
+
+  final bridge = src('lib/core/app_bridge.dart');
+  final room = src('lib/core/chat_v2_page.dart');
+  final lan = src('lib/core/lan_chat.dart');
+  final kt =
+      src('android/app/src/main/kotlin/com/thirdhub/app/MainActivity.kt');
+  final mf = src('android/app/src/main/AndroidManifest.xml');
+
+  ck('app_bridge.dart 存在（原生桥）', bridge != null);
+  ck('桥走 thirdhub/apps 通道',
+      bridge != null && bridge.contains("'thirdhub/apps'"));
+  ck('拿不到列表时不抛异常（回落空表，由界面解释原因）',
+      bridge != null && bridge.contains('on MissingPluginException'));
+
+  ck('聊天输入区挂了「发送应用」入口',
+      room != null && room.contains('onPickApp'));
+  ck('聊天页有 _sendApp 实现', room != null && room.contains('_sendApp'));
+  ck('用 AppPickerPage 选应用', room != null && room.contains('AppPickerPage'));
+  ck('发送时把种类标成 ChatKind.app',
+      room != null && room.contains('kind: ChatKind.app'));
+
+  ck('★ 传输层支持 kind 参数（不另起一套传输）',
+      lan != null && lan.contains('String kind = ChatKind.file'));
+  ck('种类随报文一起发给对方（接收端据此显示）',
+      lan != null && lan.contains("'kind': kind"));
+
+  ck('原生注册了 thirdhub/apps 通道',
+      kt != null && kt.contains('"thirdhub/apps"'));
+  ck('原生提供 installedApps() 实现',
+      kt != null && kt.contains('private fun installedApps()'));
+  ck('原生返回安装包真实路径（sourceDir）',
+      kt != null && kt.contains('ai.sourceDir'));
+
+  ck('★ 已声明 QUERY_ALL_PACKAGES（否则安卓 11+ 列表恒为空）',
+      mf != null && mf.contains('QUERY_ALL_PACKAGES'));
+
+  // 反证：不许做成"只加常量与文案、链路没接"的半成品
+  ck('★ 复用了 file 传输链路（不是另起一套）',
+      lan != null && lan.contains('_served[token] = file'));
 }

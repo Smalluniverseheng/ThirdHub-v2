@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 /** 画中画里那颗播放/暂停按钮发回来的动作。 */
 private const val PIP_ACTION_TOGGLE = "com.thirdhub.app.PIP_TOGGLE"
@@ -96,6 +97,22 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) { result.error("NET_ERR", e.message, null) }
+        }
+
+        // 已安装应用（聊天里「发送应用」用，用户需求 2026-10-01）：
+        // 列出本机可启动应用的安装包路径，把 APK 直接发给对方。
+        // 为什么必须原生：Dart 侧既拿不到已安装列表，也拿不到
+        // `ApplicationInfo.sourceDir`（安装包在磁盘上的真实路径）。
+        // 注意 Android 11(30) 起需要 QUERY_ALL_PACKAGES（见 AndroidManifest.xml），
+        // 拿不到时只会返回「自己」—— Dart 侧把空列表解释成"系统隐私限制"，
+        // 不当作错误，免得用户以为功能坏了。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/apps").setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "list" -> result.success(installedApps())
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) { result.error("APPS_ERR", e.message, null) }
         }
 
         // 打开方式/分享: 捕获 VIEW / SEND 意图
@@ -338,6 +355,50 @@ class MainActivity : FlutterActivity() {
      * VPN 一定要单独标出来：前端扫描要跳过它，否则会把 Clash/Tailscale 的假网段
      * 当成局域网去扫（10.x / 172.x），白白拖慢真网段。
      */
+    /**
+     * 列出本机可启动的应用（含自身）。每项：name / package / path / system / size / version。
+     *
+     * 只取「有启动入口」的应用 —— 本机装的一堆后台组件、插件包对用户没有意义，
+     * 全列出来只会淹没真正想发的那个 App。
+     * `path` 就是 APK 的绝对路径，发出去的就是这个文件。
+     */
+    private fun installedApps(): List<Map<String, Any?>> {
+        val pm = packageManager
+        val out = ArrayList<Map<String, Any?>>()
+        val seen = HashSet<String>()
+        val pmFlags = android.content.pm.PackageManager.GET_META_DATA
+        val apps = try {
+            pm.getInstalledApplications(pmFlags)
+        } catch (e: Exception) {
+            emptyList<android.content.pm.ApplicationInfo>()
+        }
+        for (ai in apps) {
+            try {
+                if (!seen.add(ai.packageName)) continue
+                val self = ai.packageName == packageName
+                // 自身一定要能列出来（哪怕被系统查询限制拦住）；
+                // 其它应用则要求有启动入口，避免把纯后台组件也塞进列表。
+                if (!self && pm.getLaunchIntentForPackage(ai.packageName) == null) continue
+                val src = ai.sourceDir ?: continue
+                val f = File(src)
+                if (!f.exists()) continue
+                val sys = (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                out.add(mapOf(
+                    "name" to pm.getApplicationLabel(ai).toString(),
+                    "package" to ai.packageName,
+                    "path" to src,
+                    "system" to sys,
+                    "size" to f.length(),
+                    "version" to runCatching {
+                        pm.getPackageInfo(ai.packageName, 0).versionName ?: ""
+                    }.getOrDefault("")
+                ))
+            } catch (_: Exception) { }
+        }
+        out.sortBy { (it["name"] as String).lowercase() }
+        return out
+    }
+
     private fun networkInfo(): Map<String, Any?> {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val nets = ArrayList<Map<String, Any?>>()
