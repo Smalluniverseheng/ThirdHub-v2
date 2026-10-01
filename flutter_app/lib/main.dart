@@ -92,6 +92,7 @@ import 'core/app_version.dart';
 import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
+import 'core/tts_settings_page.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -2539,6 +2540,13 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             entry(Icons.dashboard_customize_outlined, '功能管理',
                 page: const NavSettingsPage()),
+            _sep(),
+            // 语音朗读入口放在「我的」首页，而不是只藏在小说阅读器和 AI 的
+            // 「+」菜单里 —— 本版内置了 26 家语音厂商，但入口太深等于没做：
+            // 要配 TTS 得先打开一本书、或先进 AI 对话，长辈根本找不到。
+            entry(Icons.record_voice_over_outlined, '语音朗读',
+                value: '引擎 · 厂商 · 试听',
+                page: const TtsSettingsPage()),
           ]),
           _section(tr('进阶'), [
             entry(Icons.menu_book_outlined, tr('阅读进阶'),
