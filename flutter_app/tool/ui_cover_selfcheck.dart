@@ -256,7 +256,7 @@ void main() {
     ck('main.dart 使用 CoverThumb ≥ 6 处（5 处书目列表 + 2 处专辑）',
         countOf(mainSrc, 'CoverThumb(') >= 6, '${countOf(mainSrc, 'CoverThumb(')}');
     ck('main.dart 私有兜底已收归 CoverFallback',
-        mainSrc.contains('CoverFallback(b.name'));
+        mainSrc.contains('CoverFallback(name: b.name'));
   }
   for (final f in [
     'flutter_app/lib/main.dart',
