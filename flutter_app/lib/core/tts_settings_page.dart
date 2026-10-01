@@ -12,6 +12,7 @@ import 'play_tag.dart';
 import 'tts.dart';
 import 'tts_engines_page.dart';
 import 'tts_online.dart';
+import 'tts_presets.dart';
 import 'tts_vendors.dart';
 
 class TtsSettingsPage extends StatefulWidget {
@@ -275,8 +276,9 @@ class _TtsSettingsPageState extends State<TtsSettingsPage> {
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            title: const Text('暂未适配的厂商（${kTtsPendingVendors.length} 家）',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            // 不能写成 const：const 表达式里不允许对 List 取 .length（常量求值报错）。
+            title: Text('暂未适配的厂商（${kTtsPendingVendors.length} 家）',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             subtitle: const Text('这些厂商要客户端算签名或走 WebSocket，当前版本还接不了',
                 style: TextStyle(fontSize: 11)),
             children: [
@@ -314,7 +316,14 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
   String _testResult = '';
   bool _busy = false;
 
-  bool get _isCustom => widget.vendor == null;
+  /// 是不是「用户自己添加的接口」。
+  ///
+  /// 不能只判 `vendor == null`：那样「编辑一条**已保存**的自定义接口」会被
+  /// 当成内置厂商 —— 打开后走只读分支（表单不可改），删除按钮也不出现，
+  /// 等于存进去就再也改不了、也删不掉。新建（vendor == null）与已保存的
+  /// 自定义（group == '自定义'）都必须算自定义。
+  bool get _isCustom =>
+      widget.vendor == null || widget.vendor!.group == '自定义';
 
   @override
   void initState() {
@@ -391,8 +400,12 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
         setState(() => _testResult = '自定义接口至少要填：名称、请求地址、请求体模板。');
         return;
       }
+      // 自定义厂商的 id 是「名称 + 地址」推导出来的，改了名或改了地址 id 就会变。
+      // 只按新 id 去重会把**旧记录**留在列表里 —— 结果同一条接口存了两遍，
+      // 设置页里冒出两个一模一样的条目，且删掉一个另一个还在。故旧 id 一并清掉。
+      final oldId = widget.vendor?.id;
       final list = [...await TtsOnline.customVendors()];
-      list.removeWhere((e) => e.id == v.id);
+      list.removeWhere((e) => e.id == v.id || (oldId != null && e.id == oldId));
       list.add(v);
       await TtsOnline.setCustomVendors(list);
     }
@@ -473,7 +486,7 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
     final v = widget.vendor;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isCustom ? '自定义 TTS 接口' : (v?.name ?? '')),
+        title: Text(_isCustom ? (v?.name ?? '自定义 TTS 接口') : (v?.name ?? '')),
         actions: [
           if (_isCustom && v != null)
             IconButton(
@@ -487,7 +500,7 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
             Text(v.note, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 4),
             SelectableText(
-              v.needHost ? v.url : v.url,
+              v.url,
               style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
             ),
             if (v.docUrl.isNotEmpty)

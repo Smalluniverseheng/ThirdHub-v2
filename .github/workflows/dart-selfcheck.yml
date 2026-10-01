@@ -185,3 +185,15 @@ jobs:
       - name: tts_vendors（在线 TTS 厂商契约：请求构建 + 四种响应形态 + 自定义厂商往返）
         working-directory: flutter_app
         run: dart run tool/tts_vendors_selfcheck.dart
+
+      # ★第 15 步 analyze（2026-10-01 加）—— 补上「自检全绿 ≠ 能编译」这个缺口。
+      #   为什么必须进 CI：本机 `dart analyze` 因管道池耗尽（CreateFile failed 231）
+      #   跑不了，于是本地**没有任何类型检查**；而纯 Dart 自检不 import flutter，
+      #   看不见 widget 层的问题。4.56.0 那轮就是活例：18 项自检全绿，真编译却报
+      #   「The getter 'TtsBackend' isn't defined」（少了一个 import）与
+      #   「const 表达式里不能对 List 取 .length」两条 —— 都只有真编译才看得见。
+      #   加这一步后，这类错误在秒级反馈，不必等整个 build-apk 跑完。
+      #   只把 error 当致命：历史代码的 info/warning 不拦（--no-fatal-*）。
+      - name: analyze（类型检查 —— 本机跑不了，搬到这里）
+        working-directory: flutter_app
+        run: dart analyze --no-fatal-infos --no-fatal-warnings lib/

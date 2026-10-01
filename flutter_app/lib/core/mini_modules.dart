@@ -24,63 +24,346 @@ class _Store {
   }
 }
 
-// ═══ 计算器: 四则/括号/百分/乘方 + 历史 ═══
-// 递归下降解析器: + - * / % ^ ( ) 小数 负号(类方法, 支持相互递归)
+// ═══ 计算器：标准 / 科学 / 单位换算 / 大写金额 ═══
+//
+// 递归下降解析器。相比第一版补上的东西，都是"顶级计算器默认就有、
+// 而我们此前没有"的：
+//   · 函数与常量：sin/cos/tan/asin/acos/atan/ln/log/sqrt/abs/exp、π、e
+//   · 后缀运算：`%` 当**百分比**（3+5% 之类），`!` 当阶乘
+//   · 度/弧度切换：默认度（日常更多），切到弧度时函数参数按弧度算
+//
+// ★ 两个刻意的取舍：
+//   ① `%` 从「取模」改成「百分比」。第一版是取模，但用户在计算器上按 %
+//      期望的是百分比，取模几乎没人用 —— 顶着"计算器"这个名字就该按预期走。
+//   ② 阶乘限制 0~170 的整数：超标会 double 溢出成 Infinity，
+//      那样界面显示"Infinity"比直接说"只支持 0~170 的整数"更难懂。
 class _CalcParser {
-  final String s; int i = 0;
-  _CalcParser(this.s);
+  final String s;
+  final bool degrees; // true = 三角函数参数按角度
+  int i = 0;
+  _CalcParser(this.s, {this.degrees = true});
+
   double parse() {
     final v = _expr();
-    while (i < s.length && s[i] == ' ') i++;
+    _ws();
     if (i != s.length) throw '表达式有误';
     return v;
   }
+
+  void _ws() {
+    while (i < s.length && s[i] == ' ') {
+      i++;
+    }
+  }
+
   double _expr() {
     var v = _term();
-    while (i < s.length && (s[i] == '+' || s[i] == '-')) {
-      final op = s[i++]; final r = _term();
-      v = op == '+' ? v + r : v - r;
+    while (true) {
+      _ws();
+      if (i < s.length && (s[i] == '+' || s[i] == '-')) {
+        final op = s[i++];
+        final r = _term();
+        v = op == '+' ? v + r : v - r;
+      } else {
+        break;
+      }
     }
     return v;
   }
+
   double _term() {
-    var v = _factor();
-    while (i < s.length && (s[i] == '*' || s[i] == '/' || s[i] == '%')) {
-      final op = s[i++]; final r = _factor();
-      if (op == '*') v *= r; else if (op == '/') { if (r == 0) throw '除数为 0'; v /= r; } else v %= r;
+    var v = _unary();
+    while (true) {
+      _ws();
+      if (i < s.length && (s[i] == '*' || s[i] == '/')) {
+        final op = s[i++];
+        final r = _unary();
+        if (op == '*') {
+          v *= r;
+        } else {
+          if (r == 0) throw '除数为 0';
+          v /= r;
+        }
+      } else {
+        break;
+      }
     }
     return v;
   }
-  double _factor() {
-    var base = _unary();
-    if (i < s.length && s[i] == '^') { i++; base = math.pow(base, _factor()).toDouble(); }
+
+  double _unary() {
+    _ws();
+    if (i < s.length && s[i] == '-') {
+      i++;
+      return -_unary();
+    }
+    if (i < s.length && s[i] == '+') {
+      i++;
+      return _unary();
+    }
+    var base = _power();
+    // 后缀：% 与 !（可叠加，如 50%! 这种写法虽怪但语法上成立）
+    while (true) {
+      _ws();
+      if (i < s.length && s[i] == '%') {
+        i++;
+        base = base / 100;
+      } else if (i < s.length && s[i] == '!') {
+        i++;
+        base = _fact(base);
+      } else {
+        break;
+      }
+    }
     return base;
   }
-  double _unary() {
-    if (i < s.length && s[i] == '-') { i++; return -_unary(); }
-    if (i < s.length && s[i] == '+') { i++; return _unary(); }
-    return _atom();
-  }
-  double _atom() {
-    while (i < s.length && s[i] == ' ') i++;
-    if (i < s.length && s[i] == '(') {
-      i++; final v = _expr();
-      if (i >= s.length || s[i] != ')') throw '括号不配对';
-      i++; return v;
+
+  double _power() {
+    final base = _atom();
+    _ws();
+    if (i < s.length && s[i] == '^') {
+      i++;
+      return math.pow(base, _unary()).toDouble();
     }
-    final m = RegExp(r'\d+\.?\d*|\.\d+').matchAsPrefix(s, i);
-    if (m == null) throw '表达式有误';
-    i = m.end; return double.parse(m.group(0)!);
+    return base;
+  }
+
+  double _atom() {
+    _ws();
+    if (i < s.length && s[i] == '(') {
+      i++;
+      final v = _expr();
+      _ws();
+      if (i >= s.length || s[i] != ')') throw '括号不配对';
+      i++;
+      return v;
+    }
+    // 函数名 / 常量名
+    final m = RegExp(r'[a-zA-Z]+').matchAsPrefix(s, i);
+    if (m != null) {
+      final name = m.group(0)!.toLowerCase();
+      i = m.end;
+      if (name == 'pi') return math.pi;
+      if (name == 'e') return math.e;
+      final arg = _atom(); // 函数取一个"原子"作参数，sin(30) 与 sin30 都能吃
+      final double a = degrees && _trig(name) ? arg * math.pi / 180 : arg;
+      switch (name) {
+        case 'sin':
+          return math.sin(a);
+        case 'cos':
+          return math.cos(a);
+        case 'tan':
+          return math.tan(a);
+        case 'asin':
+          if (arg < -1 || arg > 1) throw 'asin 只在 -1~1 有定义';
+          final r = math.asin(arg);
+          return degrees ? r * 180 / math.pi : r;
+        case 'acos':
+          if (arg < -1 || arg > 1) throw 'acos 只在 -1~1 有定义';
+          final r = math.acos(arg);
+          return degrees ? r * 180 / math.pi : r;
+        case 'atan':
+          final r = math.atan(arg);
+          return degrees ? r * 180 / math.pi : r;
+        case 'ln':
+          if (arg <= 0) throw 'ln 只对正数有定义';
+          return math.log(arg);
+        case 'log':
+          if (arg <= 0) throw 'log 只对正数有定义';
+          return math.log(arg) / math.ln10;
+        case 'sqrt':
+          if (arg < 0) throw '负数不能开平方';
+          return math.sqrt(arg);
+        case 'abs':
+          return arg.abs();
+        case 'exp':
+          return math.exp(arg);
+      }
+      throw '未知函数 $name';
+    }
+    final n = RegExp(r'\d+\.?\d*|\.\d+').matchAsPrefix(s, i);
+    if (n == null) throw '表达式有误';
+    i = n.end;
+    return double.parse(n.group(0)!);
+  }
+
+  /// 这个函数名是否受"度/弧度"影响。
+  bool _trig(String n) => n == 'sin' || n == 'cos' || n == 'tan';
+
+  double _fact(double v) {
+    if (v < 0 || v != v.roundToDouble() || v > 170) throw '阶乘只支持 0~170 的整数';
+    var r = 1.0;
+    for (var k = 2; k <= v.round(); k++) {
+      r *= k;
+    }
+    return r;
   }
 }
 
 class CalcPage extends StatefulWidget { const CalcPage({super.key}); @override State<CalcPage> createState() => _Calc(); }
-class _Calc extends State<CalcPage> {
+
+/// 单位换算的一类。`factor` = 该单位相对基准单位的倍率（温度不用它，见下）。
+class _ConvUnit {
+  final String name;
+  final double factor;
+  const _ConvUnit(this.name, this.factor);
+}
+
+const Map<String, List<_ConvUnit>> _convCats = {
+  '长度': [
+    _ConvUnit('毫米', .001), _ConvUnit('厘米', .01), _ConvUnit('米', 1), _ConvUnit('千米', 1000),
+    _ConvUnit('英寸', .0254), _ConvUnit('英尺', .3048), _ConvUnit('码', .9144), _ConvUnit('英里', 1609.344),
+    _ConvUnit('市里', 500), _ConvUnit('市尺', 1 / 3), _ConvUnit('市寸', 1 / 30),
+  ],
+  '面积': [
+    _ConvUnit('平方厘米', .0001), _ConvUnit('平方米', 1), _ConvUnit('平方千米', 1000000),
+    _ConvUnit('公顷', 10000), _ConvUnit('亩', 2000 / 3), _ConvUnit('平方英尺', .09290304),
+  ],
+  '体积': [
+    _ConvUnit('毫升', .001), _ConvUnit('升', 1), _ConvUnit('立方米', 1000),
+    _ConvUnit('美制加仑', 3.785411784), _ConvUnit('英制加仑', 4.54609),
+  ],
+  '重量': [
+    _ConvUnit('毫克', 1e-6), _ConvUnit('克', .001), _ConvUnit('千克', 1), _ConvUnit('吨', 1000),
+    _ConvUnit('市斤', .5), _ConvUnit('市两', .05), _ConvUnit('磅', .45359237), _ConvUnit('盎司', .028349523125),
+  ],
+  '速度': [
+    _ConvUnit('米/秒', 1), _ConvUnit('千米/时', 1 / 3.6), _ConvUnit('英里/时', .44704),
+    _ConvUnit('节', 1852 / 3600), _ConvUnit('马赫', 340.3),
+  ],
+  '存储': [
+    _ConvUnit('字节', 1), _ConvUnit('KB', 1024), _ConvUnit('MB', 1024 * 1024),
+    _ConvUnit('GB', 1024 * 1024 * 1024), _ConvUnit('TB', 1024 * 1024 * 1024 * 1024),
+  ],
+  '时间': [
+    _ConvUnit('毫秒', .001), _ConvUnit('秒', 1), _ConvUnit('分', 60), _ConvUnit('时', 3600),
+    _ConvUnit('天', 86400), _ConvUnit('周', 604800),
+  ],
+};
+
+/// 温度：非线性，单列一类自己算。基准是摄氏度。
+const List<String> _tempUnits = ['摄氏度 °C', '华氏度 °F', '开尔文 K'];
+
+double _tempToC(double v, int from) {
+  switch (from) {
+    case 1:
+      return (v - 32) * 5 / 9;
+    case 2:
+      return v - 273.15;
+  }
+  return v;
+}
+
+double _cToTemp(double c, int to) {
+  switch (to) {
+    case 1:
+      return c * 9 / 5 + 32;
+    case 2:
+      return c + 273.15;
+  }
+  return c;
+}
+
+/// 金额大写。规则按财务惯例：零元也要写「零元……」，
+/// 角分为 0 写「整」，中间空节补「零」（如 10005 → 壹万零伍）。
+String _rmbUpper(double v) {
+  if (v.isNaN || v.isInfinite) return '数值无效';
+  const d = '零壹贰叁肆伍陆柒捌玖';
+  const u = ['', '拾', '佰', '仟'];
+  const g = ['', '万', '亿', '万亿'];
+  final neg = v < 0;
+  final n = v.abs();
+  if (n >= 1e16) return '超出可表示范围';
+  final intPart = n.floor();
+  final cents = ((n - intPart) * 100).round();
+  final segs = <int>[];
+  var x = intPart;
+  if (x == 0) {
+    segs.add(0);
+  } else {
+    while (x > 0) {
+      segs.add(x % 10000);
+      x ~/= 10000;
+    }
+  }
+  final sb = StringBuffer();
+  if (intPart == 0) {
+    sb.write('零');
+  } else {
+    for (var gi = segs.length - 1; gi >= 0; gi--) {
+      final seg = segs[gi];
+      if (seg == 0) {
+        var later = false;
+        for (var k = gi - 1; k >= 0; k--) {
+          if (segs[k] != 0) {
+            later = true;
+            break;
+          }
+        }
+        if (later && sb.isNotEmpty && !sb.toString().endsWith('零')) sb.write('零');
+        continue;
+      }
+      if (seg < 1000 && sb.isNotEmpty && !sb.toString().endsWith('零')) sb.write('零');
+      var s = seg;
+      var unit = 0;
+      var segStr = '';
+      var pendingZero = false;
+      while (s > 0) {
+        final dig = s % 10;
+        if (dig == 0) {
+          if (segStr.isNotEmpty) pendingZero = true;
+        } else {
+          if (pendingZero) {
+            segStr = '零$segStr';
+            pendingZero = false;
+          }
+          segStr = '${d[dig]}${u[unit]}$segStr';
+        }
+        s ~/= 10;
+        unit++;
+      }
+      sb.write(segStr);
+      sb.write(g[gi]);
+    }
+  }
+  var out = '${sb.toString()}元';
+  if (cents == 0) {
+    out += '整';
+  } else {
+    final jiao = cents ~/ 10, fen = cents % 10;
+    if (jiao == 0) {
+      out += '零${d[fen]}分';
+    } else if (fen == 0) {
+      out += '${d[jiao]}角';
+    } else {
+      out += '${d[jiao]}角${d[fen]}分';
+    }
+  }
+  return neg ? '负$out' : out;
+}
+
+class _Calc extends State<CalcPage> with SingleTickerProviderStateMixin {
+  late final TabController _tab = TabController(length: 4, vsync: this);
+
   String expr = '', result = '';
   bool isErr = false;
+  bool degrees = true;
+  double lastAns = 0;
   List<String> history = [];
 
+  int convCat = 0;
+  int convFrom = 2, convTo = 3; // 默认「米 → 千米」这种最常见的用法
+  final convInput = TextEditingController(text: '1');
+
+  final amtInput = TextEditingController();
+  String amtOut = '';
+
   @override void initState() { super.initState(); _load(); }
+  @override void dispose() {
+    _tab.dispose(); convInput.dispose(); amtInput.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
     setState(() => history = p.getStringList('calc_history') ?? []);
@@ -92,36 +375,71 @@ class _Calc extends State<CalcPage> {
     return v.toStringAsPrecision(10).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
   }
 
+  /// 把界面字符翻成解析器认的形式。
+  String _norm(String s) => s
+      .replaceAll('×', '*')
+      .replaceAll('÷', '/')
+      .replaceAll('π', 'pi')
+      .replaceAll('√', 'sqrt')
+      .replaceAll('ans', lastAns == 0 ? '0' : _fmt(lastAns))
+      .replaceAll(',', '');
+
+  double _eval(String s) => _CalcParser(_norm(s), degrees: degrees).parse();
+
   void _tap(String k) => setState(() {
     switch (k) {
       case 'C': expr = ''; result = ''; isErr = false;
       case '⌫': if (expr.isNotEmpty) expr = expr.substring(0, expr.length - 1);
+      case 'DEG': degrees = true;
+      case 'RAD': degrees = false;
       case '=':
         if (expr.isEmpty) break;
         try {
-          result = _fmt(_CalcParser(expr.replaceAll('×', '*').replaceAll('÷', '/')).parse());
+          final v = _eval(expr);
+          result = _fmt(v); lastAns = v; isErr = false;
           history.insert(0, '$expr = $result');
           if (history.length > 50) history = history.sublist(0, 50);
           SharedPreferences.getInstance().then((p) => p.setStringList('calc_history', history));
-          isErr = false;
         } catch (e) { result = '$e'; isErr = true; }
       default: expr += k;
     }
   });
 
-  @override Widget build(BuildContext c) {
-    final scheme = Theme.of(c).colorScheme;
-    const keys = [
-      ['C', '(', ')', '÷'],
-      ['7', '8', '9', '×'],
-      ['4', '5', '6', '-'],
-      ['1', '2', '3', '+'],
-      ['0', '.', '⌫', '='],
-    ];
+  /// 实时预览：边输边算，省掉"按了等号才发现括号没配平"。
+  String get _preview {
+    if (expr.isEmpty) return '';
+    try {
+      final s = _fmt(_eval(expr));
+      return s == result ? '' : s;
+    } catch (_) { return ''; }
+  }
+
+  static const _stdKeys = [
+    ['C', '(', ')', '÷'],
+    ['7', '8', '9', '×'],
+    ['4', '5', '6', '-'],
+    ['1', '2', '3', '+'],
+    ['0', '.', '⌫', '='],
+  ];
+
+  static const _sciKeys = [
+    ['DEG', 'RAD', 'sin', 'cos', 'tan'],
+    ['C', '(', ')', '%', '⌫'],
+    ['ln', 'log', '√', '^', '÷'],
+    ['7', '8', '9', 'π', '×'],
+    ['4', '5', '6', 'e', '-'],
+    ['1', '2', '3', 'ans', '+'],
+    ['0', '.', '!', '', '='],
+  ];
+
+  Widget _calcView(bool sci) {
+    final scheme = Theme.of(context).colorScheme;
+    final keys = sci ? _sciKeys : _stdKeys;
+    final pv = _preview;
     return Column(children: [
       Expanded(child: GestureDetector(
         onLongPress: () { if (result.isNotEmpty) { Clipboard.setData(ClipboardData(text: result));
-          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('结果已复制'))); } },
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('结果已复制'))); } },
         child: Container(width: double.infinity, padding: const EdgeInsets.all(20),
           alignment: Alignment.bottomRight,
           child: Column(mainAxisAlignment: MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -133,23 +451,132 @@ class _Calc extends State<CalcPage> {
             ])),
             SingleChildScrollView(scrollDirection: Axis.horizontal, reverse: true,
               child: Text(expr.isEmpty ? '0' : expr, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w300))),
+            if (pv.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2),
+              child: Text('= $pv', style: TextStyle(fontSize: 16, color: scheme.primary.withValues(alpha: .55)))),
             const SizedBox(height: 6),
             Text(result, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600,
               color: isErr ? Colors.redAccent : scheme.primary)),
           ])))),
       for (final row in keys) Row(children: [
-        for (final k in row) Expanded(child: Padding(padding: const EdgeInsets.all(4),
-          child: SizedBox(height: 58, child: FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: k == '=' ? scheme.primary : ('C⌫÷×-+()'.contains(k) ? scheme.surfaceContainerHighest : scheme.surfaceContainerLow),
-              foregroundColor: k == '=' ? scheme.onPrimary : ('C⌫÷×-+()'.contains(k) ? scheme.primary : scheme.onSurface),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: () => _tap(k),
-            child: Text(k, style: const TextStyle(fontSize: 20)))))),
+        for (final k in row) Expanded(child: Padding(padding: const EdgeInsets.all(3),
+          child: k.isEmpty
+            ? const SizedBox(height: 52)
+            : SizedBox(height: 52, child: FilledButton(
+                style: FilledButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  backgroundColor: k == '='
+                      ? scheme.primary
+                      : (k == 'DEG' || k == 'RAD')
+                          ? (degrees == (k == 'DEG') ? scheme.primaryContainer : scheme.surfaceContainerLow)
+                          : RegExp(r'^[0-9.]$').hasMatch(k)
+                              ? scheme.surfaceContainerLow
+                              : scheme.surfaceContainerHighest,
+                  foregroundColor: k == '='
+                      ? scheme.onPrimary
+                      : (k == 'DEG' || k == 'RAD')
+                          ? scheme.onPrimaryContainer
+                          : RegExp(r'^[0-9.]$').hasMatch(k) ? scheme.onSurface : scheme.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () => _tap(k),
+                child: Text(k, style: TextStyle(fontSize: k.length > 2 ? 12 : 19)))))),
       ]),
       const SizedBox(height: 6),
     ]);
   }
+
+  Widget _convView() {
+    final cats = [..._convCats.keys, '温度'];
+    final cat = cats[convCat];
+    final units = cat == '温度' ? _tempUnits : _convCats[cat]!.map((e) => e.name).toList();
+    final a = convFrom.clamp(0, units.length - 1);
+    final b = convTo.clamp(0, units.length - 1);
+    double? out;
+    final raw = double.tryParse(convInput.text.trim());
+    if (raw != null) {
+      if (cat == '温度') {
+        out = _cToTemp(_tempToC(raw, a), b);
+      } else {
+        final list = _convCats[cat]!;
+        out = raw * list[a].factor / list[b].factor;
+      }
+    }
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (var i = 0; i < cats.length; i++)
+          ChoiceChip(label: Text(cats[i], style: const TextStyle(fontSize: 12)),
+            selected: convCat == i,
+            onSelected: (_) => setState(() { convCat = i; convFrom = 0; convTo = 1; })),
+      ]),
+      const SizedBox(height: 14),
+      TextField(controller: convInput, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w300),
+        decoration: const InputDecoration(labelText: '数值', isDense: true, border: OutlineInputBorder()),
+        onChanged: (_) => setState(() {})),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: DropdownButtonFormField<int>(
+          initialValue: a, isDense: true, decoration: const InputDecoration(labelText: '从', isDense: true, border: OutlineInputBorder()),
+          items: [for (var i = 0; i < units.length; i++) DropdownMenuItem(value: i, child: Text(units[i], style: const TextStyle(fontSize: 13)))],
+          onChanged: (v) => setState(() => convFrom = v ?? 0))),
+        IconButton(onPressed: () => setState(() { final t = convFrom; convFrom = convTo; convTo = t; }),
+          tooltip: '互换', icon: const Icon(Icons.swap_horiz)),
+        Expanded(child: DropdownButtonFormField<int>(
+          initialValue: b, isDense: true, decoration: const InputDecoration(labelText: '到', isDense: true, border: OutlineInputBorder()),
+          items: [for (var i = 0; i < units.length; i++) DropdownMenuItem(value: i, child: Text(units[i], style: const TextStyle(fontSize: 13)))],
+          onChanged: (v) => setState(() => convTo = v ?? 0))),
+      ]),
+      const SizedBox(height: 20),
+      Container(width: double.infinity, padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(12)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('结果', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 6),
+          SelectableText(out == null ? '—' : _fmt(out),
+            style: TextStyle(fontSize: 30, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.primary)),
+          if (out != null) Text('${_fmt(raw!)} ${units[a]} = ${_fmt(out)} ${units[b]}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ])),
+    ]);
+  }
+
+  Widget _amtView() => ListView(padding: const EdgeInsets.all(14), children: [
+    const Text('数字 → 人民币大写', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+    const SizedBox(height: 4),
+    const Text('报销、开票、写收据时用。支持到万亿位，角分按财务惯例处理。',
+      style: TextStyle(fontSize: 11, color: Colors.grey)),
+    const SizedBox(height: 12),
+    TextField(controller: amtInput, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
+      decoration: const InputDecoration(labelText: '金额（元）', hintText: '如 12345.67', isDense: true, border: OutlineInputBorder()),
+      onChanged: (v) => setState(() { final d = double.tryParse(v.trim()); amtOut = d == null ? '' : _rmbUpper(d); })),
+    const SizedBox(height: 16),
+    if (amtOut.isNotEmpty) ...[
+      Container(width: double.infinity, padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(12)),
+        child: SelectableText(amtOut, style: const TextStyle(fontSize: 20, height: 1.6, fontWeight: FontWeight.w500))),
+      const SizedBox(height: 10),
+      OutlinedButton.icon(icon: const Icon(Icons.copy, size: 18), label: const Text('复制大写'),
+        onPressed: () { Clipboard.setData(ClipboardData(text: amtOut));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制'))); }),
+    ],
+    const SizedBox(height: 24),
+    const Text('常用示例', style: TextStyle(fontSize: 12, color: Colors.grey)),
+    const SizedBox(height: 6),
+    Wrap(spacing: 6, runSpacing: 6, children: [
+      for (final s in ['100', '1000.5', '10005', '100000000', '0.5', '12345.67'])
+        ActionChip(label: Text(s, style: const TextStyle(fontSize: 12)),
+          onPressed: () => setState(() { amtInput.text = s; amtOut = _rmbUpper(double.parse(s)); })),
+    ]),
+  ]);
+
+  @override Widget build(BuildContext c) => Column(children: [
+    TabBar(controller: _tab, labelStyle: const TextStyle(fontSize: 13), tabs: const [
+      Tab(text: '标准'), Tab(text: '科学'), Tab(text: '换算'), Tab(text: '金额'),
+    ]),
+    Expanded(child: TabBarView(controller: _tab, children: [
+      _calcView(false), _calcView(true), _convView(), _amtView(),
+    ])),
+  ]);
 }
 
 // ═══ 文本工具箱: JSON / Base64 / URL / 时间戳 / 字数统计 ═══
