@@ -792,6 +792,22 @@ class Book {
         'bookUrl': bookUrl,
         'sourceId': sourceId
       };
+
+  /// 封面**最终**加载地址（唯一出口）。
+  ///
+  /// ★ 为什么必须收口：引擎直连的书 `sourceId == 'engine'`，它的封面是引擎侧
+  /// 原样可用的地址；若统一塞进 `Api.img()`（给相对路径补后端前缀）就会变成
+  /// 一个 404 地址 → 书架整格走兜底。表现正是用户报的
+  /// 「搜索页明明有封面，加进书架就没了」。
+  /// 后端书 / 本地书的封面是相对路径，才需要 `Api.img()` 补前缀。
+  ///
+  /// 此前搜索结果列表写了这个三目，书架 / 历史 / 各列表**各写各的、多数漏写**，
+  /// 所以统一到这里，调用点一律 `b.coverSrc`，不再手写判断。
+  String get coverSrc {
+    final u = coverUrl.trim();
+    if (u.isEmpty) return '';
+    return sourceId == 'engine' ? u : Api.img(u);
+  }
   static Future<List<Book>> shelf(String kind) async {
     final p = await SharedPreferences.getInstance();
     try {
@@ -4910,8 +4926,7 @@ class _Hp extends State<HistoryPage> {
               for (final b in items)
                 ListTile(
                     leading: b.coverUrl != ''
-                        ? CoverThumb(Api.img(b.coverUrl),
-                            fallbackText: b.name)
+                        ? CoverThumb(b.coverSrc, fallbackText: b.name)
                         : const Icon(Icons.history),
                     title: Text(b.name),
                     subtitle: Text(b.author,
@@ -5139,8 +5154,10 @@ class _Sh extends State<ShelfPage> {
   List<Map<String, dynamic>> local = [];
   bool loading = true;
 
-  /// 内置《使用说明书》种子条目（仅小说书架）：每次都注入、不持久化、不可删除。
+  /// 内置《使用说明书》种子条目（仅小说书架）。
   /// 用户需求(2026-09-27)：「书架那里默认进去就拥有的使用说明书」。
+  /// 用户需求(2026-10-01)：「应该支持它能够删除，也没有说一定要置顶」。
+  /// → 从"永远在架、不可删"改为"默认注入、可移除、可在模块菜单放回"。
   Book? manual;
   @override
   void initState() {
@@ -5151,8 +5168,14 @@ class _Sh extends State<ShelfPage> {
   Future<void> load() async {
     items = await Book.shelf(widget.kind);
     if (widget.kind == 'novel') {
-      manual = Book(ManualBook.title, ManualBook.author, '', ManualBook.intro,
-          ManualBook.bookUrl, ManualBook.sourceId);
+      // 默认摆在第一格。用户移除过就不再注入 —— 移除是记住的，
+      // 免得每次进来又冒出来；想放回到模块 ⋯ 菜单里点一下即可。
+      final p0 = await SharedPreferences.getInstance();
+      final hidden = p0.getBool(ManualBook.hiddenKey) ?? false;
+      manual = hidden
+          ? null
+          : Book(ManualBook.title, ManualBook.author, '', ManualBook.intro,
+              ManualBook.bookUrl, ManualBook.sourceId);
     }
     // 本地导入的书直接进书架(点按即读, 不经过后端/引擎)
     if (widget.kind == 'novel') {
@@ -5378,10 +5401,7 @@ class _Sh extends State<ShelfPage> {
                                         child: Stack(
                                             fit: StackFit.expand,
                                             children: [
-                                              CoverImage(
-                                                  b.coverUrl != ''
-                                                      ? Api.img(b.coverUrl)
-                                                      : '',
+                                              CoverImage(b.coverSrc,
                                                   fallbackText: b.name,
                                                   clip: false),
                                               if (prog >= 0)
@@ -5432,7 +5452,7 @@ class _Sh extends State<ShelfPage> {
                 });
   }
 
-  /// 内置《使用说明书》格子：点开即读，长按只做说明（无删除）。
+  /// 内置《使用说明书》格子：点开即读；长按可把它移出书架（移除是记住的）。
   Widget _manualCell(BuildContext c) {
     final b = manual!;
     return GestureDetector(
@@ -5445,17 +5465,29 @@ class _Sh extends State<ShelfPage> {
                     index: 0,
                     bookName: b.name,
                     bookUrl: ManualBook.bookUrl))).then((_) => load()),
-        onLongPress: () => showDialog<void>(
-            context: c,
-            builder: (c2) => AlertDialog(
-                    title: const Text('内置说明书'),
-                    content: const Text('这本《使用说明书》随应用内置，'
-                        '介绍本站的用法与常见问题。\n\n它永远在书架第一位，不可删除。'),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(c2),
-                          child: const Text('知道了'))
-                    ])),
+        onLongPress: () async {
+          final rm = await showDialog<bool>(
+              context: c,
+              builder: (c2) => AlertDialog(
+                      title: const Text('内置说明书'),
+                      content: const Text('这本《使用说明书》随应用内置，'
+                          '介绍本站的用法与常见问题。\n\n'
+                          '它不占你的书架配额，也不参与同步。'
+                          '移出后想找回来，到本模块右上角 ⋯ 菜单里点「放回使用说明书」即可。'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(c2, false),
+                            child: const Text('取消')),
+                        FilledButton(
+                            onPressed: () => Navigator.pop(c2, true),
+                            child: const Text('移出书架'))
+                      ]));
+          if (rm == true) {
+            final p = await SharedPreferences.getInstance();
+            await p.setBool(ManualBook.hiddenKey, true);
+            if (mounted) load();
+          }
+        },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
               child: Container(
@@ -8824,6 +8856,38 @@ class _RootNavState extends State<RootNav> {
               //   "这个模块自己的事"的入口（本地库/导入/模块设置都在这里），
               //   挂在这儿既符合直觉，也不用给 65 个模块逐个改 UI。
               if (key == '小说') ...[
+                // 说明书虽在书架第一格，但用户可能已把它移出 —— 这里给一个
+                // 稳定的找回入口（菜单文案随当前状态变）。
+                ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.help_outline, size: 20),
+                    title: Text(
+                        (AppSettings.p.getBool(ManualBook.hiddenKey) ?? false)
+                            ? '放回使用说明书'
+                            : '使用说明书'),
+                    subtitle: const Text('每个功能在哪里点、出错怎么查',
+                        style: TextStyle(fontSize: 11)),
+                    onTap: () async {
+                      Navigator.pop(c2);
+                      final p = await SharedPreferences.getInstance();
+                      final hidden = p.getBool(ManualBook.hiddenKey) ?? false;
+                      if (!context.mounted) return;
+                      if (hidden) {
+                        await p.setBool(ManualBook.hiddenKey, false);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('已放回书架第一格')));
+                      } else {
+                        Navigator.push(
+                            context,
+                            smoothRoute(NovelReadPage(
+                                sourceId: ManualBook.sourceId,
+                                chapters: ManualBook.chapters(),
+                                index: 0,
+                                bookName: ManualBook.title,
+                                bookUrl: ManualBook.bookUrl)));
+                      }
+                    }),
                 proEntry(c2, Icons.menu_book_outlined, tr('阅读进阶'),
                     tr('换源 · 批注 · 摘抄 · 追更'), const ReadingProPage()),
                 proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',

@@ -216,5 +216,9 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/api_keys_selfcheck.dart
 
+      - name: manual_book（内置说明书：章节完整性 + 每章最低字数 + 关键操作词必现）
+        working-directory: flutter_app
+        run: dart run tool/manual_book_selfcheck.dart
+
       # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
       # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。

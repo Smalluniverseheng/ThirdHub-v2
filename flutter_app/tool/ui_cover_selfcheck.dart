@@ -285,6 +285,29 @@ void main() {
         ucSrc.contains('_empty ? _fallback(context) : _network(context)'));
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // 8. 封面地址收口：Book.coverSrc
+  //
+  // 起因（用户 2026-10-01 报）：引擎里搜到的小说，加进书架后封面没了。
+  // 根因是书架把引擎侧封面地址又套了一次 `Api.img()`（补后端前缀）→ 404 → 兜底。
+  // 搜索结果列表写了三目判断，书架 / 历史各写各的、多数漏写。
+  // 现在统一收口到 `Book.coverSrc`，这道断言守着"不再回退"。
+  // ═══════════════════════════════════════════════════════════════
+  print('');
+  print('== 8. 封面地址收口（源码断言）==');
+  if (mainSrc != null) {
+    ck('Book 提供 coverSrc 取值出口', mainSrc.contains('String get coverSrc'));
+    ck('coverSrc 对引擎书原样返回、其余才补前缀',
+        mainSrc.contains("sourceId == 'engine' ? u : Api.img(u)"));
+    ck('书架卡片改用 b.coverSrc', mainSrc.contains('CoverImage(b.coverSrc'));
+    ck('阅读历史改用 b.coverSrc', mainSrc.contains('CoverThumb(b.coverSrc'));
+    // 反证：给 Book 对象再套一次 Api.img 的写法必须为零 ——
+    // 它正是"引擎搜到有封面、加书架就没了"的成因，绝不允许复发。
+    final relapsed = countOf(mainSrc, 'Api.img(b.coverUrl)');
+    ck('无 Api.img(b.coverUrl) 残留（Book 封面二次加前缀）', relapsed == 0,
+        'count=$relapsed');
+  }
+
   print('');
   print('PASS $pass   FAIL $fail');
   if (fail > 0) exit(1);
