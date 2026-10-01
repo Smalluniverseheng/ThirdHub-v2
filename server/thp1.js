@@ -106,6 +106,28 @@ class UpstreamErr extends Error {} // 上游业务错误：不回落, 直接抛�
 const LEGACY_PATH = { search: '/thp/search', toc: '/thp/chapters', content: '/thp/content' };
 
 /**
+ * ★每个 op 的调用超时（2026-09-30）。
+ *
+ * 旧实现**所有** op 一律 `AbortSignal.timeout(8000)`，而引擎侧的实际耗时预算是：
+ *   search 20s（扫全源）/ toc 20s / content 25s —— 全都超过 8s。
+ * 后果分两档：
+ *   · toc / content：**必然**超过 8s 被本地掐断 → 表现为「搜到了书，却永远打不开目录/正文」；
+ *   · search：引擎被压到 7s 预算（迁就这个 8s），于是只扫得完全部源的约 1% →
+ *     表现为「几秒钟搜一下，只给几本书」。用户反馈的正是后者。
+ * 所以这里按 op 分开设超时，并把引擎的搜索预算一并抬上去。
+ */
+const OP_TIMEOUT_MS = {
+  search: 45000,   // 引擎扫描预算 30s + 网络与聚合余量
+  toc: 35000,      // 引擎 20s
+  content: 75000,  // 引擎 25s（正文常需多页抓取）
+};
+const OP_TIMEOUT_DEFAULT_MS = 25000;
+
+/** 搜索时向引擎申请的「扫描时长预算(秒)」与返回条数上限。 */
+const SEARCH_BUDGET_SEC = 30;
+const SEARCH_LIMIT = 100;
+
+/**
  * 归一化旧草稿端点的列表载荷。
  *
  * 旧端点历史上出现过三种形状：
@@ -128,8 +150,15 @@ function normalizeLegacyList(j) {
 async function engineCall(dev, module, op, params) {
   const t0 = Date.now();
   const p1 = `/thp/m/${module}/${op}`;
+  const toMs = OP_TIMEOUT_MS[op] || OP_TIMEOUT_DEFAULT_MS;
+  let p = params;
+  // 搜索：显式申请更大的扫描预算与条数 —— 不传的话引擎按默认 20s/20 条，
+  // 结果数被 limit 卡在 20 条，看起来像「只有几本书」。
+  if (op === 'search') {
+    p = { limit: SEARCH_LIMIT, budget: SEARCH_BUDGET_SEC, ...params };
+  }
   const qs = new URLSearchParams(Object.fromEntries(
-    Object.entries(params).map(([k, v]) => [k, String(v ?? '')]))).toString();
+    Object.entries(p).map(([k, v]) => [k, String(v ?? '')]))).toString();
   for (const attempt of ['post', 'get']) {
     try {
       const r = attempt === 'post'
@@ -139,8 +168,8 @@ async function engineCall(dev, module, op, params) {
         //   即中文搜索整体失效。引擎 1.5.4 起已强制按 UTF-8 解码请求体；
         //   这里再声明一次，让尚未升级的引擎也能收到正确的中文。
         ? await fetch(dev.device_url + p1, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-            body: JSON.stringify(params), signal: AbortSignal.timeout(8000) })
-        : await fetch(dev.device_url + p1 + '?' + qs, { signal: AbortSignal.timeout(8000) });
+            body: JSON.stringify(p), signal: AbortSignal.timeout(toMs) })
+        : await fetch(dev.device_url + p1 + '?' + qs, { signal: AbortSignal.timeout(toMs) });
       // 先尝试解析 THP 信封，再按状态码决定是否回落 ——
       // 引擎的 UPSTREAM_FAIL 是 HTTP 502 + 合法信封，绝不能因为 5xx 就当成「形态不存在」而回落，
       // 否则上游业务错误会被降级链吃掉，调用方看到的是空结果而不是错误。
@@ -161,8 +190,10 @@ async function engineCall(dev, module, op, params) {
   if (!legacyPath) throw new Error('不支持的 op: ' + op);
   let j;
   try {
-    const lqs = new URLSearchParams({ type: module, ...params }).toString();
-    const r = await fetch(dev.device_url + legacyPath + '?' + lqs, { signal: AbortSignal.timeout(8000) });
+    // 旧草稿端点也要给足超时（同样按 op 分档），否则「规范端点超时 → 回落旧端点 → 又超时」，
+    // 两级都掐在 8s 上，最终调用方只看到空结果。
+    const lqs = new URLSearchParams({ type: module, ...p }).toString();
+    const r = await fetch(dev.device_url + legacyPath + '?' + lqs, { signal: AbortSignal.timeout(toMs) });
     // 400 是旧端点的「缺参」用法，仍需读 body 里的 object:error；其余非 2xx 视为不可用
     if (!r.ok && r.status !== 400) throw new Error('HTTP ' + r.status);
     j = await r.json();
@@ -360,7 +391,7 @@ async function handle(req, res, body, u) {
     return sendErr(res, 'METHOD_NOT_ALLOWED', '方法不允许', 405, rid), true;
   }
 
-  // search：本地库 ∪ 在线引擎（并发≤8，单引擎≤8s）
+  // search：本地库 ∪ 在线引擎（并发≤8 个引擎；单个引擎按 OP_TIMEOUT_MS.search = 45s）
   if (op === 'search') {
     const q = params.q || '';
     const engines = (DEPS.thpOnline ? DEPS.thpOnline(module) : []).slice(0, 8);
@@ -368,7 +399,10 @@ async function handle(req, res, body, u) {
     try { local = (DEPS.searchLocal ? await DEPS.searchLocal(module, q) : []) || []; } catch {}
     const perEngine = await Promise.all(engines.map(async dev => {
       try {
-        const r = await engineCall(dev, module, 'search', { q, limit: params.limit || 20, cursor: '' });
+        // ★ 不再把 limit 写死成 20。旧写法 `limit: params.limit || 20` 让引擎只回 20 条，
+        //   调用方哪怕请求 100 条也只拿到 20 条 —— 「只给几本书」的另一半原因。
+        //   现在：调用方给了就照给，没给就交给 engineCall 的 SEARCH_LIMIT(100) 兜底。
+        const r = await engineCall(dev, module, 'search', { q, ...(params.limit ? { limit: params.limit } : {}), cursor: '' });
         return (Array.isArray(r.data) ? r.data : []).map(b => ({ ...b, peer: dev.instanceId || dev.device_url }));
       } catch { return []; }
     }));

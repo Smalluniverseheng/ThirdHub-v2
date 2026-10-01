@@ -74,7 +74,7 @@ class AiAgentDef {
   final bool builtin;
 
   const AiAgentDef({
-    required this.id, required this.name, this.icon = '🤖', this.desc = '',
+    required this.id, required this.name, this.icon = 'robot', this.desc = '',
     this.system = '', this.allow = const [], this.deny = const [],
     this.maxRounds = 8, this.autoApprove = false, this.builtin = true,
   });
@@ -85,7 +85,7 @@ class AiAgentDef {
   };
 
   factory AiAgentDef.from(Map<String, dynamic> j) => AiAgentDef(
-    id: '${j['id'] ?? ''}', name: '${j['name'] ?? ''}', icon: '${j['icon'] ?? '🤖'}',
+    id: '${j['id'] ?? ''}', name: '${j['name'] ?? ''}', icon: '${j['icon'] ?? 'robot'}',
     desc: '${j['desc'] ?? ''}', system: '${j['system'] ?? ''}',
     allow: [for (final e in (j['allow'] as List? ?? [])) '$e'],
     deny: [for (final e in (j['deny'] as List? ?? [])) '$e'],
@@ -116,38 +116,38 @@ class AiAgentDef {
 class AiAgents {
   /// 内置智能体: 每个都带工具授权与轮数上限, 不是"换一段提示词"而已
   static const List<AiAgentDef> builtin = [
-    AiAgentDef(id: 'general', name: '通用助理', icon: '🤖',
+    AiAgentDef(id: 'general', name: '通用助理', icon: 'robot',
       desc: '什么都能问 · 可按需调用工具',
       system: '你是 ThirdHub 内置助理，回答准确、简洁、有条理。有工具可用时优先用工具核实事实，不要凭记忆编造。',
       maxRounds: 8),
-    AiAgentDef(id: 'researcher', name: '研究员', icon: '🔬',
+    AiAgentDef(id: 'researcher', name: '研究员', icon: 'research',
       desc: '联网检索 → 交叉验证 → 带来源作答',
       system: '你是严谨的研究员。回答任何需要事实支撑的问题时，先用联网搜索工具检索，必要时打开链接原文核对；给出结论时标注来源编号，遇到互相矛盾的信息要指出分歧而不是和稀泥。分点作答，先给结论再给依据。',
       allow: ['local_web_search', 'local_open_url', 'local_clipboard_read', 'local_file_*', 'mcp'],
       maxRounds: 12),
-    AiAgentDef(id: 'coder', name: '代码工程师', icon: '💻',
+    AiAgentDef(id: 'coder', name: '代码工程师', icon: 'code',
       desc: '读文件 / 写文件 / 跑验证 · 多轮修到对',
       system: '你是资深全栈工程师。拿到需求先确认边界，再给可直接运行的代码。能用工具读文件就读，不要猜文件内容；改完代码要说明改了什么、怎么验证。发现需求本身有坑要先指出。',
       allow: ['local_file_read', 'local_file_write', 'local_file_list', 'local_clipboard_read', 'local_clipboard_write', 'local_web_search', 'local_open_url', 'mcp'],
       maxRounds: 16),
-    AiAgentDef(id: 'device', name: '设备管家', icon: '📱',
+    AiAgentDef(id: 'device', name: '设备管家', icon: 'device',
       desc: '读写本机文件 / 剪贴板 / 朗读 / 分享',
       system: '你是本机设备管家。用户要操作手机上的东西时，直接调用本机工具完成（读写文件、剪贴板、朗读、分享、打开链接），完成后用一句话汇报结果，不要输出工具调用的原始 JSON。',
       allow: ['local'], maxRounds: 6),
-    AiAgentDef(id: 'analyst', name: '数据分析师', icon: '📊',
+    AiAgentDef(id: 'analyst', name: '数据分析师', icon: 'chart',
       desc: '读文件 → 算 → 出结论',
       system: '你是数据分析师。先确认数据口径，再动手算。中间过程用工具完成，最后给出：结论 → 关键数字 → 局限与假设。不要在没有数据支撑时给结论。',
       allow: ['local_file_read', 'local_file_write', 'local_file_list', 'local_web_search'],
       maxRounds: 10),
-    AiAgentDef(id: 'writer', name: '写作官', icon: '✍️',
+    AiAgentDef(id: 'writer', name: '写作官', icon: 'writer',
       desc: '长文创作 · 只读不删',
       system: '你是资深中文写作助手。写作前先问清读者与目的（若用户已说明则不必再问）。输出直接可用，不要写"以下是"这类废话前缀。',
       deny: ['local_file_delete'], maxRounds: 4),
-    AiAgentDef(id: 'translator', name: '翻译官', icon: '🌐',
+    AiAgentDef(id: 'translator', name: '翻译官', icon: 'translate',
       desc: '中英互译 · 不调工具',
       system: '你是专业翻译。直译与意译结合，术语前后一致；只输出译文，除非用户要求解释。不要调用任何工具。',
       allow: ['__none__'], maxRounds: 1),
-    AiAgentDef(id: 'librarian', name: '资源库管家', icon: '🗂️',
+    AiAgentDef(id: 'librarian', name: '资源库管家', icon: 'library',
       desc: '整理本机与云端资源',
       system: '你是资源库管家。用户要整理/查找资源时，先列出你能看到的目录结构再动手，任何删除类操作前必须先复述要删什么并等用户确认。',
       allow: ['local_file_read', 'local_file_write', 'local_file_list', 'local_file_delete', 'mcp'],

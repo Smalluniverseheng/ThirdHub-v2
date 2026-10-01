@@ -21,6 +21,7 @@ import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
 import 'tts.dart';
+import 'ui_icons.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -390,7 +391,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     if (_webSearchOn) {
       try {
         if (await WebSearch.configured()) {
-          setState(() => _steps.add({'icon': '🔍', 'text': '联网搜索: $text', 'status': 'running'}));
+          setState(() => _steps.add({'icon': 'search', 'text': '联网搜索: $text', 'status': 'running'}));
           final items = await WebSearch.search(text);
           if (items.isNotEmpty) {
             msgs = [...msgs.sublist(0, msgs.length - 1),
@@ -421,7 +422,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         onReasoning: (r) { setState(() { _reasoning += r; }); if (!pinned) _jumpBottom(); },
         onToolCall: (name) { setState(() {
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
-          _steps.add({'icon': '🛠', 'text': '正在调用工具 $name', 'status': 'running'});
+          _steps.add({'icon': 'tool', 'text': '正在调用工具 $name', 'status': 'running'});
         }); if (!pinned) _jumpBottom(); },
         onDelta: (d) { _pendingDelta += d;
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
@@ -465,7 +466,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           if (v == 'clear') { setState(() => _queue.clear()); Navigator.pop(c2); }
         }, itemBuilder: (_) => [
           PopupMenuItem(value: 'pause', child: Text(queuePaused ? '▶ 继续排队' : '⏸ 暂停排队')),
-          const PopupMenuItem(value: 'clear', child: Text('🗑 清空排队', style: TextStyle(color: Colors.redAccent))),
+          const PopupMenuItem(value: 'clear', child: Text('清空排队', style: TextStyle(color: Colors.redAccent))),
         ]),
       ])),
       Flexible(child: ListView(shrinkWrap: true, children: [
@@ -615,7 +616,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         ]),
         children: [ for (final s in steps) Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Row(children: [
-            Text(s['icon'] ?? '•', style: const TextStyle(fontSize: 12)),
+            // 步骤类型用矢量图标（D-H2）。此前这里是 Text(s['icon'])，靠 emoji 区分
+            // 「联网搜索 / 调用工具」；换成 uiIcon 之后同一个字段既能吃历史 emoji
+            // 数据，也能吃新的图标键。
+            uiIcon(s['icon'] ?? '', size: 13, color: Colors.grey),
             const SizedBox(width: 8),
             Expanded(child: Text(s['text'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis)),
             Icon(s['status'] == 'done' ? Icons.check : s['status'] == 'error' ? Icons.error_outline : Icons.hourglass_top,
@@ -1013,7 +1017,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => _newChat(agentId: a.id, system: a.system),
           child: Padding(padding: const EdgeInsets.all(9), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Text(a.icon, style: const TextStyle(fontSize: 15)),
+              uiIcon(a.icon, size: 15),
               const SizedBox(width: 5),
               Expanded(child: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold))),
@@ -1043,7 +1047,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       child: Text('技能(注入上下文)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey))),
     for (final sk in kAiSkills)
       ListTile(dense: true,
-        leading: Text(sk['icon']!, style: const TextStyle(fontSize: 18)),
+        leading: uiIcon(sk['icon'], size: 18),
         title: Text(sk['name']!, style: const TextStyle(fontSize: 13)),
         subtitle: Text(sk['desc']!, style: const TextStyle(fontSize: 10, color: Colors.grey)),
         trailing: _skillId == sk['id'] ? const Icon(Icons.check_circle, size: 18, color: Colors.blueAccent) : null,
@@ -1072,10 +1076,15 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       ListView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [
         for (var i = 0; i < rows.length; i++) () {
           final r = rows[i];
-          final medal = i == 0 ? '🥇' : i == 1 ? '🥈' : i == 2 ? '🥉' : '${i + 1}';
+          // 前三名用奖杯图标 + 金银铜色，其余显示名次数字。
+          // 此前是 🥇🥈🥉 三个 emoji：在部分安卓 ROM 上会渲染成彩色方块，
+          // 且与旁边的名次数字字号不一致、对不齐。
           return ListTile(dense: true,
             leading: SizedBox(width: 56, child: Row(children: [
-              SizedBox(width: 26, child: Text(medal, style: const TextStyle(fontSize: 12))),
+              SizedBox(width: 26, child: i < 3
+                ? Icon(Icons.emoji_events, size: 15, color: const [
+                    Color(0xFFD4A017), Color(0xFF9AA4AE), Color(0xFFB06A34)][i])
+                : Text('${i + 1}', style: const TextStyle(fontSize: 12, color: Colors.grey))),
               VendorIcon('${r['p']}', size: 22) ])),
             title: Text('${r['m']}', style: const TextStyle(fontSize: 13)),
             trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

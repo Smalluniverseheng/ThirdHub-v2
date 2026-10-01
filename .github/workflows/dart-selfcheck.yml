@@ -36,6 +36,43 @@ name: dart-selfcheck
 #     → PASS 1262 / FAIL 0
 #   i18n 从 17 → 29：新增 §3.5「查找行为」断言（见下条说明）。
 #
+# 第 11 条 chat_proto（2026-10-01 加）—— 局域网聊天协议 LANCHAT/1：
+#   为什么必须进 CI —— 聊天的三个契约**都不会在界面上报错**，只会悄悄错：
+#     ① 去重：广播 + 单播双到达若不去重 = 对方每句话显示两遍；
+#     ② 降级：端到端加密不可用时**必须给原因**，否则用户以为"加密开着"；
+#        给不出原因就只能明文，而"明文"和"加密"在气泡上只是一个锁图标之差；
+#     ③ 密钥协商：双方算出的 salt 只要拼接顺序不同，A 能加密 B 就解不开，
+#        而且是**静默的** —— 解密失败返回 null，气泡显示空白，没有异常栈。
+#   这三条全靠人眼在双机上试是查不出来的（要两台设备 + 恰好触发）。本自检
+#   用固定向量把「A 加密 → B 解密」「第三方解不开」「改 1 字节即失败」
+#   一次性断言掉，且直接 import lib/core/chat_logic.dart 与 chat_crypto.dart，
+#   这两文件若被漏推远端，本 workflow 立刻变红（与 module_registry 同理）。
+#   实测（2026-10-01 本机）：PASS 101 / FAIL 0，exit 0。
+#
+# 第 12 条 ui_icons（2026-10-01 加）—— D-H2「UI 不许出现 emoji」：
+#   为什么必须进 CI —— 这不是风格问题，是**两条都会静默失效**的缺陷：
+#     ① UI 面残留 emoji：不会报错、不会崩，只是某个角落和别处不一致，
+#        靠人眼在 60 多个模块里找等于没找。清完一次，下次改代码又会加回来。
+#     ② ★更要命的一条：数据里 '🤖' 换成 'robot' 之后，如果渲染退回
+#        `Text(a.icon)`，**emoji 扫描器照样绿** —— 因为源码里已经没有 emoji 了 ——
+#        但用户看到的是字面量 "robot"。这种"扫描器绿、界面坏"的改法
+#        只能靠单独断言拦（本自检第 4 节）。
+#   口径：只认 UI 面（`lib/**` 与 `server/public/**`），要求恒为 0；
+#   文档里的 ✅/❌ 状态表与自检脚本往终端打印的 ✅ **不算**（清了反而看不懂）。
+#   实测（2026-10-01 本机）：PASS 68 / FAIL 0，exit 0；
+#   并做过反证：故意写一处 Text(a.icon) 与一处真实 emoji，两次都 exit 1。
+#
+# 第 13 条 tts_engines（2026-10-01 加）—— 开源 TTS 引擎接入契约（TTS/1）：
+#   为什么必须进 CI —— 判定错的后果是**安静地把错的东西当成引擎**：
+#     ① 只看 `ok: true` → 任何返回 `{"ok":true}` 的 REST 服务都会被认成引擎。
+#        用户把阅读引擎 :1234 或资源库 :9527 填进来，界面照样显示"已连接"，
+#        然后听书点了没声音 —— 与 PH/1 那次"发现≠接入"是同一类坑。
+#     ② 地址归一化的两个真缺陷就是本自检抓出来的：
+#        `Uri.parse('https://x:443').hasPort == false`（Dart 把默认端口视为没写），
+#        照 hasPort 补端口会把地址改成 `:5100`；IPv6 的 `Uri.host` 不带方括号，
+#        手工拼字符串会得到 `http://fe80::1:5100` 这种无法解析的东西。
+#   实测（2026-10-01 本机）：PASS 69 / FAIL 0，exit 0。
+#
 # 第 10 条 module_registry（2026-09-27 加）：
 #   为什么必须进 CI —— 09-27 实测 CI `build-apk` 红了整整一轮，
 #   根因是 `lib/core/module_registry.dart` **根本不在远端仓库**（main.dart 第 51 行
@@ -73,6 +110,10 @@ on:
       - 'flutter_app/lib/**'
       - 'flutter_app/tool/**'
       - 'flutter_app/pubspec.yaml'
+      - 'docs/LANCHAT-PROTOCOL.md'
+      - 'docs/AGENT-PROTOCOL.md'
+      - 'docs/TTS-PROTOCOL.md'
+      - 'server/agent-profiles.json'
       - '.github/workflows/dart-selfcheck.yml'
   workflow_dispatch:
 
@@ -128,3 +169,15 @@ jobs:
       - name: i18n（zh 短路 + 6 语言 × tr() 全键覆盖 + 查找行为断言）
         working-directory: flutter_app
         run: dart run tool/i18n_selfcheck.dart
+
+      - name: chat_proto（局域网聊天 LANCHAT/1：信封/去重排序/降级原因/端到端加密）
+        working-directory: flutter_app
+        run: dart run tool/chat_proto_selfcheck.dart
+
+      - name: ui_icons（D-H2：UI 面 emoji 必须为 0 + 拦住退回 Text(icon) 的改法）
+        working-directory: flutter_app
+        run: dart run tool/ui_icons_selfcheck.dart
+
+      - name: tts_engines（开源 TTS 引擎 TTS/1 契约：地址归一化 + 五类失败分开报）
+        working-directory: flutter_app
+        run: dart run tool/tts_engines_selfcheck.dart

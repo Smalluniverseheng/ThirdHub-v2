@@ -88,8 +88,8 @@ import 'core/pro_gallery.dart';
 import 'core/pro_system.dart';
 import 'core/pro_ai.dart';
 import 'core/pip.dart';
-import 'core/chat.dart';
 import 'core/app_version.dart';
+import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
 
@@ -2552,8 +2552,8 @@ class _Pf extends State<ProfilePage> {
                 page: const GalleryProPage()),
             _sep(),
             entry(Icons.forum_outlined, tr('聊天'),
-                value: tr('离线优先 · 多设备同步 · AI 摘要'),
-                page: const ChatSessionsPage()),
+                value: tr('局域网直连 · 端到端加密 · 后端补发'),
+                page: const ChatHomePage()),
             _sep(),
             entry(Icons.auto_awesome_outlined, tr('AI 工作台'),
                 value: tr('工具 · 确认队列 · 定时 · 审计'),
@@ -3542,7 +3542,7 @@ class _Tools extends State<ToolsSection> {
                                     builder: (_) =>
                                         NetDiskPage(baseUrl: Api.base)))),
                         const SizedBox(height: 4),
-                        statusRow('⬇️ 下载引擎 aria2', st!['aria2'] ?? '?', 6800),
+                        statusRow('下载引擎 aria2', st!['aria2'] ?? '?', 6800),
                         const SizedBox(height: 4),
                         Text(st!['hint'] ?? '',
                             style: const TextStyle(
@@ -7919,7 +7919,7 @@ final Map<String, ModuleDef> kModules = {
   // ★4.44.0 端网：前端/后端/插件/DSA 任意组合互相插线的地方。
   //   放在「核心」分类紧挨 AI —— 它是 AI 能力的延伸（让模型能指挥别的端）。
   '端网': const ModuleDef('端网', Icons.hub_outlined, PeerPage()),
-  '聊天': const ModuleDef('聊天', Icons.forum_outlined, ChatPage()),
+  '聊天': const ModuleDef('聊天', Icons.forum_outlined, ChatHomePage()),
   '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, GamesPage()),
   '社区': const ModuleDef('社区', Icons.groups_outlined, CommunityPage()),
   '论坛': const ModuleDef('论坛', Icons.article_outlined, ForumPage()),

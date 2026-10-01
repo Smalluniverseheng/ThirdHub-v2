@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ui_icons.dart';
+
 import 'lab_logic.dart';
 
 class GamesPage extends StatelessWidget {
@@ -19,9 +21,9 @@ class GamesPage extends StatelessWidget {
   @override Widget build(BuildContext c) {
     final accent = Theme.of(c).colorScheme.primary;
     final games = <(String, String, String, Widget)>[
-      ('2048', '合并数字, 凑出 2048', '🔢', const Game2048Page()),
-      ('贪吃蛇', '越长越快, 别咬到自己', '🐍', const SnakePage()),
-      ('五子棋', '先手黑棋, 对极简 AI', '⚫', const GomokuPage()),
+      ('2048', '合并数字, 凑出 2048', 'game2048', const Game2048Page()),
+      ('贪吃蛇', '越长越快, 别咬到自己', 'snake', const SnakePage()),
+      ('五子棋', '先手黑棋, 对极简 AI', 'gomoku', const GomokuPage()),
     ];
     return ListView(padding: const EdgeInsets.all(12), children: [
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
@@ -31,9 +33,9 @@ class GamesPage extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: Colors.grey))),
       ]))),
       const SizedBox(height: 10),
-      for (final (name, desc, emoji, page) in games)
+      for (final (name, desc, iconKey, page) in games)
         Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
-          leading: Text(emoji, style: const TextStyle(fontSize: 24)),
+          leading: uiIcon(iconKey, size: 24),
           title: Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           subtitle: Text(desc, style: const TextStyle(fontSize: 12)),
           trailing: const Icon(Icons.chevron_right),
@@ -73,7 +75,7 @@ class _G2048State extends State<Game2048Page> {
 
   void _finish() => showDialog<void>(context: context, builder: (c) => AlertDialog(
     title: const Text('本局结束'),
-    content: Text('得分 ${g.score}\n最高分 ${best > g.score ? best : g.score}${g.won ? '\n(已经凑到 2048 🎉)' : ''}'),
+    content: Text('得分 ${g.score}\n最高分 ${best > g.score ? best : g.score}${g.won ? '\n(已经凑到 2048)' : ''}'),
     actions: [TextButton(onPressed: () { Navigator.pop(c); setState(g.reset); }, child: const Text('再来一局'))],
   ));
 
@@ -312,7 +314,7 @@ class _GomokuState extends State<GomokuPage> {
     ]),
     body: Column(children: [
       Padding(padding: const EdgeInsets.all(12), child: Row(children: [
-        Text(result == 0 ? (turn == human ? '轮到你(黑)' : 'AI 思考中…') : result == 3 ? '和棋' : result == human ? '你赢了 🎉' : 'AI 赢了',
+        Text(result == 0 ? (turn == human ? '轮到你(黑)' : 'AI 思考中…') : result == 3 ? '和棋' : result == human ? '你赢了' : 'AI 赢了',
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         const Spacer(),
         Text('战绩 $wins 胜 $losses 负', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),

@@ -9,10 +9,39 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'media_formats.dart';
+import 'app_log.dart';
 
 class LocalLib {
   /// 上一次导入的逐文件失败原因（UI 直接展示，不再用"未导入"一句糊过去）。
   static final List<String> lastErrors = <String>[];
+
+  /// 导入结束的统一埋点（D-D2 的「书籍传输」一项）。
+  ///
+  /// 为什么把埋点放在**这一个函数**里、由五个导入入口各调一次：
+  ///   导入有 5 个入口（手选小说 / 手选媒体 / 手选漫画 / 扫描小说 / 扫描媒体），
+  ///   如果每个入口各写一段日志，落下的那一个不会报错，只会"这个入口的导入
+  ///   不在日志里" —— 用户报"我导过但日志里没有"时完全没法解释。收口成一处，
+  ///   加新入口时也只需要调这一个函数。
+  ///
+  /// 为什么**成功也记**：传输类是低频且用户主动触发的动作（不像每次开模块），
+  /// 记下来才能回答"我到底什么时候导过这本"。失败则连原因一起记 ——
+  /// `lastErrors` 只在 UI 上显示一次就没了，不落盘等于没发生过。
+  static Future<void> _logTransfer(String kind, int n) async {
+    if (n > 0) {
+      await AppLog.transfer('导入$kind $n 个', d: {'kind': kind, 'count': n});
+    }
+    if (lastErrors.isNotEmpty) {
+      await AppLog.warn('transfer', '导入$kind 有 ${lastErrors.length} 个失败',
+          d: {
+            'kind': kind,
+            'ok': n,
+            'failed': lastErrors.length,
+            // 全部塞进去会把日志撑爆（一次扫到上千个不支持的文件时）；
+            // 前 5 条足够定位是哪一类文件，数量另记。
+            'samples': lastErrors.take(5).toList(),
+          });
+    }
+  }
 
   static Future<Directory> _dir(String kind) async {
     final doc = await getApplicationDocumentsDirectory();
@@ -141,6 +170,7 @@ class LocalLib {
       }
     }
     await _save('novel', items);
+    await _logTransfer('novel', n);
     return n;
   }
 
@@ -231,6 +261,7 @@ class LocalLib {
       }
     }
     await _save(kind, items);
+    await _logTransfer(kind, n);
     return n;
   }
 
@@ -364,6 +395,7 @@ class LocalLib {
       }
     }
     await _save('comic', items);
+    await _logTransfer('comic', n);
     return n;
   }
 
@@ -506,6 +538,7 @@ class LocalLib {
       await Future.delayed(const Duration(milliseconds: 1)); // 让出事件循环，别卡 UI
     }
     await _save('novel', items);
+    await _logTransfer('novel', n);
     return n;
   }
 
@@ -530,6 +563,7 @@ class LocalLib {
       await Future.delayed(const Duration(milliseconds: 1));
     }
     await _save(kind, items);
+    await _logTransfer(kind, n);
     return n;
   }
 }

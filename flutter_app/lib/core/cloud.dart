@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'settings_bridge.dart';
 import 'module_registry.dart';
+import 'app_log.dart';
 
 class Cloud {
   static const String base = 'https://mxvxlgjzeboktufumxbp.supabase.co';
@@ -43,13 +44,26 @@ class Cloud {
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
   };
 
+  // ★ 埋点刻意**不加 await**：登录/连接都在用户点按的关键路径上，
+  //   `AppLog` 要落盘（SharedPreferences + 文件），await 它会把"点一下要等多久"
+  //   变成不可控。日志是旁路，不能拖慢主流程；丢了最多少一条记录。
   static Future<void> signIn(String mail, String password) async {
     final r = await http.post(Uri.parse('$base/auth/v1/token?grant_type=password'),
       headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
     final j = jsonDecode(r.body);
-    if (r.statusCode != 200) throw Exception(j['error_description'] ?? j['msg'] ?? '登录失败');
+    if (r.statusCode != 200) {
+      // 登录失败必须留痕：用户报"登不上"时，后台日志要能直接看出是**密码错**
+      // 还是**网络/服务端错**还是**邮箱未确认**——只报一句"登录失败"没法排查。
+      AppLog.warn('account', '登录失败', d: {
+        'email': mail,
+        'status': r.statusCode,
+        'reason': '${j['error_description'] ?? j['msg'] ?? j['error'] ?? '未知'}',
+      });
+      throw Exception(j['error_description'] ?? j['msg'] ?? '登录失败');
+    }
     accessToken = j['access_token'] ?? ''; refreshToken = j['refresh_token'] ?? '';
     userId = j['user']?['id'] ?? ''; email = j['user']?['email'] ?? mail;
+    AppLog.account('登录成功', d: {'email': email, 'uid': userId.length >= 8 ? userId.substring(0, 8) : userId});
     await _save(); await profile();
   }
 
@@ -57,12 +71,22 @@ class Cloud {
     final r = await http.post(Uri.parse('$base/auth/v1/signup'),
       headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
     final j = jsonDecode(r.body);
-    if (r.statusCode != 200) throw Exception(j['error_description'] ?? j['msg'] ?? '注册失败');
+    if (r.statusCode != 200) {
+      AppLog.warn('account', '注册失败', d: {
+        'email': mail, 'status': r.statusCode,
+        'reason': '${j['error_description'] ?? j['msg'] ?? j['error'] ?? '未知'}',
+      });
+      throw Exception(j['error_description'] ?? j['msg'] ?? '注册失败');
+    }
     if (j['access_token'] != null) {
       accessToken = j['access_token']; refreshToken = j['refresh_token'] ?? '';
       userId = j['user']?['id'] ?? ''; email = j['user']?['email'] ?? mail;
+      AppLog.account('注册成功并已登录', d: {'email': email});
       await _save();
     } else {
+      // 走了这条路说明还要去邮箱点确认链接 —— 这是用户最容易卡住的一步
+      // （界面看起来"什么都没发生"），不记下来就完全无从解释。
+      AppLog.account('注册成功，等待邮箱确认', d: {'email': mail});
       await signIn(mail, password);
     }
   }
@@ -75,10 +99,17 @@ class Cloud {
       accessToken = j['access_token'] ?? accessToken;
       refreshToken = j['refresh_token'] ?? refreshToken;
       await _save();
+    } else {
+      // ★ 只在**失败**时记：续期是定时高频动作（成功也记会把 2000 条上限刷满，
+      //   把真正有用的记录挤出去）。失败则必须记——它意味着用户会在某个时刻
+      //   突然"什么都同步不了"，而界面上往往只表现成转圈。
+      AppLog.warn('account', '登录态续期失败', d: {'status': r.statusCode});
     }
   }
 
   static Future<void> signOut() async {
+    // 记下"谁退出了"：多账号换用时，日志里能对上"这个报错发生在哪个账号下"。
+    AppLog.account('退出登录', d: {'email': email});
     accessToken = ''; refreshToken = ''; userId = ''; email = ''; profileData = {};
     await _save();
   }

@@ -44,6 +44,7 @@ input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line)
 const I18N_DICT={
 en:{ '管理':' sources','加载中':'Loading...','控制台':'Console','输入访问密钥(thsec_...)解锁':'Enter access key (thsec_...) to unlock','连接':'Connect',
 '书源':'Book sources','影视源':'Video sources','图源':'Comic sources','音源':'Music sources','搜索测试':'Search test',
+'反馈':'Feedback','刷新':'Refresh','暂无反馈':'No feedback yet','收起图片':'Hide images','查看图片':'View images','联系方式':'Contact','设备':'Device',
 '存储服务':'Storage services','网盘 Cloudreve':'Cloudreve','下载引擎 aria2':'aria2 engine','运行中':'running','未安装':'not installed',
 '下载任务':'Downloads','粘贴下载链接(HTTP/磁力/种子URL)':'Paste download URL (HTTP/magnet/torrent)','已添加下载':'Download added',
 '相册同步':'Photo sync','密钥库':'Key vault','导出全部(JSON备份)':'Export all (JSON backup)',
@@ -51,6 +52,7 @@ en:{ '管理':' sources','加载中':'Loading...','控制台':'Console','输入�
 '启用':'Enable','停用':'Disable','导入':'Import','语言':'Language','已停止, 点按重启':'Stopped, tap to restart'},
 ja:{'控制台':'コンソール','输入访问密钥(thsec_...)解锁':'アクセスキー(thsec_...)を入力','连接':'接続',
 '书源':'書籍ソース','影视源':'動画ソース','图源':'漫画ソース','音源':'音楽ソース','搜索测试':'検索テスト',
+'反馈':'フィードバック','刷新':'更新','暂无反馈':'フィードバックはありません','收回图片':'画像を隠す','查看图片':'画像を見る','联系方式':'連絡先','设备':'端末',
 '存储服务':'ストレージ','运行中':'稼働中','未安装':'未インストール','下载任务':'ダウンロード',
 '相册同步':'写真同期','密钥库':'キーボルト','导出全部(JSON备份)':'全てエクスポート','启用':'有効','停用':'無効','导入':'インポート'}};
 let LANG=localStorage.th_lang||'zh';
@@ -58,9 +60,16 @@ function tr(s){return (I18N_DICT[LANG]||{})[s]||s}
 function setLang(l){LANG=l;localStorage.th_lang=l;applyI18n();boot()}
 function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=tr(el.dataset.i18n)})}
 const $=s=>document.querySelector(s);let T=localStorage.th_token||'';
-const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源'],['test','搜索测试']];let cur='book';
+const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源'],['test','搜索测试'],['feedback','反馈']];let cur='book';
 async function api(p,opt={}){opt.headers=Object.assign({'X-TH-Token':T},opt.headers||{});
   const r=await fetch(p,opt);if(r.status===401){lock(true);throw new Error('401')}return r.json()}
+// 图片端点要带 X-TH-Token 头，<img src> 给不了头 → 必须 fetch 成 blob 再换对象 URL。
+async function apiBlob(p){const r=await fetch(p,{headers:{'X-TH-Token':T}});
+  if(r.status===401){lock(true);throw new Error('401')}if(!r.ok)throw new Error('HTTP '+r.status);return URL.createObjectURL(await r.blob())}
+// 反馈正文是**用户输入**，直接拼 innerHTML 会被 XSS → 一律先转义。
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmtTime(ms){try{const d=new Date(ms);const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())}catch(e){return ''}}
 function lock(on){$('#lock').style.display=on?'block':'none';$('#main').style.display=on?'none':'block'}
 function saveTok(){T=$('#tok').value.trim();localStorage.th_token=T;boot()}
 async function boot(){
@@ -74,7 +83,10 @@ async function boot(){
       <span class="stat">内存 <b>${s.data.memory}</b></span>
       <span class="stat">运行 <b>${Math.floor(s.data.uptime/60)}分</b></span></div>
       <div class="bar"><i style="width:${s.data.sources.enabled&&s.data.sources.total?Math.round(s.data.sources.enabled/s.data.sources.total*100):0}%"></i></div></div>
-      ${cur==='test'?`<div class="card"><h3 style="margin-bottom:6px">搜索测试</h3>
+      ${cur==='feedback'?`<div class="card"><h3 style="margin-bottom:6px">${tr('反馈')}
+        <button class="sm" style="float:right" onclick="loadFeedback()">${tr('刷新')}</button></h3>
+        <div id="fblist" class="mut" style="margin-top:8px">${tr('加载中')}</div></div>`
+      :cur==='test'?`<div class="card"><h3 style="margin-bottom:6px">搜索测试</h3>
         <div style="display:flex;gap:8px"><input id="tq" placeholder="书名/剧名/歌名/漫画名" style="margin-top:0" onkeydown="if(event.key==='Enter')testSearch()">
         <button class="sm" onclick="testSearch()">搜全部</button></div><div id="tres" class="mut" style="margin-top:8px">输入关键词, 同时搜书+漫+影+音</div></div>`
       :`<div class="card"><h3 style="margin-bottom:6px">${tr(kinds.find(k=>k[0]===cur)[1])}${tr('管理')}</h3><div id="srclist">${tr('加载中')}</div>
@@ -86,12 +98,47 @@ async function boot(){
   }catch(e){lock(true)}}
 async function loadList(){
   if(cur==='test')return;
+  if(cur==='feedback')return loadFeedback();
   const urls={book:'/v1/sources',video:'/v1/video/sources',comic:'/v1/comic/sources',music:'/v1/music/sources'};
   const r=await api(urls[cur]);const list=r.data||[];
   const rows=list.map(s=>'<div class="row"><span>'+s.name+(s.enabled===false?' <span class="mut">('+tr('停用')+')</span>':'')+'</span>'
     +'<span><button class="sm" onclick="act(\'toggle\',\''+encodeURIComponent(s.id)+'\')">'+(s.enabled===false?tr('启用'):tr('停用'))+'</button>'
     +' <button class="sm dg" onclick="act(\'delete\',\''+encodeURIComponent(s.id)+'\')">'+tr('删')+'</button></span></div>').join('');
   $('#srclist').innerHTML='<button class="sm" style="margin-bottom:8px" onclick="exportSrc()">'+tr('导出全部(JSON备份)')+'</button>'+(rows||'<p class="mut">'+tr('空。粘贴源JSON导入, 或命令行跑 import-*.js 批量导入。')+'</p>');
+}
+// ── 反馈列表(D-E3): 数据面 GET /v1/feedback 早已通, 这里只是把页面补上 ──
+// 为什么不直接在 <img src> 里写地址: 图片端点 /v1/feedback/img 在 401 闸门之后,
+// 只认 X-TH-Token 请求头, 而 <img> 发不了自定义头 → 只能 fetch 成 blob。
+async function loadFeedback(){
+  const box=$('#fblist');if(!box)return;box.textContent=tr('加载中');
+  try{
+    const r=await api('/v1/feedback');const list=r.data||[];
+    if(!list.length){box.innerHTML='<p class="mut">'+tr('暂无反馈')+'</p>';return}
+    box.innerHTML='<p class="mut" style="margin-bottom:6px">共 '+(r.meta&&r.meta.total!=null?r.meta.total:list.length)+' 条</p>'
+      +list.map((f,i)=>{
+        const imgs=(f.images||[]);
+        const meta=[f.device?tr('设备')+' '+esc(f.device):'',f.version?'v'+esc(f.version):'',f.contact?tr('联系方式')+' '+esc(f.contact):'',fmtTime(f.at)].filter(Boolean).join(' · ');
+        return '<div class="row" style="display:block">'
+          +'<div style="white-space:pre-wrap;word-break:break-word">'+esc(f.text)+'</div>'
+          +'<div class="mut" style="margin-top:6px">'+meta+'</div>'
+          +(imgs.length?'<div style="margin-top:6px"><button class="sm" onclick="toggleFbImg('+i+',this)">'+tr('查看图片')+' ('+imgs.length+')</button><div id="fbimg'+i+'" style="display:none;margin-top:6px"></div></div>':'')
+          +'</div>'
+      }).join('');
+    window.__fb=list;
+  }catch(e){box.textContent='失败: '+e.message}
+}
+async function toggleFbImg(i,btn){
+  const box=document.getElementById('fbimg'+i);if(!box)return;
+  if(box.dataset.on==='1'){box.style.display='none';box.dataset.on='0';btn.textContent=tr('查看图片')+' ('+(window.__fb[i].images||[]).length+')';return}
+  box.style.display='block';box.dataset.on='1';btn.textContent=tr('收起图片');box.textContent=tr('加载中');
+  const fns=(window.__fb[i]&&window.__fb[i].images)||[];box.innerHTML='';
+  for(const fn of fns){
+    try{const url=await apiBlob('/v1/feedback/img?f='+encodeURIComponent(fn));
+      const im=document.createElement('img');im.src=url;im.loading='lazy';
+      im.style.cssText='max-width:100%;border:1px solid var(--line);border-radius:8px;margin:4px 4px 0 0';
+      box.appendChild(im);
+    }catch(e){const s=document.createElement('span');s.className='mut';s.textContent='[图片加载失败] ';box.appendChild(s)}
+  }
 }
 async function act(a,id){await api(`/v1/src/${cur}/${a}?id=${id}`);loadList()}
 async function doImport(){const t=$('#imp').value.trim();if(!t)return;$('#impmsg').textContent='导入中…';
@@ -102,11 +149,12 @@ async function doImport(){const t=$('#imp').value.trim();if(!t)return;$('#impmsg
   }catch(e){$('#impmsg').textContent='JSON解析失败'}}
 async function testSearch(){const q=$('#tq').value.trim();if(!q)return;$('#tres').innerHTML='搜索中…';
   try{const r=await api('/v1/search/all?q='+encodeURIComponent(q));const d=r.data;
-    let h=`<b>${q}</b> 命中: 书${d.books.reduce((a,g)=>a+(g.books?.length||0),0)} · 漫${d.comics.reduce((a,g)=>a+(g.items?.length||0),0)} · 影${d.videos.reduce((a,g)=>a+(g.items?.length||0),0)} · 音${d.musics.reduce((a,g)=>a+(g.items?.length||0),0)}<br><br>`;
-    for(const g of d.books)for(const b of (g.books||[]).slice(0,3))h+=`📖 [${g.source}] ${b.name} - ${b.author||''}<br>`;
-    for(const g of d.comics)for(const b of (g.items||[]).slice(0,3))h+=`🎨 [${g.source}] ${b.title}<br>`;
-    for(const g of d.videos)for(const b of (g.items||[]).slice(0,3))h+=`🎬 [${g.source}] ${b.name}<br>`;
-    for(const g of d.musics)for(const b of (g.items||[]).slice(0,3))h+=`🎵 [${g.source}] ${b.name} - ${b.artist||''}<br>`;
+    let h=`<b>${esc(q)}</b> 命中: 书${d.books.reduce((a,g)=>a+(g.books?.length||0),0)} · 漫${d.comics.reduce((a,g)=>a+(g.items?.length||0),0)} · 影${d.videos.reduce((a,g)=>a+(g.items?.length||0),0)} · 音${d.musics.reduce((a,g)=>a+(g.items?.length||0),0)}<br><br>`;
+    const tag=(t,c)=>`<span style="color:${c};font-weight:600">[${t}]</span> `;
+    for(const g of d.books)for(const b of (g.books||[]).slice(0,3))h+=tag('书','#2dd4bf')+esc(g.source)+' '+esc(b.name)+' - '+esc(b.author||'')+'<br>';
+    for(const g of d.comics)for(const b of (g.items||[]).slice(0,3))h+=tag('漫','#f0abfc')+esc(g.source)+' '+esc(b.title)+'<br>';
+    for(const g of d.videos)for(const b of (g.items||[]).slice(0,3))h+=tag('影','#93c5fd')+esc(g.source)+' '+esc(b.name)+'<br>';
+    for(const g of d.musics)for(const b of (g.items||[]).slice(0,3))h+=tag('音','#fcd34d')+esc(g.source)+' '+esc(b.name)+' - '+esc(b.artist||'')+'<br>';
     $('#tres').innerHTML=h;
   }catch(e){$('#tres').textContent='失败: '+e.message}}
 T?boot():lock(true);

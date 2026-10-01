@@ -31,6 +31,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'discover.dart';
+import 'app_log.dart';
 
 /// 连到的是「资源库」而不是「引擎」。
 ///
@@ -430,6 +431,13 @@ class EngineDirect {
           name: nm,
           caps: cp,
           version: ver);
+      // ★ 埋点必记"连上了**哪个**引擎"：本机能同时存在引擎(:1234)、
+      //   资源库(:9527)、后端(:9527 家族) 三类端点，用户报"搜不到东西"
+      //   时，第一步就是确认他到底连的是哪一个、能力集是什么。
+      AppLog.engine('已连接引擎', d: {
+        'url': u, 'name': nm, 'version': ver,
+        'caps': cp.length > 12 ? cp.take(12).toList() : cp,
+      });
     } catch (e) {
       state.value = EngineState(
           status: EngineStatus.failed,
@@ -442,11 +450,18 @@ class EngineDirect {
         state.value =
             state.value.copyWith(message: '与引擎的连接已断开：${_describe(e)}');
       }
+      // ★ 失败原因必须落日志：界面只显示一行 toast，转瞬即逝；而"连不上引擎"
+      //   有至少 5 种根因（明文 HTTP 被系统拦 / 地址填成资源库 / 引擎没启动 /
+      //   不在同一网段 / 自签证书），只看得见一句"连接失败"根本无从下手。
+      AppLog.warn('engine',
+          from == EngineStatus.connected ? '与引擎的连接已断开' : '连接引擎失败',
+          d: {'url': u, 'reason': _describe(e), 'errType': '${e.runtimeType}'});
       rethrow;
     }
   }
 
   static Future<void> disconnect() async {
+    AppLog.engine('已断开引擎连接', d: {'url': state.value.url});
     state.value = const EngineState();
     final p = await SharedPreferences.getInstance();
     await p.remove('engine_direct_url');

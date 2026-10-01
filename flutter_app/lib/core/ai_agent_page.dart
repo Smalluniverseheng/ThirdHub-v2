@@ -20,6 +20,7 @@ import 'ai.dart';
 import 'ai_agent.dart';
 import 'ai_providers_page.dart';
 import 'local_tools.dart';
+import 'ui_icons.dart';
 
 class AiAgentPage extends StatefulWidget {
   /// 传入会话 id 时多出「钉注」一栏(钉注是会话级的)
@@ -148,7 +149,7 @@ class _AgentsTabState extends State<_AgentsTab> {
       Card(margin: const EdgeInsets.only(bottom: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         child: ListTile(
-          leading: Text(a.icon, style: const TextStyle(fontSize: 20)),
+          leading: uiIcon(a.icon, size: 20),
           title: Row(children: [
             Expanded(child: Text(a.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
             _tag(a.builtin ? '内置' : '自定义', a.builtin),
@@ -184,7 +185,7 @@ class _AgentsTabState extends State<_AgentsTab> {
     final srcName = src?.name ?? '';
 
     final name = TextEditingController(text: src?.name ?? '');
-    final icon = TextEditingController(text: src?.icon ?? '🤖');
+    final icon = TextEditingController(text: src?.icon ?? 'robot');
     final desc = TextEditingController(text: src?.desc ?? '');
     final sys = TextEditingController(text: src?.system ?? '');
     final allow = TextEditingController(text: src?.allow.join(', ') ?? '');
@@ -207,9 +208,25 @@ class _AgentsTabState extends State<_AgentsTab> {
               Row(children: [
                 SizedBox(width: 70, child: TextField(controller: icon, textAlign: TextAlign.center,
                   decoration: dec('图标'))),
+                const SizedBox(width: 6),
+                // 实时预览：认不出的值当场变灰 + 悬停说明，而不是等保存以后
+                // 在列表里看到一个没有内容的图标位（静默回退最难排查）。
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: icon,
+                  builder: (_, v, __) {
+                    final known = UiIcon.knows(v.text);
+                    return Tooltip(
+                      message: known ? '图标键：${v.text.trim()}' : '认不出「${v.text.trim()}」',
+                      child: Icon(UiIcon.of(v.text), size: 22,
+                        color: known ? Theme.of(c2).colorScheme.primary : Colors.grey));
+                  }),
                 const SizedBox(width: 10),
                 Expanded(child: TextField(controller: name, decoration: dec('名称'))),
               ]),
+              const Padding(padding: EdgeInsets.only(top: 4),
+                child: Text('图标填图标键即可：robot / research / code / device / chart / writer / '
+                  'translate / library / search / tool / pin …（旧存档里的 emoji 仍会正常显示）',
+                  style: TextStyle(fontSize: 10.5, color: Colors.grey))),
               const SizedBox(height: 10),
               TextField(controller: desc, decoration: dec('一句话简介')),
               const SizedBox(height: 10),
@@ -269,7 +286,7 @@ class _AgentsTabState extends State<_AgentsTab> {
                   }
                   await AiAgents.saveCustom(AiAgentDef(
                     id: editing ? baseId : AiAgents.newId(),
-                    name: n, icon: icon.text.trim().isEmpty ? '🤖' : icon.text.trim(),
+                    name: n, icon: icon.text.trim().isEmpty ? 'robot' : icon.text.trim(),
                     desc: desc.text.trim(), system: sys.text.trim(),
                     allow: _split(allow.text), deny: _split(deny.text),
                     maxRounds: rounds, autoApprove: auto, builtin: false));

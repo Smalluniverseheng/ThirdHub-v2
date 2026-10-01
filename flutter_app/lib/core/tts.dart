@@ -1,4 +1,8 @@
-// 听书: 系统离线TTS(flutter_tts) + 在线AI TTS(OpenAI兼容 /audio/speech) + 后端合成(/v1/tts)
+// 听书四条通道：
+//   system     —— 系统离线 TTS(flutter_tts)，零配置
+//   online:<id> —— 在线 AI TTS(OpenAI 兼容 /audio/speech)
+//   backend    —— 家庭后端合成(/v1/tts，后端决定 piper / edge)
+//   opensource —— **用户自己跑的开源引擎**直连（TTS/1 协议，D-C3）
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai.dart';
 import 'tts_presets.dart';
+import 'tts_direct.dart';
 import 'play_tag.dart';
 
 enum TtsState { idle, playing, paused }
@@ -34,7 +39,7 @@ class TtsManager {
     _sys.setCancelHandler(() { _chunkDone?.complete(); _chunkDone = null; });
   }
 
-  // 当前引擎: system | 在线厂商id
+  // 当前引擎: system | backend | opensource | 在线厂商id
   static Future<String> engine() async => (await SharedPreferences.getInstance()).getString('tts_engine') ?? 'system';
   static Future<void> setEngine(String v) async => (await SharedPreferences.getInstance()).setString('tts_engine', v);
   static Future<double> rate() async => (await SharedPreferences.getInstance()).getDouble('tts_rate') ?? 0.5;
@@ -62,6 +67,7 @@ class TtsManager {
     final eng = await engine();
     if (eng == 'system') { _speakSystem(_session); }
     else if (eng == 'backend') { _speakBackend(_session); }
+    else if (eng == 'opensource') { _speakOpenSource(_session); }
     else { _speakOnline(eng, _session); }
   }
 
@@ -80,6 +86,48 @@ class TtsManager {
       } catch (e) {
         backendError = '$e';
         // 后端合成失败 → 从当前段降级到系统 TTS，保证"点了就有声音"
+        await setEngine('system');
+        _speakSystem(sess);
+        return;
+      }
+      if (state == TtsState.paused) return;
+      chunkIdx++;
+      _stateC.add(state);
+    }
+    if (!_stop) _set(TtsState.idle);
+  }
+
+  // 开源引擎直连（D-C3，TTS/1 协议）：文本 → 用户自己跑的那台引擎 → 音频字节。
+  // 与 _speakBackend 同构：失败就逐段降级到系统 TTS，绝不让"点了没反应"。
+  //
+  // 与 backend 通道的关键差异：**地址由用户在「开源 TTS 引擎」页里自己填**
+  // （存 `tts_os_url`），不依赖家庭后端是否在线。
+  static String openSourceError = '';
+  static Future<void> _speakOpenSource(int sess) async {
+    openSourceError = '';
+    final p = await SharedPreferences.getInstance();
+    final url = p.getString('tts_os_url') ?? '';
+    if (url.isEmpty) {
+      // 没填地址却选了这条通道，是配置问题而不是网络问题 —— 直接降级并说明，
+      // 不静默什么都不做（静默的话用户只会觉得"听书坏了"）。
+      openSourceError = '还没配置开源 TTS 引擎地址';
+      await setEngine('system');
+      _speakSystem(sess);
+      return;
+    }
+    while (!_stop && sess == _session && chunkIdx < _chunks.length) {
+      try {
+        final f = await TtsDirect.synthesize(url, _chunks[chunkIdx]);
+        await _player.setAudioSource(tagFile(f,
+            title: '听书 · 第 ${chunkIdx + 1}/$chunkTotal 段',
+            album: 'ThirdHub 听书'));
+        await _player.play();
+        await _player.playerStateStream
+            .firstWhere((s) => s.processingState == ProcessingState.completed)
+            .timeout(const Duration(minutes: 3),
+                onTimeout: () => _player.playerState);
+      } catch (e) {
+        openSourceError = '$e';
         await setEngine('system');
         _speakSystem(sess);
         return;

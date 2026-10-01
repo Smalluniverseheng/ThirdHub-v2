@@ -24,6 +24,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ui_icons.dart';
+
 // ─────────────────────────────────────────────────────────────────────────
 // 数据模型
 // ─────────────────────────────────────────────────────────────────────────
@@ -162,7 +164,7 @@ Future<(int, int)> dirUsage(Directory d) async {
 /// 模板清单
 final List<JobTemplate> kJobTemplates = [
   JobTemplate(
-    id: 'cache_clean', name: '缓存清理', icon: '🧹', daily: true, confirmAt: [1], maxSeconds: 90,
+    id: 'cache_clean', name: '缓存清理', icon: 'clean', daily: true, confirmAt: [1], maxSeconds: 90,
     desc: '扫描应用临时目录, 列出占用并清掉可安全删除的缓存',
     steps: [
       (ctx) async {
@@ -190,7 +192,7 @@ final List<JobTemplate> kJobTemplates = [
     ],
   ),
   JobTemplate(
-    id: 'library_stats', name: '资源库统计', icon: '📚', daily: true, maxSeconds: 120,
+    id: 'library_stats', name: '资源库统计', icon: 'stats', daily: true, maxSeconds: 120,
     desc: '统计应用目录下的文件数量与类型分布, 结果归档成报告',
     steps: [
       (ctx) async {
@@ -234,7 +236,7 @@ final List<JobTemplate> kJobTemplates = [
     ],
   ),
   JobTemplate(
-    id: 'link_check', name: '链接巡检', icon: '🔗', confirmAt: [], maxSeconds: 180,
+    id: 'link_check', name: '链接巡检', icon: 'link', confirmAt: [], maxSeconds: 180,
     desc: '逐个探测收藏/书签里的链接, 把失效项列出来(支持批量删除)',
     steps: [
       (ctx) async {
@@ -275,14 +277,14 @@ final List<JobTemplate> kJobTemplates = [
           }
           if (i % 10 == 0) ctx.log('已探测 $i / ${urls.length}');
         }
-        ctx.log(dead.isEmpty ? '全部链接可达 🎉' : '发现 ${dead.length} 个失效链接:');
+        ctx.log(dead.isEmpty ? '全部链接可达' : '发现 ${dead.length} 个失效链接:');
         for (final d in dead) { ctx.log('  · $d'); }
         return dead.isEmpty ? '全部可达' : '${dead.length} 个失效';
       },
     ],
   ),
   JobTemplate(
-    id: 'export_backup', name: '数据导出备份', icon: '💾', daily: true, confirmAt: [0], maxSeconds: 90,
+    id: 'export_backup', name: '数据导出备份', icon: 'backup', daily: true, confirmAt: [0], maxSeconds: 90,
     desc: '把本机全部配置/笔记/书签导出成一份 JSON, 可随时回灌',
     steps: [
       (ctx) async {
@@ -586,7 +588,7 @@ class _JobCenterPageState extends State<JobCenterPage> {
         for (final t in kJobTemplates)
           ActionChip(
             avatar: const Icon(Icons.play_arrow, size: 16),
-            label: Text('${t.icon} ${t.name}', style: const TextStyle(fontSize: 12)),
+            label: Text(t.name, style: const TextStyle(fontSize: 12)),
             onPressed: () async {
               await JobCenter.submit(t.id);
               if (!mounted) return;
@@ -621,7 +623,7 @@ class _JobCenterPageState extends State<JobCenterPage> {
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => JobDetailPage(jobId: r.id))),
       child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(t?.icon ?? '📋', style: const TextStyle(fontSize: 16)),
+          uiIcon(t?.icon ?? 'task', size: 16),
           const SizedBox(width: 8),
           Expanded(child: Text(r.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
           Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -696,7 +698,7 @@ class JobDetailPage extends StatelessWidget {
         return ListView(padding: const EdgeInsets.all(12), children: [
           Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Text(t?.icon ?? '📋', style: const TextStyle(fontSize: 18)),
+              uiIcon(t?.icon ?? 'task', size: 18),
               const SizedBox(width: 8),
               Expanded(child: Text(r.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
               Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

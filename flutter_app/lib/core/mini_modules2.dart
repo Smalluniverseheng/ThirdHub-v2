@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cloud.dart';
+import 'ui_icons.dart';
 
 class _Store2 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -255,7 +256,7 @@ class _Cal extends State<CalendarPage> {
 class DiaryPage extends StatefulWidget { const DiaryPage({super.key}); @override State<DiaryPage> createState() => _Diary(); }
 class _Diary extends State<DiaryPage> {
   List<Map<String, dynamic>> entries = []; // {date, mood, content, ts}
-  static const moods = ['😄', '🙂', '😐', '😔', '😤'];
+  static const moods = ['happy', 'ok', 'meh', 'sad', 'angry'];
 
   @override void initState() { super.initState(); _load(); }
   Future<void> _load() async {
@@ -266,7 +267,7 @@ class _Diary extends State<DiaryPage> {
 
   Future<void> _edit([Map<String, dynamic>? e]) async {
     final contentC = TextEditingController(text: e?['content'] ?? '');
-    var mood = e?['mood'] ?? '🙂';
+    var mood = e?['mood'] ?? 'ok';
     final date = e?['date'] ?? _today();
     final ok = await showDialog<bool>(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
       title: Text('$date 的日记'),
@@ -276,7 +277,8 @@ class _Diary extends State<DiaryPage> {
             child: Container(padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(shape: BoxShape.circle,
                 color: mood == m ? Theme.of(c2).colorScheme.primary.withValues(alpha: 0.15) : null),
-              child: Text(m, style: const TextStyle(fontSize: 22)))),
+              child: uiIcon(m, size: 22,
+                color: mood == m ? Theme.of(c2).colorScheme.primary : null))),
         ]),
         const SizedBox(height: 10),
         TextField(controller: contentC, maxLines: 6,
@@ -309,7 +311,7 @@ class _Diary extends State<DiaryPage> {
       : ListView(children: [
           for (final e in entries) Card(margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: ListTile(
-              leading: Text(e['mood'] ?? '🙂', style: const TextStyle(fontSize: 24)),
+              leading: uiIcon('${e['mood'] ?? 'ok'}', size: 24),
               title: Text(e['date'] ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               subtitle: Text(e['content'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13)),
@@ -419,7 +421,11 @@ class _Qn extends State<QuickNotePage> {
     }
     final pinned = items.firstWhere((e) => e['pin'] == true, orElse: () => items.isNotEmpty ? items.first : {});
     if (pinned.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('先写一条便签再悬浮'))); return; }
-    await _ovCh.invokeMethod('show', {'text': '📌 ${pinned['text']}'});
+    // 悬浮窗只显示便签正文。此前这里拼了个 📌 前缀，D-H2 清理 emoji 时
+    // 被直译成 'pin ' —— 于是悬浮窗真的显示出「pin 我要买牛奶」这种字面量。
+    // 教训：emoji 出现在**拼接出来的展示文案**里时，不能按"图标"处理，
+    // 要么整段去掉，要么换成中文词；机械替换会留下这种一眼看去很荒唐的结果。
+    await _ovCh.invokeMethod('show', {'text': '${pinned['text']}'});
     setState(() => _floatOn = true);
   }
 

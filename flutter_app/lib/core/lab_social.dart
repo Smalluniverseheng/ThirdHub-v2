@@ -42,7 +42,12 @@ String fmtWhen(int ts) {
 // 都在 lab_logic.dart(唯一实现)。这里只保留真正需要 socket 的 LanChat。
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// 局域网聊天引擎: 广播发现 + 群发/单发消息
+/// 局域网聊天引擎 v1 —— **已被 `lan_chat.dart` 的 [ChatHub] 取代**。
+///
+/// ★ 保留它只是为了不改动本文件里其它仍在用的部分；**不要再把它接到任何 UI**：
+///   它绑的是同一个 UDP 端口 [kLanPort]，和 ChatHub 同时启动会有一方收不到广播
+///   （SO_REUSEADDR 下"谁收到"是不确定的），表现为"偶尔能聊、偶尔看不见对方"。
+///   新功能的落点一律在 `chat_v2_page.dart`。
 class LanChat {
   static final LanChat instance = LanChat._();
   LanChat._();
@@ -180,6 +185,14 @@ class LanChat {
   }
 }
 
+/// 旧版聊天页（单列群发流）—— **已被 `chat_v2_page.dart` 的 [ChatHomePage] 取代**。
+///
+/// 取代原因（都是实测出来的）：
+///   · 没有设备身份，也没有指纹，别的设备可以随便冒名；
+///   · 私聊不加密、也没有"当前是明文"的提示；
+///   · 不能发文件/图片；
+///   · UI 塞在模块 body 里，没有全屏、没有好友与区域频道之分。
+/// 模块注册表与「我的 → 进阶」都已改指 [ChatHomePage]，这里不再被任何入口引用。
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
   @override State<ChatPage> createState() => _ChatState();

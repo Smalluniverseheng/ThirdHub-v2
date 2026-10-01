@@ -17,7 +17,9 @@ import 'reader_fonts.dart';
 import 'read_stats.dart';
 import 'tts.dart';
 import 'tts_presets.dart';
+import 'tts_engines_page.dart';
 import 'ai.dart';
+import 'motion.dart';
 
 // ── 背景预设(背景色, 默认字色) ──
 const kReaderBgs = <(Color, Color, String)>[
@@ -203,6 +205,26 @@ class _NovelReaderState extends State<NovelReaderPage> {
             if (TtsBackend.available)
               ChoiceChip(label: const Text('后端合成'), avatar: const Icon(Icons.dns_outlined, size: 16), selected: cur == 'backend',
                 onSelected: (_) { TtsManager.setEngine('backend'); setD(() {}); }),
+            // 开源引擎直连（D-C3）。★ 没配地址时**不要装作能选** ——
+            //   选了却不合成、只是静默降级，用户会以为"听书坏了"。
+            //   所以未配置时这一项直接把人送到引导页。
+            ChoiceChip(
+              label: Text(cur == 'opensource' ? '开源引擎 · 已选' : '开源引擎'),
+              avatar: const Icon(Icons.memory, size: 16),
+              selected: cur == 'opensource',
+              onSelected: (_) async {
+                final p = await SharedPreferences.getInstance();
+                final u = p.getString('tts_os_url') ?? '';
+                if (u.isEmpty) {
+                  if (context.mounted) {
+                    await Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const TtsEnginesPage()));
+                  }
+                  return;
+                }
+                TtsManager.setEngine('opensource');
+                setD(() {});
+              }),
             for (final p in ttsProviders)
               ChoiceChip(label: Text(p.name), selected: cur == p.id,
                 onSelected: (_) { TtsManager.setEngine(p.id); setD(() {}); }),
@@ -211,8 +233,21 @@ class _NovelReaderState extends State<NovelReaderPage> {
         if (TtsManager.backendError.isNotEmpty)
           Padding(padding: const EdgeInsets.only(top: 6),
             child: Text('后端合成失败已降级系统朗读: ${TtsManager.backendError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
+        if (TtsManager.openSourceError.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 6),
+            child: Text('开源引擎不可用已降级系统朗读: ${TtsManager.openSourceError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
         const SizedBox(height: 6),
         GestureDetector(onTap: () => showModalBottomSheet(context: context, builder: (c3) => SafeArea(child: ListView(shrinkWrap: true, children: [
+          ListTile(dense: true, leading: const Icon(Icons.memory, size: 20),
+            title: const Text('开源 TTS 引擎（自己跑引擎直连）', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            subtitle: const Text('Piper / sherpa-onnx / GPT-SoVITS / ChatTTS / Kokoro / edge-tts\n装在哪台机器上都能连；本应用不内置、不分发模型',
+              style: TextStyle(fontSize: 10)),
+            trailing: const Icon(Icons.chevron_right, size: 16),
+            onTap: () {
+              Navigator.pop(c3);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const TtsEnginesPage()));
+            }),
+          const Divider(height: 1),
           const Padding(padding: EdgeInsets.all(12), child: Text('在线 TTS 厂商预设', style: TextStyle(fontWeight: FontWeight.bold))),
           for (final tp in kTtsPresets)
             ListTile(dense: true, leading: const Icon(Icons.record_voice_over_outlined, size: 20),
@@ -262,19 +297,21 @@ class _NovelReaderState extends State<NovelReaderPage> {
     bookName: widget.bookName, bookUrl: widget.bookUrl,
     fetchContent: widget.fetchContent, onProgress: widget.onProgress)));
 
-  // ── 分页: 按估算行字数切块 ──
+  // ── 分页: TextPainter 真实测量（canvas 预分页）──
+  //
+  // 旧实现按「估算每行字数 × 估算行数」硬切：字号/字体改变、中英混排、标点
+  // 宽度差异都会让实际换行与估算不符 → 页尾出现半行空档或末行被裁掉。
+  // 这里改用 TextPainter 做真实 layout，二分定位该页能容纳的字符数，再往
+  // 换行处微调切点（避免把标点孤零零留在页首）。
   List<String> _paginate(String t, BoxConstraints box) {
     if (t.isEmpty) return const [''];
-    final w = box.maxWidth - ReaderCfg.margin * 2;
-    final h = box.maxHeight - 40;
-    final perLine = math.max(8, (w / ReaderCfg.fontSize).floor());
-    final lines = math.max(4, (h / (ReaderCfg.fontSize * ReaderCfg.lineH)).floor());
-    final per = perLine * lines;
-    final out = <String>[];
-    for (var i = 0; i < t.length; i += per) {
-      out.add(t.substring(i, math.min(i + per, t.length)));
-    }
-    return out;
+    return TextPaginator.paginate(
+      text: t,
+      style: _textStyle,
+      maxWidth: box.maxWidth - ReaderCfg.margin * 2,
+      maxHeight: box.maxHeight - 40,
+      paraSpace: ReaderCfg.paraSpace,
+    );
   }
 
   TextStyle get _textStyle => TextStyle(
@@ -817,56 +854,67 @@ class _FlipPager extends StatefulWidget {
 }
 
 class _FlipPagerState extends State<_FlipPager> {
-  late final PageController ctrl = PageController();
-  double page = 0;
-  @override void initState() { super.initState(); ctrl.addListener(() { if (mounted) setState(() => page = ctrl.page ?? 0); }); }
-  @override void dispose() { ctrl.dispose(); super.dispose(); }
+  /// 当前页索引（最后一屏 = 「本章完」章节导航页，索引 == pages.length）。
+  ///
+  /// ★ 为什么不再用 PageController：仿真/覆盖要的是「三屏承载 + 跟手卷曲」，
+  ///   PageView 只能做到整页平移，做不出折痕锚点、卷边阴影与背面。改为自持
+  ///   索引后，翻页动画由 PageCurlView 负责，**动画走完才改这个索引**——
+  ///   于是"动画不得改变真实章节位置"这条约束天然成立。
+  int _idx = 0;
 
-  // 搜索跳转: 按字符位置估算页码
-  void jumpToChar(int charIdx) {
-    if (widget.pages.isEmpty) return;
-    final total = widget.pages.fold<int>(0, (s, p) => s + p.length);
-    if (total == 0) return;
-    final per = total / widget.pages.length;
-    final page = (charIdx / per).floor().clamp(0, widget.pages.length - 1);
-    ctrl.jumpToPage(page);
+  int get _last => widget.pages.length;
+
+  void _go(int i) {
+    final n = _last + 1;
+    setState(() => _idx = i.clamp(0, n - 1));
   }
 
-  // 音量键翻页入口: 优先翻页, 到边界再翻章
+  // 搜索跳转: 按真实分页结果把字偏移映射到页
+  void jumpToChar(int charIdx) =>
+      _go(TextPaginator.pageOfIndex(widget.pages, charIdx));
+
+  // 音量键/点按翻页入口: 优先翻页, 到边界再翻章
   void turn(bool next) {
-    final cur = ctrl.page?.round() ?? 0;
     if (next) {
-      if (cur < widget.pages.length) { ctrl.nextPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
-      else { widget.onNextChapter?.call(); }
+      if (_idx < _last) {
+        _go(_idx + 1);
+      } else {
+        widget.onNextChapter?.call();
+      }
     } else {
-      if (cur > 0) { ctrl.previousPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
-      else { widget.onPrevChapter?.call(); }
+      if (_idx > 0) {
+        _go(_idx - 1);
+      } else {
+        widget.onPrevChapter?.call();
+      }
     }
   }
 
-  @override Widget build(BuildContext c) {
-    final n = widget.pages.length + 1; // 最后一页=章节导航页
-    if (widget.mode == 'none') {
-      return PageView.builder(controller: ctrl, itemCount: n, physics: const NeverScrollableScrollPhysics(),
-        itemBuilder: (_, i) => _page(i));
-    }
-    return PageView.builder(controller: ctrl, itemCount: n,
-      itemBuilder: (_, i) => AnimatedBuilder(animation: ctrl, builder: (_, child) {
-        final delta = i - page;
-        if (widget.mode == 'cover') {
-          // 覆盖: 新页从右侧滑入盖住旧页
-          final dx = delta <= 0 ? 0.0 : delta;
-          return Transform.translate(offset: Offset(dx * MediaQuery.of(c).size.width, 0), child: child);
-        }
-        if (widget.mode == 'sim') {
-          // 仿真: 翻页透视+阴影
-          final angle = delta.clamp(-1.0, 1.0) * -0.5;
-          return Transform(alignment: delta >= 0 ? Alignment.centerLeft : Alignment.centerRight,
-            transform: Matrix4.identity()..setEntry(3, 2, 0.001)..rotateY(angle),
-            child: Container(color: widget.bg, child: child));
-        }
-        return child!; // slide 平移: 默认
-      }, child: _page(i)));
+  @override
+  Widget build(BuildContext c) {
+    final n = _last + 1;
+    if (widget.mode == 'none') return _page(_idx); // 无动画: 直接换页
+
+    final style = widget.mode == 'cover'
+        ? PageTurnStyle.cover
+        : widget.mode == 'slide'
+            ? PageTurnStyle.slide
+            : PageTurnStyle.curl; // sim / 其余 → 纸张卷曲
+
+    // 背面取同色系略深/略浅一档，看起来才像同一张纸翻过来
+    final back = shadeOf(widget.bg,
+        widget.bg.computeLuminance() > 0.5 ? -0.09 : 0.10);
+
+    return PageCurlView(
+      style: style,
+      bgColor: widget.bg,
+      backColor: back,
+      current: _page(_idx),
+      previous: _idx > 0 ? _page(_idx - 1) : null,
+      next: _idx < n - 1 ? _page(_idx + 1) : null,
+      // ★ 翻页动画 completion 后才回写索引
+      onTurn: (fwd) => _go(_idx + (fwd ? 1 : -1)),
+    );
   }
 
   Widget _page(int i) {
