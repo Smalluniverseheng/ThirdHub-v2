@@ -8834,13 +8834,25 @@ class _RootNavState extends State<RootNav> {
     final mod = kModules[key]!;
     final fsNow = RootNav.fullscreen.value;
 
-    /// 打开"本模块的进阶页"：先收起菜单，再跳过去。
-    /// 抽这个是因为下面每个模块都要挂自己那几项，写法必须一致。
-    void proEntry(
-        BuildContext sheetCtx, IconData icon, String title, String sub, Widget page) {
-      Navigator.pop(sheetCtx);
-      Navigator.push(context, smoothRoute(page));
-    }
+    /// 生成"本模块的进阶入口"这一行（点它先收起菜单、再跳过去）。
+    ///
+    /// ★ 必须**返回 Widget**而不是 void：这些入口是放进 `...[ ]` 展开到
+    ///   bottom sheet 的 children 里的，而集合字面量里不允许出现 void 表达式 ——
+    ///   写成 void 时 `dart analyze` 不报错，只有真编译才报
+    ///   「This expression has type 'void' and can't be used」。
+    ListTile proEntry(BuildContext sheetCtx, IconData icon, String title,
+            String sub, Widget page) =>
+        ListTile(
+            dense: true,
+            leading: Icon(icon, size: 20),
+            title: Text(title),
+            subtitle: sub.isEmpty
+                ? null
+                : Text(sub, style: const TextStyle(fontSize: 11)),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              Navigator.push(context, smoothRoute(page));
+            });
 
     showModalBottomSheet(
         context: context,

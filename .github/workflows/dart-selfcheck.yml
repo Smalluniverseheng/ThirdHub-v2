@@ -130,6 +130,28 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
+      # ★第 1 步 analyze（2026-10-01 加，同一天上移到最前）—— 补「自检全绿 ≠ 能编译」。
+      #
+      #   为什么必须进 CI：本机 `dart analyze` 因管道池耗尽（CreateFile failed 231）
+      #   跑不了，于是本地**没有任何类型检查**；而纯 Dart 自检不 import flutter，
+      #   看不见 widget 层的问题。两次活例：
+      #     · 4.56.0：18 项自检全绿，真编译报「The getter 'TtsBackend' isn't defined」
+      #       （少一个 import）与「const 表达式里不能对 List 取 .length」；
+      #     · 4.57.0：把**返回 void 的调用**放进 `...[ ]` 集合展开里，
+      #       报 use_of_void_result（9 条）—— 纯 Dart 自检同样看不见。
+      #
+      #   ★ 为什么放在最前面：它只要 ~19 秒，而后面 14 步自检要 ~1 分钟。
+      #     "类型对不对"是最该第一时间知道的信息。4.57.0 实测：analyze 在
+      #     10:25:35 就报出了 build 到 10:28:34 才发现的那 9 条错误 —— 提前 3 分钟。
+      #
+      #   参数只写 --no-fatal-warnings：没有 `--no-fatal-infos` 这个开关
+      #   （写了会 exit 64「Cannot negate option "--no-fatal-infos"」，
+      #   本步第一次就是这么红的）；而 warnings 默认致命
+      #   （--[no-]fatal-warnings defaults to on），所以"只拦 error"必须显式关掉它。
+      - name: analyze（类型检查 —— 本机跑不了，搬到这里；放最前，错误最快可见）
+        working-directory: flutter_app
+        run: dart analyze --no-fatal-warnings lib/
+
       - name: nav_swipe
         working-directory: flutter_app
         run: dart run tool/nav_swipe_selfcheck.dart
@@ -186,18 +208,5 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/tts_vendors_selfcheck.dart
 
-      # ★第 15 步 analyze（2026-10-01 加）—— 补上「自检全绿 ≠ 能编译」这个缺口。
-      #   为什么必须进 CI：本机 `dart analyze` 因管道池耗尽（CreateFile failed 231）
-      #   跑不了，于是本地**没有任何类型检查**；而纯 Dart 自检不 import flutter，
-      #   看不见 widget 层的问题。4.56.0 那轮就是活例：18 项自检全绿，真编译却报
-      #   「The getter 'TtsBackend' isn't defined」（少了一个 import）与
-      #   「const 表达式里不能对 List 取 .length」两条 —— 都只有真编译才看得见。
-      #   加这一步后，这类错误在秒级反馈，不必等整个 build-apk 跑完。
-      #   参数只写 --no-fatal-warnings：dart analyze 的 infos 默认就不致命
-      #   （没有 --no-fatal-infos 这个开关，写了会 exit 64：
-      #    「Cannot negate option "--no-fatal-infos"」—— 本步第一次就是这么红的），
-      #   而 warnings 默认致命（--[no-]fatal-warnings defaults to on），
-      #   所以要「只拦 error」必须显式关掉 warnings。
-      - name: analyze（类型检查 —— 本机跑不了，搬到这里）
-        working-directory: flutter_app
-        run: dart analyze --no-fatal-warnings lib/
+      # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
+      # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。
