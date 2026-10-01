@@ -147,6 +147,84 @@
 
 ---
 
+### ★ 封面布局统一：现状实测与施工方案（2026-10-01 核实）
+
+**现状**（grep 实测，不是印象）：`Image.network` 在全仓出现 **20+ 处**，封面相关至少 13 处
+（`main.dart` 3858 / 4484 / 4919 / 5109 / 5400 / 5881 / 6146 / 6159 / 6310 / 6427 /
+7027 / 7387 / 7519 / 13009 / 13344 / 13374，`core/engine_direct_page.dart:544`，
+`core/mini_modules4.dart:105`、`mini_modules5.dart:294/341` …），每处**各写各的兜底**：
+
+- 有的 `loadingBuilder` + `errorBuilder` 都写，有的只写一个，有的**一个都没有**
+  → 表现是"网断时有的地方灰块、有的地方裂图图标、有的地方一片空白"；
+- 网格规格不统一：`childAspectRatio` 出现 **0.52 / 0.62 / 0.65 / 0.75 / 0.85 / 1.15 /
+  1.2 / 1.3 / 1.4 / 1.5 / 2.2** —— **十一种**；间距出现 2 / 4 / 6 / 8 / 12 五种；
+- 封面圆角是 **10**，而 `STYLE_GUIDE.md` 规定卡片圆角 **12**。
+
+**施工方案**
+1. 新建 `core/ui_cover.dart`（纯 Flutter、无业务依赖）：
+   - `CoverImage(url, {fit, radius, fallbackText})` —— **在 API 层强制**带
+     `loadingBuilder`（骨架占位）与 `errorBuilder`（渐变底 + 书名首字），
+     从机制上杜绝"漏写兜底"。
+   - `GridSpec` 常量：`radius = 12`（对齐 STYLE_GUIDE）、`gap = 10`、
+     封面比例按内容类型定（书 3:4.4≈0.68 / 视频 16:9 / 专辑 1:1），
+     `delegateFor(kind)` 返回统一 `SliverGridDelegate`。
+2. 替换顺序（**每步单独提交 + 单独验收**，避免"一次性大改、看不出改了哪"）：
+   ① 小说书架 → ② 漫画 → ③ 视频 → ④ 音乐 → ⑤ 直播 → ⑥ 搜索结果 →
+   ⑦ 详情页封面 → ⑧ 相册 / 壁纸等图墙 → ⑨ `engine_direct_page` / `mini_modules*`。
+3. 自检：新建 `tool/ui_cover_selfcheck.dart`（纯 Dart）——
+   - 断言 `GridSpec` 的数值、`delegateFor` 的返回、比例合法、**圆角 == 12**；
+   - ★**grep 式断言**：直接读 `lib/main.dart` 等源码字符串，断言"封面相关的
+     `Image.network` 调用点已经全部换成 `CoverImage`、没有裸遗留"。
+     这条能纯 Dart 做（`File(...).readAsStringSync()` + 计数），且**正是防"改一半"
+     最有效的一条** —— 逐模块替换最容易漏掉某处，而漏掉的那处不会有任何报错。
+   - `CoverImage` 的**渲染**行为断言不了（要 Flutter）→ 用模拟器截图取证兜。
+
+### ★ 4.59.0 施工完成记录（2026-10-01）
+
+**新增两个文件（职责分离是关键）**
+- `lib/core/cover_spec.dart` —— **零 Flutter 依赖**的规格层：`CoverKind`（7 个用途分类）
+  + `CoverSpec`（radius=12 / gap=8 / pad=8 / thumbRadius=4 / photoRadius=2
+  + `aspect` 表 + `columns` 表 + `declared` 常量清单）。
+  拆出来的原因：`ui_cover.dart` import 了 flutter → 依赖 `dart:ui`，
+  纯 Dart VM 下**连编译都过不去**，自检根本 import 不了。规格放这里就能真断言。
+- `lib/core/ui_cover.dart` —— 渲染层：`CoverImage`（构造时**强制**注入 loading
+  骨架 + error 兜底，调用者没有"忘记写兜底"这个选项）、`CoverThumb`（列表行 40×56）、
+  `CoverFallback`（六色哈希调色板 + 名字首字）、`coverDelegate(kind)`、`coverPad`。
+
+**实际替换落点（13 处）**
+| 位置 | 原状 | 现状 |
+|---|---|---|
+| 小说书架网格 | 3 列 / 0.52 / gap 12 / 圆角 10 | `coverDelegate(bookGrid)` + 圆角 12 |
+| 小说封面图 | 裸 `Image.network` + 私有兜底 | `CoverImage`（`clip:false`，外层已裁） |
+| 直播频道网格 | 3 列 / 0.75 / 无间距 | `coverDelegate(liveGrid)` + `coverPad` |
+| 引擎直连结果墙 | 3 列 / 0.62 / 圆角 8 | `coverDelegate(coverGrid)` + 圆角 12 |
+| 壁纸图墙 | 3 列 / 0.65 / gap 4 / 圆角 8 | `coverDelegate(wallGrid)` + 圆角 12 |
+| 菜谱网格 + 详情大图 | 2 列 / 0.85 / gap 6 | `coverDelegate(cardGrid)` + `CoverImage` |
+| 书目列表小封面 ×5 | **同一段代码复制了 5 遍**（40×56 / 圆角 4 / 只有 errorBuilder） | `CoverThumb` |
+| 专辑列表小封面 ×2 | 44×44 / 圆角 4（同样复制两遍） | `CoverThumb(width:44,height:44)` |
+| 音乐播放页封面 | 230×230 / 圆角 16 | `CoverImage` |
+| 信息头小封面 | 72×96 / 圆角 8 | `CoverImage` |
+| 已同步照片墙 | 手写 `headers` + 黑底裂图 | `CoverImage(radius: photoRadius)` |
+
+**有意保留（不算"漏换"）**：阅读器正文大图 4 处（`main.dart`，前缀必为
+`Api.img(images[` / `images[`）、壁纸预览大图、`novel_reader` 正文插图 ——
+它们是"看图"不是"封面网格"。自检用**前缀判定**把这条钉死：
+凡 `main.dart` 里新出现的非 `images[` 前缀的 `Image.network` 一律报红。
+
+**自检 `tool/ui_cover_selfcheck.dart`（49 项）**
+① 规格数值；② 表体完整性（`declared` vs `aspect`/`columns` 三表键集必须一致
+—— 拦"加了 kind 常量忘记登记 → 悄悄退回正方"）；③ 查表兜底；
+④ **口径守卫**：`bookGrid` 必须比 `coverGrid` 更瘦高（带书名条的格子要装下
+书名 2 行 + 副标题，调到 >= 就说明封面会被压扁/书名被裁）；
+⑤⑥⑦ 源码层 grep 断言（裸封面图清零 / 网格走统一下发 / import 齐备 / 兜底色彩）。
+
+**反证（证明闸门真能拦）**：临时把 `main.dart` 第一处 `CoverImage(` 改回
+`Image.network(` → 自检立刻
+`FAIL ★ main.dart 剩余的 Image.network 全部是阅读器正文图 [bad=1 reader=4 total=5]`，
+并打印行号；还原后 sha256 与改前**逐字节一致**（无残留）。
+
+---
+
 ## 四、引擎更新通道（用户诉求 8 的后半）
 
 ### 用户原话

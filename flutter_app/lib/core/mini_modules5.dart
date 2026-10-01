@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ui_cover.dart';
+
 class _Store5 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
     final p = await SharedPreferences.getInstance();
@@ -291,7 +293,9 @@ class _Rp extends State<RecipePage> {
         appBar: AppBar(title: Text(m['strMeal'] ?? '')),
         body: ListView(padding: const EdgeInsets.all(14), children: [
           if ((m['strMealThumb'] ?? '').toString().isNotEmpty)
-            ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(m['strMealThumb'])),
+            CoverImage(m['strMealThumb'],
+                fallbackText: '${m['strMeal'] ?? ''}',
+                fallbackIcon: Icons.restaurant_outlined),
           const SizedBox(height: 10),
           Text('${m['strArea'] ?? ''} · ${m['strCategory'] ?? ''}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const Padding(padding: EdgeInsets.symmetric(vertical: 8),
@@ -329,17 +333,18 @@ class _Rp extends State<RecipePage> {
     if (err.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
     Expanded(child: loading
       ? const Center(child: CircularProgressIndicator())
-      : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2, mainAxisSpacing: 6, crossAxisSpacing: 6, childAspectRatio: 0.85),
-        padding: const EdgeInsets.all(10),
+      : GridView.builder(gridDelegate: coverDelegate(CoverKind.cardGrid),
+        padding: coverPad,
         itemCount: meals.length,
         itemBuilder: (_, i) {
           final m = meals[i];
           return InkWell(onTap: () => _detail(m['idMeal']),
             child: Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: SizedBox(width: double.infinity,
-                child: Image.network(m['strMealThumb'] ?? '', fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: Colors.grey.withValues(alpha: 0.2))))),
+              Expanded(child: CoverImage(m['strMealThumb'],
+                width: double.infinity,
+                fallbackText: '${m['strMeal'] ?? ''}',
+                fallbackIcon: Icons.restaurant_outlined,
+                clip: false)),
               Padding(padding: const EdgeInsets.all(8),
                 child: Text(m['strMeal'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))),
             ])));

@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'discover.dart';
 import 'engine_direct.dart';
+import 'ui_cover.dart';
 
 // ═══ 连接管理页(我的 → 引擎直连) ═══
 class EngineDirectPage extends StatefulWidget {
@@ -523,10 +524,8 @@ class _Edv extends State<EngineDiscoverView> {
         : items.isEmpty
           ? Center(child: Text(loading ? '加载中…' : '暂无内容',
               style: const TextStyle(color: Colors.grey)))
-          : GridView.builder(padding: const EdgeInsets.all(10),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3, childAspectRatio: 0.62,
-                crossAxisSpacing: 8, mainAxisSpacing: 8),
+          : GridView.builder(padding: coverPad,
+              gridDelegate: coverDelegate(CoverKind.coverGrid),
               // 发现模式: 末尾多一格"加载更多"
               itemCount: items.length + (!searching && hasMore ? 1 : 0),
               itemBuilder: (_, i) {
@@ -539,14 +538,10 @@ class _Edv extends State<EngineDiscoverView> {
                 final it = items[i];
                 return GestureDetector(onTap: () => widget.onOpen(it),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8),
-                      child: (it['coverUrl'] ?? '') != ''
-                        ? Image.network(it['coverUrl'], fit: BoxFit.cover, width: double.infinity,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: Colors.grey.withValues(alpha: 0.2),
-                              child: const Icon(Icons.image_not_supported_outlined)))
-                        : Container(color: Colors.grey.withValues(alpha: 0.2),
-                            child: const Icon(Icons.book_outlined)))),
+                    Expanded(child: CoverImage(it['coverUrl'],
+                        width: double.infinity,
+                        fallbackText: '${it['name'] ?? ''}',
+                        fallbackIcon: Icons.book_outlined)),
                     Padding(padding: const EdgeInsets.only(top: 4),
                       child: Text('${it['name'] ?? ''}', maxLines: 2,
                         overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),

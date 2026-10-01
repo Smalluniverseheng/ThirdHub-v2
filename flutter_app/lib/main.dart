@@ -28,6 +28,7 @@ import 'package:path_provider/path_provider.dart';
 // 硬性禁止（见 AppSettings.navSwipe 的长注释），导航层不再注册任何横向识别器。
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
+import 'core/ui_cover.dart';
 import 'core/local_tools.dart';
 import 'core/manual_book.dart';
 import 'core/module_shell.dart';
@@ -3853,16 +3854,11 @@ class _Asc extends State<AlbumSyncCard> {
                     return GestureDetector(
                         onLongPress: () =>
                             removePhoto(Map<String, dynamic>.from(p)),
-                        child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Image.network(
-                                '${Api.base}/v1/album/file?id=${p['id']}',
-                                fit: BoxFit.cover,
-                                headers: {'X-TH-Token': Api.token},
-                                errorBuilder: (_, __, ___) => const ColoredBox(
-                                    color: Colors.black26,
-                                    child:
-                                        Icon(Icons.broken_image, size: 18)))));
+                        child: CoverImage(
+                            '${Api.base}/v1/album/file?id=${p['id']}',
+                            headers: {'X-TH-Token': Api.token},
+                            radius: CoverSpec.photoRadius,
+                            fallbackIcon: Icons.broken_image_outlined));
                   }),
             if (synced.length > 8)
               Text('…还有 ${synced.length - 8} 张',
@@ -4479,14 +4475,8 @@ class _Home extends State<SearchSection> {
         ListTile(
             dense: true,
             leading: ('${it['coverUrl'] ?? ''}') != ''
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network('${it['coverUrl']}',
-                        width: 40,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const SizedBox(width: 40, height: 56)))
+                ? CoverThumb('${it['coverUrl']}',
+                    fallbackText: '${it['name'] ?? it['title'] ?? ''}')
                 : null,
             title: Text('${it['name'] ?? it['title'] ?? ''}'),
             // ★4.51.0 副标题补全：此前只显示 author，把引擎一起送来的 **标签(kind)** 与
@@ -4914,14 +4904,8 @@ class _Hp extends State<HistoryPage> {
               for (final b in items)
                 ListTile(
                     leading: b.coverUrl != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(Api.img(b.coverUrl),
-                                width: 40,
-                                height: 56,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox(width: 40, height: 56)))
+                        ? CoverThumb(Api.img(b.coverUrl),
+                            fallbackText: b.name)
                         : const Icon(Icons.history),
                     title: Text(b.name),
                     subtitle: Text(b.author,
@@ -5104,17 +5088,11 @@ class _NSR extends State<NovelSearchResults> {
               for (final b in (g['books'] as List? ?? []))
                 ListTile(
                     leading: (b['coverUrl'] ?? '') != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                                g['engine'] == true
-                                    ? '${b['coverUrl']}'
-                                    : Api.img(b['coverUrl']),
-                                width: 40,
-                                height: 56,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox(width: 40, height: 56)))
+                        ? CoverThumb(
+                            g['engine'] == true
+                                ? '${b['coverUrl']}'
+                                : Api.img(b['coverUrl']),
+                            fallbackText: '${b['name'] ?? b['title'] ?? ''}')
                         : null,
                     title: Text(b['name'] ?? b['title'] ?? ''),
                     subtitle: Text(b['author'] ?? ''),
@@ -5231,12 +5209,8 @@ class _Sh extends State<ShelfPage> {
                     style: const TextStyle(color: Colors.grey, fontSize: 11)),
               ]))
             : GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 0.52,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12),
+                padding: coverPad,
+                gridDelegate: coverDelegate(CoverKind.bookGrid),
                 itemCount: mOff + local.length + items.length,
                 itemBuilder: (_, i) {
                   // 第一格: 内置使用说明书(不可删除, 点开即读)
@@ -5281,8 +5255,8 @@ class _Sh extends State<ShelfPage> {
                               Expanded(
                                   child: Container(
                                       decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                              CoverSpec.radius),
                                           boxShadow: [
                                             BoxShadow(
                                                 color: Colors.black
@@ -5291,8 +5265,8 @@ class _Sh extends State<ShelfPage> {
                                                 offset: const Offset(0, 3))
                                           ]),
                                       child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                              CoverSpec.radius),
                                           child: Stack(
                                               fit: StackFit.expand,
                                               children: [
@@ -5383,7 +5357,8 @@ class _Sh extends State<ShelfPage> {
                             Expanded(
                                 child: Container(
                                     decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(
+                                            CoverSpec.radius),
                                         boxShadow: [
                                           BoxShadow(
                                               color: Colors.black
@@ -5392,18 +5367,17 @@ class _Sh extends State<ShelfPage> {
                                               offset: const Offset(0, 3))
                                         ]),
                                     child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(
+                                            CoverSpec.radius),
                                         child: Stack(
                                             fit: StackFit.expand,
                                             children: [
-                                              b.coverUrl != ''
-                                                  ? Image.network(
-                                                      Api.img(b.coverUrl),
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder:
-                                                          (_, __, ___) =>
-                                                              _coverFallback(b))
-                                                  : _coverFallback(b),
+                                              CoverImage(
+                                                  b.coverUrl != ''
+                                                      ? Api.img(b.coverUrl)
+                                                      : '',
+                                                  fallbackText: b.name,
+                                                  clip: false),
                                               if (prog >= 0)
                                                 Positioned(
                                                     left: 0,
@@ -5534,31 +5508,11 @@ class _Sh extends State<ShelfPage> {
         ]));
   }
 
-  Widget _coverFallback(Book b) {
-    const palette = [
-      [0xFF5B7FFF, 0xFF8E5BFF],
-      [0xFFFF7A59, 0xFFFFB347],
-      [0xFF2EBD85, 0xFF56C6A9],
-      [0xFFF06292, 0xFFBA68C8],
-      [0xFF4DD0E1, 0xFF5B7FFF],
-      [0xFFFFB74D, 0xFFFF8A65]
-    ];
-    final h = b.name.codeUnits.fold<int>(0, (a, e) => (a + e) & 0x7fffffff);
-    final pair = palette[h % palette.length];
-    return Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-            gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(pair[0]), Color(pair[1])])),
-        alignment: Alignment.center,
-        child: Text(b.name.isEmpty ? '?' : b.name.characters.first,
-            style: const TextStyle(
-                fontSize: 30,
-                color: Colors.white,
-                fontWeight: FontWeight.bold)));
-  }
+  /// 本地书（无网络封面）的兜底。
+  /// **实现已收归 `CoverFallback`** —— 六色调色板 + 首字此前只长在这里，
+  /// 现在全仓封面失败态共用同一份，不再各写一套。
+  Widget _coverFallback(Book b) =>
+      CoverFallback(b.name, width: double.infinity);
 }
 
 class TocPage extends StatefulWidget {
@@ -5876,17 +5830,11 @@ class _CSR extends State<ComicSearchResults> {
               for (final b in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (b['coverUrl'] ?? '') != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                                g['engine'] == true
-                                    ? '${b['coverUrl']}'
-                                    : Api.img(b['coverUrl']),
-                                width: 40,
-                                height: 56,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox(width: 40, height: 56)))
+                        ? CoverThumb(
+                            g['engine'] == true
+                                ? '${b['coverUrl']}'
+                                : Api.img(b['coverUrl']),
+                            fallbackText: '${b['title'] ?? b['name'] ?? ''}')
                         : null,
                     title: Text(b['title'] ?? b['name'] ?? ''),
                     subtitle: Text(b['subTitle'] ?? b['author'] ?? ''),
@@ -6305,14 +6253,11 @@ class _MpList extends State<_MusicPlaylist> {
               for (final m in items)
                 ListTile(
                     leading: (m['coverUrl'] ?? '') != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(Api.img(m['coverUrl']),
-                                width: 44,
-                                height: 44,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox(width: 44, height: 44)))
+                        ? CoverThumb(Api.img(m['coverUrl']),
+                            width: 44,
+                            height: 44,
+                            fallbackText: '${m['name'] ?? ''}',
+                            fallbackIcon: Icons.music_note)
                         : const Icon(Icons.music_note),
                     title: Text(m['name'] ?? ''),
                     subtitle: Text(m['artist'] ?? ''),
@@ -6422,17 +6367,14 @@ class _MSR extends State<MusicSearchResults> {
               for (final m in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (m['coverUrl'] ?? '') != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                                g['engine'] == true
-                                    ? '${m['coverUrl']}'
-                                    : Api.img(m['coverUrl']),
-                                width: 44,
-                                height: 44,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox(width: 44, height: 44)))
+                        ? CoverThumb(
+                            g['engine'] == true
+                                ? '${m['coverUrl']}'
+                                : Api.img(m['coverUrl']),
+                            width: 44,
+                            height: 44,
+                            fallbackText: '${m['name'] ?? ''}',
+                            fallbackIcon: Icons.music_note)
                         : const Icon(Icons.music_note),
                     title: Text(m['name'] ?? ''),
                     subtitle: Text(
@@ -7021,16 +6963,14 @@ class _MPlay extends State<MusicPlayPage> {
                   children: [
                 // 封面页
                 Center(
-                    child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: (cur['coverUrl'] ?? '') != ''
-                            ? Image.network(Api.img(cur['coverUrl']),
-                                width: 230,
-                                height: 230,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const Icon(Icons.music_note, size: 140))
-                            : const Icon(Icons.music_note, size: 140))),
+                    child: CoverImage(
+                        (cur['coverUrl'] ?? '') != ''
+                            ? Api.img(cur['coverUrl'])
+                            : '',
+                        width: 230,
+                        height: 230,
+                        radius: 16,
+                        fallbackIcon: Icons.music_note)),
                 // 歌词页: LRC同步高亮+自动滚动; 无时间戳则整段展示
                 lyric.isEmpty
                     ? const Center(
@@ -7354,9 +7294,8 @@ class _Live extends State<LivePage> {
                             : _searchEmptyBox(
                                 Icons.live_tv, '搜索频道名', '也可以点上方热词快速试一个。')))
                 : GridView.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3, childAspectRatio: 0.75),
+                    padding: coverPad,
+                    gridDelegate: coverDelegate(CoverKind.liveGrid),
                     itemCount: channels.length,
                     itemBuilder: (_, i) {
                       final ch = channels[i];
@@ -7383,19 +7322,14 @@ class _Live extends State<LivePage> {
                                           index: 0))),
                           child: Column(children: [
                             Expanded(
-                                child: (ch['coverUrl'] ?? '') != ''
-                                    ? Image.network(
-                                        ch['engine'] == true
+                                child: CoverImage(
+                                    ch['coverUrl'] == ''
+                                        ? ''
+                                        : (ch['engine'] == true
                                             ? '${ch['coverUrl']}'
-                                            : Api.img(ch['coverUrl']),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            const ColoredBox(
-                                                color: Colors.black26,
-                                                child: Icon(Icons.live_tv)))
-                                    : const ColoredBox(
-                                        color: Colors.black26,
-                                        child: Icon(Icons.live_tv))),
+                                            : Api.img(ch['coverUrl'])),
+                                    fallbackText: '${ch['name'] ?? ''}',
+                                    fallbackIcon: Icons.live_tv)),
                             Padding(
                                 padding: const EdgeInsets.all(4),
                                 child: Text(ch['name'] ?? '',
@@ -7513,15 +7447,11 @@ class _VSR extends State<VideoSearchResults> {
               for (final b in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (b['coverUrl'] ?? '') != ''
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child:
-                                Image.network(g['engine'] == true ? '${b['coverUrl']}' : Api.img(b['coverUrl']),
-                                    width: 40,
-                                    height: 56,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const SizedBox(width: 40, height: 56)))
+                        ? CoverThumb(
+                            g['engine'] == true
+                                ? '${b['coverUrl']}'
+                                : Api.img(b['coverUrl']),
+                            fallbackText: '${b['name'] ?? ''}')
                         : null,
                     title: Text(b['name'] ?? ''),
                     subtitle:
@@ -13000,19 +12930,10 @@ class _Ei extends State<EngineItemPage> {
                         child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(
-                                      width: 72,
-                                      height: 96,
-                                      child: cover.isNotEmpty
-                                          ? Image.network(cover,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  const ColoredBox(
-                                                      color: Colors.black26))
-                                          : const ColoredBox(
-                                              color: Colors.black26))),
+                              CoverImage(cover.isEmpty ? '' : cover,
+                                  width: 72,
+                                  height: 96,
+                                  fallbackText: name),
                               const SizedBox(width: 12),
                               Expanded(
                                   child: Column(

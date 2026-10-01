@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'browser_page.dart';
 import 'recents.dart';
+import 'ui_cover.dart';
 
 class _Store4 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -92,17 +93,16 @@ class _Wp extends State<WallpaperPage> {
               TextButton(onPressed: () => _fetch(q: searchC.text.trim()),
                 child: const Text('重试', style: TextStyle(fontSize: 12))),
           ])))
-      : GridView.builder(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, mainAxisSpacing: 4, crossAxisSpacing: 4, childAspectRatio: 0.65),
-        padding: const EdgeInsets.all(8),
+      : GridView.builder(gridDelegate: coverDelegate(CoverKind.wallGrid),
+        padding: coverPad,
         itemCount: items.length + 1,
         itemBuilder: (_, i) {
           if (i == items.length) return TextButton(onPressed: loading ? null : () => _fetch(q: searchC.text.trim(), more: true),
             child: Text(loading ? '加载中…' : '加载更多'));
           final w = items[i];
           final thumb = w['thumbs']?['small'] ?? w['thumbs']?['original'] ?? '';
-          return InkWell(onTap: () => _preview(c, w), child: ClipRRect(borderRadius: BorderRadius.circular(8),
-            child: Image.network(thumb, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.grey.withValues(alpha: 0.2)))));
+          return InkWell(onTap: () => _preview(c, w),
+            child: CoverImage(thumb, fallbackIcon: Icons.wallpaper_outlined));
         })),
   ]);
 

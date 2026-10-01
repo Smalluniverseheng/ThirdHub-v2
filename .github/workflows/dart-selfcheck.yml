@@ -208,5 +208,9 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/tts_vendors_selfcheck.dart
 
+      - name: ui_cover（封面网格统一：规格数值 + 全仓裸封面图已清零的 grep 断言）
+        working-directory: flutter_app
+        run: dart run tool/ui_cover_selfcheck.dart
+
       # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
       # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。
