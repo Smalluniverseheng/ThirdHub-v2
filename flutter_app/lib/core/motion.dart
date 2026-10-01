@@ -158,7 +158,7 @@ class DragReorderList extends StatelessWidget {
   final int itemCount;
   final Widget Function(BuildContext, int, bool) itemBuilder;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final EdgeInsetsGeometry? padding;
+  final EdgeInsets? padding;
   final bool enabled;
 
   /// [itemBuilder] 的第三参数 = 该项当前是否正被拖动。
@@ -607,7 +607,7 @@ class RippleSwitchGroup extends StatefulWidget {
   final List<String> labels;
   final List<bool> values;
   final void Function(int index, bool value) onChanged;
-  final int? rippleRadius;
+  final int rippleRadius;
 
   const RippleSwitchGroup({
     super.key,

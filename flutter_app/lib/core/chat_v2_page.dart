@@ -937,7 +937,7 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
       ProUI.toast(context, _err3('文件没能拿到', err ?? '未知原因', '确认两台设备仍在同一 WiFi 下，再点一次'));
       return;
     }
-    await ChatHub.instance.fileAckOk(offer, path);
+    ChatHub.instance.fileAckOk(offer, path); // 只是回一个回执包，同步发出，不必 await
     await ChatHub.instance.attachLocalPath(m.mid, path);
     await OpenFilex.open(path);
   }

@@ -9,8 +9,6 @@
 //   `/health` 通过只证明 HTTP 活着、声明像 TTS/1；真正坏的是合成那一段
 //   （模型没加载、显存不足、音色名写错）。本项目在"测试通过、实际用不了"
 //   上吃过不止一次亏，所以这里给自检两步：先连上，再**真合成一句并播放**。
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
@@ -18,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_log.dart';
+import 'play_tag.dart';
 import 'pro_kit.dart';
 import 'tts_direct.dart';
 import 'tts_engines_logic.dart';
@@ -126,7 +125,11 @@ class _TtsEnginesPageState extends State<TtsEnginesPage> {
   Future<void> _play(String path) async {
     try {
       _player ??= AudioPlayer();
-      await _player!.setAudioSource(AudioFileSource(File(path), tag: null));
+      // ★ 走 play_tag.dart 这条统一通道，不裸调 setAudioSource：
+      //   项目约定（play_tag.dart 头注释）是所有 just_audio 播放都必须带 MediaItem 标签，
+      //   否则 just_audio_background 在后台/通知栏拿不到曲目信息。
+      await _player!.setAudioSource(
+          tagFile(path, title: '开源引擎试听', album: 'ThirdHub 语音引擎'));
       await _player!.play();
     } catch (e) {
       if (!mounted) return;
