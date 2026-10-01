@@ -5512,7 +5512,7 @@ class _Sh extends State<ShelfPage> {
   /// **实现已收归 `CoverFallback`** —— 六色调色板 + 首字此前只长在这里，
   /// 现在全仓封面失败态共用同一份，不再各写一套。
   Widget _coverFallback(Book b) =>
-      CoverFallback(b.name, width: double.infinity);
+      CoverFallback(name: b.name, width: double.infinity);
 }
 
 class TocPage extends StatefulWidget {
