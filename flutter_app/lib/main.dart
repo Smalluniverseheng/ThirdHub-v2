@@ -8127,9 +8127,17 @@ class ModuleHubPage extends StatefulWidget {
 
 class _HubState extends State<ModuleHubPage> {
   int _i = 0;
-  // 懒建：把 10 个子功能一次性塞进 IndexedStack，会让"打开工具箱"这一下
-  // 立刻初始化 10 个页面（天气/传感器那类会马上发网络请求、申请权限）。
-  // 只建"访问过的" —— 与 PageView 的 keep-alive 是同一个道理。
+  // ★2026-10-01 用户要求：「模块里面可以左右滑动切换里面的功能」。
+  //   改造前这里是一个 IndexedStack —— 只能点顶部的子功能条，滑不动。
+  //   现在换成 PageView：横滑 = 在本模块的**子功能之间**切换，
+  //   与「模块之间不许横滑」并不矛盾（那条禁止的是底栏切模块，见 AppSettings.navSwipe）。
+  //   嵌套优先级：子功能页面**自己**的横向滚动/翻页会先赢得手势竞争
+  //   （Flutter 手势竞技场里更深的识别器先加入、先胜出），所以阅读器翻页、
+  //   封面横滑这类既有手势完全不受影响 —— 只有落在空白处的横滑才切子功能。
+  final PageController _pc = PageController();
+  // 懒建：把 10 个子功能一次性建出来，会让"打开工具箱"这一下立刻初始化 10 个页面
+  // （天气/传感器那类会马上发网络请求、申请权限）。PageView.builder 天然只建可见页，
+  // 再配 _KeepAlivePage 保住已访问页的状态。
   final Set<int> _built = <int>{0};
 
   List<String> get _ks => [
@@ -8139,10 +8147,29 @@ class _HubState extends State<ModuleHubPage> {
 
   void _jump(int i) {
     if (i == _i) return;
-    setState(() {
-      _i = i;
-      _built.add(i);
+    setState(() => _built.add(i));
+    // 走动画切页：PageView 会自己把 _i 通过 onPageChanged 同步回来（含跨多页）。
+    _pc.animateToPage(i,
+        duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 返回键：先在**本模块内部**退回「总览」，退无可退才交给上层（换模块/退 App）。
+    // 这正是用户说的「我应该是返回到上一次打开那个，而不是退回别的模块」。
+    ModuleBackHook.set(widget.name, () {
+      if (_i == 0) return false;
+      _jump(0);
+      return true;
     });
+  }
+
+  @override
+  void dispose() {
+    ModuleBackHook.clear(widget.name);
+    _pc.dispose();
+    super.dispose();
   }
 
   @override
@@ -8161,13 +8188,29 @@ class _HubState extends State<ModuleHubPage> {
       ModuleNavBar(
           labels: labels, icons: icons, index: _i, onTap: _jump),
       Expanded(
-          child: IndexedStack(index: _i, children: [
-        _overview(c, ks, accent),
-        for (var n = 0; n < ks.length; n++)
-          _built.contains(n + 1)
-              ? kModules[ks[n]]!.page
-              : const SizedBox.shrink(),
-      ])),
+          child: PageView.builder(
+        controller: _pc,
+        itemCount: ks.length + 1,
+        onPageChanged: (i) => setState(() {
+          _i = i;
+          _built.add(i);
+        }),
+        itemBuilder: (c2, i) {
+          if (i == 0) {
+            return _KeepAlivePage(
+                key: const ValueKey<String>('__hub_overview__'),
+                child: _overview(c2, ks, accent));
+          }
+          final n = i - 1;
+          // 没访问过的子功能保持空白（不构建 = 不发请求、不申请权限）。
+          if (!_built.contains(i) && n < ks.length) {
+            return const SizedBox.shrink();
+          }
+          return _KeepAlivePage(
+              key: ValueKey<String>('__hub_${ks[n]}__'),
+              child: kModules[ks[n]]!.page);
+        },
+      )),
     ]);
   }
 
@@ -8582,13 +8625,22 @@ class _RootNavState extends State<RootNav> {
     });
   }
 
-  void _goNow(int i, {bool animate = false}) {
+  /// [recordHistory] = false 时**不把当前模块写进访问历史**。
+  ///
+  /// ★2026-10-01 修「返回两次在相邻两个模块之间来回弹」：
+  ///   `_backOne()` 走的是"回到上一个打开过的模块"，而它调用的是本函数 ——
+  ///   本函数默认会把**当前**模块压进 `_modHistory`。于是 C→B 的返回又记下了 C，
+  ///   下一次返回取出的就是 C，用户在 B/C 之间来回弹，永远退不出去。
+  ///   返回动作是**消费**历史，不是产生历史，所以必须显式关掉记录。
+  void _goNow(int i, {bool animate = false, bool recordHistory = true}) {
     HapticFeedback.selectionClick(); // 切换模块轻微震动
     if (i == idx) return;
     // 记模块访问历史（供侧滑返回"回到上一个模块"用）。放在 setState 之前：
     // 一旦这里抛异常也不该把"历史已写、idx 未变"这种自相矛盾的状态留下来。
-    _modHistory.add(idx);
-    if (_modHistory.length > 20) _modHistory.removeAt(0);
+    if (recordHistory) {
+      _modHistory.add(idx);
+      if (_modHistory.length > 20) _modHistory.removeAt(0);
+    }
     setState(() {
       idx = i;
       RootNav.currentModuleKey = enabled[i];
@@ -8642,14 +8694,15 @@ class _RootNavState extends State<RootNav> {
       final prev = _modHistory.removeLast();
       if (prev == idx) continue;
       if (prev < 0 || prev >= enabled.length) continue;
-      _goNow(prev);
+      // ★ 返回 = 消费历史，绝不能再把当前模块写回历史（否则两次返回就来回弹）。
+      _goNow(prev, recordHistory: false);
       return true;
     }
     // 历史用尽：退到「我的」（用户把它当作"App 首页"），没有「我的」就退到第 0 个。
     var home = enabled.indexOf('我的');
     if (home < 0) home = 0;
     if (enabled.length > 1 && idx != home) {
-      _goNow(home);
+      _goNow(home, recordHistory: false);
       return true;
     }
     return false; // 真到根部：交给系统退出
