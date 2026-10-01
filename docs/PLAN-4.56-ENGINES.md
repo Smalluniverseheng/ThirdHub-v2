@@ -345,15 +345,29 @@
 - **语音消息**（按住说话发语音条）与**实时语音通话**属于独立子系统：
   前者可用已有 `record` 依赖做；后者需双向流 + 信令，单独排期。
 
-### ⑤ 网页端与前端/后端统一（**未做，需先定口径**）
-- 现状核实：网页端**已经有**引擎一整套 ——
-  `deep seek/js/engine/` 下有 `legado-adapter / venera-adapter / lx-adapter / tvbox-adapter /
-  backend-bridge / backend-bus / backend-probe / backend-source / thp-direct /
-  source-engine / source-service / manual-source`，
-  另有 `js/modules/backend-center.js`。
-- 所以不是"从零做"，而是**确认它与 App 端是否连的是同一套后端契约（THP / 家庭后端 :9527）**，
-  以及**同一份说明书 / 同一套密钥库语义**是否两端一致。
-  下一步先做"两端能力对照表"，再决定要补哪一侧。
+### ⑤ 网页端与前端/后端统一（**未做，已完成第一步对照**）
+- **先纠一个误解**：网页端**不是没有**引擎与后端，而是**已经有整套**，在
+  `deep seek/js/engine/` 下：
+
+  | 网页端文件 | 行数 | 职责 | App 侧对应 |
+  |---|---|---|---|
+  | `thp-direct.js` | 576 | THP 直连：探测 / 地址 / 模块 / 分页 | `core/engine_direct.dart` |
+  | `backend-source.js` | 288 | 后端源：detect / pushSources / srcList / delSource | `core/engine_direct*.dart` + `pro_system.dart` |
+  | `source-engine.js` | 406 | 源引擎（Legado 规则执行） | 引擎 App 内（不在前端） |
+  | `backend-bridge.js` | 42 | 后端 base / storage / health | `core/pro_system.dart` 的 `Backends` |
+  | `legado / venera / lx / tvbox -adapter.js` | — | 四类源的适配器 | ★App 侧**没有**等价物（见下） |
+  | `manual-source.js` | 207 | 内置说明书虚拟源 | `core/manual_book.dart`（**本轮已两端逐字同步**） |
+
+  另有 `js/modules/backend-center.js`（后端管理界面）。
+
+- **所以 ⑤ 不是"从零做网页端引擎"，而是三件事**：
+  1. **契约对齐**：两端的 THP 探测与握手、家庭后端（`:9527`）端点形状是否**逐字段一致**。
+     需要一次真实对拍（同一台后端，两端各连一次，比对 `/v1/meta`、`/v1/ping`、源列表结构）。
+  2. **配置语义对齐**：App 已有统一密钥库 `core/api_keys.dart`（12 家跨模块复用），
+     网页端是否也有等价物、命名是否一致 —— 待查。
+  3. **能力补齐方向**：网页端有**四类源适配器**（legado / venera / lx / tvbox），
+     App 侧目前走的是自研 THP；这一块是"哪边补哪边"要先定的。
+- **本轮已完成的部分**：说明书两端逐字同步（见 ②）—— 这是"两端同一份说法"的第一块砖。
 
 ---
 
