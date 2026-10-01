@@ -193,7 +193,11 @@ jobs:
       #   「The getter 'TtsBackend' isn't defined」（少了一个 import）与
       #   「const 表达式里不能对 List 取 .length」两条 —— 都只有真编译才看得见。
       #   加这一步后，这类错误在秒级反馈，不必等整个 build-apk 跑完。
-      #   只把 error 当致命：历史代码的 info/warning 不拦（--no-fatal-*）。
+      #   参数只写 --no-fatal-warnings：dart analyze 的 infos 默认就不致命
+      #   （没有 --no-fatal-infos 这个开关，写了会 exit 64：
+      #    「Cannot negate option "--no-fatal-infos"」—— 本步第一次就是这么红的），
+      #   而 warnings 默认致命（--[no-]fatal-warnings defaults to on），
+      #   所以要「只拦 error」必须显式关掉 warnings。
       - name: analyze（类型检查 —— 本机跑不了，搬到这里）
         working-directory: flutter_app
-        run: dart analyze --no-fatal-infos --no-fatal-warnings lib/
+        run: dart analyze --no-fatal-warnings lib/
