@@ -63,12 +63,38 @@ class TtsManager {
 
   static void _set(TtsState s) { state = s; _stateC.add(s); }
 
+  static bool _hiSurr(int c) => c >= 0xD800 && c <= 0xDBFF; // 代理对高位
+  static bool _loSurr(int c) => c >= 0xDC00 && c <= 0xDFFF; // 代理对低位
+
+  /// 把长文切成可逐段合成的碎片。
+  ///
+  /// 400 字一段：多数在线厂商单次上限在 500～1000 字（小米文档建议 ≤500），
+  /// 切太大会被拒、切太小又会让"每段的等待"变得明显。
+  ///
+  /// ★ 不能在代理对（emoji 等增补平面字符）中间切开 —— 半截字符会让
+  ///   请求体编码出问题，真机上的表现是"某一段怎么都念不出来"，
+  ///   而且因为其他段都正常，极难定位。这里退一格避开。
   static List<String> split(String text, {int size = 400}) {
     final paras = text.split('\n').where((e) => e.trim().isNotEmpty).toList();
     final out = <String>[];
     for (final p in paras) {
-      if (p.length <= size) { out.add(p.trim()); continue; }
-      for (var i = 0; i < p.length; i += size) out.add(p.substring(i, (i + size).clamp(0, p.length)).trim());
+      if (p.length <= size) {
+        out.add(p.trim());
+        continue;
+      }
+      var i = 0;
+      while (i < p.length) {
+        var end = (i + size).clamp(0, p.length);
+        if (end < p.length &&
+            end > i &&
+            _hiSurr(p.codeUnitAt(end - 1)) &&
+            _loSurr(p.codeUnitAt(end))) {
+          end -= 1;
+        }
+        if (end <= i) end = i + 1; // 兜底，绝不原地踏步
+        out.add(p.substring(i, end).trim());
+        i = end;
+      }
     }
     return out;
   }

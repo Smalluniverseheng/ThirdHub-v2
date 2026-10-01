@@ -138,6 +138,112 @@ void main() {
   print('── 3. 各家的"特有形状"逐条钉住（写错就会没声音的地方）──');
   TtsVendor v(String id) => ttsVendorOf(id)!;
 
+  // ══ 小米 MiMo：形态最特殊的一家，必须逐条钉死 ══
+  // 它不是 /audio/speech，而是 chat/completions；待合成文本放在 assistant
+  // 消息里；音频以 base64 藏在 choices[0].message.audio.data。
+  // 这是"照 OpenAI 形状写就会错、而且错得很安静"的典型。
+  final xm = planTtsRequest(v('xiaomi'), const TtsVars(text: '你好', key: 'sk-x'));
+  ck('小米: 端点是 chat/completions（不是 /audio/speech）',
+      xm.url == 'https://api.xiaomimimo.com/v1/chat/completions', xm.url);
+  ck('小米: 鉴权是 Bearer', xm.headers['Authorization'] == 'Bearer sk-x');
+  final xmj = jsonDecode(xm.body!) as Map;
+  ck('小米: 没有 input 字段（它不是 OpenAI 音频形状）', !xmj.containsKey('input'));
+  final xmMsgs = xmj['messages'] as List;
+  ck('小米: 有一条 assistant 消息', xmMsgs.length == 1 &&
+      (xmMsgs[0] as Map)['role'] == 'assistant');
+  ck('小米: 待合成文本在 assistant 的 content 里',
+      (xmMsgs[0] as Map)['content'] == '你好');
+  final xmAudio = xmj['audio'] as Map;
+  ck('小米: 音色与格式在 audio 对象里',
+      xmAudio.containsKey('voice') && xmAudio.containsKey('format'));
+
+  // 用官方文档里的真实响应结构验证取值路径（不是编一个形状出来自证）
+  const xmRespBody = '{"id":"6ebe","choices":[{"finish_reason":"stop","index":0,'
+      '"message":{"content":"","role":"assistant","audio":{"id":"979a",'
+      '"data":"QUJD","expires_at":null,"transcript":null}}}],'
+      '"model":"mimo-v2.5-tts","object":"chat.completion"}';
+  final xmOut = extractTtsAudio(v('xiaomi'), 'application/json',
+      Uint8List.fromList(utf8.encode(xmRespBody)));
+  ck('小米: 能从真实响应里取到音频', xmOut.ok && xmOut.bytes?.length == 3,
+      '${xmOut.error}');
+  ck('小米: 解出来正是 ABC 三个字节',
+      xmOut.bytes != null &&
+          xmOut.bytes![0] == 65 &&
+          xmOut.bytes![1] == 66 &&
+          xmOut.bytes![2] == 67);
+  // 反证：audio 对象在但 data 缺失 —— 必须报错，不能静默存 0 字节
+  final xmNoData = extractTtsAudio(
+      v('xiaomi'),
+      'application/json',
+      Uint8List.fromList(utf8.encode(
+          '{"choices":[{"message":{"audio":{"id":"x"}}}]}')));
+  ck('小米: 响应里缺 data 要报错（不是静默空音频）', !xmNoData.ok);
+
+  // ══ 计费方式：一个厂商两套端点、两套互不通用的 Key ══
+  ck('小米: 登记了 4 套计费方案', v('xiaomi').plans.length == 4);
+  ck('小米: 方案 id 与顺序正确',
+      v('xiaomi').plans.map((p) => p.id).join(',') ==
+          'payg,tokenplan-cn,tokenplan-sgp,tokenplan-ams');
+  ck('小米: 每套方案都写明 Key 前缀要求',
+      v('xiaomi').plans.every((p) => p.keyPrefixes.isNotEmpty));
+  ck('小米: 每套方案都有自己的完整地址',
+      v('xiaomi').plans.every((p) => p.url.startsWith('https://')));
+
+  final xmPayg = planTtsRequest(
+      v('xiaomi'),
+      const TtsVars(
+          text: 'x',
+          key: 'sk-x',
+          planUrl: 'https://api.xiaomimimo.com/v1/chat/completions'));
+  ck('小米: 选按量 → 打 api.xiaomimimo.com',
+      xmPayg.url.startsWith('https://api.xiaomimimo.com/'), xmPayg.url);
+  // ★ 同一家厂商、同一份配置，只因为"选了套餐"就换域名 —— 这是核心断言
+  final xmTp = planTtsRequest(
+      v('xiaomi'),
+      const TtsVars(
+          text: 'x',
+          key: 'tp-x',
+          planUrl: 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions'));
+  ck('★ 小米: 选会员套餐 → 换成 token-plan-cn 域名',
+      xmTp.url == 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
+      xmTp.url);
+  ck('小米: 没选方案时回落厂商默认地址（照样能用）',
+      planTtsRequest(v('xiaomi'), const TtsVars(text: 'x', key: 'k'))
+          .url
+          .startsWith('https://api.xiaomimimo.com/'));
+
+  ck('ttsEffectiveUrl: 选了套餐就用套餐地址',
+      ttsEffectiveUrl(v('xiaomi'), 'tokenplan-sgp') ==
+          'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions');
+  ck('ttsEffectiveUrl: 没选就用厂商默认地址',
+      ttsEffectiveUrl(v('xiaomi'), '') ==
+          'https://api.xiaomimimo.com/v1/chat/completions');
+  ck('ttsEffectiveUrl: 选了不存在的方案也不崩',
+      ttsEffectiveUrl(v('xiaomi'), 'nope') ==
+          'https://api.xiaomimimo.com/v1/chat/completions');
+  ck('ttsDefaultPlan: 默认是按量付费（TTS 限时免费那条）',
+      ttsDefaultPlan(v('xiaomi'))?.id == 'payg');
+  ck('无方案厂商: ttsDefaultPlan 返回 null（不是崩）',
+      ttsDefaultPlan(v('siliconflow')) == null);
+
+  // ══ "两套 Key 不可混用"的落地：填错端点前就提醒 ══
+  final xmPaygPlan = ttsPlanOf(v('xiaomi'), 'payg');
+  final xmTpPlan = ttsPlanOf(v('xiaomi'), 'tokenplan-cn');
+  ck('小米: sk- Key 配按量 → 不告警',
+      keyPlanMismatchHint(v('xiaomi'), xmPaygPlan, 'sk-abc') == '');
+  ck('小米: tp- Key 配套餐 → 不告警',
+      keyPlanMismatchHint(v('xiaomi'), xmTpPlan, 'tp-abc') == '');
+  ck('小米: ttp- Key（团队版）配套餐 → 不告警',
+      keyPlanMismatchHint(v('xiaomi'), xmTpPlan, 'ttp-abc') == '');
+  ck('★ 小米: tp- Key 配按量 → 必须告警',
+      keyPlanMismatchHint(v('xiaomi'), xmPaygPlan, 'tp-abc').isNotEmpty);
+  ck('★ 小米: sk- Key 配套餐 → 必须告警',
+      keyPlanMismatchHint(v('xiaomi'), xmTpPlan, 'sk-abc').isNotEmpty);
+  ck('小米: 还没填 Key 时不要告警（只是没填而已）',
+      keyPlanMismatchHint(v('xiaomi'), xmTpPlan, '') == '');
+  ck('无方案的厂商: 一律不告警（不猜）',
+      keyPlanMismatchHint(v('siliconflow'), null, '随便什么') == '');
+
   // 硅基流动：OpenAI 形状，音频直接二进制
   final sf = planTtsRequest(
       v('siliconflow'), const TtsVars(text: '你好', key: 'k'));
@@ -331,12 +437,46 @@ void main() {
         back.needHost == v.needHost &&
         _sameMap(back.extraHeaders, v.extraHeaders) &&
         back.voices.join(',') == v.voices.join(',') &&
-        back.models.join(',') == v.models.join(',');
+        back.models.join(',') == v.models.join(',') &&
+        back.keyHint == v.keyHint &&
+        // ★ 计费方案也要往返一致：丢了它 = 用户选的套餐重启后回到按量，
+        //   表现就是"昨天还能用，今天突然 401"。
+        back.plans.length == v.plans.length &&
+        back.plans.every((bp) {
+          final orig = v.plans.firstWhere(
+              (p) => p.id == bp.id,
+              orElse: () => const TtsPlan(id: '__none__', name: ''));
+          return orig.url == bp.url &&
+              orig.keyHint == bp.keyHint &&
+              orig.keyPrefixes.join(',') == bp.keyPrefixes.join(',');
+        });
     if (!same) roundTripBad++;
     ck('往返一致：${v.id}', same,
         back == null ? '反序列化返回 null' : '字段有丢失');
   }
   ck('全表往返无一处丢失', roundTripBad == 0, '$roundTripBad 家不一致');
+
+  // 方案这一层单独再钉一遍：它是"重启后静默失效"的高危字段。
+  final xmBack = vendorFromJson(vendorToJson(v('xiaomi')))!;
+  ck('★ 小米的计费方案往返不丢（4 套都还在）', xmBack.plans.length == 4);
+  ck('小米: 方案地址往返一字不差',
+      xmBack.plans.map((p) => p.url).join('|') ==
+          v('xiaomi').plans.map((p) => p.url).join('|'));
+  ck('小米: 方案的 Key 前缀往返不丢',
+      xmBack.plans[1].keyPrefixes.join(',') == 'tp-,ttp-');
+  ck('小米: keyHint 往返不丢', xmBack.keyHint == v('xiaomi').keyHint);
+  ck('无方案厂商往返后 plans 仍为空（别凭空造方案）',
+      vendorFromJson(vendorToJson(v('siliconflow')))!.plans.isEmpty);
+  ck('坏方案条目被单条丢弃，不牵连整家厂商',
+      vendorFromJson({
+        'id': 'xx',
+        'url': 'https://a/b',
+        'bodyTpl': '{}',
+        'plans': [
+          {'name': '没有 id 的坏条目'},
+          {'id': 'ok', 'name': '有效', 'url': 'https://c/d'},
+        ],
+      })!.plans.length == 1);
   ck('整表编码再解码数量不变',
       decodeVendorList(encodeVendorList(kTtsVendors)).length == kTtsVendors.length);
   ck('空串解码为空表（不抛）', decodeVendorList('').isEmpty);

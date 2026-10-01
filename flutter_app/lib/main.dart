@@ -2527,11 +2527,21 @@ class _Pf extends State<ProfilePage> {
         children: [
           _heroCard(),
           const SizedBox(height: 10),
+          // ★4.57.0 重构：「我的」= 身份 + 设置 + 全局。
+          //
+          //   原先这里堆了 25 项，把「阅读进阶 / 影音进阶 / 相册闭环 / AI 工作台」
+          //   这类**功能**也塞了进来 —— 影音的功能就该在影音模块里能找到，
+          //   而不是翻到「我的」才看得见。现在那些入口各自回到所属模块的
+          //   ⋯ 菜单里（见 openModuleMenu），这里只留"关于这个 App 本身"的事：
+          //   我是谁、怎么显示、连着哪儿、数据在哪、出问题去哪看。
           _section('', [
             entry(Icons.person_outline, '账号安全',
                 value: logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录',
                 page: const ProfileSubPage()),
             _sep(),
+            entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
+          ]),
+          _section('设置', [
             entry(Icons.notifications_none, '通知',
                 page: const NotificationSettingsPage()),
             _sep(),
@@ -2541,71 +2551,32 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.dashboard_customize_outlined, '功能管理',
                 page: const NavSettingsPage()),
             _sep(),
-            // 语音朗读入口放在「我的」首页，而不是只藏在小说阅读器和 AI 的
-            // 「+」菜单里 —— 本版内置了 26 家语音厂商，但入口太深等于没做：
-            // 要配 TTS 得先打开一本书、或先进 AI 对话，长辈根本找不到。
+            // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
             entry(Icons.record_voice_over_outlined, '语音朗读',
                 value: '引擎 · 厂商 · 试听',
                 page: const TtsSettingsPage()),
-          ]),
-          _section(tr('进阶'), [
-            entry(Icons.menu_book_outlined, tr('阅读进阶'),
-                value: tr('换源 · 批注 · 摘抄 · 追更'), page: const ReadingProPage()),
-            _sep(),
-            entry(Icons.cast_outlined, tr('影音进阶'),
-                value: tr('投屏 DLNA · 下载归一 · 画中画'), page: const MediaProPage()),
-            _sep(),
-            entry(Icons.photo_library_outlined, tr('相册闭环'),
-                value: tr('备份 · 秒传 · 地图 · 加密柜 · 分享链'),
-                page: const GalleryProPage()),
-            _sep(),
-            entry(Icons.forum_outlined, tr('聊天'),
-                value: tr('局域网直连 · 端到端加密 · 后端补发'),
-                page: const ChatHomePage()),
-            _sep(),
-            entry(Icons.auto_awesome_outlined, tr('AI 工作台'),
-                value: tr('工具 · 确认队列 · 定时 · 审计'),
-                page: const AiWorkbenchPage()),
-            _sep(),
-            entry(Icons.hub_outlined, tr('系统与生态'),
-                value: tr('模块 · 多后端 · 迁移 · 授权'),
-                page: const SystemCenterPage()),
-          ]),
-          _section('数据', [
-            entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
             _sep(),
             entry(Icons.dns_outlined, '后端管理',
                 value: Api.base.isEmpty ? '未连接' : '已连接',
                 page: const BackendAdminPage()),
             _sep(),
-            entry(Icons.play_circle_outline, '最近播放',
-                page: const RecentPlayPage()),
-            _sep(),
-            entry(Icons.bar_chart_outlined, '阅读统计',
-                page: const ReadStatsPage()),
-            _sep(),
-            entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
-            _sep(),
-            entry(Icons.receipt_long_outlined, '日志中心',
-                value: '运行透明 · 含报错中心', page: const LogCenterPage()),
-            _sep(),
-            entry(Icons.download_outlined, '下载 App',
-                page: const DownloadAppsPage()),
-          ]),
-          _section('服务', [
             entry(Icons.extension_outlined, '引擎直连',
                 value: EngineDirect.connected ? '已连接' : '',
                 page: const EngineDirectPage()),
             _sep(),
-            entry(Icons.smart_toy_outlined, 'AI 智能体与指令',
-                value: AiInstruct.active || AiMemory.entries.isNotEmpty
-                    ? '已配置'
-                    : '',
-                page: const AiAgentPage()),
+            entry(Icons.hub_outlined, tr('系统与生态'),
+                value: tr('模块 · 多后端 · 迁移 · 授权'),
+                page: const SystemCenterPage()),
             _sep(),
             entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
           ]),
-          _section('帮助中心', [
+          _section('数据与诊断', [
+            entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
+            _sep(),
+            entry(Icons.receipt_long_outlined, '日志中心',
+                value: '运行透明 · 含报错中心', page: const LogCenterPage()),
+          ]),
+          _section('帮助与关于', [
             entry(Icons.help_outline, '帮助中心', page: const HelpPage()),
             _sep(),
             entry(Icons.mail_outline, '反馈中心',
@@ -8862,6 +8833,15 @@ class _RootNavState extends State<RootNav> {
     final key = enabled[idx];
     final mod = kModules[key]!;
     final fsNow = RootNav.fullscreen.value;
+
+    /// 打开"本模块的进阶页"：先收起菜单，再跳过去。
+    /// 抽这个是因为下面每个模块都要挂自己那几项，写法必须一致。
+    void proEntry(
+        BuildContext sheetCtx, IconData icon, String title, String sub, Widget page) {
+      Navigator.pop(sheetCtx);
+      Navigator.push(context, smoothRoute(page));
+    }
+
     showModalBottomSheet(
         context: context,
         showDragHandle: true,
@@ -8880,6 +8860,40 @@ class _RootNavState extends State<RootNav> {
                       Navigator.pop(c2);
                       AiSection.newSessionTick.value++;
                     }),
+              // ★4.57.0 功能入口"各回各家"：这些进阶页原先全堆在「我的」里，
+              //   于是"影音的功能要去我的里找"——这不合理。模块菜单本来就是
+              //   "这个模块自己的事"的入口（本地库/导入/模块设置都在这里），
+              //   挂在这儿既符合直觉，也不用给 65 个模块逐个改 UI。
+              if (key == '小说') ...[
+                proEntry(c2, Icons.menu_book_outlined, tr('阅读进阶'),
+                    tr('换源 · 批注 · 摘抄 · 追更'), const ReadingProPage()),
+                proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',
+                    const ReadStatsPage()),
+                proEntry(c2, Icons.play_circle_outline, '最近播放', '',
+                    const RecentPlayPage()),
+              ],
+              if (key == '漫画')
+                proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',
+                    const ReadStatsPage()),
+              if (key == '视频' || key == '音乐') ...[
+                proEntry(c2, Icons.cast_outlined, tr('影音进阶'),
+                    tr('投屏 DLNA · 下载归一 · 画中画'), const MediaProPage()),
+                proEntry(c2, Icons.play_circle_outline, '最近播放', '',
+                    const RecentPlayPage()),
+              ],
+              if (key == '相册')
+                proEntry(c2, Icons.photo_library_outlined, tr('相册闭环'),
+                    tr('备份 · 秒传 · 地图 · 加密柜 · 分享链'),
+                    const GalleryProPage()),
+              if (key == 'AI') ...[
+                proEntry(c2, Icons.auto_awesome_outlined, tr('AI 工作台'),
+                    tr('工具 · 确认队列 · 定时 · 审计'), const AiWorkbenchPage()),
+                proEntry(c2, Icons.smart_toy_outlined, 'AI 智能体与指令',
+                    AiInstruct.active || AiMemory.entries.isNotEmpty
+                        ? '已配置'
+                        : '',
+                    const AiAgentPage()),
+              ],
               if (mod.localKind != null) ...[
                 ListTile(
                     dense: true,

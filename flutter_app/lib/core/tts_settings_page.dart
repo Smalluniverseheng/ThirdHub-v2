@@ -316,6 +316,9 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
   String _testResult = '';
   bool _busy = false;
 
+  /// 选中的计费方案 id（只有"按量与套餐两套端点"的厂商才用得上，如小米）。
+  String _planId = '';
+
   /// 是不是「用户自己添加的接口」。
   ///
   /// 不能只判 `vendor == null`：那样「编辑一条**已保存**的自定义接口」会被
@@ -342,7 +345,22 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
     _authHeader = TextEditingController(text: v?.authHeader ?? 'Authorization');
     _authValue = TextEditingController(text: v?.authValue ?? 'Bearer {key}');
     _audioPath = TextEditingController(text: v?.audioPath ?? '');
+    // 计费方案：已保存的优先；没存过就用厂商列出的第一套。
+    _planId = (c?.planId ?? '').isNotEmpty
+        ? c!.planId
+        : (v == null ? '' : (ttsDefaultPlan(v)?.id ?? ''));
   }
+
+  /// 当前选中的方案对象（没有方案 / 没选 → null）。
+  TtsPlan? get _plan {
+    final v = widget.vendor;
+    if (v == null) return null;
+    return ttsPlanOf(v, _planId);
+  }
+
+  /// 表单当前值与所选方案是否冲突（如"套餐 Key 打到按量端点"）。
+  String get _mismatch =>
+      widget.vendor == null ? '' : keyPlanMismatchHint(widget.vendor!, _plan, _key.text);
 
   @override
   void dispose() {
@@ -369,6 +387,9 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
         encoding: v.encoding, voices: v.voices, models: v.models,
         voice: v.voice, model: v.model, format: v.format,
         needRegion: v.needRegion, needHost: v.needHost, docUrl: v.docUrl,
+        // 少传这两个会让试听用不到"选中的计费方案"地址（小米：套餐/按量
+        // 是两个域名），表现就是"明明选了套餐，试听却一直 401"。
+        plans: v.plans, keyHint: v.keyHint,
       );
     }
     return buildCustomVendor(
@@ -415,7 +436,8 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
         model: _model.text.trim(),
         format: _format.text.trim(),
         region: _region.text.trim(),
-        host: _host.text.trim());
+        host: _host.text.trim(),
+        planId: _planId);
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('已保存「${v.name}」')));
@@ -428,7 +450,17 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
       _testResult = '';
     });
     try {
-      final f = await TtsOnline.preview(v);
+      // 用表单里的当前值试听（含还没保存的计费方案）—— 所见即所试。
+      final f = await TtsOnline.preview(v,
+          override: TtsConfig(
+            key: _key.text.trim(),
+            voice: _voice.text.trim(),
+            model: _model.text.trim(),
+            format: _format.text.trim(),
+            region: _region.text.trim(),
+            host: _host.text.trim(),
+            planId: _planId,
+          ));
       await _player.setAudioSource(
           tagFile(f, title: '试听 · ${v.name}', album: 'ThirdHub 语音朗读'));
       await _player.play();
@@ -459,14 +491,70 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
     if (mounted) Navigator.pop(context);
   }
 
+  /// 计费方式选择器（按量付费 / 会员套餐…）。
+  ///
+  /// 用 ListTile + 圆点图标而不是 RadioListTile：后者的 `groupValue`/`onChanged`
+  /// 在新版 Flutter 已被 RadioGroup 取代，写法跨版本不稳定，这里不值得为它冒险。
+  Widget _planSelector(TtsVendor v) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('计费方式（决定请求打到哪个端点）',
+          style: TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 2),
+      for (final p in v.plans)
+        ListTile(
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            _planId == p.id
+                ? Icons.radio_button_checked
+                : Icons.radio_button_unchecked,
+            size: 20,
+            color: _planId == p.id ? primary : Colors.grey,
+          ),
+          title: Text(p.name, style: const TextStyle(fontSize: 13)),
+          subtitle: Text(
+            '${p.url.isEmpty ? v.url : p.url}'
+            '${p.keyHint.isEmpty ? '' : '　Key 需 ${p.keyHint}'}',
+            style: const TextStyle(fontSize: 10.5),
+          ),
+          onTap: () => setState(() => _planId = p.id),
+        ),
+    ]);
+  }
+
+  /// 黄色警示条：用来放"这样填一定会失败"的提醒。
+  Widget _warnBox(String s) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+              child:
+                  Text(s, style: const TextStyle(fontSize: 11.5, height: 1.45))),
+        ]),
+      );
+
   Widget _field(String label, TextEditingController c,
-      {String? hint, bool obscure = false, int lines = 1, String? helper}) {
+      {String? hint,
+      bool obscure = false,
+      int lines = 1,
+      String? helper,
+      ValueChanged<String>? onChanged}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
         controller: c,
         obscureText: obscure,
         maxLines: lines,
+        onChanged: onChanged,
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
@@ -506,6 +594,11 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
             if (v.docUrl.isNotEmpty)
               Text('文档：${v.docUrl}',
                   style: const TextStyle(fontSize: 11, color: Colors.blue)),
+            const SizedBox(height: 4),
+            // ★ 计费方式：只有真的存在"多套端点"的厂商才出现这一栏。
+            //   小米是按量付费与会员套餐两个域名、两套互不通用的 Key，
+            //   选错了必然 401 —— 对这类厂商，这一栏比 Key 本身还关键。
+            if (v.plans.isNotEmpty) _planSelector(v),
             const SizedBox(height: 12),
           ] else ...[
             _field('名称', _name, hint: '例如 我的自建 TTS'),
@@ -522,7 +615,16 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
                 helper: 'Azure 的区域拼在域名里，填错会连不上'),
           if (v?.auth != TtsAuth.none && v?.auth != TtsAuth.baidu)
             _field('API Key', _key,
-                hint: '粘贴厂商控制台里的 Key', obscure: true),
+                hint: (v?.keyHint ?? '').isEmpty
+                    ? '粘贴厂商控制台里的 Key'
+                    : v!.keyHint,
+                obscure: true,
+                // 要跟着输入实时判断"这个 Key 像不像所选计费方式的"。
+                onChanged: (_) => setState(() {})),
+          // Key 与所选计费方式明显冲突时当场拦一下。
+          // 小米这类"一个厂商两套端点、两套 Key"的，用户拿到 401 时
+          // 根本想不到是这个原因 —— 提前说比事后猜有用。
+          if (_mismatch.isNotEmpty) _warnBox(_mismatch),
           if (v?.auth == TtsAuth.baidu)
             _field('APIKey|SecretKey', _key,
                 hint: '两段用一根竖线隔开', obscure: true,

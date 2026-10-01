@@ -27,6 +27,10 @@ class TtsConfig {
   final String format;
   final String region;
   final String host;
+
+  /// 选中的计费方案 id（小米那种"按量 / 会员套餐"两套端点的厂商才用得上）。
+  /// 空 = 用厂商自带的默认地址。
+  final String planId;
   const TtsConfig({
     this.key = '',
     this.voice = '',
@@ -34,7 +38,11 @@ class TtsConfig {
     this.format = '',
     this.region = '',
     this.host = '',
+    this.planId = '',
   });
+
+  /// 这家实际要打的地址（按选中的方案解析）。
+  String planUrlFor(TtsVendor v) => ttsEffectiveUrl(v, planId);
 
   /// 这家是否已经配置到"能发一次请求"的程度。
   /// 自托管看 host；需要 Key 的看 key。
@@ -97,6 +105,7 @@ class TtsOnline {
       format: p.getString(_k(id, 'format')) ?? '',
       region: p.getString(_k(id, 'region')) ?? '',
       host: p.getString(_k(id, 'host')) ?? '',
+      planId: p.getString(_k(id, 'plan')) ?? '',
     );
   }
 
@@ -108,6 +117,7 @@ class TtsOnline {
     String? format,
     String? region,
     String? host,
+    String? planId,
   }) async {
     final p = await SharedPreferences.getInstance();
     if (key != null) await p.setString(_k(id, 'key'), key);
@@ -116,14 +126,18 @@ class TtsOnline {
     if (format != null) await p.setString(_k(id, 'format'), format);
     if (region != null) await p.setString(_k(id, 'region'), region);
     if (host != null) await p.setString(_k(id, 'host'), host);
+    if (planId != null) await p.setString(_k(id, 'plan'), planId);
   }
 
   /// 合成并把音频落成临时文件，返回路径。
   ///
   /// 失败一律抛 [TtsSynthException]，其 `message` 是**给人看的**（不是状态码），
   /// 由调用方直接展示。这样"点了没声音"能变成"Key 被拒绝：…"。
-  static Future<String> synthesize(TtsVendor v, String text) async {
-    final cfg = await configOf(v.id);
+  /// [override] 用于"设置页试听"：把表单里**当前还没保存**的值直接拿来发一次请求，
+  /// 做到所见即所试。不传则读已保存的配置（小说朗读、AI 朗读走这条）。
+  static Future<String> synthesize(TtsVendor v, String text,
+      {TtsConfig? override}) async {
+    final cfg = override ?? await configOf(v.id);
     if (!cfg.readyFor(v)) throw TtsSynthException(missingConfigHint(v));
 
     final vars = TtsVars(
@@ -134,6 +148,8 @@ class TtsOnline {
       format: cfg.format,
       region: cfg.region,
       host: cfg.host,
+      // 按选中的计费方案解析真实地址（小米：按量 vs 会员套餐域名不同）。
+      planUrl: cfg.planUrlFor(v),
     );
 
     // 百度这类要两步：先换 access_token。
@@ -150,7 +166,12 @@ class TtsOnline {
     }
 
     final req = planTtsRequest(v, vars, token: token);
-    final body = await _send(req, v, label: '合成');
+    final body = await _send(req, v,
+        label: '合成',
+        // 只有在失败时才可能用上：把"Key 与所选计费方式不匹配"这句话
+        // 预先算好带进去，401 时一并抛给用户 —— 小米这类双端点厂商，
+        // 用户拿套餐 Key 打按量域名必然 401，而他自己想不到这一层。
+        mismatch: keyPlanMismatchHint(v, ttsPlanOf(v, cfg.planId), cfg.key));
 
     final out = extractTtsAudio(v, req.headers['Content-Type'] ?? '', body);
     Uint8List audio;
@@ -181,8 +202,12 @@ class TtsOnline {
   }
 
   /// 试听：合成一句短句。返回文件路径，失败抛 [TtsSynthException]。
-  static Future<String> preview(TtsVendor v) =>
-      synthesize(v, v.id == 'baidu' ? '你好，这是一段试听。' : '你好，我是${v.name}的语音，这是一段试听。');
+  static Future<String> preview(TtsVendor v, {TtsConfig? override}) => synthesize(
+      v,
+      v.id == 'baidu'
+          ? '你好，这是一段试听。'
+          : '你好，我是${v.name}的语音，这是一段试听。',
+      override: override);
 
   static String _extOf(TtsVendor v, TtsRequest req) {
     final want = (req.headers['Content-Type'] ?? '') + v.format;
@@ -196,7 +221,7 @@ class TtsOnline {
 
   /// 发一条请求；非 2xx 时把厂商返回的原文带进错误信息。
   static Future<Uint8List> _send(TtsRequest req, TtsVendor v,
-      {required String label}) async {
+      {required String label, String mismatch = ''}) async {
     final uri = Uri.parse(req.url);
     if (!uri.hasScheme || uri.host.isEmpty) {
       throw TtsSynthException('「${v.name}」的请求地址不完整：${req.url}\n'
@@ -224,6 +249,7 @@ class TtsOnline {
     if (r.statusCode == 401 || r.statusCode == 403) {
       throw TtsSynthException('「${v.name}」拒绝了这个 Key（HTTP ${r.statusCode}）。\n'
           '${_brief(r.bodyBytes)}\n'
+          '${mismatch.isEmpty ? '' : '$mismatch\n'}'
           '· 核对 Key 是否复制完整、是否与所选区域匹配；\n'
           '· 到 ${v.docUrl} 看该 Key 是否已开通语音合成权限。');
     }

@@ -47,6 +47,54 @@ enum TtsTier {
   needSign, // 需要客户端签名/token 交换 —— 未实现
 }
 
+/// 同一家厂商的**一种计费/接入方案**。
+///
+/// 为什么必须有这个：很多厂商的"按量付费"与"会员套餐"是**两套完全独立的
+/// 端点和两套互不通用的 Key** —— 小米 MiMo 就是最典型的：
+///   按量付费   https://api.xiaomimimo.com/v1             Key 形如 sk-xxxxx
+///   会员套餐   https://token-plan-cn.xiaomimimo.com/v1   Key 形如 tp-xxxxx
+/// 官方原文：「Token Plan 的 API Key（tp-xxxxx 或 ttp-xxxxx）与按量付费
+/// API 调用的 API Key（sk-xxxxx）相互独立，不可混用。」
+///
+/// 把这种情况硬压成"一家一个 URL"的后果是：用户拿套餐 Key 打到按量域名上，
+/// 得到一个看不懂的 401，还以为是自己 Key 填错了。所以方案要摆出来让用户选。
+class TtsPlan {
+  final String id; // 稳定标识，存进 SharedPreferences
+  final String name; // 显示名，如「会员套餐 · 中国集群」
+  final String url; // 覆盖 vendor.url；空 = 沿用 vendor.url
+  final String keyHint; // Key 形态提示，如「sk- 开头」
+
+  /// 本方案要求的 Key 前缀（如 `['sk-']`）。空 = 不做检查。
+  /// 用来提前拦住"套餐 Key 打到按量端点"这种必然失败的组合。
+  final List<String> keyPrefixes;
+  const TtsPlan({
+    required this.id,
+    required this.name,
+    this.url = '',
+    this.keyHint = '',
+    this.keyPrefixes = const [],
+  });
+}
+
+/// 填的 Key 与所选计费方案"看起来对不上"时，返回一句给人看的话；没问题返回空串。
+///
+/// 只做**前缀级的显式判断**，方案没声明前缀就不猜。
+/// 价值在于小米这类厂商：两种 Key 互不通用，打错端点只会得到一个 401，
+/// 用户根本想不到是"一个厂商两套端点"。
+String keyPlanMismatchHint(TtsVendor v, TtsPlan? plan, String key) {
+  if (plan == null || plan.keyPrefixes.isEmpty) return '';
+  final k = key.trim();
+  if (k.isEmpty) return '';
+  for (final p in plan.keyPrefixes) {
+    if (k.startsWith(p)) return '';
+  }
+  final want = plan.keyPrefixes.join(' 或 ');
+  return '这个 Key 不像「${plan.name}」的：该方案的 Key 应该是 $want 开头'
+      '${plan.keyHint.isEmpty ? '' : '（${plan.keyHint}）'}。\n'
+      '这两套 Key 由厂商互相独立签发、不可混用 —— 请确认计费方式选对了，'
+      '或到 ${v.docUrl.isEmpty ? '厂商控制台' : v.docUrl} 换取对应的一种。';
+}
+
 class TtsVendor {
   final String id;
   final String name;
@@ -79,6 +127,13 @@ class TtsVendor {
   final bool needHost; // 自托管：URL 里的 {host} 要用户填
   final String docUrl;
 
+  /// 计费/接入方案。**空 = 这家只有一套端点**（大多数厂商如此）。
+  /// 非空时 UI 要求用户先选一种，请求地址改用选中那条 —— 见 [TtsPlan]。
+  final List<TtsPlan> plans;
+
+  /// Key 输入框的提示语（如「sk- 开头」）。空则不显示提示。
+  final String keyHint;
+
   const TtsVendor({
     required this.id,
     required this.name,
@@ -104,6 +159,8 @@ class TtsVendor {
     this.needRegion = false,
     this.needHost = false,
     this.docUrl = '',
+    this.plans = const [],
+    this.keyHint = '',
   });
 
   /// OpenAI 兼容系（body 就是 `{model,input,voice,response_format}`）。
@@ -119,6 +176,75 @@ const String _oaTpl =
 /// 排序即 UI 顺序：国内 → 海外 → 自托管。同组内按"填 Key 后最可能一次跑通"排。
 const List<TtsVendor> kTtsVendors = [
   // ══ 国内 ══════════════════════════════════════════════════════════════
+  // ★ 放第一位：用户当前要用的就是这家（TTS 限时免费）。
+  TtsVendor(
+    id: 'xiaomi',
+    name: '小米 MiMo TTS',
+    group: '国内',
+    // 形态特殊，必须写清楚 —— 它不是 /audio/speech，
+    // 而是把待合成文本塞进 assistant 消息、走 chat/completions。
+    note: '★ 限时免费 · 形态特殊：走 chat/completions（文本放 assistant 消息），'
+        '音频以 base64 在 choices[0].message.audio.data 返回 · 支持唱歌与风格标签',
+    url: 'https://api.xiaomimimo.com/v1/chat/completions',
+    auth: TtsAuth.bearer,
+    bodyTpl:
+        '{"model":"{model}","messages":[{"role":"assistant","content":"{text}"}],'
+            '"audio":{"format":"{format}","voice":"{voice}"}}',
+    resp: TtsResp.jsonBase64,
+    audioPath: 'choices.0.message.audio.data',
+    voices: [
+      'mimo_default',
+      '冰糖',
+      '茉莉',
+      '苏打',
+      '白桦',
+      'Mia',
+      'Chloe',
+      'Milo',
+      'Dean',
+    ],
+    voice: 'mimo_default',
+    model: 'mimo-v2.5-tts',
+    models: [
+      'mimo-v2.5-tts',
+      'mimo-v2.5-tts-voicedesign',
+      'mimo-v2.5-tts-voiceclone',
+    ],
+    format: 'mp3',
+    keyHint: 'sk- 开头（按量付费）或 tp- 开头（会员套餐）',
+    // ★ 小米是"套餐与按量端点不同"的教科书案例：域名不同、Key 不通用。
+    plans: [
+      TtsPlan(
+        id: 'payg',
+        name: '按量付费（TTS 限时免费）',
+        url: 'https://api.xiaomimimo.com/v1/chat/completions',
+        keyHint: 'sk- 开头',
+        keyPrefixes: ['sk-'],
+      ),
+      TtsPlan(
+        id: 'tokenplan-cn',
+        name: '会员套餐 · 中国集群',
+        url: 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
+        keyHint: 'tp- 开头（团队版 ttp-）',
+        keyPrefixes: ['tp-', 'ttp-'],
+      ),
+      TtsPlan(
+        id: 'tokenplan-sgp',
+        name: '会员套餐 · 新加坡集群',
+        url: 'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions',
+        keyHint: 'tp- 开头（团队版 ttp-）',
+        keyPrefixes: ['tp-', 'ttp-'],
+      ),
+      TtsPlan(
+        id: 'tokenplan-ams',
+        name: '会员套餐 · 欧洲集群',
+        url: 'https://token-plan-ams.xiaomimimo.com/v1/chat/completions',
+        keyHint: 'tp- 开头（团队版 ttp-）',
+        keyPrefixes: ['tp-', 'ttp-'],
+      ),
+    ],
+    docUrl: 'https://mimo.mi.com/docs/zh-CN/api/audio/tts',
+  ),
   TtsVendor(
     id: 'siliconflow',
     name: '硅基流动 SiliconFlow',
@@ -650,6 +776,10 @@ class TtsVars {
   final String format;
   final String region; // Azure
   final String host; // 自托管服务地址（如 192.168.1.5:8880）
+
+  /// 选中的计费方案覆盖下来的请求地址；空 = 用厂商自带的 url。
+  /// 小米那种"按量与套餐域名不同"就靠这个字段分流。
+  final String planUrl;
   const TtsVars({
     required this.text,
     this.key = '',
@@ -658,6 +788,7 @@ class TtsVars {
     this.format = '',
     this.region = '',
     this.host = '',
+    this.planUrl = '',
   });
 }
 
@@ -732,7 +863,9 @@ TtsRequest planTtsRequest(TtsVendor v, TtsVars vars, {String token = ''}) {
     'text': escapeFor(v.body, vars.text),
   };
 
-  final url = _fill(v.url, raw, const {});
+  // 选中的计费方案可覆盖请求地址（小米就是：按量与会员套餐是两个不同域名）。
+  final url =
+      _fill(vars.planUrl.trim().isEmpty ? v.url : vars.planUrl, raw, const {});
   final headers = <String, String>{};
   for (final e in v.extraHeaders.entries) {
     headers[e.key] = _fill(e.value, raw, const {});
@@ -929,6 +1062,24 @@ TtsVendor? ttsVendorOf(String id) {
   return null;
 }
 
+/// 取某厂商的某个计费方案；找不到返回 null。
+TtsPlan? ttsPlanOf(TtsVendor v, String planId) {
+  for (final p in v.plans) {
+    if (p.id == planId) return p;
+  }
+  return null;
+}
+
+/// 该厂商的默认方案（第一家）；没有方案返回 null。
+TtsPlan? ttsDefaultPlan(TtsVendor v) => v.plans.isEmpty ? null : v.plans.first;
+
+/// 实际要打的那个地址：选了方案且方案带地址就用它，否则用厂商自带地址。
+String ttsEffectiveUrl(TtsVendor v, String planId) {
+  final p = ttsPlanOf(v, planId);
+  if (p != null && p.url.trim().isNotEmpty) return p.url;
+  return v.url;
+}
+
 /// 分组后的厂商（UI 用），保持组内原始顺序。
 List<String> get ttsGroups {
   final seen = <String>[];
@@ -971,6 +1122,17 @@ Map<String, dynamic> vendorToJson(TtsVendor v) => {
       'needRegion': v.needRegion,
       'needHost': v.needHost,
       'docUrl': v.docUrl,
+      'keyHint': v.keyHint,
+      'plans': [
+        for (final p in v.plans)
+          {
+            'id': p.id,
+            'name': p.name,
+            'url': p.url,
+            'keyHint': p.keyHint,
+            'keyPrefixes': p.keyPrefixes,
+          },
+      ],
     };
 
 T _enumOf<T extends Enum>(List<T> values, String name, T fallback) {
@@ -1014,6 +1176,22 @@ TtsVendor? vendorFromJson(Map<String, dynamic> j) {
     needRegion: j['needRegion'] == true,
     needHost: j['needHost'] == true,
     docUrl: '${j['docUrl'] ?? ''}',
+    keyHint: '${j['keyHint'] ?? ''}',
+    // 方案列表也容错：缺字段退默认，坏条目整条丢掉（不能因为一条方案
+    // 坏掉就让用户那家自定义厂商都打不开）。
+    plans: [
+      for (final e in ((j['plans'] as List?) ?? const []))
+        if (e is Map && '${e['id'] ?? ''}'.trim().isNotEmpty)
+          TtsPlan(
+            id: '${e['id']}'.trim(),
+            name: '${e['name'] ?? e['id']}',
+            url: '${e['url'] ?? ''}',
+            keyHint: '${e['keyHint'] ?? ''}',
+            keyPrefixes: [
+              for (final x in ((e['keyPrefixes'] as List?) ?? const [])) '$x',
+            ],
+          ),
+    ],
   );
 }
 
