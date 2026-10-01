@@ -141,15 +141,99 @@ const Map<String, String> kModuleRenames = {
   '天气快递': '天气与快递',
 };
 
-/// 把持久化的模块键列表迁到当前键名（改过名的模块不会丢）。
+// ═══ 聚合模块归属表 ═══
+// ★用户诉求原话（2026-10-01）：「不是让你整合到某一个大模块，而是这些很多（的小模块）
+//   其实是可以整理到（各自所属的）模块，就是整理到**多个**模块……这样而不是下落成
+//   很多个模块。」「这些应该细分到，比如说影音的功能，你放在影音里面。」
+//
+// 这张表 = 「哪个小模块归到哪个大模块」的唯一真相源：
+//   key   = 子模块的 kModules 键
+//   value = 它所属聚合模块的 kModules 键
+// **不在表里的键 = 本身就是顶层模块**（含 6 个聚合模块自己）。
+//
+// ★为什么放这里而不是 main.dart 的 ModuleDef 里：
+//   表的唯一消费者是 `migrateModuleKeys`（模块键域规范化），而它被 nav_modules 的
+//   **每一处读取**与**云端上行前**调用（saveNavModules / RootNav._load /
+//   showNavSettings / ProBridge.setNavModules / Cloud 上行）。放 core/ 里纯 Dart
+//   零依赖，才能被 tool/module_registry_selfcheck.dart 独立自检 —— 否则"归并表
+//   某个 value 打错字"这种错只有把 App 装起来点进去才会发现。
+const Map<String, String> kModuleHubOf = <String, String>{
+  // ── 工具箱 ──
+  '翻译': '工具箱',
+  '扫描仪': '工具箱',
+  '二维码': '工具箱',
+  '悬浮便签': '工具箱', // 工具箱与记录中心都留着入口，但归属只登记一次
+  '计算器': '工具箱',
+  '白板': '工具箱',
+  '文本工具箱': '工具箱',
+  '传感器': '工具箱',
+  '文件互传': '工具箱',
+  '远程打印': '工具箱',
+  // ── 家庭中心 ──
+  '共享相册': '家庭中心',
+  '共享清单': '家庭中心',
+  '家庭影院': '家庭中心',
+  '家庭音乐库': '家庭中心',
+  '摄像头': '家庭中心',
+  '智能家居': '家庭中心',
+  '设备互联': '家庭中心',
+  '家庭日历': '家庭中心',
+  // ── 记录中心 ──
+  '笔记': '记录中心',
+  '日记': '记录中心',
+  'Markdown': '记录中心',
+  '代码片段': '记录中心',
+  '书签': '记录中心',
+  '剪贴板': '记录中心',
+  // ── 音频中心 ──
+  '播客': '音频中心',
+  '有声书': '音频中心',
+  '广播': '音频中心',
+  // ── 学习中心 ──
+  '记忆卡': '学习中心',
+  '课程表': '学习中心',
+  // ── 备份迁移 ──
+  '通讯录备份': '备份迁移',
+  '短信备份': '备份迁移',
+};
+
+/// 允许出现在归属表 value 侧（上层）的聚合模块键。只有这几个才配收纳别人。
+const List<String> kHubModuleKeys = <String>[
+  '工具箱',
+  '家庭中心',
+  '记录中心',
+  '音频中心',
+  '学习中心',
+  '备份迁移',
+];
+
+/// 把持久化的模块键列表迁到当前形态：① 改过名的模块不会丢；② 小模块收进所属大模块。
 List<String> migrateModuleKeys(Iterable<String> raw) {
-  final out = <String>[];
+  final renamed = <String>[];
   for (final k in raw) {
     final n = kModuleRenames[k] ?? k;
-    if (!out.contains(n)) out.add(n);
+    if (!renamed.contains(n)) renamed.add(n);
+  }
+  // ★聚合归并：子模块 → 其所属聚合模块，占用原子模块的**位次**（保序）。
+  //   为什么必须在「读」这一层做而不是只在显示层过滤：老用户的 nav_modules 里
+  //   可能只有「翻译」而没有「工具箱」。若只把子模块从列表里过滤掉，结果是
+  //   「翻译」消失、且「工具箱」也不出现 —— 功能凭空不见（最坏的升级体验）。
+  //   归并后「工具箱」顶上「翻译」原来的位置，用户原来排的顺序感觉不变。
+  final out = <String>[];
+  for (final k in renamed) {
+    final v = kModuleHubOf[k] ?? k;
+    if (!out.contains(v)) out.add(v);
   }
   return out;
 }
+
+/// 顶层模块键（按传入的全量键顺序过滤）：不在归属表里的才算顶层。
+/// ★显示层（首启引导的模块勾选 / 导航管理分类树 / 切换模块宫格）一律用它 ——
+/// 这样"小模块收进大模块"才真的让**列表变短**，而不只是多摆一个聚合入口。
+List<String> topModuleKeys(Iterable<String> allKeys) => [
+      for (final k in allKeys)
+        if (!kModuleHubOf.containsKey(k)) k
+    ];
 
 /// read 组的 canonical id（上行压缩目标、下行展开来源）。
 const String kReadGroupId = 'read';
@@ -157,7 +241,13 @@ const String kReadGroupId = 'read';
 /// 网页端 READ_GROUP 迁移前的旧 id（loadEnabledTabs 会把它们并进 'read'）。
 /// 下行遇到这些 id 一律按 'read' 组处理 —— 云端老布局（迁移前写入的
 /// novel/comic/…）才不会在 App 端展开成空。
-const List<String> kLegacyReadIds = <String>['novel', 'comic', 'audio', 'music', 'video'];
+const List<String> kLegacyReadIds = <String>[
+  'novel',
+  'comic',
+  'audio',
+  'music',
+  'video'
+];
 
 class ModuleRegistry {
   ModuleRegistry._();
@@ -202,8 +292,7 @@ class ModuleRegistry {
   /// **空列表 = 记忆为全关**（组开关语义）；'read' 在云端布局里 → 展开成子集，
   /// 不在 → 五个全隐。
   /// 「我的」不在输入里也会补到尾部（两端都固定保留）。
-  static List<String> applyNavIds(List<String> ids,
-      {List<String>? readGroup}) {
+  static List<String> applyNavIds(List<String> ids, {List<String>? readGroup}) {
     final group = readGroup == null
         ? kReadGroupAppKeys
         : readGroup.where(kReadGroupAppKeys.contains).toList();
@@ -285,6 +374,39 @@ class ModuleRegistry {
     // read 组的每个键都必须在注册表里通过 read 行登记过（防漏登）
     for (final k in kReadGroupAppKeys) {
       if (!seenKeys.contains(k)) issues.add('read 组键未登记: $k');
+    }
+    // ★聚合归属表校验：归属表打错一个 value，用户就会看到「聚合模块把某个模块
+    //   吞了却不显示」或「子模块彻底消失」。这种错静态必须拦住（装 App 才发现的代价太高）。
+    for (final e in kModuleHubOf.entries) {
+      if (!kHubModuleKeys.contains(e.value)) {
+        issues.add('归属表 ${e.key} → ${e.value}：${e.value} 不是聚合模块');
+      }
+      if (e.key == e.value) issues.add('归属表自指: ${e.key}');
+      if (kHubModuleKeys.contains(e.key)) {
+        issues.add('聚合模块 ${e.key} 不应有归属（它自己就是顶层）');
+      }
+      if (!allAppKeys.contains(e.key)) {
+        issues.add('归属表里的子模块不在 kModules 里: ${e.key}');
+      }
+      if (!allAppKeys.contains(e.value)) {
+        issues.add('归属表的聚合模块不在 kModules 里: ${e.value}');
+      }
+    }
+    for (final h in kHubModuleKeys) {
+      if (!kModuleHubOf.containsValue(h)) {
+        issues.add('聚合模块 $h 没有收纳任何子模块（空壳入口）');
+      }
+      if (!allAppKeys.contains(h)) issues.add('聚合模块不在 kModules 里: $h');
+    }
+    // topModuleKeys 的语义：聚合模块恒存在、子模块恒不出现
+    final top = topModuleKeys(allAppKeys);
+    for (final h in kHubModuleKeys) {
+      if (allAppKeys.contains(h) && !top.contains(h)) {
+        issues.add('聚合模块 $h 被 topModuleKeys 排除了');
+      }
+    }
+    for (final k in kModuleHubOf.keys) {
+      if (top.contains(k)) issues.add('子模块 $k 仍出现在顶层列表里');
     }
     return issues;
   }

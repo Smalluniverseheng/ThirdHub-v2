@@ -1569,7 +1569,8 @@ class _Ob extends State<OnboardingPage> {
   ];
   Future<void> finish() async {
     final p = await SharedPreferences.getInstance();
-    await saveNavModules(kModules.keys.where((k) => _mods.contains(k)).toList());
+    await saveNavModules(
+        kModules.keys.where((k) => _mods.contains(k)).toList());
     await p.setBool('first_run', true);
     if (mounted)
       runApp(ThApp(
@@ -1680,19 +1681,23 @@ class _Ob extends State<OnboardingPage> {
 
   Widget _modStep() =>
       ListView(padding: const EdgeInsets.symmetric(horizontal: 24), children: [
+        // ★4.58.0 归并：只列顶层模块。收益在于「列表真的短了」——
+        //   子模块（翻译/计算器/笔记…）已收进工具箱/记录中心等聚合入口，
+        //   这里再各列一行就等于归并没发生。
         for (final e in kModules.entries)
-          CheckboxListTile(
-              value: _mods.contains(e.key),
-              secondary: Icon(e.value.icon),
-              title: Text(tr(e.key)),
-              subtitle: e.key == '我的'
-                  ? Text(tr('固定保留'), style: const TextStyle(fontSize: 11))
-                  : null,
-              onChanged: e.key == '我的'
-                  ? null
-                  : (v) => setState(() {
-                        v == true ? _mods.add(e.key) : _mods.remove(e.key);
-                      })),
+          if (!kModuleHubOf.containsKey(e.key))
+            CheckboxListTile(
+                value: _mods.contains(e.key),
+                secondary: Icon(e.value.icon),
+                title: Text(tr(e.key)),
+                subtitle: e.key == '我的'
+                    ? Text(tr('固定保留'), style: const TextStyle(fontSize: 11))
+                    : null,
+                onChanged: e.key == '我的'
+                    ? null
+                    : (v) => setState(() {
+                          v == true ? _mods.add(e.key) : _mods.remove(e.key);
+                        })),
       ]);
 
   Widget _accountStep() =>
@@ -2553,8 +2558,7 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
             entry(Icons.record_voice_over_outlined, '语音朗读',
-                value: '引擎 · 厂商 · 试听',
-                page: const TtsSettingsPage()),
+                value: '引擎 · 厂商 · 试听', page: const TtsSettingsPage()),
             _sep(),
             entry(Icons.dns_outlined, '后端管理',
                 value: Api.base.isEmpty ? '未连接' : '已连接',
@@ -4415,25 +4419,25 @@ class _Home extends State<SearchSection> {
     final loaded = engItems?.length ?? 0;
     final sb = StringBuffer();
     if (EngineDirect.connected) {
-      sb.write(tr('来自引擎「{{n}}」').replaceAll(
-          '{{n}}',
-          EngineDirect.name.isEmpty
-              ? tr('THP 引擎')
-              : EngineDirect.name));
+      sb.write(tr('来自引擎「{{n}}」').replaceAll('{{n}}',
+          EngineDirect.name.isEmpty ? tr('THP 引擎') : EngineDirect.name));
       if (EngineDirect.version.isNotEmpty)
         sb.write(' v${EngineDirect.version}');
-      sb.write(' · ${tr('THP 直连')} · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '$loaded')}');
+      sb.write(
+          ' · ${tr('THP 直连')} · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '$loaded')}');
     } else {
       // 资源库（家庭后端）分支：后端每个分组自带条数与 latency，这里只报来源
       sb.write(tr('来自资源库『{{n}}』')
           .replaceAll('{{n}}', Uri.tryParse(Api.base)?.host ?? Api.base));
-      sb.write(' · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '${_aggCount(agg)}')}');
+      sb.write(
+          ' · ${tr('已返回 {{n}} 条').replaceAll('{{n}}', '${_aggCount(agg)}')}');
     }
     if (EngineDirect.connected &&
         EngineDirect.supportsPaging &&
         _engTotal > loaded) {
       sb.write(
-          ' / ${_autoPull ? tr('引擎共 {{n}} 条，继续拉取中…') : tr('引擎共 {{n}} 条（已停，可继续）')}'.replaceAll('{{n}}', '$_engTotal'));
+          ' / ${_autoPull ? tr('引擎共 {{n}} 条，继续拉取中…') : tr('引擎共 {{n}} 条（已停，可继续）')}'
+              .replaceAll('{{n}}', '$_engTotal'));
     }
     if (EngineDirect.connected && !EngineDirect.supportsPaging) {
       final done = _done.length;
@@ -4521,8 +4525,8 @@ class _Home extends State<SearchSection> {
                           decoration: InputDecoration(
                               hintText: typeFilter == 0
                                   ? tr('一次搜索: 书/漫画/视频/音乐')
-                                  : tr('搜索{{n}}')
-                                      .replaceAll('{{n}}', typeNames[typeFilter]),
+                                  : tr('搜索{{n}}').replaceAll(
+                                      '{{n}}', typeNames[typeFilter]),
                               prefixIcon: const Icon(Icons.search),
                               isDense: true,
                               filled: false,
@@ -4581,9 +4585,7 @@ class _Home extends State<SearchSection> {
                         Colors.redAccent
                       ),
                     EngineStatus.idle => (
-                        Api.base.isNotEmpty
-                            ? tr('资源库模式')
-                            : tr('未连接引擎 — 点此连接'),
+                        Api.base.isNotEmpty ? tr('资源库模式') : tr('未连接引擎 — 点此连接'),
                         Colors.redAccent
                       ),
                   };
@@ -4658,7 +4660,8 @@ class _Home extends State<SearchSection> {
                                 Text(
                                     _engTotal > 0
                                         ? tr('正在继续拉取（{{n}}/{{m}} 条）…')
-                                            .replaceAll('{{n}}', '${engItems!.length}')
+                                            .replaceAll(
+                                                '{{n}}', '${engItems!.length}')
                                             .replaceAll('{{m}}', '$_engTotal')
                                         : tr('正在继续拉取…'),
                                     style: const TextStyle(
@@ -4683,7 +4686,8 @@ class _Home extends State<SearchSection> {
                                   child: Text(
                                       _engTotal > 0
                                           ? tr('向引擎加载更多（已 {{n}}/{{m}} 条）')
-                                              .replaceAll('{{n}}', '${engItems!.length}')
+                                              .replaceAll('{{n}}',
+                                                  '${engItems!.length}')
                                               .replaceAll('{{m}}', '$_engTotal')
                                           : tr('向引擎加载更多'),
                                       style: const TextStyle(fontSize: 12))))),
@@ -5240,21 +5244,127 @@ class _Sh extends State<ShelfPage> {
                   // 中段: 本地导入的书(仅小说模块)
                   if (i < mOff + local.length) {
                     final lb = local[i - mOff];
+                    final prog =
+                        AppSettings.p.getInt('progress_local_${lb['path']}') ??
+                            -1;
+                    return GestureDetector(
+                        onTap: () => Navigator.push(
+                                c,
+                                MaterialPageRoute(
+                                    builder: (_) => LocalNovelReader(book: lb)))
+                            .then((_) => load()),
+                        onLongPress: () async {
+                          final del = await showDialog<bool>(
+                              context: c,
+                              builder: (c2) => AlertDialog(
+                                      title: const Text('删除本地书'),
+                                      content:
+                                          Text('《${lb['name']}》\n将同时删除本地文件'),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(c2, false),
+                                            child: const Text('取消')),
+                                        FilledButton(
+                                            onPressed: () =>
+                                                Navigator.pop(c2, true),
+                                            child: const Text('删除'))
+                                      ]));
+                          if (del == true) {
+                            await LocalLib.remove('novel', '${lb['path']}');
+                            load();
+                          }
+                        },
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                  child: Container(
+                                      decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.14),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3))
+                                          ]),
+                                      child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: Stack(
+                                              fit: StackFit.expand,
+                                              children: [
+                                                _coverFallback(Book(
+                                                    '${lb['name'] ?? ''}',
+                                                    '',
+                                                    '',
+                                                    '',
+                                                    '',
+                                                    '')),
+                                                Positioned(
+                                                    left: 0,
+                                                    right: 0,
+                                                    bottom: 0,
+                                                    child: Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 3),
+                                                        decoration: const BoxDecoration(
+                                                            gradient: LinearGradient(
+                                                                begin: Alignment
+                                                                    .topCenter,
+                                                                end: Alignment
+                                                                    .bottomCenter,
+                                                                colors: [
+                                                              Colors
+                                                                  .transparent,
+                                                              Colors.black54
+                                                            ])),
+                                                        child: Text(
+                                                            prog >= 0
+                                                                ? '第${prog + 1}章 · 本地'
+                                                                : '本地导入',
+                                                            style: const TextStyle(
+                                                                fontSize: 9,
+                                                                color: Colors
+                                                                    .white)))),
+                                              ])))),
+                              const SizedBox(height: 4),
+                              Text('${lb['name'] ?? ''}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.2)),
+                              Text(
+                                  prog >= 0
+                                      ? '读到第${prog + 1}章'
+                                      : '${lb['format'] ?? 'txt'} · 本地',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 10, color: Colors.grey)),
+                            ]));
+                  }
+                  final b = items[i - mOff - local.length];
                   final prog =
-                      AppSettings.p.getInt('progress_local_${lb['path']}') ??
-                          -1;
+                      AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
                   return GestureDetector(
                       onTap: () => Navigator.push(
                               c,
                               MaterialPageRoute(
-                                  builder: (_) => LocalNovelReader(book: lb)))
+                                  builder: (_) => widget.builder(b)))
                           .then((_) => load()),
                       onLongPress: () async {
                         final del = await showDialog<bool>(
                             context: c,
                             builder: (c2) => AlertDialog(
-                                    title: const Text('删除本地书'),
-                                    content: Text('《${lb['name']}》\n将同时删除本地文件'),
+                                    title: Text('移出书架'),
+                                    content: Text('《${b.name}》'),
                                     actions: [
                                       TextButton(
                                           onPressed: () =>
@@ -5263,12 +5373,9 @@ class _Sh extends State<ShelfPage> {
                                       FilledButton(
                                           onPressed: () =>
                                               Navigator.pop(c2, true),
-                                          child: const Text('删除'))
+                                          child: const Text('移出'))
                                     ]));
-                        if (del == true) {
-                          await LocalLib.remove('novel', '${lb['path']}');
-                          load();
-                        }
+                        if (del == true) remove(b);
                       },
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -5289,43 +5396,44 @@ class _Sh extends State<ShelfPage> {
                                         child: Stack(
                                             fit: StackFit.expand,
                                             children: [
-                                              _coverFallback(Book(
-                                                  '${lb['name'] ?? ''}',
-                                                  '',
-                                                  '',
-                                                  '',
-                                                  '',
-                                                  '')),
-                                              Positioned(
-                                                  left: 0,
-                                                  right: 0,
-                                                  bottom: 0,
-                                                  child: Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                              horizontal: 6,
-                                                              vertical: 3),
-                                                      decoration: const BoxDecoration(
-                                                          gradient: LinearGradient(
-                                                              begin: Alignment
-                                                                  .topCenter,
-                                                              end: Alignment
-                                                                  .bottomCenter,
-                                                              colors: [
-                                                            Colors.transparent,
-                                                            Colors.black54
-                                                          ])),
-                                                      child: Text(
-                                                          prog >= 0
-                                                              ? '第${prog + 1}章 · 本地'
-                                                              : '本地导入',
-                                                          style: const TextStyle(
-                                                              fontSize: 9,
-                                                              color: Colors
-                                                                  .white)))),
+                                              b.coverUrl != ''
+                                                  ? Image.network(
+                                                      Api.img(b.coverUrl),
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (_, __, ___) =>
+                                                              _coverFallback(b))
+                                                  : _coverFallback(b),
+                                              if (prog >= 0)
+                                                Positioned(
+                                                    left: 0,
+                                                    right: 0,
+                                                    bottom: 0,
+                                                    child: Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 3),
+                                                        decoration: const BoxDecoration(
+                                                            gradient: LinearGradient(
+                                                                begin: Alignment
+                                                                    .topCenter,
+                                                                end: Alignment
+                                                                    .bottomCenter,
+                                                                colors: [
+                                                              Colors
+                                                                  .transparent,
+                                                              Colors.black54
+                                                            ])),
+                                                        child: Text(
+                                                            '第${prog + 1}章',
+                                                            style: const TextStyle(
+                                                                fontSize: 9,
+                                                                color: Colors
+                                                                    .white)))),
                                             ])))),
                             const SizedBox(height: 4),
-                            Text('${lb['name'] ?? ''}',
+                            Text(b.name,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -5335,112 +5443,13 @@ class _Sh extends State<ShelfPage> {
                             Text(
                                 prog >= 0
                                     ? '读到第${prog + 1}章'
-                                    : '${lb['format'] ?? 'txt'} · 本地',
+                                    : (b.author.isNotEmpty ? b.author : '未开始'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                     fontSize: 10, color: Colors.grey)),
                           ]));
-                }
-                final b = items[i - mOff - local.length];
-                final prog =
-                    AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
-                return GestureDetector(
-                    onTap: () => Navigator.push(
-                            c,
-                            MaterialPageRoute(
-                                builder: (_) => widget.builder(b)))
-                        .then((_) => load()),
-                    onLongPress: () async {
-                      final del = await showDialog<bool>(
-                          context: c,
-                          builder: (c2) => AlertDialog(
-                                  title: Text('移出书架'),
-                                  content: Text('《${b.name}》'),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(c2, false),
-                                        child: const Text('取消')),
-                                    FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(c2, true),
-                                        child: const Text('移出'))
-                                  ]));
-                      if (del == true) remove(b);
-                    },
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                              child: Container(
-                                  decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(10),
-                                      boxShadow: [
-                                        BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.14),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 3))
-                                      ]),
-                                  child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            b.coverUrl != ''
-                                                ? Image.network(
-                                                    Api.img(b.coverUrl),
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder:
-                                                        (_, __, ___) =>
-                                                            _coverFallback(b))
-                                                : _coverFallback(b),
-                                            if (prog >= 0)
-                                              Positioned(
-                                                  left: 0,
-                                                  right: 0,
-                                                  bottom: 0,
-                                                  child: Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                              horizontal: 6,
-                                                              vertical: 3),
-                                                      decoration: const BoxDecoration(
-                                                          gradient: LinearGradient(
-                                                              begin: Alignment
-                                                                  .topCenter,
-                                                              end: Alignment
-                                                                  .bottomCenter,
-                                                              colors: [
-                                                            Colors.transparent,
-                                                            Colors.black54
-                                                          ])),
-                                                      child: Text(
-                                                          '第${prog + 1}章',
-                                                          style: const TextStyle(
-                                                              fontSize: 9,
-                                                              color: Colors
-                                                                  .white)))),
-                                          ])))),
-                          const SizedBox(height: 4),
-                          Text(b.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.2)),
-                          Text(
-                              prog >= 0
-                                  ? '读到第${prog + 1}章'
-                                  : (b.author.isNotEmpty ? b.author : '未开始'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 10, color: Colors.grey)),
-                        ]));
-              });
+                });
   }
 
   /// 内置《使用说明书》格子：点开即读，长按只做说明（无删除）。
@@ -5448,15 +5457,14 @@ class _Sh extends State<ShelfPage> {
     final b = manual!;
     return GestureDetector(
         onTap: () => Navigator.push(
-                c,
-                MaterialPageRoute(
-                    builder: (_) => NovelReadPage(
-                        sourceId: ManualBook.sourceId,
-                        chapters: ManualBook.chapters(),
-                        index: 0,
-                        bookName: b.name,
-                        bookUrl: ManualBook.bookUrl)))
-            .then((_) => load()),
+            c,
+            MaterialPageRoute(
+                builder: (_) => NovelReadPage(
+                    sourceId: ManualBook.sourceId,
+                    chapters: ManualBook.chapters(),
+                    index: 0,
+                    bookName: b.name,
+                    bookUrl: ManualBook.bookUrl))).then((_) => load()),
         onLongPress: () => showDialog<void>(
             context: c,
             builder: (c2) => AlertDialog(
@@ -5487,7 +5495,10 @@ class _Sh extends State<ShelfPage> {
                                 gradient: LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
-                                    colors: [Color(0xFF2EBD85), Color(0xFF56C6A9)])),
+                                    colors: [
+                                  Color(0xFF2EBD85),
+                                  Color(0xFF56C6A9)
+                                ])),
                             alignment: Alignment.center,
                             child: const Icon(Icons.menu_book,
                                 size: 40, color: Colors.white)),
@@ -8164,8 +8175,7 @@ class _HubState extends State<ModuleHubPage> {
       for (final k in ks) kModules[k]!.icon
     ];
     return Column(children: [
-      ModuleNavBar(
-          labels: labels, icons: icons, index: _i, onTap: _jump),
+      ModuleNavBar(labels: labels, icons: icons, index: _i, onTap: _jump),
       Expanded(
           child: PageView.builder(
         controller: _pc,
@@ -8667,7 +8677,8 @@ class _RootNavState extends State<RootNav> {
       mn.pop();
       return true;
     }
-    final key = enabled.isEmpty ? '' : enabled[idx.clamp(0, enabled.length - 1)];
+    final key =
+        enabled.isEmpty ? '' : enabled[idx.clamp(0, enabled.length - 1)];
     if (key.isNotEmpty && ModuleBackHook.tryBack(key)) return true;
     while (_modHistory.isNotEmpty) {
       final prev = _modHistory.removeLast();
@@ -8895,12 +8906,14 @@ class _RootNavState extends State<RootNav> {
               ],
               if (key == '相册')
                 proEntry(c2, Icons.photo_library_outlined, tr('相册闭环'),
-                    tr('备份 · 秒传 · 地图 · 加密柜 · 分享链'),
-                    const GalleryProPage()),
+                    tr('备份 · 秒传 · 地图 · 加密柜 · 分享链'), const GalleryProPage()),
               if (key == 'AI') ...[
                 proEntry(c2, Icons.auto_awesome_outlined, tr('AI 工作台'),
                     tr('工具 · 确认队列 · 定时 · 审计'), const AiWorkbenchPage()),
-                proEntry(c2, Icons.smart_toy_outlined, 'AI 智能体与指令',
+                proEntry(
+                    c2,
+                    Icons.smart_toy_outlined,
+                    'AI 智能体与指令',
                     AiInstruct.active || AiMemory.entries.isNotEmpty
                         ? '已配置'
                         : '',
@@ -9453,6 +9466,8 @@ Future<void> showNavSettings(BuildContext c) async {
   final byCat = <String, List<String>>{};
   for (final k in kModules.keys) {
     if (sel.contains(k)) continue;
+    // ★4.58.0 归并：子模块不再单独出现在"可添加"清单里（它已在所属聚合模块内）。
+    if (kModuleHubOf.containsKey(k)) continue;
     byCat.putIfAbsent(moduleCat(k), () => []).add(k);
   }
   await showDialog(
@@ -9716,8 +9731,8 @@ class _At extends State<AccountTile> {
         } catch (_) {}
         if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(tr('已通过{{n}}自动连接后端')
-                  .replaceAll('{{n}}', winner.key))));
+              content:
+                  Text(tr('已通过{{n}}自动连接后端').replaceAll('{{n}}', winner.key))));
       }
     } catch (_) {}
   }
@@ -9754,20 +9769,18 @@ class _At extends State<AccountTile> {
             decoration: BoxDecoration(
                 color: Colors.blueAccent.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(10)),
-            child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.person_outline,
-                      size: 16, color: Colors.blueAccent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: Text(
-                          tr('当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)'),
-                          style: const TextStyle(
-                              fontSize: 10,
-                              height: 1.6,
-                              color: Colors.blueAccent))),
-                ])),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.person_outline,
+                  size: 16, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(
+                      tr('当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)'),
+                      style: const TextStyle(
+                          fontSize: 10,
+                          height: 1.6,
+                          color: Colors.blueAccent))),
+            ])),
       ]);
     }
     final prof = Cloud.profileData;
@@ -11486,7 +11499,9 @@ final ValueNotifier<String?> proOpenModule = ValueNotifier<String?>(null);
 
 void registerProBridges() {
   // ── S-1 模块市场: 读写与首启引导同一份 nav_modules ──
-  ProBridge.moduleKeys = () => kModules.keys.toList();
+  // ★4.58.0 归并：市场里只挂顶层模块。子模块已在所属聚合模块内，
+  //   就算硬塞进导航，下面 setNavModules 的 migrateModuleKeys 也会把它并回聚合模块。
+  ProBridge.moduleKeys = () => topModuleKeys(kModules.keys);
   ProBridge.navModules =
       () => (AppSettings.p.getStringList('nav_modules') ?? <String>[]).toList();
   ProBridge.setNavModules = (l) async {
@@ -12170,7 +12185,8 @@ class _Ape extends State<AppearancePage> {
           ListTile(
               leading: const Icon(Icons.brightness_6_outlined, size: 20),
               title: Text(tr('主题外观'), style: const TextStyle(fontSize: 14)),
-              subtitle: Text(tr('默认跟随系统'), style: const TextStyle(fontSize: 11)),
+              subtitle:
+                  Text(tr('默认跟随系统'), style: const TextStyle(fontSize: 11)),
               trailing: SegmentedButton<String>(
                   showSelectedIcon: false,
                   style: const ButtonStyle(
@@ -13565,13 +13581,17 @@ class _ModulePanelState extends State<_ModulePanel> {
 
   /// 实际存在的分类（按 kCatOrder 排序，末尾补"其他"）
   List<String> get _cats {
-    final seen = <String>{for (final k in kModules.keys) moduleCat(k)};
+    final seen = <String>{
+      for (final k in topModuleKeys(kModules.keys)) moduleCat(k)
+    };
     return [...kCatOrder.where(seen.contains), if (seen.contains('其他')) '其他'];
   }
 
+  // ★4.58.0 归并：分类树里也只列顶层 —— 否则点开「效率」还是看到
+  //   工具箱 + 翻译 + 扫描仪 + 二维码… 一长串，归并等于没做。
   List<String> _modulesOf(String cat) => [
-        for (final e in kModules.entries)
-          if (moduleCat(e.key) == cat) e.key
+        for (final k in topModuleKeys(kModules.keys))
+          if (moduleCat(k) == cat) k
       ];
 
   static IconData _catIcon(String cat) => switch (cat) {

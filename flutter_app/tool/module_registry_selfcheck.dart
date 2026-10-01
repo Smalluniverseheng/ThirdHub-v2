@@ -14,14 +14,37 @@ import 'dart:io';
 
 int pass = 0, fail = 0;
 void ck(String name, bool ok) {
-  if (ok) { pass++; } else { fail++; print('  FAIL  $name'); }
+  if (ok) {
+    pass++;
+  } else {
+    fail++;
+    print('  FAIL  $name');
+  }
 }
 
 /// 模拟网页端认识的 id 集合（BOARDS 20 id + profile，照抄 js/boards.js）
 const List<String> webBoardIds = <String>[
-  'ai', 'tavern', 'search', 'read', 'novel', 'comic', 'music', 'audio', 'video',
-  'game', 'storage', 'community', 'navstation', 'toolbox', 'compute',
-  'cloudphone', 'album', 'clouddrive', 'grade', 'plugins', 'profile',
+  'ai',
+  'tavern',
+  'search',
+  'read',
+  'novel',
+  'comic',
+  'music',
+  'audio',
+  'video',
+  'game',
+  'storage',
+  'community',
+  'navstation',
+  'toolbox',
+  'compute',
+  'cloudphone',
+  'album',
+  'clouddrive',
+  'grade',
+  'plugins',
+  'profile',
 ];
 
 void main() {
@@ -34,8 +57,10 @@ void main() {
     print('    $i');
   }
   ck('条目数 = 74', kModuleRegistry.length == 74);
-  ck('id 全部唯一',
-      kModuleRegistry.map((e) => e.id).toSet().length == kModuleRegistry.length);
+  ck(
+      'id 全部唯一',
+      kModuleRegistry.map((e) => e.id).toSet().length ==
+          kModuleRegistry.length);
   ck(
       'read 行的五键 = kReadGroupAppKeys',
       kModuleRegistry
@@ -46,12 +71,15 @@ void main() {
 
   // ── 2. 上行压缩：navIdsOf ──
   print('== 2. 上行压缩 navIdsOf ==');
-  ck('read 组五键压缩成一个 read',
-      ModuleRegistry.navIdsOf(['小说', '漫画', '音乐', '视频', '有声书']).join(',') == 'read');
-  ck('read 组混排占首次出现位',
-      ModuleRegistry.navIdsOf(['搜索', '小说', '漫画', 'AI']).join(',') == 'search,read,ai');
-  ck('「我的」不进数组',
-      ModuleRegistry.navIdsOf(['我的', '搜索']).join(',') == 'search');
+  ck(
+      'read 组五键压缩成一个 read',
+      ModuleRegistry.navIdsOf(['小说', '漫画', '音乐', '视频', '有声书']).join(',') ==
+          'read');
+  ck(
+      'read 组混排占首次出现位',
+      ModuleRegistry.navIdsOf(['搜索', '小说', '漫画', 'AI']).join(',') ==
+          'search,read,ai');
+  ck('「我的」不进数组', ModuleRegistry.navIdsOf(['我的', '搜索']).join(',') == 'search');
   ck('read 组内 1 个键也算 read 开',
       ModuleRegistry.navIdsOf(['小说']).join(',') == 'read');
   ck('App 独有键映射自造 id',
@@ -63,20 +91,28 @@ void main() {
   print('== 3. 下行展开 applyNavIds ==');
   ck('read 默认展开五键',
       ModuleRegistry.applyNavIds(['read']).join(',') == '小说,漫画,音乐,视频,有声书,我的');
-  ck('read 按记忆子集展开',
-      ModuleRegistry.applyNavIds(['read'], readGroup: ['小说', '漫画']).join(',') == '小说,漫画,我的');
-  ck('记忆子集里的非法键被滤掉',
-      ModuleRegistry.applyNavIds(['read'], readGroup: ['小说', '搜索']).join(',') == '小说,我的');
+  ck(
+      'read 按记忆子集展开',
+      ModuleRegistry.applyNavIds(['read'], readGroup: ['小说', '漫画']).join(',') ==
+          '小说,漫画,我的');
+  ck(
+      '记忆子集里的非法键被滤掉',
+      ModuleRegistry.applyNavIds(['read'], readGroup: ['小说', '搜索']).join(',') ==
+          '小说,我的');
   ck('记忆为空列表 = 组内全关（不是回落默认）',
       ModuleRegistry.applyNavIds(['read'], readGroup: []).join(',') == '我的');
   ck('read 不在数组 → 五个全隐',
       ModuleRegistry.applyNavIds(['search', 'ai']).join(',') == '搜索,AI,我的');
   ck('旧 id（novel 等）按 read 组展开',
       ModuleRegistry.applyNavIds(['novel']).join(',') == '小说,漫画,音乐,视频,有声书,我的');
-  ck('旧 id 与 read 并存不重复展开',
-      ModuleRegistry.applyNavIds(['read', 'comic']).join(',') == '小说,漫画,音乐,视频,有声书,我的');
-  ck('网页独有 id 跳过（不认识≠删除，合并时带回去）',
-      ModuleRegistry.applyNavIds(['tavern', 'grade', 'plugins']).join(',') == '我的');
+  ck(
+      '旧 id 与 read 并存不重复展开',
+      ModuleRegistry.applyNavIds(['read', 'comic']).join(',') ==
+          '小说,漫画,音乐,视频,有声书,我的');
+  ck(
+      '网页独有 id 跳过（不认识≠删除，合并时带回去）',
+      ModuleRegistry.applyNavIds(['tavern', 'grade', 'plugins']).join(',') ==
+          '我的');
   ck('App 独有 id 正常投影',
       ModuleRegistry.applyNavIds(['jobs', 'notes']).join(',') == '自动化任务,笔记,我的');
   ck('「我的」在数组里也只出现一次、在尾部',
@@ -85,17 +121,22 @@ void main() {
   // ── 4. 合并写：mergeNavIds ──
   print('== 4. 合并写 mergeNavIds ==');
   final appKnown = ModuleRegistry.appKnownIds;
-  ck('appKnownIds 含 read 与 profile、不含 tavern',
-      appKnown.contains('read') && appKnown.contains('profile') && !appKnown.contains('tavern'));
+  ck(
+      'appKnownIds 含 read 与 profile、不含 tavern',
+      appKnown.contains('read') &&
+          appKnown.contains('profile') &&
+          !appKnown.contains('tavern'));
   final m1 = ModuleRegistry.mergeNavIds(
-      ['search', 'read'], ['tavern', 'search', 'grade'], knownIds: appKnown);
+      ['search', 'read'], ['tavern', 'search', 'grade'],
+      knownIds: appKnown);
   ck('本端新顺序优先', m1.take(2).join(',') == 'search,read');
   ck('不认识的 id 保序追加尾部', m1.sublist(2).join(',') == 'tavern,grade');
   ck('认识的旧位置被丢弃（以新顺序为准）', m1.where((x) => x == 'search').length == 1);
   final m2 = ModuleRegistry.mergeNavIds(['jobs'], null, knownIds: appKnown);
   ck('云端数组为空时只留本端', m2.join(',') == 'jobs');
   final m3 = ModuleRegistry.mergeNavIds(
-      ['read', 'read', 'jobs'], ['jobs', 'peer'], knownIds: appKnown);
+      ['read', 'read', 'jobs'], ['jobs', 'peer'],
+      knownIds: appKnown);
   ck('本端输入去重', m3.where((x) => x == 'read').length == 1);
   ck('本端认识的不从云端尾部重复回来', m3.where((x) => x == 'jobs').length == 1);
 
@@ -111,7 +152,8 @@ void main() {
   ck('App 上行后：App 独有 id 进数组', cloudArr.contains('jobs'));
   ck('★ App 上行后：网页独有 id 全存活', cloudArr.contains('tavern'));
   // ② 网页用户在导航栏管理改成 [ai, game, read]（关掉 tavern）→ 合并写
-  cloudArr = ModuleRegistry.mergeNavIds(['ai', 'game', 'read'], cloudArr, knownIds: webKnown);
+  cloudArr = ModuleRegistry.mergeNavIds(['ai', 'game', 'read'], cloudArr,
+      knownIds: webKnown);
   ck('网页改动后：网页新顺序在前', cloudArr.take(3).join(',') == 'ai,game,read');
   ck('★ 网页改动后：App 独有 id 全存活', cloudArr.contains('jobs'));
   ck('网页关掉的板块真的被删', !cloudArr.contains('tavern'));
@@ -122,9 +164,9 @@ void main() {
   ck('App 下行：App 独有模块回来了', appDown.contains('自动化任务'));
   // ④ App 再上行（幂等：不动布局时数组逐位不变）
   final appUp2 = ModuleRegistry.mergeNavIds(
-      ModuleRegistry.navIdsOf(appDown), cloudArr, knownIds: appKnown);
-  ck('★ 幂等：App 不改布局再上行，数组逐位不变',
-      appUp2.join(',') == cloudArr.join(','));
+      ModuleRegistry.navIdsOf(appDown), cloudArr,
+      knownIds: appKnown);
+  ck('★ 幂等：App 不改布局再上行，数组逐位不变', appUp2.join(',') == cloudArr.join(','));
   // ⑤ 网页再上行（幂等：网页只看得见自己认识的，但合并后数组不变）。
   //    网页侧 navIdsOf 是「网页 id 数组→canonical」（JS 版）：剔 profile、旧 id 归一 read。
   final webIds = cloudArr
@@ -133,14 +175,55 @@ void main() {
       .toList();
   final webUp2 =
       ModuleRegistry.mergeNavIds(webIds, cloudArr, knownIds: webKnown);
-  ck('★ 幂等：网页不改布局再上行，数组逐位不变',
-      webUp2.join(',') == cloudArr.join(','));
+  ck('★ 幂等：网页不改布局再上行，数组逐位不变', webUp2.join(',') == cloudArr.join(','));
   // ⑥ 网页把 read 勾掉（内容组总开关）→ App 下行五个内容模块全隐
-  final cloudNoRead =
-      cloudArr.where((x) => x != 'read' && !kLegacyReadIds.contains(x)).toList();
+  final cloudNoRead = cloudArr
+      .where((x) => x != 'read' && !kLegacyReadIds.contains(x))
+      .toList();
   final appDown2 = ModuleRegistry.applyNavIds(cloudNoRead, readGroup: ['小说']);
   ck('★ 网页勾掉 read → App 内容五模块全隐',
       !['小说', '漫画', '音乐', '视频', '有声书'].any(appDown2.contains));
+
+  // ── 6. 聚合归并（4.58.0 用户诉求："不要下落成很多个模块"）──
+  print('== 6. 聚合归并 migrateModuleKeys ==');
+  ck('归属表 31 条', kModuleHubOf.length == 31);
+  ck('6 个聚合模块', kHubModuleKeys.join(',') == '工具箱,家庭中心,记录中心,音频中心,学习中心,备份迁移');
+  // ★最要命的场景：老用户 nav_modules 里只有「翻译」、没有「工具箱」。
+  //   若只做显示层过滤 → 翻译消失且工具箱不出现 = 功能凭空不见。
+  ck('★只启用「翻译」的老用户升级后拿到「工具箱」（不是空白）',
+      migrateModuleKeys(['我的', '翻译']).join(',') == '我的,工具箱');
+  ck('保序：子模块在自己原来的位次上变成聚合模块',
+      migrateModuleKeys(['搜索', '翻译', 'AI', '计算器']).join(',') == '搜索,工具箱,AI');
+  ck('同一聚合模块收纳多个子模块也只出现一次',
+      migrateModuleKeys(['翻译', '扫描仪', '二维码']).join(',') == '工具箱');
+  ck('聚合模块已在列表里则不重复插入', migrateModuleKeys(['工具箱', '翻译']).join(',') == '工具箱');
+  ck('无归属的模块原样保留（顺序不变）',
+      migrateModuleKeys(['搜索', 'AI', '相册']).join(',') == '搜索,AI,相册');
+  ck('改名 + 归并同一条链路都生效（学习工具→记忆卡→学习中心）',
+      migrateModuleKeys(['学习工具']).join(',') == '学习中心');
+  ck('改名到顶层模块不误并（作业中心→自动化任务）',
+      migrateModuleKeys(['作业中心']).join(',') == '自动化任务');
+  ck(
+      '归属表每组都对得上',
+      kModuleHubOf['翻译'] == '工具箱' &&
+          kModuleHubOf['家庭影院'] == '家庭中心' &&
+          kModuleHubOf['日记'] == '记录中心' &&
+          kModuleHubOf['播客'] == '音频中心' &&
+          kModuleHubOf['课程表'] == '学习中心' &&
+          kModuleHubOf['短信备份'] == '备份迁移');
+  final once = migrateModuleKeys(['我的', '小说', '翻译', '笔记', '课程表']);
+  ck('幂等：归并两次结果一致', migrateModuleKeys(once).join(',') == once.join(','));
+  // topModuleKeys：显示层用它才能让"列表真的变短"
+  final top = topModuleKeys(allAppKeys);
+  ck('topModuleKeys 排除全部子模块', top.every((k) => !kModuleHubOf.containsKey(k)));
+  ck(
+      'topModuleKeys 保留全部 6 个聚合模块',
+      kHubModuleKeys.every(allAppKeys.contains) &&
+          kHubModuleKeys.every(top.contains));
+  ck('topModuleKeys 保序（按传入顺序过滤）',
+      topModuleKeys(['搜索', '翻译', 'AI', '计算器']).join(',') == '搜索,AI');
+  ck('归属表里的键都不是聚合模块自己（不会自吞噬）',
+      kModuleHubOf.keys.every((k) => !kHubModuleKeys.contains(k)));
 
   print('');
   print('PASS $pass   FAIL $fail');
