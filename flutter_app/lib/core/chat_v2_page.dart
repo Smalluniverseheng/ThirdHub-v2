@@ -25,6 +25,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_bridge.dart';
+import 'voice_msg.dart';
 import 'chat.dart' show ChatApi, ChatRoomPage, ChatSession, ChatStore;
 import 'chat_crypto.dart';
 import 'chat_logic.dart';
@@ -862,6 +863,7 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
   @override
   void dispose() {
     _typingThrottle?.cancel();
+    _vrec.dispose(); // 录音器持有麦克风，离开会话必须放掉
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -932,41 +934,91 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
     }
   }
 
-  /// 打开文件气泡：本机有的直接开；对方发来的先下载再开。
-  Future<void> _open(LanMessage2 m) async {
+  /// 把对方发来的附件拉到本机，返回本地路径；已在本机则直接返回。
+  ///
+  /// 拆出来是为了让「打开文件」与「播放语音」共用同一条下载链路 ——
+  /// 语音本质上也是文件消息，只是点开的方式不同（播放而不是交给系统）。
+  Future<String?> _fetchLocal(LanMessage2 m) async {
     final meta = m.file;
-    if (meta == null) return;
+    if (meta == null) return null;
 
-    final local = meta['path'] as String?;
-    if (local != null && local.isNotEmpty) {
-      if (await File(local).exists()) {
-        await OpenFilex.open(local);
-        return;
-      }
-      if (!mounted) return;
-      ProUI.toast(context, _err3('文件打不开', '它已被移动或删除', '让对方重发一次'));
-      return;
-    }
+    final local = '${meta['path'] ?? ''}';
+    if (local.isNotEmpty && await File(local).exists()) return local;
 
-    // 对方发来的：需要先从对方的临时 HTTP 服务上下载
+    // 对方发来的：先从对方的临时 HTTP 服务上下下来
     final offer = ChatFileOffer(
         peerId: m.from,
         peerName: m.fromName,
         meta: meta,
         host: '${meta['host'] ?? ''}');
-    if (!mounted) return;
+    if (!mounted) return null;
     ProUI.toast(context, '正在从对方下载…');
     final dir = await _recvDir();
     final (path, err) =
         await ChatHub.instance.fetchOffer(offer, '${dir.path}/${offer.fileName}');
-    if (!mounted) return;
-    if (path == null) {
-      ProUI.toast(context, _err3('文件没能拿到', err ?? '未知原因', '确认两台设备仍在同一 WiFi 下，再点一次'));
-      return;
-    }
+    if (path == null) return null;
     ChatHub.instance.fileAckOk(offer, path); // 只是回一个回执包，同步发出，不必 await
     await ChatHub.instance.attachLocalPath(m.mid, path);
+    return path;
+  }
+
+  /// 打开文件气泡：本机有的直接开；对方发来的先下载再开。
+  Future<void> _open(LanMessage2 m) async {
+    final meta = m.file;
+    if (meta == null) return;
+
+    final local = '${meta['path'] ?? ''}';
+    if (local.isNotEmpty && !await File(local).exists()) {
+      if (!mounted) return;
+      ProUI.toast(context, _err3('文件打不开', '它已被移动或删除', '让对方重发一次'));
+      return;
+    }
+    final path = await _fetchLocal(m);
+    if (!mounted) return;
+    if (path == null) {
+      ProUI.toast(context, _err3('文件没能拿到', '未知原因', '确认两台设备仍在同一 WiFi 下，再点一次'));
+      return;
+    }
     await OpenFilex.open(path);
+  }
+
+  /// 语音消息：按住说话，松手发出去（走同一条文件传输链路，只是种类标成 voice）。
+  final _vrec = VoiceRec();
+  bool _recOn = false;
+
+  Future<void> _voiceStart() async {
+    final ok = await _vrec.start();
+    if (!mounted) return;
+    if (!ok) {
+      ProUI.toast(context, '需要麦克风权限才能发语音，请在系统设置里放行后重试。');
+      return;
+    }
+    setState(() => _recOn = true);
+  }
+
+  Future<void> _voiceStop() async {
+    if (!_recOn) return;
+    final (path, secs) = await _vrec.stop();
+    if (!mounted) return;
+    setState(() => _recOn = false);
+    if (path == null) {
+      ProUI.toast(context, '这次录音没存下来，再试一次');
+      return;
+    }
+    // 太短的几乎都是误触，发出去只会让对方点开是空的
+    if (secs < 1) {
+      await _vrec.cancel();
+      ProUI.toast(context, '说话时间太短，没有发出去');
+      return;
+    }
+    final err = await ChatHub.instance
+        .sendFile(path, to: widget.peerId, kind: ChatKind.voice, secs: secs);
+    _jump();
+    if (!mounted) return;
+    if (err != null) {
+      ProUI.toast(
+          context, _err3('语音没能发出去', err, '确认两台设备连的是同一个 WiFi，然后重试'));
+    }
   }
 
   @override
@@ -1033,6 +1085,7 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
                       await ChatHub.instance.recall(m.mid, to: widget.peerId);
                     },
                     onOpen: _open,
+                    onFetch: _fetchLocal,
                   ),
                 ),
         ),
@@ -1043,6 +1096,9 @@ class _LanRoomState extends State<LanRoomPage> with _LanTickMixin {
           onPickImage: () => _sendFile(imagesOnly: true),
           onPickFile: () => _sendFile(imagesOnly: false),
           onPickApp: _sendApp,
+          onVoiceStart: _voiceStart,
+          onVoiceEnd: _voiceStop,
+          recording: _recOn,
           onTyping: () {
             if (_typingThrottle?.isActive ?? false) return;
             _typingThrottle = Timer(const Duration(seconds: 2), () {});
@@ -1062,13 +1118,19 @@ class _Bubble extends StatelessWidget {
   final LanMessage2 msg;
   final void Function(LanMessage2) onRecall;
   final void Function(LanMessage2)? onOpen;
-  const _Bubble({required this.msg, required this.onRecall, this.onOpen});
+
+  /// 语音用：把附件拉到本机后**播放**（与"打开"共用下载链路，
+  /// 但不交给系统播放器 —— 语音要在气泡里直接播）。
+  final Future<String?> Function(LanMessage2)? onFetch;
+  const _Bubble(
+      {required this.msg, required this.onRecall, this.onOpen, this.onFetch});
 
   @override
   Widget build(BuildContext c) {
     final mine = msg.mine;
     final isPoke = msg.kind == ChatKind.poke;
     final isApp = msg.kind == ChatKind.app;
+    final isVoice = msg.kind == ChatKind.voice;
     final isFile = msg.kind == ChatKind.file || msg.file != null;
     final col = Theme.of(c).colorScheme;
 
@@ -1095,6 +1157,8 @@ class _Bubble extends StatelessWidget {
             Text(mine ? '你戳了对方一下' : '${msg.fromName} 戳了你一下',
                 style: const TextStyle(fontSize: 13)),
           ])
+        else if (isVoice)
+          VoiceBubble(msg: msg, mine: mine, onFetch: onFetch)
         else if (isFile)
           InkWell(
             onTap: () => onOpen?.call(msg),
@@ -1165,6 +1229,13 @@ class _Composer extends StatelessWidget {
 
   /// 「发送应用」：列出本机已安装应用，把它的安装包（APK）发给对方。
   final VoidCallback? onPickApp;
+
+  /// 语音：按住说话（onVoiceStart）→ 松开发送（onVoiceEnd）。
+  final VoidCallback? onVoiceStart;
+  final VoidCallback? onVoiceEnd;
+
+  /// 正在录音 —— 显示提示条，否则用户不知道松手会发出去。
+  final bool recording;
   const _Composer({
     required this.controller,
     required this.hint,
@@ -1173,6 +1244,9 @@ class _Composer extends StatelessWidget {
     this.onPickImage,
     this.onPickFile,
     this.onPickApp,
+    this.onVoiceStart,
+    this.onVoiceEnd,
+    this.recording = false,
   });
 
   /// 快捷短语而不是 emoji —— STYLE_GUIDE 第 1 条禁用 emoji 字符。
@@ -1206,7 +1280,29 @@ class _Composer extends StatelessWidget {
                 },
               ),
             ),
+          // 录音中提示：不加的话用户松手才知道发生了什么，
+          // 会出现"我明明只是点了一下"的困惑。
+          if (recording)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                Icon(Icons.mic, size: 16, color: Colors.redAccent),
+                SizedBox(width: 6),
+                Text('正在录音…松开发送',
+                    style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+              ]),
+            ),
           Row(children: [
+            if (onVoiceStart != null)
+              GestureDetector(
+                onLongPressStart: (_) => onVoiceStart!(),
+                onLongPressEnd: (_) => onVoiceEnd?.call(),
+                child: IconButton(
+                    tooltip: '按住说话',
+                    // 单击不做事 —— 只有长按才录音（微信就是这个习惯）
+                    onPressed: () {},
+                    icon: const Icon(Icons.mic_none_outlined)),
+              ),
             if (onPickApp != null)
               IconButton(
                   tooltip: '应用',

@@ -453,4 +453,32 @@ void sendApp() {
   // 反证：不许做成"只加常量与文案、链路没接"的半成品
   ck('★ 复用了 file 传输链路（不是另起一套）',
       lan != null && lan.contains('_served[token] = file'));
+
+  // ── (3) 语音消息：按住说话，松手发出去 ──
+  print('  -- 语音 --');
+  ck('ChatKind.voice 常量存在且值为 voice', ChatKind.voice == 'voice');
+  final vs = src('lib/core/voice_msg.dart');
+  ck('voice_msg.dart 存在（录音器 + 播放气泡）', vs != null);
+  ck('录音用 AudioRecorder（与录音机模块同一路数）',
+      vs != null && vs.contains('AudioRecorder'));
+  ck('★ 录音前检查麦克风权限', vs != null && vs.contains('hasPermission'));
+  ck('语音气泡能播（AudioPlayer）', vs != null && vs.contains('AudioPlayer'));
+  ck('取消录音会删掉临时文件（不留垃圾）',
+      vs != null && vs.contains('await f.delete()'));
+
+  ck('聊天页接了「按住说话」', room != null && room.contains('onVoiceStart'));
+  ck('聊天页有 _voiceStart / _voiceStop',
+      room != null &&
+          room.contains('_voiceStart') &&
+          room.contains('_voiceStop'));
+  ck('★ 语音走同一条传输链路（kind: ChatKind.voice）',
+      room != null && room.contains('kind: ChatKind.voice'));
+  ck('传输层带时长 secs（气泡要显示几秒）',
+      lan != null && lan.contains("'secs': secs"));
+  ck('太短的录音不发（防误触发出空白语音）',
+      room != null && room.contains('secs < 1'));
+  ck('★ 录音中有提示（否则用户不知道松手会发出去）',
+      room != null && room.contains('正在录音'));
+  ck('离开会话释放录音器（麦克风不能一直占着）',
+      room != null && room.contains('_vrec.dispose()'));
 }
