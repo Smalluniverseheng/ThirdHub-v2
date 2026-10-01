@@ -239,6 +239,47 @@
 
 ---
 
+## 五-A、统一密钥库（4.60.0 新增诉求）
+
+### 用户原话
+「很多 AI 厂商的 TTS 模型和 API 密钥是通用的。在 AI 模块输入的 Key，TTS
+模块也能用，不用重复输入。你要弄好一点，做好各个厂商的登记。」
+
+### 现状（2026-10-01 核实）
+- AI 模块的 Key 存 `aikey_<providerId>`（`ai.dart:136/138`）；
+  语音模块存 `tts_key_<vendorId>`（`tts_online.dart:73`）——**两套键两套厂商标识**，
+  同一家公司的同一把 Key 要填两遍。
+- 两边对同一家公司的**叫法还不一样**：AI 35 家 vs 语音 32 家，
+  其中 **10 家同名可直通**，但 **2 家同公司不同名**：
+  AI `aliyun` ↔ 语音 `dashscope`；AI `bytedance` ↔ 语音 `volc`。
+
+### 做法（已落地）
+- `lib/core/api_keys.dart` —— **零 Flutter 依赖**的规则层：
+  `KeyUse`（用途）/ `KeyVendor`（别名归一 + `canonical`/`same`）/
+  `KeySharing`（★通用性登记：默认通用，百度这类"对话与语音是两套凭证"的显式标 false）/
+  `ApiKeyKeys`（键名 + **回落顺序 `apikey_ → aikey_ → tts_key_`**）/ `maskKey`。
+- `lib/core/api_keys_store.dart` —— 存储层：`find`（回落读）/ `set`（**只写统一库**）/
+  `migrate`（把旧键并入，**已存在则不覆盖**）/ `dump` / `keychainCount`。
+- `lib/core/api_keys_page.dart` —— 「我的 → 设置 → API 密钥库」：
+  列出已填厂商、掩码、来源徽标、用途说明，可改可删，顶部一键并入历史 Key。
+- 接线：`ai.dart` 的 `keyOf/setKey` 与 `tts_online.dart` 的
+  `configOf/saveConfig` 全部改走密钥库；TTS 设置页在 Key 来自别处时
+  显示「已从 AI 模块自动带出，无需重填」。
+- 自检 `tool/api_keys_selfcheck.dart`（54 项）。**重点是"不该合的没合"**：
+  别名无交叉 + 反向断言（openai≠azure、xiaomi≠zhipu 等 6 对），
+  因为把 A 公司的 Key 发去 B 公司的端点会**泄露凭据**且静默难查。
+  归一后跨模块可复用厂商 **12 家**：aliyun azure baidu bytedance groq
+  minimax openai openrouter siliconflow stepfun xiaomi zhipu。
+
+### 未做（下一版）
+- **语音引擎一键自动配对**：遍历厂商 + 计费方案发最小探测请求，
+  命中即自动保存 Key/planId/模型；并尝试拉 `/models` 补全模型列表。
+- **书架真正的离线下载**：`Book.add(target:'local')` 目前**只写元数据**
+  （`shelf_<kind>`），正文一个字都不下 —— 所以"下载到本机"名不副实，
+  打开仍需引擎。要做成"抓全章节 → 落本地 → 由 `LocalNovelReader` 读"。
+
+---
+
 ## 五、必须记住的约束（来自用户口述，累计）
 - 引擎图标：**保留各自原生**，不得统一替换。
 - 引擎：自用版允许**内置源**；分享前必须能一键删源。

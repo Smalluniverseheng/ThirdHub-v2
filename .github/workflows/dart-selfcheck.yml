@@ -212,5 +212,9 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/ui_cover_selfcheck.dart
 
+      - name: api_keys（统一密钥库：厂商归一不误并 + 跨模块 Key 复用清单）
+        working-directory: flutter_app
+        run: dart run tool/api_keys_selfcheck.dart
+
       # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
       # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。

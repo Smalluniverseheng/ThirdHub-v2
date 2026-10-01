@@ -8,6 +8,8 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'api_keys.dart';
+import 'api_keys_store.dart';
 import 'play_tag.dart';
 import 'tts.dart';
 import 'tts_engines_page.dart';
@@ -319,6 +321,13 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
   /// 选中的计费方案 id（只有"按量与套餐两套端点"的厂商才用得上，如小米）。
   String _planId = '';
 
+  /// 这把 Key 的**来源层**（keychain / ai / tts）。
+  ///
+  /// 为什么要显示它：Key 现在是从**统一密钥库**带出来的 —— 用户可能压根没在
+  /// 语音模块填过这把 Key（是在 AI 模块填的）。不说明来源的话，他会以为
+  /// "这里怎么自己有了"，或者担心"改了会不会影响 AI"。
+  String _keySrc = '';
+
   /// 是不是「用户自己添加的接口」。
   ///
   /// 不能只判 `vendor == null`：那样「编辑一条**已保存**的自定义接口」会被
@@ -349,6 +358,14 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
     _planId = (c?.planId ?? '').isNotEmpty
         ? c!.planId
         : (v == null ? '' : (ttsDefaultPlan(v)?.id ?? ''));
+    // 查一下这把 Key 是从哪一层带出来的（密钥库 / AI 模块 / 语音模块）。
+    // 只在内置厂商上做：自定义接口没有"别处填过"这回事。
+    if (v != null && !_isCustom) {
+      ApiKeys.find(v.id).then((h) {
+        if (!mounted) return;
+        setState(() => _keySrc = h.key == _key.text.trim() ? h.layer : '');
+      });
+    }
   }
 
   /// 当前选中的方案对象（没有方案 / 没选 → null）。
@@ -625,6 +642,24 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
           // 小米这类"一个厂商两套端点、两套 Key"的，用户拿到 401 时
           // 根本想不到是这个原因 —— 提前说比事后猜有用。
           if (_mismatch.isNotEmpty) _warnBox(_mismatch),
+          // Key 是从**别的模块**带出来时，明确交代来源 —— 否则用户会以为
+          // "这里怎么自己有了"，或者担心改了会影响 AI 那边。
+          if (_keySrc.isNotEmpty && _keySrc != 'keychain')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.link, size: 14, color: Colors.grey),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(
+                  '已从「${ApiKeyKeys.layerLabel(_keySrc)}」自动带出，无需重填。'
+                  '在这里改动会同步到所有用到该厂商的模块。',
+                  style: const TextStyle(
+                      fontSize: 11, color: Colors.grey, height: 1.5),
+                )),
+              ]),
+            ),
           if (v?.auth == TtsAuth.baidu)
             _field('APIKey|SecretKey', _key,
                 hint: '两段用一根竖线隔开', obscure: true,

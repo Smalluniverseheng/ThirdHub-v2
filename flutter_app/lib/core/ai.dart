@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_snapshot.dart';
 import 'ai_agent.dart';
+import 'api_keys_store.dart';
 import 'app_version.dart';
 
 class AiProvider {
@@ -131,11 +132,13 @@ class AiRegistry {
 
   static AiProvider? byId(String id) { for (final p in all) { if (p.id == id) return p; } return null; }
 
-  // API key 管理(本机存储)
+  // API key 管理（★4.60.0 起走**统一密钥库**：与语音等模块共用同一把 Key。
+  // 读时按「密钥库 → 旧 aikey_ → 旧 tts_key_」回落，所以老用户填过的
+  // 不用重填；写时只写密钥库。）
   static Future<String> keyOf(String providerId) async =>
-      (await SharedPreferences.getInstance()).getString('aikey_$providerId') ?? '';
+      ApiKeys.get(providerId);
   static Future<void> setKey(String providerId, String key) async =>
-      (await SharedPreferences.getInstance()).setString('aikey_$providerId', key);
+      ApiKeys.set(providerId, key);
 
   // 最近使用的模型
   static Future<(String, String)> lastModel() async {

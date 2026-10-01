@@ -29,6 +29,7 @@ import 'package:path_provider/path_provider.dart';
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
+import 'core/api_keys_page.dart';
 import 'core/local_tools.dart';
 import 'core/manual_book.dart';
 import 'core/module_shell.dart';
@@ -2560,6 +2561,11 @@ class _Pf extends State<ProfilePage> {
             // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
             entry(Icons.record_voice_over_outlined, '语音朗读',
                 value: '引擎 · 厂商 · 试听', page: const TtsSettingsPage()),
+            _sep(),
+            // 密钥库也是**全局**设置：AI 与语音共用同一把 Key，
+            // 「在 AI 里填过的小米 Key，语音自动带上」这件事就落在这里。
+            entry(Icons.key_outlined, 'API 密钥库',
+                value: '一处填写 · 多模块共用', page: const ApiKeysPage()),
             _sep(),
             entry(Icons.dns_outlined, '后端管理',
                 value: Api.base.isEmpty ? '未连接' : '已连接',

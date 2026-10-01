@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_keys_store.dart';
 import 'tts_vendors.dart';
 
 /// 某一家厂商的用户配置。
@@ -99,7 +100,10 @@ class TtsOnline {
   static Future<TtsConfig> configOf(String id) async {
     final p = await SharedPreferences.getInstance();
     return TtsConfig(
-      key: p.getString(_k(id, 'key')) ?? '',
+      // ★ Key 走**统一密钥库**：在 AI 模块填过的同一家厂商（如小米）会自动带出，
+      //   无需在语音里再填一遍。`ApiKeys.get` 内含 `tts_key_` 旧键回落，
+      //   所以本模块老用户的历史 Key 依然有效。
+      key: await ApiKeys.get(id),
       voice: p.getString(_k(id, 'voice')) ?? '',
       model: p.getString(_k(id, 'model')) ?? '',
       format: p.getString(_k(id, 'format')) ?? '',
@@ -120,7 +124,9 @@ class TtsOnline {
     String? planId,
   }) async {
     final p = await SharedPreferences.getInstance();
-    if (key != null) await p.setString(_k(id, 'key'), key);
+    // ★ Key 写进**统一密钥库**（不再写 tts_key_ 私有键）——
+    //   于是"在语音里填的小米 Key"，AI 模块同样能读到。
+    if (key != null) await ApiKeys.set(id, key);
     if (voice != null) await p.setString(_k(id, 'voice'), voice);
     if (model != null) await p.setString(_k(id, 'model'), model);
     if (format != null) await p.setString(_k(id, 'format'), format);
