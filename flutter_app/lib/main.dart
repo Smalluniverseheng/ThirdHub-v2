@@ -95,6 +95,8 @@ import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
 import 'core/tts_settings_page.dart';
+import 'core/offline_store.dart';
+import 'core/offline_ui.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -5159,6 +5161,11 @@ class _Sh extends State<ShelfPage> {
   /// 用户需求(2026-10-01)：「应该支持它能够删除，也没有说一定要置顶」。
   /// → 从"永远在架、不可删"改为"默认注入、可移除、可在模块菜单放回"。
   Book? manual;
+
+  /// 每本书的离线状态小字（bookUrl → 「已离线 320 章」）。没下过的不进这张表。
+  /// 卡片上必须显示它：用户点了"下载到本机"，总得看得出到底下下来了没有。
+  Map<String, String> offLines = {};
+
   @override
   void initState() {
     super.initState();
@@ -5203,6 +5210,12 @@ class _Sh extends State<ShelfPage> {
           if (!items.any((x) => x.bookUrl == cb.bookUrl)) items.add(cb);
         }
       } catch (_) {}
+    }
+    // 离线状态: 卡片要显示"已离线 N 章", 否则用户点完下载不知道到底下下来了没有。
+    offLines.clear();
+    for (final b in items) {
+      final line = await OfflineUI.progressLine(b.bookUrl, b.name);
+      if (line != null) offLines[b.bookUrl] = line;
     }
     setState(() => loading = false);
   }
@@ -5363,22 +5376,44 @@ class _Sh extends State<ShelfPage> {
                                   builder: (_) => widget.builder(b)))
                           .then((_) => load()),
                       onLongPress: () async {
-                        final del = await showDialog<bool>(
-                            context: c,
-                            builder: (c2) => AlertDialog(
-                                    title: Text('移出书架'),
-                                    content: Text('《${b.name}》'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(c2, false),
-                                          child: const Text('取消')),
-                                      FilledButton(
-                                          onPressed: () =>
-                                              Navigator.pop(c2, true),
-                                          child: const Text('移出'))
-                                    ]));
-                        if (del == true) remove(b);
+                        // 长按给一整套动作: 下载/续传、导出、删离线内容、移出书架。
+                        // 此前这里只有「移出书架」一个确认框 —— 想离线还得先进详情页。
+                        final act = await OfflineUI.shelfMenu(c,
+                            name: b.name, bookUrl: b.bookUrl, kind: widget.kind);
+                        if (!c.mounted) return;
+                        if (act == OfflineUI.actRemove) {
+                          final del = await showDialog<bool>(
+                              context: c,
+                              builder: (c2) => AlertDialog(
+                                      title: Text('移出书架'),
+                                      content: Text('《${b.name}》'),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(c2, false),
+                                            child: const Text('取消')),
+                                        FilledButton(
+                                            onPressed: () =>
+                                                Navigator.pop(c2, true),
+                                            child: const Text('移出'))
+                                      ]));
+                          if (del == true) remove(b);
+                        } else if (act == OfflineUI.actDownload) {
+                          await OfflineUI.download(c, b.toJson(),
+                              kind: widget.kind);
+                          load();
+                        } else if (act == OfflineUI.actDeleteOffline) {
+                          await OfflineStore.remove(b.bookUrl, name: b.name);
+                          load();
+                        } else if (act == OfflineUI.actExport) {
+                          final p = await OfflineStore.exportTxt(b.bookUrl,
+                              name: b.name);
+                          if (c.mounted) {
+                            ScaffoldMessenger.of(c).showSnackBar(SnackBar(
+                                content:
+                                    Text(p == null ? '导出失败' : '已导出到 $p')));
+                          }
+                        }
                       },
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -5441,13 +5476,20 @@ class _Sh extends State<ShelfPage> {
                                     fontWeight: FontWeight.w500,
                                     height: 1.2)),
                             Text(
-                                prog >= 0
-                                    ? '读到第${prog + 1}章'
-                                    : (b.author.isNotEmpty ? b.author : '未开始'),
+                                // 离线状态优先显示 —— 用户最关心的就是"下下来了没有"
+                                offLines[b.bookUrl] ??
+                                    (prog >= 0
+                                        ? '读到第${prog + 1}章'
+                                        : (b.author.isNotEmpty
+                                            ? b.author
+                                            : '未开始')),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 10, color: Colors.grey)),
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: offLines.containsKey(b.bookUrl)
+                                        ? Colors.blueAccent
+                                        : Colors.grey)),
                           ]));
                 });
   }
@@ -5568,6 +5610,13 @@ class _T extends State<TocPage> {
   //   用户无法区分「加载失败」与「这本书真的没有章节」。漫画详情页与视频详情页
   //   都正确地把错误落到 err 并展示，唯独小说目录页没有 —— 这里补齐。
   String? err;
+
+  // 离线状态: offDone/offTotal 为 null 表示还没查过
+  int? offDone, offTotal;
+
+  /// 有可读的离线正文就走本地（断网也能读），否则走原来的网络路径。
+  bool get offlineReady => (offDone ?? 0) > 0;
+
   @override
   void initState() {
     super.initState();
@@ -5575,12 +5624,36 @@ class _T extends State<TocPage> {
     load();
   }
 
+  /// 查这本书在本机下了多少章。目录页据此显示「已离线 / 离线 N/M 章」，
+  /// 并决定打开正文时走本地还是走引擎。
+  Future<void> _checkOffline() async {
+    final m =
+        await OfflineStore.metaOf(widget.book.bookUrl, name: widget.book.name);
+    if (!mounted) return;
+    setState(() {
+      offDone = m?.done ?? 0;
+      offTotal = m?.total ?? 0;
+    });
+  }
+
   Future<void> load() async {
     err = null;
+    _checkOffline();
     try {
       if (widget.book.sourceId == 'engine') {
-        // 引擎直连书: 目录走 THP /thp/chapters
-        chapters = await EngineDirect.chapters('novel', widget.book.bookUrl);
+        // 优先用本机离线目录 —— 引擎关了/没网也能看到章节列表。
+        // 没下过才回引擎取目录。
+        final off =
+            await OfflineStore.toc(widget.book.bookUrl, name: widget.book.name);
+        if (off.isNotEmpty) {
+          chapters = [
+            for (var i = 0; i < off.length; i++)
+              {'name': off[i]['name'] ?? '第${i + 1}章', 'url': '$i', 'index': i}
+          ];
+        } else {
+          // 引擎直连书: 目录走 THP /thp/chapters
+          chapters = await EngineDirect.chapters('novel', widget.book.bookUrl);
+        }
       } else if (widget.book.bookUrl.startsWith('lib:')) {
         // 后端资源库书: 全书已在库, 直接取目录
         final r = await Api.get(
@@ -5612,27 +5685,80 @@ class _T extends State<TocPage> {
     final t = await chooseDownloadTarget(context);
     if (t == null) return;
     await Book.add(widget.book, 'novel', target: t);
+    // ★「下载到本机」必须真的把正文抓下来。此前这里只把书名写进书架(shelf_ 正文
+    //   一个字都没下)，所以"下载到本机"名不副实 —— 断网再点开只有一句取内容失败。
+    if ((t == 'local' || t == 'both') && mounted) {
+      final s =
+          await OfflineUI.download(context, widget.book.toJson(), kind: 'novel');
+      if (mounted) _checkOffline();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s == 'done'
+              ? '已下载到本机，断网也能读'
+              : s == 'partial'
+                  ? '已下载到本机，个别章节没取到，可再点一次补'
+                  : s == 'cancel'
+                      ? '已加入书架（下载暂停，长按书可继续）'
+                      : '已加入书架，但离线下载没成功')));
+      return;
+    }
     if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(t == 'local'
-              ? '已下载到本机书架'
-              : t == 'backend'
-                  ? '已提交后端资源库下载'
-                  : tr('已加入书架'))));
+          content: Text(t == 'backend'
+              ? '已提交后端资源库下载'
+              : tr('已加入书架'))));
   }
 
   void openAt(int i) => Navigator.push(
       context,
       MaterialPageRoute(
           builder: (_) => NovelReadPage(
-              sourceId: widget.book.sourceId,
+              // 有离线正文就走本地: 断网也能读。缺的章节由 NovelReadPage 自己回落引擎。
+              sourceId: offlineReady ? 'offline' : widget.book.sourceId,
               chapters: chapters,
               index: i,
               bookName: widget.book.name,
               bookUrl: widget.book.bookUrl))).then((_) => load());
+
+  /// 离线下载/续传（带进度弹窗）。完事刷新一下离线状态。
+  Future<void> _doDownload() async {
+    final s = await OfflineUI.download(context, widget.book.toJson(),
+        kind: 'novel');
+    if (!mounted) return;
+    await _checkOffline();
+    if (!mounted) return;
+    if (s == 'done') {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已离线，断网也能读')));
+    } else if (s == 'partial') {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已下到本机，个别章节没取到，可再点一次补')));
+    } else if (s == 'cancel') {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('下载已暂停，随时可以继续')));
+    }
+  }
+
   @override
-  Widget build(BuildContext c) => Scaffold(
+  Widget build(BuildContext c) {
+    final hasOff = (offDone ?? 0) > 0;
+    final complete = hasOff && offDone == offTotal;
+    return Scaffold(
       appBar: AppBar(title: Text(widget.book.name), actions: [
+        IconButton(
+            icon: Icon(
+                complete
+                    ? Icons.download_done
+                    : hasOff
+                        ? Icons.downloading
+                        : Icons.download_for_offline,
+                color: hasOff ? Colors.blueAccent : null),
+            tooltip: complete
+                ? '已离线 ${offTotal}章'
+                : hasOff
+                    ? '继续离线下载'
+                    : '下载全书到本机（断网也能读）',
+            onPressed: _doDownload),
         IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
         Text('  ${chapters.length}章  ',
             style: const TextStyle(color: Colors.grey))
@@ -5675,6 +5801,7 @@ class _T extends State<TocPage> {
                                   : null,
                               onTap: () => openAt(i)))),
                 ]));
+  }
 }
 
 // 网络书籍阅读页: 适配到番茄式阅读器(目录/夜间/设置全内建)
@@ -5701,6 +5828,26 @@ class NovelReadPage extends StatelessWidget {
         if (sourceId == ManualBook.sourceId) {
           final t = ManualBook.textOf(url);
           return {'text': t, 'content': t};
+        }
+        if (sourceId == 'offline') {
+          // 已离线的书: 正文从本地章节文件读, 不打引擎 → 断网也能读。
+          // url 是章节下标(与 OfflineStore 的 c_00000.txt 一一对应)。
+          final i = int.tryParse(url) ?? 0;
+          final t = await OfflineStore.chapterText(bookUrl, i, name: bookName);
+          if (t != null && t.trim().isNotEmpty) return {'text': t, 'content': t};
+          // 本地缺这章(下载时源站没给正文) → 回落引擎取, 不能给用户一个空白页。
+          // 离线清单里存着每章的引擎章节引用, 用它换回真正的取内容参数。
+          final toc = await OfflineStore.toc(bookUrl, name: bookName);
+          final ref = (i >= 0 && i < toc.length) ? (toc[i]['url'] ?? '') : '';
+          if (ref.isEmpty) {
+            return {
+              'text': '(本机没有这一章的离线内容，且取不到它的联网地址)',
+              'content': ''
+            };
+          }
+          final d = await EngineDirect.content('novel', bookUrl, ref);
+          if (d['text'] == null && d['content'] != null) d['text'] = d['content'];
+          return d;
         }
         if (sourceId == 'engine') {
           // 引擎直连书: 正文走 THP /thp/content (text/content 字段归一)
