@@ -810,6 +810,7 @@ class Book {
     if (u.isEmpty) return '';
     return sourceId == 'engine' ? u : Api.img(u);
   }
+
   static Future<List<Book>> shelf(String kind) async {
     final p = await SharedPreferences.getInstance();
     try {
@@ -3963,6 +3964,10 @@ class _Home extends State<SearchSection> {
   // 并把结果**逐帧铺开**（每次 +_pumpStep 条）——既是用户要的「一条一条蹦出来」，
   // 又不会一次性构建上千个 ListTile 把首帧卡死。
   bool _autoPull = false; // 正在自动续拉
+
+  /// 连续空页轮数 —— 只做 `_autoPullLoop` 的死循环保险丝（30 轮空手即停）。
+  int _emptyStreak = 0;
+
   /// 逐帧铺开的步长（条/帧）。40 条/帧 ≈ 60fps 下每 0.1s 冒一批，观感是「持续在出」。
   ///
   /// ★第十六轮：从 `static const 40` 改成走 `AppSettings.litePumpStep` ——
@@ -4012,20 +4017,22 @@ class _Home extends State<SearchSection> {
     }
   }
 
-  /// 向引擎取下一页（引擎侧翻页不重扫，秒回）
+  /// 向引擎取下一页（引擎侧翻页不重扫，秒回；存量拉干时引擎自动逐块补扫）
   Future<void> _loadMore() async {
     if (_more || !EngineDirect.connected) return;
     final mySeq = _seq;
     setState(() => _more = true);
     try {
+      // ★续拉一律用大预算（不再看 _engTruncated）：引擎 1.10.0+ 的「不断续搜」
+      //   把 budget 当补扫预算用，小预算会让深搜一整块都扫不完、迟迟出不了新结果。
       final p = await EngineDirect.searchPage(_engType, _engQuery,
-          page: _engPage + 1,
-          limit: _pageSize,
-          budgetSec: _engTruncated ? _moreBudget : _firstBudget);
+          page: _engPage + 1, limit: _pageSize, budgetSec: _moreBudget);
       if (!mounted || mySeq != _seq) return;
       setState(() {
         _appendEng(p.items);
-        _engPage = p.page;
+        // ★空页不推进页码：引擎深搜中，空页只是「下一块还没扫出来」。
+        //   推进会让 from 跳过还没送出来的条目（丢书），重试同一页才接得上。
+        if (p.items.isNotEmpty) _engPage = p.page;
         _engHasMore = p.hasMore;
         _engTotal = p.total;
         _engTruncated = p.truncated;
@@ -4116,9 +4123,17 @@ class _Home extends State<SearchSection> {
       final before = engItems?.length ?? 0;
       await _loadMore();
       if (!mounted || !_autoPull || mySeq != _seq) break;
-      // `_loadMore` 失败会把 `_engHasMore` 置假 → 下一轮 while 自然退出；
-      // 但引擎返回空页也会让 hasMore 变假，这里再兜一层「一条都没新增」就收工。
-      if ((engItems?.length ?? 0) == before) break;
+      // `_loadMore` 失败会把 `_engHasMore` 置假 → 下一轮 while 自然退出。
+      // ★「一条都没新增」不再直接收工（2026-10-02 治「几百/几千条就停」）：
+      //   引擎深搜中，空页只是「下一块还没扫出来」，hasMore 仍为真就继续
+      //   重试同一页（页码不推进），直到引擎说见底（hasMore=false）。
+      //   只留一道保险丝：连续 30 轮空手才认输，防引擎异常时死循环。
+      if ((engItems?.length ?? 0) == before) {
+        _emptyStreak++;
+        if (_emptyStreak >= 30) break;
+      } else {
+        _emptyStreak = 0;
+      }
       unawaited(_pumpShown());
     }
     if (mounted && mySeq == _seq) setState(() => _autoPull = false);
@@ -4220,6 +4235,7 @@ class _Home extends State<SearchSection> {
       _engTotal = 0;
       _engHasMore = false;
       _engTruncated = false;
+      _emptyStreak = 0;
       _autoPull = false; // 新一轮先停掉上一轮的续拉
       _engQuery = q;
       _engType = typeFilter == 0 ? 'all' : typeKeys[typeFilter];
@@ -4232,13 +4248,19 @@ class _Home extends State<SearchSection> {
         // 老引擎(<=1.5.4)：不认 page/budget/type=all → 退回"逐类并发、谁先回来谁先上屏"，
         //   否则 type=all 在老引擎上会被当成 novel，漫画/视频/音乐全丢。
         if (EngineDirect.supportsPaging) {
+          // restart：用户按「搜索」= 全新搜索，让引擎推翻旧缓存重搜。
+          //   （续拉/重试绝不带它 —— 带了会把深搜进度整个推倒重来。）
           final p = await EngineDirect.searchPage(_engType, q,
-              page: 1, limit: _pageSize, budgetSec: _firstBudget);
+              page: 1,
+              limit: _pageSize,
+              budgetSec: _firstBudget,
+              restart: true);
           if (!mounted || mySeq != _seq) return;
           setState(() {
             _ids.clear();
             _appendEng(p.items);
-            _engPage = p.page;
+            // 空页不推进页码（同 _loadMore 注释）：首屏 0 条时续拉要重试第 1 页
+            if (p.items.isNotEmpty) _engPage = p.page;
             _engTotal = p.total;
             _engHasMore = p.hasMore;
             _engTruncated = p.truncated;
@@ -5127,7 +5149,8 @@ class _NSR extends State<NovelSearchResults> {
                                     type: 'novel',
                                     item: Map<String, dynamic>.from(b))
                                 : TocPage(
-                                    book: Book.from(Map<String, dynamic>.from(b)))))),
+                                    book: Book.from(
+                                        Map<String, dynamic>.from(b)))))),
           ],
           searchEmptyState(
               loading: loading,
@@ -5379,7 +5402,9 @@ class _Sh extends State<ShelfPage> {
                         // 长按给一整套动作: 下载/续传、导出、删离线内容、移出书架。
                         // 此前这里只有「移出书架」一个确认框 —— 想离线还得先进详情页。
                         final act = await OfflineUI.shelfMenu(c,
-                            name: b.name, bookUrl: b.bookUrl, kind: widget.kind);
+                            name: b.name,
+                            bookUrl: b.bookUrl,
+                            kind: widget.kind);
                         if (!c.mounted) return;
                         if (act == OfflineUI.actRemove) {
                           final del = await showDialog<bool>(
@@ -5410,8 +5435,7 @@ class _Sh extends State<ShelfPage> {
                               name: b.name);
                           if (c.mounted) {
                             ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                                content:
-                                    Text(p == null ? '导出失败' : '已导出到 $p')));
+                                content: Text(p == null ? '导出失败' : '已导出到 $p')));
                           }
                         }
                       },
@@ -5688,8 +5712,8 @@ class _T extends State<TocPage> {
     // ★「下载到本机」必须真的把正文抓下来。此前这里只把书名写进书架(shelf_ 正文
     //   一个字都没下)，所以"下载到本机"名不副实 —— 断网再点开只有一句取内容失败。
     if ((t == 'local' || t == 'both') && mounted) {
-      final s =
-          await OfflineUI.download(context, widget.book.toJson(), kind: 'novel');
+      final s = await OfflineUI.download(context, widget.book.toJson(),
+          kind: 'novel');
       if (mounted) _checkOffline();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -5703,10 +5727,8 @@ class _T extends State<TocPage> {
       return;
     }
     if (mounted)
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(t == 'backend'
-              ? '已提交后端资源库下载'
-              : tr('已加入书架'))));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t == 'backend' ? '已提交后端资源库下载' : tr('已加入书架'))));
   }
 
   void openAt(int i) => Navigator.push(
@@ -5722,8 +5744,8 @@ class _T extends State<TocPage> {
 
   /// 离线下载/续传（带进度弹窗）。完事刷新一下离线状态。
   Future<void> _doDownload() async {
-    final s = await OfflineUI.download(context, widget.book.toJson(),
-        kind: 'novel');
+    final s =
+        await OfflineUI.download(context, widget.book.toJson(), kind: 'novel');
     if (!mounted) return;
     await _checkOffline();
     if (!mounted) return;
@@ -5731,11 +5753,11 @@ class _T extends State<TocPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('已离线，断网也能读')));
     } else if (s == 'partial') {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已下到本机，个别章节没取到，可再点一次补')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已下到本机，个别章节没取到，可再点一次补')));
     } else if (s == 'cancel') {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('下载已暂停，随时可以继续')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('下载已暂停，随时可以继续')));
     }
   }
 
@@ -5744,63 +5766,63 @@ class _T extends State<TocPage> {
     final hasOff = (offDone ?? 0) > 0;
     final complete = hasOff && offDone == offTotal;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.book.name), actions: [
-        IconButton(
-            icon: Icon(
-                complete
-                    ? Icons.download_done
-                    : hasOff
-                        ? Icons.downloading
-                        : Icons.download_for_offline,
-                color: hasOff ? Colors.blueAccent : null),
-            tooltip: complete
-                ? '已离线 ${offTotal}章'
-                : hasOff
-                    ? '继续离线下载'
-                    : '下载全书到本机（断网也能读）',
-            onPressed: _doDownload),
-        IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
-        Text('  ${chapters.length}章  ',
-            style: const TextStyle(color: Colors.grey))
-      ]),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : (err != null && chapters.isEmpty)
-              ? Center(
-                  child: SingleChildScrollView(
-                      child: _searchEmptyBox(
-                          Icons.error_outline, '目录加载失败', err!, fixLabel: '重试',
-                          onFix: () {
-                  setState(() {
-                    loading = true;
-                    err = null;
-                  });
-                  load();
-                })))
-              : Column(children: [
-                  if (lastRead >= 0 && lastRead < chapters.length)
-                    MaterialBanner(
-                        content: Text(
-                            '上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => openAt(lastRead),
-                              child: Text(tr('继续阅读'))),
-                          TextButton(
-                              onPressed: () => setState(() => lastRead = -1),
-                              child: const Text('关闭'))
-                        ]),
-                  Expanded(
-                      child: ListView.builder(
-                          itemCount: chapters.length,
-                          itemBuilder: (_, i) => ListTile(
-                              title: Text(chapters[i]['name'] ?? ''),
-                              trailing: i == lastRead
-                                  ? const Icon(Icons.history,
-                                      size: 16, color: Colors.blueAccent)
-                                  : null,
-                              onTap: () => openAt(i)))),
-                ]));
+        appBar: AppBar(title: Text(widget.book.name), actions: [
+          IconButton(
+              icon: Icon(
+                  complete
+                      ? Icons.download_done
+                      : hasOff
+                          ? Icons.downloading
+                          : Icons.download_for_offline,
+                  color: hasOff ? Colors.blueAccent : null),
+              tooltip: complete
+                  ? '已离线 ${offTotal}章'
+                  : hasOff
+                      ? '继续离线下载'
+                      : '下载全书到本机（断网也能读）',
+              onPressed: _doDownload),
+          IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
+          Text('  ${chapters.length}章  ',
+              style: const TextStyle(color: Colors.grey))
+        ]),
+        body: loading
+            ? const Center(child: CircularProgressIndicator())
+            : (err != null && chapters.isEmpty)
+                ? Center(
+                    child: SingleChildScrollView(
+                        child: _searchEmptyBox(
+                            Icons.error_outline, '目录加载失败', err!, fixLabel: '重试',
+                            onFix: () {
+                    setState(() {
+                      loading = true;
+                      err = null;
+                    });
+                    load();
+                  })))
+                : Column(children: [
+                    if (lastRead >= 0 && lastRead < chapters.length)
+                      MaterialBanner(
+                          content: Text(
+                              '上次读到: ${chapters[lastRead]['name'] ?? '第${lastRead + 1}章'}'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => openAt(lastRead),
+                                child: Text(tr('继续阅读'))),
+                            TextButton(
+                                onPressed: () => setState(() => lastRead = -1),
+                                child: const Text('关闭'))
+                          ]),
+                    Expanded(
+                        child: ListView.builder(
+                            itemCount: chapters.length,
+                            itemBuilder: (_, i) => ListTile(
+                                title: Text(chapters[i]['name'] ?? ''),
+                                trailing: i == lastRead
+                                    ? const Icon(Icons.history,
+                                        size: 16, color: Colors.blueAccent)
+                                    : null,
+                                onTap: () => openAt(i)))),
+                  ]));
   }
 }
 
@@ -5834,19 +5856,18 @@ class NovelReadPage extends StatelessWidget {
           // url 是章节下标(与 OfflineStore 的 c_00000.txt 一一对应)。
           final i = int.tryParse(url) ?? 0;
           final t = await OfflineStore.chapterText(bookUrl, i, name: bookName);
-          if (t != null && t.trim().isNotEmpty) return {'text': t, 'content': t};
+          if (t != null && t.trim().isNotEmpty)
+            return {'text': t, 'content': t};
           // 本地缺这章(下载时源站没给正文) → 回落引擎取, 不能给用户一个空白页。
           // 离线清单里存着每章的引擎章节引用, 用它换回真正的取内容参数。
           final toc = await OfflineStore.toc(bookUrl, name: bookName);
           final ref = (i >= 0 && i < toc.length) ? (toc[i]['url'] ?? '') : '';
           if (ref.isEmpty) {
-            return {
-              'text': '(本机没有这一章的离线内容，且取不到它的联网地址)',
-              'content': ''
-            };
+            return {'text': '(本机没有这一章的离线内容，且取不到它的联网地址)', 'content': ''};
           }
           final d = await EngineDirect.content('novel', bookUrl, ref);
-          if (d['text'] == null && d['content'] != null) d['text'] = d['content'];
+          if (d['text'] == null && d['content'] != null)
+            d['text'] = d['content'];
           return d;
         }
         if (sourceId == 'engine') {
@@ -6572,7 +6593,8 @@ class _MSR extends State<MusicSearchResults> {
                                 builder: (_) => EngineItemPage(
                                     type: 'music',
                                     item: Map<String, dynamic>.from(m))))
-                        : play(Map<String, dynamic>.from(m), g['sourceId'] ?? '')),
+                        : play(
+                            Map<String, dynamic>.from(m), g['sourceId'] ?? '')),
           ],
           searchEmptyState(
               loading: loading,
@@ -9022,8 +9044,8 @@ class _RootNavState extends State<RootNav> {
                       if (hidden) {
                         await p.setBool(ManualBook.hiddenKey, false);
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('已放回书架第一格')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('已放回书架第一格')));
                       } else {
                         Navigator.push(
                             context,
@@ -13148,9 +13170,7 @@ class _Ei extends State<EngineItemPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               CoverImage(cover.isEmpty ? '' : cover,
-                                  width: 72,
-                                  height: 96,
-                                  fallbackText: name),
+                                  width: 72, height: 96, fallbackText: name),
                               const SizedBox(width: 12),
                               Expanded(
                                   child: Column(

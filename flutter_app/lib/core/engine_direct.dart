@@ -415,8 +415,7 @@ class EngineDirect {
       //   避免同一件事在两处各写一遍判定规则（历史教训：口径散落多处必然分叉）。
       //   资源库也带 m:novel/m:comic… 这些能力标签，所以不能只看 m:* —— 必须看 library 标记。
       if ('${m['role'] ?? ''}' == 'library' || cp.contains('library')) {
-        throw const NotAnEngineException(
-            '这个地址是「资源库」(:9527)，不是「引擎」(:1234)\n'
+        throw const NotAnEngineException('这个地址是「资源库」(:9527)，不是「引擎」(:1234)\n'
             '· 资源库请到「我的 → 系统 → 连接资源库」里填（它管的是源清单与账号）；\n'
             '· 「引擎直连」要填引擎 App 的地址（引擎装在手机上时通常是 127.0.0.1:1234）。');
       }
@@ -435,7 +434,9 @@ class EngineDirect {
       //   资源库(:9527)、后端(:9527 家族) 三类端点，用户报"搜不到东西"
       //   时，第一步就是确认他到底连的是哪一个、能力集是什么。
       AppLog.engine('已连接引擎', d: {
-        'url': u, 'name': nm, 'version': ver,
+        'url': u,
+        'name': nm,
+        'version': ver,
         'caps': cp.length > 12 ? cp.take(12).toList() : cp,
       });
     } catch (e) {
@@ -453,8 +454,8 @@ class EngineDirect {
       // ★ 失败原因必须落日志：界面只显示一行 toast，转瞬即逝；而"连不上引擎"
       //   有至少 5 种根因（明文 HTTP 被系统拦 / 地址填成资源库 / 引擎没启动 /
       //   不在同一网段 / 自签证书），只看得见一句"连接失败"根本无从下手。
-      AppLog.warn('engine',
-          from == EngineStatus.connected ? '与引擎的连接已断开' : '连接引擎失败',
+      AppLog.warn(
+          'engine', from == EngineStatus.connected ? '与引擎的连接已断开' : '连接引擎失败',
           d: {'url': u, 'reason': _describe(e), 'errType': '${e.runtimeType}'});
       rethrow;
     }
@@ -743,15 +744,19 @@ class EngineDirect {
   /// 首屏传小值(如 8s)让结果尽快出来，用户按「加载更多」时再传大值(如 25s)扫得更深。
   /// [type] 传 'all' 时引擎一次扫描返回**全部类型**（每项带 type 字段）——
   /// 旧做法按类型逐个请求 = 同一份扫描做 4 遍，白等 4 倍时间。
+  /// [restart] 为真时要求引擎**推翻缓存重新搜**（用户点「搜索」按钮）。
+  ///   平时翻页/重试一律传假：引擎 1.10.0+ 会在存量拉干时自动逐块补扫
+  ///   （「不断续搜」），空页只表示「下一块还没扫出来」，重试同一页即可续上。
   static Future<SearchPage> searchPage(
     String type,
     String q, {
     int page = 1,
     int limit = 40,
     int budgetSec = 25,
+    bool restart = false,
   }) async {
     final path = '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
-        '&page=$page&limit=$limit&budget=$budgetSec';
+        '&page=$page&limit=$limit&budget=$budgetSec${restart ? '&restart=1' : ''}';
     try {
       final r = await _get(path, false, _searchTimeoutSec);
       return SearchPage.from(r);

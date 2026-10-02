@@ -110,14 +110,26 @@ async function handle(req, res, body, u, p, send, ctx) {
         meta: { via: 'local-library' }});
     }
     // THP 引擎并行(异步合并进结果)
-    const thpEngines = thpOnline('novel');
-    const thpPromise = Promise.all(thpEngines.map(async (dev) => {
+    // ★ 2026-10-02 修：此前这里写死 `thpOnline('novel')` + `type: 'novel'` ——
+    //   不管前端搜什么，后端**永远只问小说引擎**。漫画/音乐/影视引擎即使已经在线，
+    //   在 /v1/search 这条路径上也永远收不到请求、永远返回空 ——
+    //   前端看到的是"引擎明明连上了，就是搜不出东西"，而日志里一条错误都没有。
+    //   现在按四类内容类型各自取在线引擎、各问各的类型，结果一并合并。
+    //   （同一个引擎凭多模块可能被问多次，这是有意的：它返回的是不同类型的内容。）
+    const THP_TYPES = ['novel', 'comic', 'video', 'music'];
+    const thpTargets = [];
+    for (const type of THP_TYPES) {
+      for (const dev of thpOnline(type)) thpTargets.push({ dev, type });
+    }
+    const thpDeviceCount = new Set(thpTargets.map(x => x.dev.device_url)).size;
+    const thpPromise = Promise.all(thpTargets.map(async ({ dev, type }) => {
       const t0 = Date.now();
-      try { const r = await thpCall(dev, '/thp/search', { type: 'novel', q });
-        return { source: 'THP引擎@' + dev.device_url.replace(/^https?:\/\//, ''), sourceId: 'thp:' + dev.device_url,
+      const label = 'THP引擎@' + dev.device_url.replace(/^https?:\/\//, '') + '[' + type + ']';
+      try { const r = await thpCall(dev, '/thp/search', { type, q });
+        return { source: label, sourceId: 'thp:' + dev.device_url,
           ok: !r.error, latency: Date.now() - t0, books: (r.items || []).slice(0, 10)
             .map(b => ({ name: b.name, author: b.author || '', coverUrl: b.coverUrl || '', intro: b.intro || '', bookUrl: b.id, sourceId: 'thp:' + dev.device_url })) };
-      } catch (e) { return { source: dev.device_url, sourceId: 'thp:' + dev.device_url, ok: false, latency: Date.now() - t0, error: String(e.message || e) }; }
+      } catch (e) { return { source: label, sourceId: 'thp:' + dev.device_url, ok: false, latency: Date.now() - t0, error: String(e.message || e) }; }
     }));
     // 原版引擎优先: 局域网Legado设备(官方Web服务)在→转发给它, 官方引擎自己解析规则(零适配), 后端只收结果
     const legadoDev = devices.find(d => d.device_type === 'legado' && (Date.now() - (d.last_seen || 0)) < 300000);
@@ -192,7 +204,8 @@ async function handle(req, res, body, u, p, send, ctx) {
     const thpResults = await thpPromise.catch(() => []);
     const merged = [...thpResults.filter(r => r.ok && (r.books || []).length), ...results];
     return send(200, { object:'list', data: merged,
-      meta: { total: merged.length, ok: merged.filter(r => r.ok).length, deduped: true, thp: thpEngines.length } });
+      meta: { total: merged.length, ok: merged.filter(r => r.ok).length, deduped: true,
+        thp: thpDeviceCount, thpQueries: thpTargets.length } });
   }
   // ── THP 引擎搜索(与内置/legado并行, 结果聚合) ──
   if (p.startsWith('/v1/thp/search')) {
