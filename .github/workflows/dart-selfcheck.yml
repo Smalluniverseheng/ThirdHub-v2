@@ -230,3 +230,7 @@ jobs:
 
       # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
       # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。
+
+      - name: engine_autopull（搜索纪律：用户未按停止时不得自行停搜 + 行为反证）
+        working-directory: flutter_app
+        run: dart run tool/engine_autopull_selfcheck.dart

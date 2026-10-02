@@ -139,6 +139,15 @@ class SearchPage {
   final bool truncated;
   final int budgetSec;
 
+  /// 引擎侧深搜累计已扫过的源次 / 参与搜索的源总数（引擎 1.10.0+ 才带）。
+  ///
+  /// ★为什么要解出来显示：用户抱怨「收几本就停了」。**光看条数分不清**
+  /// 「全网就这些」和「才扫了 45/3660 个源」。把这两个数摆到界面上，
+  /// 「还在干活」这件事就是可观测的，而不是让用户猜。
+  /// 老引擎不带这两个字段 → 恒为 0，界面自动不显示（不报错、不留脏值）。
+  final int scannedSources;
+  final int totalSources;
+
   const SearchPage({
     this.items = const [],
     this.page = 1,
@@ -146,7 +155,20 @@ class SearchPage {
     this.hasMore = false,
     this.truncated = false,
     this.budgetSec = 0,
+    this.scannedSources = 0,
+    this.totalSources = 0,
   });
+
+  /// ★「引擎还没搜完」的**合成判据** —— 客户端侧的兜底，与 [hasMore] 取或。
+  ///
+  /// `truncated` 的语义是「引擎自己承认还有源没扫完」。既然引擎自己都没走完一轮，
+  /// 客户端就**没有任何理由**认为可以停 —— 只看 `hasMore` 会踩到两种情形：
+  ///   ① 引擎版本漂移（实测 4.64.0 线上：引擎报 hasMore=false / truncated=true，
+  ///      客户端第一页即停 → 用户看到「收几本」，即本次回归的现场）；
+  ///   ② 存量切片恰好翻干但深搜仍在推进。
+  /// 取或之后，只要引擎没说自己见底，续拉就不会停 —— 这也正是用户要的纪律：
+  /// **只有用户主动按停止才允许停**。
+  bool get wantMore => hasMore || truncated;
 
   static SearchPage from(Map<String, dynamic> r) {
     final raw = r['raw'];
@@ -172,6 +194,8 @@ class SearchPage {
       hasMore: boolOf('hasMore'),
       truncated: boolOf('truncated'),
       budgetSec: intOf('budgetSec', 0),
+      scannedSources: intOf('scannedSources', 0),
+      totalSources: intOf('totalSources', 0),
     );
   }
 }

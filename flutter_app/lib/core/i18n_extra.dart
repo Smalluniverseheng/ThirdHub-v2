@@ -171,6 +171,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': 'Pas de compte ? Touchez ici pour vous inscrire',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Mode invité : lecture locale + bibliothèque LAN disponibles.\nConnectez-vous pour débloquer la synchro cloud et l\'accès distant (IPv6/tunnel).',
     '已通过{{n}}自动连接后端': 'Connexion automatique au serveur via {{n}}',
+    '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} sources analysées',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Le moteur explore encore toutes les sources et continue automatiquement ; appuyez sur Arrêter pour interrompre)',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -324,6 +326,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': 'Нет аккаунта? Нажмите, чтобы зарегистрироваться',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Гостевой режим: локальное воспроизведение + библиотека в LAN.\nВойдите, чтобы открыть облачную синхронизацию и удалённый доступ (IPv6/туннель).',
     '已通过{{n}}自动连接后端': 'Автоподключение к серверу через {{n}}',
+    '已扫 {{n}}/{{m}} 源': 'Просканировано {{n}}/{{m}} источников',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Движок продолжает поиск по всем источникам и продолжит автоматически; нажмите Стоп, чтобы прервать)',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -478,6 +482,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': '¿Sin cuenta? Toca aquí para registrarte',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Modo invitado: reproducción local + biblioteca LAN disponibles.\nInicia sesión para desbloquear la sincronización en la nube y el acceso remoto (IPv6/túnel).',
     '已通过{{n}}自动连接后端': 'Conexión automática al servidor vía {{n}}',
+    '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} fuentes escaneadas',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(El motor sigue buscando en todas las fuentes y continuará automáticamente; pulsa Detener para interrumpir)',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -632,6 +638,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': 'ليس لديك حساب؟ اضغط هنا للتسجيل',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'وضع الضيف: تشغيل محلي + مكتبة الشبكة المحلية متاحة.\nسجّل الدخول لفتح المزامنة السحابية والوصول عن بُعد (IPv6/نفق).',
     '已通过{{n}}自动连接后端': 'تم الاتصال التلقائي عبر {{n}}',
+    '已扫 {{n}}/{{m}} 源': 'تم فحص {{n}}/{{m}} مصدرًا',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(المحرك ما زال يبحث في جميع المصادر وسيستمر تلقائيًا؛ اضغط إيقاف للمقاطعة)',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -695,6 +703,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': 'No account? Tap here to sign up',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': 'Guest mode: local playback + LAN library available.\nSign in to unlock cloud sync and remote access (IPv6/tunnel).',
     '已通过{{n}}自动连接后端': 'Auto-connected to the backend via {{n}}',
+    '已扫 {{n}}/{{m}} 源': 'Scanned {{n}}/{{m}} sources',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Engine is still digging through all sources and will continue automatically; tap Stop to interrupt)',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -759,6 +769,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '没有账号？点这里注册': 'アカウントなし？ここをタップして登録',
     '当前为游客模式: 本地播放 + 局域网资源库可用\n登录后解锁云端同步与远程连接(IPv6/内网穿透)': '現在ゲストモード：ローカル再生 + LANライブラリが利用可能。\nログインでクラウド同期とリモート接続(IPv6/トンネル)を解放。',
     '已通过{{n}}自动连接后端': '{{n}}でバックエンドに自動接続しました',
+    '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} ソースをスキャン済み',
+    '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(エンジンは全ソースを引き続き検索中です。自動で続行します。停止をタップで中断)',
   },
 
 };

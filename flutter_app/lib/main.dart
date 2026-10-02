@@ -3965,8 +3965,24 @@ class _Home extends State<SearchSection> {
   // 又不会一次性构建上千个 ListTile 把首帧卡死。
   bool _autoPull = false; // 正在自动续拉
 
-  /// 连续空页轮数 —— 只做 `_autoPullLoop` 的死循环保险丝（30 轮空手即停）。
+  /// 引擎侧深搜进度（已扫源次 / 源总数）—— 只为把「还在干活」变得可观测。
+  /// 老引擎不带这两个字段时恒为 0，界面自动不显示。
+  int _engScanned = 0;
+  int _engSources = 0;
+
+  /// 连续「这一轮没拿到新条目」的轮数 —— ★**只用来拉长重试间隔，永不作为停止条件**。
+  ///
+  /// 旧实现是「满 30 轮空手就 break」：那是一条**静默熔断**，与用户明确要求
+  /// 「只要我没按停止就不许停」直接冲突。用户看不到任何提示，只觉得「又只搜了几本」。
+  /// 现在它只驱动退避（间隔翻倍，上限 [_maxAutoPullGap]），搜索本身会一直推进到
+  /// 引擎说见底（`wantMore` 为假）或用户按停止为止。
   int _emptyStreak = 0;
+
+  /// 退避上限（毫秒）：空手轮次再多也不超过这个间隔 —— 「一直搜」不等于「一直猛打引擎」。
+  static const int _maxAutoPullGap = 3000;
+
+  /// 续拉连续报错的轮数 —— 同样**只用于降频报警，不作为停止条件**。
+  int _pullErrStreak = 0;
 
   /// 逐帧铺开的步长（条/帧）。40 条/帧 ≈ 60fps 下每 0.1s 冒一批，观感是「持续在出」。
   ///
@@ -4033,16 +4049,31 @@ class _Home extends State<SearchSection> {
         // ★空页不推进页码：引擎深搜中，空页只是「下一块还没扫出来」。
         //   推进会让 from 跳过还没送出来的条目（丢书），重试同一页才接得上。
         if (p.items.isNotEmpty) _engPage = p.page;
-        _engHasMore = p.hasMore;
+        // ★用合成判据 `wantMore`（= hasMore || truncated）而不是裸 hasMore：
+        //   引擎自己说「还有源没扫完」(truncated) 时，客户端就没有理由停。
+        //   实测线上正是 hasMore=false + truncated=true 这一组合让续拉第一页即收工。
+        _engHasMore = p.wantMore;
         _engTotal = p.total;
         _engTruncated = p.truncated;
+        if (p.totalSources > 0) {
+          _engSources = p.totalSources;
+          _engScanned = p.scannedSources;
+        }
       });
+      _pullErrStreak = 0;
     } catch (e) {
+      // ★失败**不再**把 `_engHasMore` 置假（旧实现如此）。
+      //   那等于「一次网络抖动 = 整轮搜索永久结束」，与用户要求
+      //   「我没按停止就不许停」冲突。这里只记一次错误、降频提示，
+      //   是否收工交给下一轮：引擎真的没了会由 `EngineDirect.connected` 判假收场。
       if (mounted) {
-        setState(() => _engHasMore = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                '加载更多失败：${EngineDirect.lastError.isNotEmpty ? EngineDirect.lastError : e}')));
+        _pullErrStreak++;
+        if (_pullErrStreak == 1 || _pullErrStreak % 10 == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              duration: const Duration(seconds: 2),
+              content: Text(
+                  '加载更多失败（第 $_pullErrStreak 次，仍会继续重试）：${EngineDirect.lastError.isNotEmpty ? EngineDirect.lastError : e}')));
+        }
       }
     } finally {
       if (mounted) setState(() => _more = false);
@@ -4103,11 +4134,22 @@ class _Home extends State<SearchSection> {
     }
   }
 
-  /// 自动续拉：首屏拿到后不等用户操作，自己把 `_engHasMore` 翻到没有为止。
+  /// 自动续拉：首屏拿到后不等用户操作，自己把引擎翻到见底为止。
   ///
-  /// 退出条件有四个，缺一不可 —— 否则用户点了停止还会继续往上灌：
-  ///   ① 用户停止（`_autoPull` 被置假）；② 代次变了（`_seq` 不等 = 又发起了新搜索）；
-  ///   ③ 引擎说没有更多了；④ 组件已卸载。
+  /// ★纪律（用户 2026-10-02 明确要求）：「**我没按停止就不许停搜**」。
+  ///   因此这里**不存在**「连续空手 N 轮就 break」这类**静默熔断** ——
+  ///   旧实现正是 `_emptyStreak >= 30` 静默收工，用户看不到任何提示，
+  ///   体感就是「明明库里几千本，怎么又只搜了几本」。已删除。
+  ///
+  /// 退出条件只剩五个，每一个都表示**客观上已经不可能再拿到东西**，
+  /// 而不是「我懒得等了」：
+  ///   ① `!mounted`                 页面已销毁；
+  ///   ② `!_autoPull`               用户按了停止（**唯一的人工终止**）；
+  ///   ③ `mySeq != _seq`            又发起了新搜索，本轮代次作废；
+  ///   ④ `!_engHasMore`             引擎报见底（=`wantMore` 为假，hasMore 与
+  ///                                truncated 都说没得搜了）；
+  ///   ⑤ `!EngineDirect.connected`  引擎确实不可达（连不上 = 没有东西可搜）。
+  /// 空手轮次只让重试间隔**退避**，不改变「继续搜」这个决定。
   Future<void> _autoPullLoop(int mySeq) async {
     while (mounted && _autoPull && mySeq == _seq) {
       if (!_engHasMore || !EngineDirect.connected) break;
@@ -4115,22 +4157,25 @@ class _Home extends State<SearchSection> {
         await Future.delayed(const Duration(milliseconds: 80));
         continue;
       }
+      // ★退避：空手越多、间隔越长（上限 _maxAutoPullGap）。
+      //   「一直搜」≠「一直猛打引擎」—— 引擎那边一块源要 8s 才扫得完，
+      //   这边 200ms 一催只会堆一堆空转请求。
       // ★不能写 `const Duration(...)`：`_autoPullGap` 是 getter（读设置里的
       //   低端机间隔），不是编译期常量。此前误加 `const` 直接让 release 编译
       //   报 "Not a constant expression"（CI build #80 实测）。
-      await Future.delayed(Duration(milliseconds: _autoPullGap));
+      final mult = 1 << _emptyStreak.clamp(0, 5); // 1,2,4,8,16,32
+      final rawGap = _autoPullGap * mult;
+      final int gap = rawGap > _maxAutoPullGap ? _maxAutoPullGap : rawGap;
+      await Future.delayed(Duration(milliseconds: gap));
       if (!mounted || !_autoPull || mySeq != _seq) break;
       final before = engItems?.length ?? 0;
       await _loadMore();
       if (!mounted || !_autoPull || mySeq != _seq) break;
-      // `_loadMore` 失败会把 `_engHasMore` 置假 → 下一轮 while 自然退出。
-      // ★「一条都没新增」不再直接收工（2026-10-02 治「几百/几千条就停」）：
-      //   引擎深搜中，空页只是「下一块还没扫出来」，hasMore 仍为真就继续
-      //   重试同一页（页码不推进），直到引擎说见底（hasMore=false）。
-      //   只留一道保险丝：连续 30 轮空手才认输，防引擎异常时死循环。
+      // `_loadMore` 里的失败**不再**把 `_engHasMore` 置假（见该函数注释）：
+      // 引擎真的没了由 ⑤ 收场，一次抖动不该让整轮搜索永久结束。
       if ((engItems?.length ?? 0) == before) {
         _emptyStreak++;
-        if (_emptyStreak >= 30) break;
+        if (mounted) setState(() {}); // 让「仍在深挖/退避中」这类进度文案刷新
       } else {
         _emptyStreak = 0;
       }
@@ -4235,7 +4280,10 @@ class _Home extends State<SearchSection> {
       _engTotal = 0;
       _engHasMore = false;
       _engTruncated = false;
+      _engScanned = 0;
+      _engSources = 0;
       _emptyStreak = 0;
+      _pullErrStreak = 0;
       _autoPull = false; // 新一轮先停掉上一轮的续拉
       _engQuery = q;
       _engType = typeFilter == 0 ? 'all' : typeKeys[typeFilter];
@@ -4262,12 +4310,17 @@ class _Home extends State<SearchSection> {
             // 空页不推进页码（同 _loadMore 注释）：首屏 0 条时续拉要重试第 1 页
             if (p.items.isNotEmpty) _engPage = p.page;
             _engTotal = p.total;
-            _engHasMore = p.hasMore;
+            // ★合成判据（见 SearchPage.wantMore）：引擎说「还有源没扫完」时不停。
+            _engHasMore = p.wantMore;
             _engTruncated = p.truncated;
-            if (p.hasMore) _autoPull = true; // ← 首屏之后自己接着拉，不等用户滑到底
+            if (p.totalSources > 0) {
+              _engSources = p.totalSources;
+              _engScanned = p.scannedSources;
+            }
+            if (p.wantMore) _autoPull = true; // ← 首屏之后自己接着拉，不等用户滑到底
           });
           unawaited(_pumpShown()); // 首屏逐帧铺开
-          if (p.hasMore) unawaited(_autoPullLoop(mySeq));
+          if (p.wantMore) unawaited(_autoPullLoop(mySeq));
         } else {
           final types = typeFilter == 0
               ? const ['novel', 'comic', 'video', 'music']
@@ -4481,6 +4534,16 @@ class _Home extends State<SearchSection> {
           ' / ${_autoPull ? tr('引擎共 {{n}} 条，继续拉取中…') : tr('引擎共 {{n}} 条（已停，可继续）')}'
               .replaceAll('{{n}}', '$_engTotal'));
     }
+    // ★真实扫描进度（引擎 1.10.0+ 才带这两个数）。作用不是好看，而是让
+    //   「还在干活」变成**可观测**的 —— 用户先前只能看到「已返回 28 条」，
+    //   完全无法区分「全网就这些」和「才扫了 45/3660 个源」，于是合理地
+    //   认为功能坏了。把分母摆出来，这件事就不再需要猜。
+    if (_engSources > 0 &&
+        (_autoPull || _engTruncated) &&
+        EngineDirect.connected) {
+      sb.write(
+          ' · ${tr('已扫 {{n}}/{{m}} 源').replaceAll('{{n}}', '$_engScanned').replaceAll('{{m}}', '$_engSources')}');
+    }
     if (EngineDirect.connected && !EngineDirect.supportsPaging) {
       final done = _done.length;
       if (done < _typeTotal && loading)
@@ -4488,7 +4551,11 @@ class _Home extends State<SearchSection> {
             .replaceAll('{{n}}', '$done')
             .replaceAll('{{m}}', '$_typeTotal'));
     } else if (EngineDirect.connected && _engTruncated) {
-      sb.write(tr('（引擎扫描被时间预算截断，加载更多可扫得更深）'));
+      // ★旧文案：「（引擎扫描被时间预算截断，加载更多可扫得更深）」。
+      //   用户实测反馈那句话让人以为「一到预算上限就不干了」，与事实相反 ——
+      //   引擎的深搜是**跨请求续扫**的：这一轮被截断只表示「还有源没走完」，
+      //   下一轮从断点接着走，越拉越多。改成陈述事实，并说明它会自己继续。
+      sb.write(tr('（引擎仍在深挖全网源，会自动继续；点停止可中断）'));
     }
     return sb.toString();
   }
