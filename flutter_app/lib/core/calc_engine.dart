@@ -42,9 +42,10 @@ class CalcEngine {
   }
 
   /// 界面字符 → 解析器认的形式。
+  /// （曾兼容 U+2715 ✕ 变体，因其落在 ui_icons 扫描的装饰符号区已删——
+  ///   界面键盘只产生 U+00D7 ×，不值得为粘贴变体破 STYLE_GUIDE 第 1 条。）
   static String _norm(String s) => s
       .replaceAll('×', '*')
-      .replaceAll('✕', '*')
       .replaceAll('÷', '/')
       .replaceAll('−', '-')
       .replaceAll('（', '(')
