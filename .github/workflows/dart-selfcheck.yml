@@ -220,5 +220,13 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/manual_book_selfcheck.dart
 
+      - name: offline_book（书架离线下载：命名规则 + 断点续传 + 三层接线）
+        working-directory: flutter_app
+        run: dart run tool/offline_book_selfcheck.dart
+
+      - name: calc_engine（计算器规则层：百分比语义 + 非线性换算 + UI 接线防改一半）
+        working-directory: flutter_app
+        run: dart run tool/calc_engine_selfcheck.dart
+
       # 注：analyze 步骤已上移到 `pub get` 之后的第一位 —— 类型错误应当最先报出来，
       # 不该等 14 步自检跑完才轮到它（见文件开头该步骤处的完整说明）。
