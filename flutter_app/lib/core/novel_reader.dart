@@ -98,7 +98,7 @@ class NovelReaderPage extends StatefulWidget {
   /// ② 往 [SourceHealth] 记一笔成败，供自动换源排序用（复用既有 R-2 能力，不另造一套）。
   final String sourceName;
 
-  /// ★换源重搜：正文取不到时的**主出口**。由调用方实现（要按书名重新搜索、
+  /// ★换一批结果重搜：正文取不到时的**主出口**。由调用方实现（要按书名重新搜索、
   /// 挑一个同名但不同源的结果并重开本书）—— 阅读器本身不知道引擎/书源怎么用，
   /// 所以这里只留一个回调，保持它对引擎的零依赖（本地书、离线书同样能用这个界面）。
   final Future<void> Function()? onSwapSource;
@@ -150,7 +150,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
         'source_empty' => tr('来源抓不到正文'),
         'source_missing' => tr('来源已失效'),
         'chapter_gone' => tr('这一章不存在'),
-        'engine_down' => tr('连不上引擎'),
+        'engine_down' => tr('连不上资料库'),
         _ => tr('正文没拿到'),
       };
 
@@ -158,15 +158,15 @@ class _NovelReaderState extends State<NovelReaderPage> {
   ///
   /// ★只用**两种**提示：源坏了 vs 其它故障。
   /// 分类标题已说明"是哪一类"，这里只补"接下来该干什么"，而不同类的
-  /// **下一步动作其实是同一个** —— 换源重搜或重试。键越少越不容易漏翻译
+  /// **下一步动作其实是同一个** —— 换一批结果重搜或重试。键越少越不容易漏翻译
   /// （每多一个键 ×6 语言就是一份长期维护债）。
   ///
   /// ★不要把源名插进这句话：插值拼出来的字符串**不在 tr() 里**，
   ///   英文界面就会整段露中文。源名单独一行显示（见 [_failView]）。
   static String _failHint(String k) => switch (k) {
         'source_empty' || 'source_missing' => tr(
-            '这个来源没能返回这一章的内容。同一本书在别的来源通常能读，点「换源重搜」会自动用书名重搜并进入能读的那一份。'),
-        _ => tr('暂时取不到这一章。可以先重试；不行就换源重搜。'),
+            '这个来源没能返回这一章的内容。同一本书在别的来源通常能读，点「换一批结果重搜」会自动用书名重搜并进入能读的那一份。'),
+        _ => tr('暂时取不到这一章。可以先重试；不行就换一批结果重搜。'),
       };
 
   bool chrome = false; // 菜单显隐
@@ -433,7 +433,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
     SourceHealth.record(src, ok: ok, ms: ms);
   }
 
-  /// 换源重搜：委托调用方实现（阅读器不知道引擎/书源怎么用，保持零依赖）。
+  /// 换一批结果重搜：委托调用方实现（阅读器不知道引擎/书源怎么用，保持零依赖）。
   Future<void> _swapSource() async {
     if (_swapping) return;
     setState(() => _swapping = true);
@@ -940,7 +940,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
     // init 未完成前绝不碰 ReaderCfg（_p! 会抛 → release 下整页灰屏）
     if (!_cfgReady) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     // ★正文取不到时**整页早退**成可操作的失败页，而不是把异常当正文显示。
-    //   早退而不是就地替换：失败页要能给出「换源重搜」这个跨页动作，
+    //   早退而不是就地替换：失败页要能给出「换一批结果重搜」这个跨页动作，
     //   留在阅读器正文流里会让用户以为是自己翻错了页。
     if (_failKind != null) return _failView(c);
     final bg = ReaderCfg.bgColor;
@@ -959,7 +959,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   ///
   /// ★设计取舍：按钮只给三个，多了反而让人不知道该点哪个 ——
   ///   「重试本章」   网络抖动、临时抽风时用（不换书，最快）
-  ///   「换源重搜」   源坏了时用（**主按钮**，自动以书名重搜并进入能读的那一份）
+  ///   「换一批结果重搜」   源坏了时用（**主按钮**，自动以书名重搜并进入能读的那一份）
   ///   「返回」       回到目录/详情
   Widget _failView(BuildContext c) {
     final k = _failKind!;
@@ -1038,7 +1038,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
                     icon: _swapping
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.swap_horiz, size: 18),
-                    label: Text(_swapping ? tr('正在换源…') : tr('换源重搜')),
+                    label: Text(_swapping ? tr('正在换一批结果…') : tr('换一批结果重搜')),
                   ),
                   OutlinedButton.icon(
                     onPressed: () { chapCache.remove(idx); load(); },

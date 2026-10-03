@@ -733,6 +733,51 @@ class AppSettings {
   // ── 账号 ──
   static String get nickname => p.getString('nickname') ?? '';
   static String get avatarB64 => p.getString('avatar_b64') ?? '';
+
+  /// ★2026-10-03 跨端头像契约。
+  ///
+  /// 【真因】用户报「App 头像和网页端同步不了」。查了线上库才发现：
+  ///   `th_profiles` 表里**只有 `avatar` 一列**，
+  ///   `avatar_b64` 与 `avatar_url` **压根不存在**（PostgREST 报
+  ///   `column th_profiles.avatar_b64 does not exist`）。
+  ///   而本 App 历来上传写 `avatar_b64`、下行读 `avatar_b64`/`avatar_url`
+  ///   ⇒ **写必 400、读必为空**，头像云端同步**从来没工作过**，一直是纯本地。
+  ///   （早前那处「avatar_b64 优先」的注释只对齐了字段名，没发现列本身不存在。）
+  ///
+  /// 【修法】**不再依赖新列**：云端统一走**已存在的 `avatar` 列**，值用 dataURI
+  ///   （`data:image/jpeg;base64,…`）—— 与网页端原生形态一致，天然互通。
+  ///   本地仍存**裸 base64**（显示端 `base64Decode` 直接吃），只做一次归一。
+  ///   这样**不需要改数据库结构**，改完即可用。
+  static String normAvatarB64(String v) {
+    var s = v.trim();
+    if (s.isEmpty) return '';
+    if (s.startsWith('data:')) {
+      final i = s.indexOf(',');
+      return i >= 0 ? s.substring(i + 1).trim() : '';
+    }
+    // 远端 URL 无法凭空转 base64 —— 交给原有的下载分支处理
+    if (s.startsWith('http://') || s.startsWith('https://')) return '';
+    return s;
+  }
+
+  /// 裸 base64 → dataURI（写 `avatar` 列时用）
+  static String b64ToAvatarDataUri(String b64) =>
+      b64.isEmpty ? '' : 'data:image/jpeg;base64,$b64';
+
+  /// 上传头像到云端：**只写 `avatar` 一列**（该列确实存在）。
+  ///
+  /// ★不要写 `avatar_b64` —— 那一列在线上库里不存在，多写一个字段会让整个
+  ///   upsert 报 400 column does not exist，表现为「点了保存头像但没反应」。
+  ///   （网页端侧已加缺列自动剔除的降级，两边都不会因此整体失败。）
+  static Future<void> pushAvatarCloud(String b64) async {
+    if (!Cloud.loggedIn) return;
+    final uri = b64ToAvatarDataUri(b64);
+    if (uri.isEmpty) return;
+    try {
+      await Cloud.updateProfile({'avatar': uri});
+    } catch (_) {}
+  }
+
   static Future<void> setAvatar(String b64) async {
     // 压缩保证 < 0.5MB (调用前已压缩到~30KB, 这里兜底检查)
     if (b64.length > 700 * 1024) throw Exception('头像超过0.5MB限制');
@@ -2512,11 +2557,7 @@ class _Pf extends State<ProfilePage> {
       final jpg = img.encodeJpg(resized, quality: 85);
       await AppSettings.setAvatar(base64Encode(jpg));
       // 登录状态下同步到云端账号体系
-      if (Cloud.loggedIn) {
-        try {
-          await Cloud.updateProfile({'avatar_b64': base64Encode(jpg)});
-        } catch (_) {}
-      }
+      await AppSettings.pushAvatarCloud(base64Encode(jpg));
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted)
@@ -2925,11 +2966,8 @@ class _Psub extends State<ProfileSubPage> {
       final jpg =
           img.encodeJpg(img.copyResize(decoded, width: 256), quality: 85);
       await AppSettings.setAvatar(base64Encode(jpg));
-      if (Cloud.loggedIn) {
-        try {
-          await Cloud.updateProfile({'avatar_b64': base64Encode(jpg)});
-        } catch (_) {}
-      }
+      // ★双字段一起写，网页端才读得到（详见 AppSettings.pushAvatarCloud 的注释）
+      await AppSettings.pushAvatarCloud(base64Encode(jpg));
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted)
@@ -3458,7 +3496,7 @@ class _Eng extends State<EnginesPage> {
             if (network.isNotEmpty)
               Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  child: Text(tr('网络引擎(局域网设备)'),
+                  child: Text(tr('网络资料库(局域网设备)'),
                       style: TextStyle(fontSize: 12, color: Colors.grey))),
             for (final e in network) engineCard(Map<String, dynamic>.from(e)),
             if (network.isEmpty) emptyState(),
@@ -4355,7 +4393,7 @@ class _Home extends State<SearchSection> {
       final received = agg != null ? _aggCount(agg) : (engItems?.length ?? 0);
       return [
         _engTotal > 0
-            ? tr('已收到 {{n}} 条（引擎共 {{m}} 条）。')
+            ? tr('已收到 {{n}} 条（共找到 {{m}} 条）。')
                 .replaceAll('{{m}}', '$_engTotal')
                 .replaceAll('{{n}}', '$received')
             : tr('已收到 {{n}} 条。').replaceAll('{{n}}', '$received'),
@@ -4677,8 +4715,8 @@ class _Home extends State<SearchSection> {
     final loaded = engItems?.length ?? 0;
     final sb = StringBuffer();
     if (EngineDirect.connected) {
-      sb.write(tr('来自引擎「{{n}}」').replaceAll('{{n}}',
-          EngineDirect.name.isEmpty ? tr('THP 引擎') : EngineDirect.name));
+      sb.write(tr('来自资料库「{{n}}」').replaceAll('{{n}}',
+          EngineDirect.name.isEmpty ? tr('本地资料库') : EngineDirect.name));
       if (EngineDirect.version.isNotEmpty)
         sb.write(' v${EngineDirect.version}');
       sb.write(
@@ -4694,7 +4732,7 @@ class _Home extends State<SearchSection> {
         EngineDirect.supportsPaging &&
         _engTotal > loaded) {
       sb.write(
-          ' / ${_autoPull ? tr('引擎共 {{n}} 条，继续拉取中…') : tr('引擎共 {{n}} 条（已停，可继续）')}'
+          ' / ${_autoPull ? tr('共找到 {{n}} 条，继续找更多…') : tr('共找到 {{n}} 条（已停，可继续）')}'
               .replaceAll('{{n}}', '$_engTotal'));
     }
     // ★真实扫描进度（引擎 1.10.0+ 才带这两个数）。作用不是好看，而是让
@@ -4718,7 +4756,7 @@ class _Home extends State<SearchSection> {
       //   用户实测反馈那句话让人以为「一到预算上限就不干了」，与事实相反 ——
       //   引擎的深搜是**跨请求续扫**的：这一轮被截断只表示「还有源没走完」，
       //   下一轮从断点接着走，越拉越多。改成陈述事实，并说明它会自己继续。
-      sb.write(tr('（引擎仍在深挖全网源，会自动继续；点停止可中断）'));
+      sb.write(tr('（仍在继续查找更多结果，会自动继续；点停止可中断）'));
     }
     return sb.toString();
   }
@@ -4870,21 +4908,21 @@ class _Home extends State<SearchSection> {
                   final st = EngineDirect.state.value;
                   final (String txt, Color col) = switch (st.status) {
                     EngineStatus.connected => (
-                        tr('THP 引擎直连: {{n}}').replaceAll('{{n}}', st.name),
+                        tr('本地资料库直连: {{n}}').replaceAll('{{n}}', st.name),
                         Colors.green
                       ),
                     EngineStatus.connecting => (
-                        tr('正在连接引擎…'),
+                        tr('正在连接本地资料库…'),
                         Colors.orangeAccent
                       ),
                     EngineStatus.failed => (
                         Api.base.isNotEmpty
-                            ? tr('资源库模式 · 引擎离线')
-                            : tr('引擎不可达 — 点此查看原因/重试'),
+                            ? tr('资源库模式 · 本地资料库离线')
+                            : tr('资料库不可达 — 点此查看原因/重试'),
                         Colors.redAccent
                       ),
                     EngineStatus.idle => (
-                        Api.base.isNotEmpty ? tr('资源库模式') : tr('未连接引擎 — 点此连接'),
+                        Api.base.isNotEmpty ? tr('资源库模式') : tr('未连接资料库 — 点此连接'),
                         Colors.redAccent
                       ),
                   };
@@ -4984,11 +5022,11 @@ class _Home extends State<SearchSection> {
                                   },
                                   child: Text(
                                       _engTotal > 0
-                                          ? tr('向引擎加载更多（已 {{n}}/{{m}} 条）')
+                                          ? tr('加载更多结果（已 {{n}}/{{m}} 条）')
                                               .replaceAll('{{n}}',
                                                   '${engItems!.length}')
                                               .replaceAll('{{m}}', '$_engTotal')
-                                          : tr('向引擎加载更多'),
+                                          : tr('加载更多结果'),
                                       style: const TextStyle(fontSize: 12))))),
           ],
           if (agg == null && engItems == null && history.isNotEmpty)
@@ -9321,7 +9359,7 @@ class _RootNavState extends State<RootNav> {
                       }
                     }),
                 proEntry(c2, Icons.menu_book_outlined, tr('阅读进阶'),
-                    tr('换源 · 批注 · 摘抄 · 追更'), const ReadingProPage()),
+                    tr('换一批结果 · 批注 · 摘抄 · 追更'), const ReadingProPage()),
                 proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',
                     const ReadStatsPage()),
                 proEntry(c2, Icons.play_circle_outline, '最近播放', '',
@@ -10101,18 +10139,13 @@ class _At extends State<AccountTile> {
       await p.setString('nickname', '$nick');
     if (prof['bio'] != null && '${prof['bio']}'.isNotEmpty)
       await AppSettings.setBio('${prof['bio']}');
-    if (prof['avatar_url'] != null && '${prof['avatar_url']}'.isNotEmpty) {
+    // ★头像下行（2026-10-03）：云端只有 `avatar` 一列（dataURI）。
+    //   线上库实测 `avatar_b64` / `avatar_url` **都不存在** —— 此前这里读的两个字段
+    //   永远是空，所以头像从来同步不下来。现在只认 `avatar`，归一成裸 base64 存本地。
+    final pick = AppSettings.normAvatarB64('${prof['avatar'] ?? ''}');
+    if (pick.isNotEmpty && pick != AppSettings.avatarB64) {
       try {
-        final r = await http.get(Uri.parse('${prof['avatar_url']}'));
-        if (r.statusCode == 200)
-          await AppSettings.setAvatar(base64Encode(r.bodyBytes));
-      } catch (_) {}
-    }
-    // ★头像字段对齐: 本端上传写的是 avatar_b64(见 _pickAvatar), 此前这里只读 avatar_url
-    //   → 头像永远同步不下来。两个字段都认, avatar_b64 优先。
-    if (prof['avatar_b64'] != null && '${prof['avatar_b64']}'.isNotEmpty) {
-      try {
-        await AppSettings.setAvatar('${prof['avatar_b64']}');
+        await AppSettings.setAvatar(pick);
       } catch (_) {}
     }
     await AppSettings.sync();
@@ -13124,7 +13157,7 @@ class _Ei extends State<EngineItemPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
   }
 
-  /// ★2026-10-03 换源重搜（正文取不到时的**主出口**）。
+  /// ★2026-10-03 换一批结果重搜（正文取不到时的**主出口**）。
   ///
   /// 为什么要它：实测（模拟器 10 本样本）**目录正常、正文为空**，引擎抛
   /// `ContentEmptyException: 内容为空` —— 是**某些源的正文规则失效**，
@@ -13138,7 +13171,7 @@ class _Ei extends State<EngineItemPage> {
   Future<void> _swapSourceAndRead() async {
     final q = name.trim();
     if (q.isEmpty) {
-      _toast(tr('这本书没有书名，无法自动换源'));
+      _toast(tr('这本书没有书名，无法自动换一批结果'));
       return;
     }
     _toast(tr('正在用书名重新搜索其它来源…'));
@@ -13148,7 +13181,7 @@ class _Ei extends State<EngineItemPage> {
           limit: 20, budgetSec: 20, restart: true);
       found = p.items;
     } catch (e) {
-      _toast(tr('换源失败：{{e}}').replaceAll('{{e}}', '$e'));
+      _toast(tr('换一批结果失败：{{e}}').replaceAll('{{e}}', '$e'));
       return;
     }
     if (!mounted) return;
@@ -13420,7 +13453,7 @@ class _Ei extends State<EngineItemPage> {
                   index: i,
                   bookName: name,
                   bookUrl: id,
-                  // ★把「源名」与「换源重搜」交给阅读器：正文取不到时，
+                  // ★把「源名」与「换一批结果重搜」交给阅读器：正文取不到时，
                   //   它要能说清「哪个来源坏了」并一键换源（见 _swapSourceAndRead）。
                   sourceName: sourceName,
                   onSwapSource: _swapSourceAndRead,

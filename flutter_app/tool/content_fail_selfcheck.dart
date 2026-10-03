@@ -127,7 +127,7 @@ void main() {
   ck('NovelReaderPage 接收 onSwapSource', reader.contains('final Future<void> Function()? onSwapSource;'));
   ck('NovelReaderPage 接收 sourceName（要告诉用户是哪个源坏了）',
       reader.contains('final String sourceName;'));
-  ck('失败页提供「换源重搜」', reader.contains("tr('换源重搜')"));
+  ck('失败页提供「换源重搜」', reader.contains("tr('换一批结果重搜')"));
   ck('失败页提供「重试本章」', reader.contains("tr('重试本章')"));
   ck('失败页提供「返回」', reader.contains("tr('返回')"));
   ck('重试会清掉失败缓存（否则永远拿同一份坏数据）',
