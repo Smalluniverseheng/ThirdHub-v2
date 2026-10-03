@@ -13144,7 +13144,8 @@ class _Ei extends State<EngineItemPage> {
     _toast(tr('正在用书名重新搜索其它来源…'));
     List<Map<String, dynamic>> found;
     try {
-      final p = await EngineDirect.searchPage('novel', q, limit: 20, budget: 20, restart: true);
+      final p = await EngineDirect.searchPage('novel', q,
+          limit: 20, budgetSec: 20, restart: true);
       found = p.items;
     } catch (e) {
       _toast(tr('换源失败：{{e}}').replaceAll('{{e}}', '$e'));
