@@ -23,6 +23,10 @@ import 'tts_settings_page.dart';
 import 'tts_vendors.dart';
 import 'ai.dart';
 import 'motion.dart';
+// ★2026-10-03：正文失败要「说清哪个源坏了 + 给换源出口」，这两件事分别用到
+//   既有 R-2 的源健康度统计与 i18n。**复用，不另造一套**。
+import 'i18n.dart';
+import 'pro_reading.dart';
 
 // ── 背景预设(背景色, 默认字色) ──
 const kReaderBgs = <(Color, Color, String)>[
@@ -88,13 +92,83 @@ class NovelReaderPage extends StatefulWidget {
   final List chapters; final int index;
   final Future<Map<String, dynamic>> Function(String sourceId, String url) fetchContent;
   final Future<void> Function(int index, String chapterName)? onProgress;
+
+  /// ★2026-10-03 新增：这本书来自哪个源（显示名）。
+  /// 正文失败时用它做两件事：① 告诉用户「哪个来源坏了」而不是干巴巴一句"获取失败"；
+  /// ② 往 [SourceHealth] 记一笔成败，供自动换源排序用（复用既有 R-2 能力，不另造一套）。
+  final String sourceName;
+
+  /// ★换源重搜：正文取不到时的**主出口**。由调用方实现（要按书名重新搜索、
+  /// 挑一个同名但不同源的结果并重开本书）—— 阅读器本身不知道引擎/书源怎么用，
+  /// 所以这里只留一个回调，保持它对引擎的零依赖（本地书、离线书同样能用这个界面）。
+  final Future<void> Function()? onSwapSource;
+
   const NovelReaderPage({super.key, required this.sourceId, required this.chapters, required this.index,
-    required this.bookName, required this.bookUrl, required this.fetchContent, this.onProgress});
+    required this.bookName, required this.bookUrl, required this.fetchContent, this.onProgress,
+    this.sourceName = '', this.onSwapSource});
   @override State<NovelReaderPage> createState() => _NovelReaderState();
 }
 
 class _NovelReaderState extends State<NovelReaderPage> {
   String text = ''; List<String> images = []; bool loading = true;
+
+  // ★2026-10-03 正文取不到时的**结构化失败态**（旧实现只有 `text = '错误: $e'`）。
+  //
+  // 为什么要结构化：用户报的是「搜得到、有封面简介、点进去提示正文未加载」。
+  // 根因实测（模拟器 10 本样本）：**目录正常、正文为空**，引擎抛
+  // `ContentEmptyException: 内容为空` —— 即**某些源的正文规则已经失效**；
+  // 而同一本书换个源就能读（实测 7 个源里 4 个能读出正文）。
+  // 旧实现把异常字符串当正文显示，用户既不知道哪个源坏了、也没有任何出口，
+  // 只能退出去重搜 —— 而重搜还会搜到同一个坏源。→ 必须给「原因 + 换源出口」。
+  String? _failKind;   // source_empty | source_missing | chapter_gone | engine_down | unknown
+  String? _failMsg;
+  bool _swapping = false;
+
+  /// 把引擎/网络抛来的东西归类成人能懂的失败原因。
+  ///
+  /// ★两层判据，新旧通吃：
+  ///   第一层认引擎 1.13.0 起给的**稳定标记** `[SOURCE_EMPTY]` / `[NEED_REGISTRATION]`
+  ///   （引擎侧在 `BookController.getBookContent` 里打的，语义稳定、不会随文案改动而失效）；
+  ///   第二层退回字符串兜底，兼容 1.13.0 之前的引擎（它们只会吐
+  ///   `ContentEmptyException: 内容为空` 这类带异常名的文本）。
+  static String _classifyFail(Object e) {
+    final t = '$e';
+    if (t.contains('SOURCE_EMPTY') || t.contains('ContentEmpty') || t.contains('内容为空')) {
+      return 'source_empty';
+    }
+    if (t.contains('NEED_REGISTRATION') || t.contains('未找到书源') || t.contains('未在数据库找到')) {
+      return 'source_missing';
+    }
+    if (t.contains('章节不存在') || t.contains('HTTP 404')) return 'chapter_gone';
+    if (t.contains('未连接引擎') || t.contains('CLEARTEXT') || t.contains('未发现引擎')) {
+      return 'engine_down';
+    }
+    return 'unknown';
+  }
+
+  static String _failTitle(String k) => switch (k) {
+        'source_empty' => tr('来源抓不到正文'),
+        'source_missing' => tr('来源已失效'),
+        'chapter_gone' => tr('这一章不存在'),
+        'engine_down' => tr('连不上引擎'),
+        _ => tr('正文没拿到'),
+      };
+
+  /// 失败原因的人话说明。
+  ///
+  /// ★只用**两种**提示：源坏了 vs 其它故障。
+  /// 分类标题已说明"是哪一类"，这里只补"接下来该干什么"，而不同类的
+  /// **下一步动作其实是同一个** —— 换源重搜或重试。键越少越不容易漏翻译
+  /// （每多一个键 ×6 语言就是一份长期维护债）。
+  ///
+  /// ★不要把源名插进这句话：插值拼出来的字符串**不在 tr() 里**，
+  ///   英文界面就会整段露中文。源名单独一行显示（见 [_failView]）。
+  static String _failHint(String k) => switch (k) {
+        'source_empty' || 'source_missing' => tr(
+            '这个来源没能返回这一章的内容。同一本书在别的来源通常能读，点「换源重搜」会自动用书名重搜并进入能读的那一份。'),
+        _ => tr('暂时取不到这一章。可以先重试；不行就换源重搜。'),
+      };
+
   bool chrome = false; // 菜单显隐
   String? fontFamily;
   final Map<int, Map<String, dynamic>> chapCache = {};
@@ -315,25 +389,73 @@ class _NovelReaderState extends State<NovelReaderPage> {
   }
 
   Future<void> load() async {
-    setState(() => loading = true);
+    setState(() { loading = true; _failKind = null; _failMsg = null; });
+    final t0 = DateTime.now();
     try {
       Map<String, dynamic> d;
       if (chapCache.containsKey(idx)) { d = chapCache[idx]!; }
       else { d = await widget.fetchContent(widget.sourceId, chapter['url'] ?? ''); chapCache[idx] = d; }
       text = d['text'] as String? ?? ''; images = List<String>.from(d['images'] ?? []);
-      if (text.isEmpty && images.isEmpty) text = '本章无内容';
-      ReadStats.tick(chars: text.length); // 阅读统计: 按章记字数
+      // ★「HTTP 200 但正文是空的」与「抛异常」是**同一类问题**（源没给内容），
+      //   旧实现只把前者显示成一句「本章无内容」，用户同样没有出口。归到失败态一起处理。
+      if (text.trim().isEmpty && images.isEmpty) {
+        _recordHealth(true, DateTime.now().difference(t0).inMilliseconds);
+        _failKind = 'source_empty';
+        _failMsg = '引擎返回了这一章，但内容是空的。';
+        text = '';
+      } else {
+        _recordHealth(true, DateTime.now().difference(t0).inMilliseconds);
+        ReadStats.tick(chars: text.length); // 阅读统计: 按章记字数
+      }
       final p = await SharedPreferences.getInstance();
       await p.setInt('progress_${widget.bookUrl}', idx);
       try { await widget.onProgress?.call(idx, chapter['name'] ?? ''); } catch (_) {}
       preload(idx + 1); preload(idx - 1);
-    } catch (e) { text = '错误: $e'; }
+    } catch (e) {
+      // ★失败也要记账：源健康度是「自动换源」排序的依据（复用既有 R-2 的 SourceHealth）。
+      //   旧实现只把异常显示出来，全项目**没有任何地方统计过章节抓取成败**，
+      //   于是 R-2 那套换源能力在引擎直连这条路上其实是**空转的**。
+      _recordHealth(false, DateTime.now().difference(t0).inMilliseconds);
+      chapCache.remove(idx); // 别把失败的缓存留下，否则「重试」永远拿到同一份坏数据
+      text = '';
+      _failKind = _classifyFail(e);
+      _failMsg = '$e';
+    }
     if (mounted) setState(() => loading = false);
+  }
+
+  /// 把这一章的成败记进源健康度（失败原因已分类，`unknown` 不记 —— 那是网络抖动不是源坏）。
+  void _recordHealth(bool ok, int ms) {
+    final src = widget.sourceName.trim();
+    if (src.isEmpty) return;
+    if (!ok && _failKind == 'unknown') return;
+    // 复用既有 R-2 能力，不另造一套统计
+    SourceHealth.record(src, ok: ok, ms: ms);
+  }
+
+  /// 换源重搜：委托调用方实现（阅读器不知道引擎/书源怎么用，保持零依赖）。
+  Future<void> _swapSource() async {
+    if (_swapping) return;
+    setState(() => _swapping = true);
+    try {
+      await widget.onSwapSource?.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('换源失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _swapping = false);
+    }
   }
 
   void goChapter(int i) => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NovelReaderPage(
     sourceId: widget.sourceId, chapters: widget.chapters, index: i,
     bookName: widget.bookName, bookUrl: widget.bookUrl,
+    // ★把「源名 + 换源出口」一起带走：换章后如果这个源也坏了，
+    //   新页面照样能说清是哪个源、照样能换源 —— 旧实现这两个参数只在本页有效，
+    //   翻一页就退回到「一句 错误: ...」，等于换源能力只对第一章生效。
+    sourceName: widget.sourceName, onSwapSource: widget.onSwapSource,
     fetchContent: widget.fetchContent, onProgress: widget.onProgress)));
 
   // ── 分页: TextPainter 真实测量（canvas 预分页）──
@@ -817,6 +939,10 @@ class _NovelReaderState extends State<NovelReaderPage> {
   @override Widget build(BuildContext c) {
     // init 未完成前绝不碰 ReaderCfg（_p! 会抛 → release 下整页灰屏）
     if (!_cfgReady) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // ★正文取不到时**整页早退**成可操作的失败页，而不是把异常当正文显示。
+    //   早退而不是就地替换：失败页要能给出「换源重搜」这个跨页动作，
+    //   留在阅读器正文流里会让用户以为是自己翻错了页。
+    if (_failKind != null) return _failView(c);
     final bg = ReaderCfg.bgColor;
     final hasBgImg = ReaderCfg.bgImage.isNotEmpty && File(ReaderCfg.bgImage).existsSync();
     final content = Scaffold(
@@ -827,6 +953,109 @@ class _NovelReaderState extends State<NovelReaderPage> {
         child: _readerBody(c)) : _readerBody(c),
     );
     return content;
+  }
+
+  /// 正文失败的整页出口（原因 + 三个动作）。
+  ///
+  /// ★设计取舍：按钮只给三个，多了反而让人不知道该点哪个 ——
+  ///   「重试本章」   网络抖动、临时抽风时用（不换书，最快）
+  ///   「换源重搜」   源坏了时用（**主按钮**，自动以书名重搜并进入能读的那一份）
+  ///   「返回」       回到目录/详情
+  Widget _failView(BuildContext c) {
+    final k = _failKind!;
+    final src = widget.sourceName.trim();
+    return Scaffold(
+      backgroundColor: ReaderCfg.bgColor,
+      appBar: AppBar(
+        backgroundColor: ReaderCfg.bgColor,
+        foregroundColor: ReaderCfg.fgColor,
+        elevation: 0,
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(c)),
+        title: Text(tr('正文没拿到'), style: TextStyle(color: ReaderCfg.fgColor, fontSize: 15)),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.menu_book_outlined, size: 52, color: ReaderCfg.fgColor.withValues(alpha: 0.35)),
+              const SizedBox(height: 14),
+              Text(_failTitle(k),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600, color: ReaderCfg.fgColor)),
+              const SizedBox(height: 8),
+              // 源名单独一行：它是「换个源」这件事的判断依据，必须让用户看见。
+              if (src.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: ReaderCfg.fgColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(src,
+                      style: TextStyle(
+                          fontSize: 12, color: ReaderCfg.fgColor.withValues(alpha: 0.7))),
+                ),
+              const SizedBox(height: 10),
+              Text(
+                // ★单条完整文案走 tr()；不要用插值拼句子里（那会绕过翻译表）。
+                _failHint(k),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, height: 1.6, color: ReaderCfg.fgColor.withValues(alpha: 0.75)),
+              ),
+              const SizedBox(height: 8),
+              // 原始报错折叠：技术细节给排查用，不糊在主视图上
+              if ((_failMsg ?? '').isNotEmpty)
+                Theme(
+                  data: Theme.of(c).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: Text(tr('技术细节'),
+                        style: TextStyle(fontSize: 12, color: ReaderCfg.fgColor.withValues(alpha: 0.55))),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(_failMsg!,
+                            style: TextStyle(fontSize: 11,
+                                color: ReaderCfg.fgColor.withValues(alpha: 0.5))),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _swapping ? null : _swapSource,
+                    icon: _swapping
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.swap_horiz, size: 18),
+                    label: Text(_swapping ? tr('正在换源…') : tr('换源重搜')),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () { chapCache.remove(idx); load(); },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: Text(tr('重试本章')),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(c),
+                    child: Text(tr('返回')),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _readerBody(BuildContext c) {

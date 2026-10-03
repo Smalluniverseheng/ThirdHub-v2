@@ -13114,6 +13114,73 @@ class _Ei extends State<EngineItemPage> {
   String get cover => '${widget.item['coverUrl'] ?? ''}';
   String get authorS => '${widget.item['author'] ?? ''}';
   String get introS => '${widget.item['intro'] ?? ''}';
+
+  /// 这本书来自哪个源（引擎搜索结果带的 `sourceName`，引擎侧扩展字段）。
+  String get sourceName => '${widget.item['sourceName'] ?? widget.item['originName'] ?? ''}';
+
+  /// 页面级提示（与本页既有的 SnackBar 用法一致）。
+  void _toast(String s) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  }
+
+  /// ★2026-10-03 换源重搜（正文取不到时的**主出口**）。
+  ///
+  /// 为什么要它：实测（模拟器 10 本样本）**目录正常、正文为空**，引擎抛
+  /// `ContentEmptyException: 内容为空` —— 是**某些源的正文规则失效**，
+  /// 而同一本书换个源就能读（实测 7 个源里 4 个能读出正文）。
+  /// 旧实现把异常字符串当正文显示，用户没有出口；让他自己退出去重搜，
+  /// 又会搜到**同一个坏源**（搜索结果按引擎返回顺序，坏源往往排在前面）。
+  ///
+  /// 所以这里做成「自动」：用书名重搜 → 优先挑**同名但不同源**的结果 →
+  /// 排序按既有 R-2 的源健康度（[SourceHealth.best]）→ 直接重开这一本。
+  /// 挑不到同名不同源时，退到同名任意源；再不行才提示失败（不硬跳一个不相干的书）。
+  Future<void> _swapSourceAndRead() async {
+    final q = name.trim();
+    if (q.isEmpty) {
+      _toast(tr('这本书没有书名，无法自动换源'));
+      return;
+    }
+    _toast(tr('正在用书名重新搜索其它来源…'));
+    List<Map<String, dynamic>> found;
+    try {
+      final p = await EngineDirect.searchPage('novel', q, limit: 20, budget: 20, restart: true);
+      found = p.items;
+    } catch (e) {
+      _toast(tr('换源失败：{{e}}').replaceAll('{{e}}', '$e'));
+      return;
+    }
+    if (!mounted) return;
+    // 只认「书名完全一致」的，且必须**换了个源** —— 换源换源，换回自己没意义
+    final sameName =
+        found.where((it) => '${it['name'] ?? ''}'.trim() == q).toList();
+    final other = sameName.where((it) => '${it['sourceName'] ?? ''}' != sourceName).toList();
+    final pool = other.isNotEmpty
+        ? other
+        : (sameName.isNotEmpty ? sameName : <Map<String, dynamic>>[]);
+    if (pool.isEmpty) {
+      _toast(tr('没有搜到《{{n}}》的其它来源').replaceAll('{{n}}', q));
+      return;
+    }
+    // 按源健康度排序：把「这条线读过、成功率高的源」排前面（复用 R-2）
+    final names = <String>{for (final it in pool) '${it['sourceName'] ?? ''}'}
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final best = names.isEmpty ? null : await SourceHealth.best(names);
+    pool.sort((a, b) {
+      final sa = '${a['sourceName'] ?? ''}', sb = '${b['sourceName'] ?? ''}';
+      if (sa == best && sb != best) return -1;
+      if (sb == best && sa != best) return 1;
+      return 0;
+    });
+    if (!mounted) return;
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => EngineItemPage(
+                type: 'novel',
+                item: Map<String, dynamic>.from(pool.first))));
+  }
   bool shelved = false;
 
   // ── ★4.51.0 详情页信息补全（用户：「前端和引擎之间丢失了太多信息了」）──
@@ -13352,6 +13419,10 @@ class _Ei extends State<EngineItemPage> {
                   index: i,
                   bookName: name,
                   bookUrl: id,
+                  // ★把「源名」与「换源重搜」交给阅读器：正文取不到时，
+                  //   它要能说清「哪个来源坏了」并一键换源（见 _swapSourceAndRead）。
+                  sourceName: sourceName,
+                  onSwapSource: _swapSourceAndRead,
                   fetchContent: (s, url) => _content(url))));
       return;
     }
