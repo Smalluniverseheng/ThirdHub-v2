@@ -841,7 +841,10 @@ class EngineDirect {
   }) {
     final ctl = StreamController<SearchPage>();
     http.Client? cli;
-    StreamSubscription<List<int>>? sub;
+    // ★类型是 Stream<String> 不是 Stream<List<int>>：经 utf8.decoder + LineSplitter
+    //   之后流出的已经是解码好的整行字符串。写成 <List<int>> 编译期就报
+    //   "can't be assigned"（CI run 37091296525 实测）。
+    StreamSubscription<String>? sub;
     var closed = false;
 
     void finish() {
