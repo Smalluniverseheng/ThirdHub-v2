@@ -508,6 +508,27 @@ class AppSettings {
   /// 图片解码缓存上限（MB）。
   static int get imageCacheMB => liteMode ? 60 : 200;
 
+  // ── ★引擎搜索模式（2026-10-03，用户诉求「让引擎知道我们是想精确搜还是模糊搜」）──
+  //
+  // 为什么是**客户端存、随请求发给引擎**，而不是前端自己过滤：
+  //   上游引擎本来就同时具备「严格匹配」与「宽松关联」两种语义，前端过滤只能
+  //   在**已经拿回来的结果**上做事 —— 那既费流量又费时间，而且改不了引擎的
+  //   扫描行为（比如精确搜索本就该"够量即停"，扫描策略完全不同）。
+  //   所以这里只决定"发什么 mode 给引擎"，过滤与扫描都由引擎做。
+  //
+  //   · fuzzy 模糊（默认）—— 源站返回什么就是什么，与 4.64.x 行为完全一致
+  //   · exact 精确        —— 引擎侧再收一道：书名或作者必须真的含关键词
+  //   · deep  深度        —— 不设扫描时长上限，配流式一路扫到所有源见底
+  //
+  // ★只落本地盘、**不进 sync()**：它是"这一次想怎么搜"的操作意图，不是账号偏好。
+  //   把一台设备的搜索习惯同步到别的端，只会让人莫名其妙。
+  static String get engineSearchMode => p.getString('engine_search_mode') ?? 'fuzzy';
+  static Future<void> setEngineSearchMode(String v) async {
+    if (v != 'fuzzy' && v != 'exact' && v != 'deep') return; // 白名单，防脏值写进盘
+    await p.setString('engine_search_mode', v);
+    onChanged?.call();
+  }
+
   // ── 导航(网页版-手表端导航栏位置) ──
   static String get navSide =>
       p.getString('nav_side') ?? 'right'; // left|right(悬浮球默认吸附侧)
@@ -3970,6 +3991,19 @@ class _Home extends State<SearchSection> {
   int _engScanned = 0;
   int _engSources = 0;
 
+  /// ── ★4.65.0：流式搜索 + 搜索模式（引擎 1.12.0+）──
+  ///
+  /// **为什么要有流式**：旧路径是「发一个请求 → 引擎在预算内扫完一轮 → 一次性返回」，
+  /// 实测单轮 12~22s。这期间界面上一个条目都不出来，用户的体感是
+  /// 「卡半天，然后突然冒出一大堆」——这正是用户说的「不应该是一口气突然拉一下子」。
+  /// 引擎 1.12.0 起支持 `stream=1` 的 NDJSON：**每扫完一块就推一行**，
+  /// 这里逐行收、逐行 `_appendEng`，条目就是边扫边到。
+  ///
+  /// **为什么是引擎侧的模式而不是前端过滤**：上游引擎本来就两种语义都有，
+  /// 前端过滤只能事后筛（费流量、改不了扫描策略）。所以这里只把意图发给引擎。
+  StreamSubscription<SearchPage>? _streamSub;
+  String _engMode = 'fuzzy'; // fuzzy 模糊 | exact 精确 | deep 深度
+
   /// 连续「这一轮没拿到新条目」的轮数 —— ★**只用来拉长重试间隔，永不作为停止条件**。
   ///
   /// 旧实现是「满 30 轮空手就 break」：那是一条**静默熔断**，与用户明确要求
@@ -3999,6 +4033,8 @@ class _Home extends State<SearchSection> {
   void initState() {
     super.initState();
     _loadHistory();
+    // ★搜索模式从设置里恢复（用户上次选的精确/模糊/深度要记住）
+    _engMode = AppSettings.engineSearchMode;
     // ★订阅连接状态：旧版只在 build 时读一次静态字段 →「连上了还显示未连接 / 变化特别慢」
     EngineDirect.state.addListener(_onConn);
     _scroll.addListener(_maybeMore);
@@ -4007,6 +4043,9 @@ class _Home extends State<SearchSection> {
   @override
   void dispose() {
     EngineDirect.state.removeListener(_onConn);
+    // ★必须显式取消流：不断开的话引擎侧会一直往这条连接推（直到自身超时），
+    //   既浪费电也浪费那台机器的扫描时间片。
+    _streamSub?.cancel();
     _scroll.dispose();
     ctrl.dispose();
     super.dispose();
@@ -4034,8 +4073,14 @@ class _Home extends State<SearchSection> {
   }
 
   /// 向引擎取下一页（引擎侧翻页不重扫，秒回；存量拉干时引擎自动逐块补扫）
+  ///
+  /// ★4.65.0 起按引擎能力**分两条路**：
+  ///   · 引擎支持流式（caps `stream-search`）→ 走 [_streamOnce]：一次连流边收边上屏，
+  ///     回来得快（首块常 1~3s）、也不会「等 20 秒然后一口气冒出来」。
+  ///   · 不支持 → 保持原翻页路径，行为与 4.64.x 逐字节一致（老引擎不受影响）。
   Future<void> _loadMore() async {
     if (_more || !EngineDirect.connected) return;
+    if (EngineDirect.supportsStream) return _streamOnce();
     final mySeq = _seq;
     setState(() => _more = true);
     try {
@@ -4077,6 +4122,113 @@ class _Home extends State<SearchSection> {
       }
     } finally {
       if (mounted) setState(() => _more = false);
+    }
+  }
+
+  /// ★流式搜索主循环（引擎 1.12.0+，caps `stream-search`）。一次调用跑到「见底」或「用户按停」。
+  ///
+  /// 与 [_autoPullLoop]（翻页路径）是**同一纪律的两条实现**：
+  ///   退出条件同样是那五个（页面销毁 / 用户按停 / 新搜索作废 / 引擎说见底 / 引擎不可达），
+  ///   空手只让重连间隔退避，**永不作为停止条件**。
+  ///
+  /// 一条流结束时（引擎自身 120s 上限）如果 `truncated` 仍为真，就立刻再连一条 ——
+  /// 对用户是无缝的：屏幕上条目一直在滚，进度（已扫源数）也一直在涨。
+  /// ★这里刻意用**位置可选参数**而不是 `{bool restart = false}`：
+  ///   `tool/engine_autopull_selfcheck.dart` 的 `fnBody()` 取「anchor 之后的第一个 `{`」
+  ///   作为函数体起点 —— 命名参数块里那个 `{` 会先被命中，抠出来的"函数体"
+  ///   变成 `{bool restart = false}`，整节断言全假绿。改成位置参数后没有这个歧义。
+  ///   （要改回命名参数的话，先把 fnBody 改成能跳过命名参数块。）
+  Future<void> _streamLoop(int mySeq, [bool restart = false]) async {
+    var first = true;
+    while (mounted && _autoPull && mySeq == _seq) {
+      if (!EngineDirect.connected) break;
+      await _streamOnce(restart && first);
+      first = false;
+      if (!mounted || !_autoPull || mySeq != _seq) break;
+      if (!_engHasMore) break; // 引擎说见底 —— 客观没得搜了
+      // 退避：本轮流里没拿到新条目时拉长重连间隔（同 _autoPullLoop 的口径）
+      final mult = 1 << _emptyStreak.clamp(0, 5);
+      final rawGap = _autoPullGap * mult;
+      final int gap = rawGap > _maxAutoPullGap ? _maxAutoPullGap : rawGap;
+      await Future.delayed(Duration(milliseconds: gap));
+    }
+    if (mounted && mySeq == _seq) setState(() => _autoPull = false);
+  }
+
+  /// ★流式续拉（引擎 1.12.0+）：连一次流，边收边追加，直到流自然结束。
+  ///
+  /// 与 [_loadMore] 的分工：
+  ///   · 这里是**一次**流（引擎侧最长 [STREAM_MAX_SEC]≈120s，或扫到见底）。
+  ///   · [_streamLoop] 在外层反复调它 —— 流因到时收尾时 `truncated` 仍为真，
+  ///     循环立刻再连一次，对用户是无缝的。**语义上仍然是「不问过我不停」**：
+  ///     流结束 ≠ 搜索被停了，只是这条 HTTP 连接该换一条了。
+  ///
+  /// 取消（用户按停）= `_streamSub.cancel()` → 断开连接 → 引擎侧写管道失败自然收手。
+  /// ★位置可选参数（不用 `{bool restart = false}`）—— 理由见 [_streamLoop] 的注释。
+  Future<void> _streamOnce([bool restart = false]) async {
+    final mySeq = _seq;
+    setState(() => _more = true);
+    final done = Completer<void>();
+    try {
+      await _streamSub?.cancel();
+      _streamSub = EngineDirect.searchStream(
+        type: _engType,
+        q: _engQuery,
+        mode: _engMode,
+        limit: _pageSize,
+        restart: restart,
+      ).listen((p) {
+        if (!mounted || mySeq != _seq) {
+          if (!done.isCompleted) done.complete();
+          return;
+        }
+        setState(() {
+          // 增量：引擎每行只带本块新扫到的，直接追加即可（_appendEng 内按 id 去重）
+          _appendEng(p.items);
+          if (p.total > 0) _engTotal = p.total;
+          // ★每收到一块就刷新进度：这是「还在干活」的唯一可见证据，
+          //   也是把「卡住了」和「在扫」区分开的东西。
+          if (p.totalSources > 0) {
+            _engSources = p.totalSources;
+            _engScanned = p.scannedSources;
+          }
+          _engHasMore = p.wantMore;
+          _engTruncated = p.truncated;
+          // ★第一块一到就撤掉首屏 loading —— 这正是"流式"要的效果：
+          //   用户在 1~3s 内看到第一批结果，而不是盯着转圈等 20s。
+          if (loading) loading = false;
+        });
+        _emptyStreak = 0; // 有块回来就算推进（空块也算：那是"在扫、本块无新书"）
+        unawaited(_pumpShown()); // 逐帧铺开，观感是「一条一条蹦出来」
+      }, onError: (Object e) {
+        // 不把 _engHasMore 置假：一次抖动不等于引擎没了（同 _loadMore 的纪律）。
+        if (mounted && mySeq == _seq) {
+          _pullErrStreak++;
+          if (_pullErrStreak == 1 || _pullErrStreak % 10 == 0) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                duration: const Duration(seconds: 2),
+                content: Text(tr('流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}')
+                    .replaceAll('{{n}}', '$_pullErrStreak')
+                    .replaceAll('{{e}}', '$e'))));
+          }
+        }
+        if (!done.isCompleted) done.complete();
+      }, onDone: () {
+        if (!done.isCompleted) done.complete();
+      }, cancelOnError: false);
+      // 等这条流结束（正常收尾 / 到时 / 出错 / 用户按停）
+      await done.future.timeout(const Duration(seconds: 150), onTimeout: () {});
+    } catch (e) {
+      if (mounted && mySeq == _seq) {
+        _pullErrStreak++;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _more = false;
+          if (loading) loading = false; // 流没给任何块就结束了，也不能一直转圈
+        });
+      }
     }
   }
 
@@ -4230,6 +4382,10 @@ class _Home extends State<SearchSection> {
     tick.dispose();
     if (ok != true || !mounted) return;
     _seq++; // 在途请求全部作废
+    // ★流式路径下的"停止"就是**断连**：让引擎侧写管道失败、自然收手。
+    //   不取消的话这条连接会一直挂着，直到引擎自身的单流上限。
+    await _streamSub?.cancel();
+    _streamSub = null;
     setState(() {
       _autoPull = false;
       _more = false;
@@ -4295,7 +4451,14 @@ class _Home extends State<SearchSection> {
         //   之后「加载更多」按 page 翻页（引擎侧有结果缓存，翻页不重扫，秒回）。
         // 老引擎(<=1.5.4)：不认 page/budget/type=all → 退回"逐类并发、谁先回来谁先上屏"，
         //   否则 type=all 在老引擎上会被当成 novel，漫画/视频/音乐全丢。
-        if (EngineDirect.supportsPaging) {
+        if (EngineDirect.supportsStream) {
+          // ★流式（引擎 1.12.0+）：首屏不再等整轮扫完 —— 第一块回来就上屏。
+          //   ★这里**刻意不 await**：await 会把 loading 一直卡到整条流结束
+          //   （引擎单流上限 120s），那就又变回「等半天」了。
+          //   交给 [_streamLoop]：它连流、收块、到时续流，直到见底或用户按停。
+          setState(() => _autoPull = true);
+          unawaited(_streamLoop(mySeq, true));
+        } else if (EngineDirect.supportsPaging) {
           // restart：用户按「搜索」= 全新搜索，让引擎推翻旧缓存重搜。
           //   （续拉/重试绝不带它 —— 带了会把深搜进度整个推倒重来。）
           final p = await EngineDirect.searchPage(_engType, q,
@@ -4664,6 +4827,39 @@ class _Home extends State<SearchSection> {
                           if (ctrl.text.trim().isNotEmpty) go();
                         }),
                 ]))),
+        // ★4.65.0：搜索模式选择（仅当引擎声明 caps `search-mode` 时才出现）。
+        //
+        // 用户原话：「原来那个引擎是支持精确搜索的…也支持模糊搜索…我们前端不需要去改，
+        // 而是看一下能不能让引擎知道我们是想搜索精确搜索还是什么搜索。」
+        // 所以这三个 chip 做的事只有一件：**把意图发给引擎**（mode=…），
+        // 过滤与扫描策略都在引擎侧 —— 前端一行过滤代码都没有。
+        //
+        // 老引擎（<1.12.0）没有这个 cap → 整行不渲染，不会出现"点了没反应的开关"。
+        if (EngineDirect.connected && EngineDirect.supportsSearchMode)
+          Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(spacing: 6, children: [
+                    for (final m in const [
+                      ('fuzzy', '模糊'),
+                      ('exact', '精确'),
+                      ('deep', '深度'),
+                    ])
+                      ChoiceChip(
+                          label: Text(tr(m.$2),
+                              style: const TextStyle(fontSize: 12)),
+                          selected: _engMode == m.$1,
+                          onSelected: (_) async {
+                            if (_engMode == m.$1) return;
+                            setState(() => _engMode = m.$1);
+                            await AppSettings.setEngineSearchMode(m.$1);
+                            // 模式改了结果集就不同（引擎侧缓存键含 mode），
+                            // 有查询词就直接重搜，否则用户以为"点了没变"。
+                            if (mounted && ctrl.text.trim().isNotEmpty) go();
+                          }),
+                  ]))),
+
         // 数据来源状态行: 引擎直连(绿) / 连接中(橙) / 资源库(灰) / 不可达(红)
         // ★已订阅 EngineDirect.state（见 initState），连接成功会立刻变绿，不再"变化特别慢"
         Padding(

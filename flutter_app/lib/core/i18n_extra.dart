@@ -173,6 +173,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': 'Connexion automatique au serveur via {{n}}',
     '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} sources analysées',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Le moteur explore encore toutes les sources et continue automatiquement ; appuyez sur Arrêter pour interrompre)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'Flux interrompu (n° {{n}}, reconnexion) : {{e}}',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -328,6 +329,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': 'Автоподключение к серверу через {{n}}',
     '已扫 {{n}}/{{m}} 源': 'Просканировано {{n}}/{{m}} источников',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Движок продолжает поиск по всем источникам и продолжит автоматически; нажмите Стоп, чтобы прервать)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'Поток прерван (№{{n}}, переподключение): {{e}}',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -484,6 +486,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': 'Conexión automática al servidor vía {{n}}',
     '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} fuentes escaneadas',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(El motor sigue buscando en todas las fuentes y continuará automáticamente; pulsa Detener para interrumpir)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'Flujo interrumpido (n.º {{n}}, reconectando): {{e}}',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -640,6 +643,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': 'تم الاتصال التلقائي عبر {{n}}',
     '已扫 {{n}}/{{m}} 源': 'تم فحص {{n}}/{{m}} مصدرًا',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(المحرك ما زال يبحث في جميع المصادر وسيستمر تلقائيًا؛ اضغط إيقاف للمقاطعة)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'انقطع البث (رقم {{n}}، إعادة الاتصال): {{e}}',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -705,6 +709,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': 'Auto-connected to the backend via {{n}}',
     '已扫 {{n}}/{{m}} 源': 'Scanned {{n}}/{{m}} sources',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(Engine is still digging through all sources and will continue automatically; tap Stop to interrupt)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'Stream interrupted (attempt {{n}}, reconnecting): {{e}}',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -771,6 +776,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已通过{{n}}自动连接后端': '{{n}}でバックエンドに自動接続しました',
     '已扫 {{n}}/{{m}} 源': '{{n}}/{{m}} ソースをスキャン済み',
     '（引擎仍在深挖全网源，会自动继续；点停止可中断）': '(エンジンは全ソースを引き続き検索中です。自動で続行します。停止をタップで中断)',
+    '流式续拉中断（第 {{n}} 次，仍会重连）：{{e}}': 'ストリーム中断（{{n}}回目、再接続中）：{{e}}',
   },
 
 };

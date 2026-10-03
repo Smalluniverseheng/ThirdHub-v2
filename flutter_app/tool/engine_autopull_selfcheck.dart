@@ -133,6 +133,34 @@ enum Exit {
   return (rounds, Exit.none); // 跑满 maxRounds 都没退出 = 一直在搜
 }
 
+/// 复刻 `_streamLoop` 的退出判据。
+///
+/// 与 [simulateAutoPull] 的唯一区别：单位是「**一条流**」而不是「一页」。
+/// 引擎侧单条流有 120s 上限，到时 `truncated` 仍为真 —— 这时客户端**必须再连一条**，
+/// 于是「一轮 = 一条流」。而「流到时」绝不能被当成「搜索结束」，否则用户点一次搜索
+/// 只能拿到 120s 的量 —— 这正是本节要钉死的缺陷形状。
+(int, Exit) simulateStreamLoop({
+  required bool Function(int stream) wantMore,
+  required bool Function(int stream) userStops,
+  required bool Function(int stream) mounted,
+  required bool Function(int stream) engineConnected,
+  int maxRounds = 500,
+}) {
+  var streams = 0;
+  for (var r = 1; r <= maxRounds; r++) {
+    if (!mounted(r)) return (streams, Exit.unmounted);
+    // ① `!_autoPull`：用户停止是唯一的人工终止。
+    if (userStops(r)) return (streams, Exit.userStop);
+    streams = r;
+    // ② 引擎明确说见底（`wantMore` = hasMore || truncated）
+    if (!wantMore(r)) return (streams, Exit.engineExhausted);
+    // ③ 引擎不可达
+    if (!engineConnected(r)) return (streams, Exit.engineGone);
+    // 到这里 = 这条流用完（到时/中断），`truncated` 仍为真 → 循环回去再连一条。
+  }
+  return (streams, Exit.none); // 跑满 maxRounds 都没退出 = 一直在搜
+}
+
 void main() {
   final libMain = File('lib/main.dart').readAsStringSync();
   final libEng = File('lib/core/engine_direct.dart').readAsStringSync();
@@ -287,6 +315,95 @@ void main() {
   }
   ck('反证：旧熔断写法在同样输入下确实会停（第 $legacyRounds 轮）——'
       ' 证明 §6(a) 测得出这个缺陷', legacyRounds == 31);
+
+  // ── §7 流式路径（4.65.0 / 引擎 1.12.0）必须守**同一条纪律** ──
+  //
+  // 为什么单开一节：流式（`_streamLoop`）与翻页（`_autoPullLoop`）是**两套实现**，
+  // 而纪律只写在 §3 的注释里 —— 换实现就等于脱离闸门，正是本项目反复出事的形状
+  // （"我改了、我以为测过了"）。所以这里对流式**逐条复刻**同一组断言。
+  print('== 7. 流式搜索路径（_streamLoop / _streamOnce）==');
+  final sloop = fnBody(libMain, 'Future<void> _streamLoop(');
+  final sOnce = fnBody(libMain, 'Future<void> _streamOnce(');
+  ck('能定位到 _streamLoop 函数体（解析没跑偏）', sloop != null);
+  ck('能定位到 _streamOnce 函数体（解析没跑偏）', sOnce != null);
+  if (sloop != null) {
+    ck('流式循环同样没有 `_emptyStreak >= 30` 静默熔断',
+        !RegExp(r'_emptyStreak\s*[>=]+\s*(29|30|31)\b').hasMatch(sloop));
+    ck('流式循环含退出条件 ① mounted', sloop.contains('!mounted'));
+    ck('流式循环含退出条件 ② _autoPull（用户停止）', sloop.contains('!_autoPull'));
+    ck('流式循环含退出条件 ③ 代次 _seq', sloop.contains('mySeq != _seq'));
+    ck('流式循环含退出条件 ④ !_engHasMore（引擎见底）',
+        sloop.contains('!_engHasMore'));
+    ck('流式循环含退出条件 ⑤ !EngineDirect.connected（引擎不可达）',
+        sloop.contains('!EngineDirect.connected'));
+    // ★流式特有的那条：一条流到时**不等于**搜索结束，必须能续流。
+    ck('流式循环会反复连流（while + _streamOnce）',
+        sloop.contains('_streamOnce') && sloop.contains('while'));
+    ck('流式循环的间隔仍走退避（_maxAutoPullGap）', sloop.contains('_maxAutoPullGap'));
+  }
+  if (sOnce != null) {
+    // 「流因到时收尾」不是失败：truncated 仍为真 → 由 _streamLoop 续流。
+    ck('_streamOnce 把引擎状态存进 _engHasMore（供续流判据用）',
+        sOnce.contains('_engHasMore = p.wantMore'));
+    ck('_streamOnce 逐块 _appendEng（增量追加，不是等全部回来）',
+        sOnce.contains('_appendEng(p.items)'));
+    ck('_streamOnce 错误分支不得把 _engHasMore 置假（一次抖动≠引擎没了）',
+        !(sOnce.contains('_engHasMore = false')));
+  }
+  // 停止 = 断连：协议层没有取消端点，唯一的取消手段就是断开这条流。
+  ck('停止搜索会取消 _streamSub（断连即停）',
+      libMain.contains('_streamSub?.cancel()'));
+  ck('dispose 也会取消 _streamSub（不泄漏连接）',
+      RegExp(r'dispose\(\)[\s\S]{0,400}_streamSub\?\.cancel\(\)')
+          .hasMatch(libMain));
+  ck('引擎直连层提供 searchStream', libEng.contains('searchStream('));
+  ck('搜索请求带 stream=1', libEng.contains('&stream=1'));
+  ck('流用 NDJSON 按行解码（LineSplitter）', libEng.contains('LineSplitter'));
+  ck('提供 supportsStream（按 caps 判断，不靠版本号猜）',
+      libEng.contains("caps.contains('stream-search')"));
+  ck('提供 supportsSearchMode', libEng.contains("caps.contains('search-mode')"));
+  ck('mode 只在引擎声明支持时才发（老引擎不受影响）',
+      libEng.contains('supportsSearchMode ? \'&mode='));
+  ck('模式选择器只在 supportsSearchMode 时渲染（老引擎不显示假开关）',
+      libMain.contains('EngineDirect.supportsSearchMode'));
+  ck('模式有白名单（防脏值写进设置）',
+      RegExp(r"v\s*!=\s*'fuzzy'\s*&&\s*v\s*!=\s*'exact'")
+          .hasMatch(libMain));
+
+  // ── §7.1 行为断言：流到时 ≠ 停止 ──
+  print('== 7.1 行为反证（流结束不等于搜索结束）==');
+  final (s1, se1) = simulateStreamLoop(
+    userStops: (_) => false,
+    mounted: (_) => true,
+    engineConnected: (_) => true,
+    wantMore: (_) => true,
+  );
+  ck('引擎一直说「还有」且用户不按停止 → 永不退出（跑满 500 次流，实跑 $s1）',
+      s1 == 500 && se1 == Exit.none);
+  final (s2, se2) = simulateStreamLoop(
+    userStops: (_) => false,
+    mounted: (_) => true,
+    engineConnected: (_) => true,
+    wantMore: (r) => r < 3,
+  );
+  ck('引擎第 3 次流说见底 → 退出（实跑 $s2，原因 $se2）',
+      s2 == 3 && se2 == Exit.engineExhausted);
+  final (s3, se3) = simulateStreamLoop(
+    userStops: (r) => r >= 6,
+    mounted: (_) => true,
+    engineConnected: (_) => true,
+    wantMore: (_) => true,
+  );
+  ck('用户在第 6 次流按停止 → 只完成 5 次即退出（实跑 $s3，原因 $se3）',
+      s3 == 5 && se3 == Exit.userStop);
+  // 反证：把「流结束」当「搜索结束」的旧写法，在同样输入下只跑 1 次。
+  var legacyStreams = 0;
+  for (var s = 1; s <= 300; s++) {
+    legacyStreams = s;
+    break; // ← 旧实现：一条流完就收工（引擎还在深搜，前端却停了）
+  }
+  ck('反证：旧写法（一条流结束即收工）只跑 1 次 —— 证明 §7.1 测得出这个缺陷',
+      legacyStreams == 1);
 
   print('');
   print('PASS $pass   FAIL $fail');

@@ -257,6 +257,62 @@ POST /thp/m/novel/content
 - 调用方策略：**优先 POST，404/UNSUPPORTED 回落 GET**
 - ref：资源的原始 URL，仅供调试/浏览器兜底，**禁止当 ID 使用**
 
+### 7.3a 搜索模式 `mode`（caps: search-mode）
+
+```
+POST /thp/m/novel/search
+{ "q": "人", "limit": 20, "mode": "exact" }
+GET  /thp/search?type=all&q=人&mode=exact
+```
+
+引擎上游通常**本来就同时具备**「严格匹配」与「宽松关联」两种语义，协议要解决的不是实现它，
+而是**让调用方能够表达自己想要哪一种** —— 否则用户在前端点开关，引擎根本不知道。
+
+| mode | 语义 | 调用方典型场景 |
+| --- | --- | --- |
+| `fuzzy`（默认） | 上游返回什么就是什么（宽松 / 关联） | 默认搜索 |
+| `exact` | **引擎侧再收一道**：结果名或作者必须真的含关键词 | 用户明确要「只搜这个名字」 |
+| `deep` | 不给扫描时长设限，一路扫到所有源见底 | 「搜全」，通常与 `stream=1` 同用 |
+
+- 不传 `mode` ≡ `fuzzy`，**与旧版行为逐字节一致**（协议只增不减）。
+- 传了未登记的 mode → **回落 fuzzy，不报错**（前向兼容：新 mode 由老引擎忽略即可）。
+- `exact` 的过滤发生在**引擎侧、入结果集之前**（不是切片处过滤），否则 `total` 会虚高。
+- `mode` 必须参与引擎侧的搜索缓存键：`exact` 与 `fuzzy` 不是同一份结果集。
+
+### 7.3b 流式搜索 `stream=1`（caps: stream-search）
+
+```
+GET /thp/search?type=all&q=人&mode=deep&stream=1
+→ 200 application/x-ndjson（分块，每行一个信封）
+```
+
+**为什么要有**：不带 `stream` 的搜索是「在时间预算内扫完一轮再一次性返回」，
+实测单轮 12~22s —— 调用方只能干等，用户的体感是「卡半天，然后突然冒出一大堆」。
+带 `stream=1` 后**每扫完一块就立刻推一行**，首条通常 1s 内到，其余在滚。
+
+行格式（形状与兼容端点一致，便于复用同一套解析）：
+
+```json
+{"object":"list","type":"start","mode":"deep","q":"人","items":[],"data":{"items":[]},
+ "total":0,"scannedSources":0,"totalSources":3695,"hasMore":true,"truncated":true}
+{"object":"list","items":[…本块新增…],"data":{"items":[…]},"chunk":1,
+ "total":40,"scannedSources":128,"totalSources":3695,"hasMore":true,"truncated":true}
+{"object":"list","items":[…],"data":{"items":[…]},"chunk":9,"done":true,
+ "total":1832,"scannedSources":3695,"totalSources":3695,"hasMore":false,"truncated":false}
+```
+
+- `items` 是**增量**（本块新扫到的），不是切片 → 调用方按 id 去重后**追加**即可。
+- 首行 `type:"start"` 只报 mode 与源数，界面可立刻画进度骨架，不必空白转圈。
+- 流结束有两种原因：
+  - `done:true` + `truncated:false` —— 真搜完了，可以停；
+  - `streamTimeout:true` + `truncated:true` —— 单流到时（服务端自定，参考 120s）。
+    调用方**立刻再开一个流**从断点续扫，对用户无缝。**这不是「搜索被停了」**，
+    引擎侧的扫描进度（sweepOffset）一直保留在缓存里。
+- **取消 = 断开连接**。服务端向已断开的连接写流会失败并自然收手，
+  不要求额外的取消端点（这与 §14.3「用户主动停才停」的纪律一致）。
+- 不支持 `stream` 的老引擎会把它当普通查询参数忽略，返回单个 JSON ——
+  调用方应先按 caps 里的 `stream-search` 判断，再决定用哪种读法。
+
 ### 7.4 GET /thp/m/{module}/extra
 
 ```
@@ -404,6 +460,8 @@ GET  /thp/blob/{id}              下载（支持 HTTP Range）
 | tools | 支持 AI 工具发现 |
 | library | 资源库身份声明（library 角色必含） |
 | discover | 支持发现页（可选内容） |
+| search-mode | 搜索端点认 `mode` 参数（fuzzy / exact / deep，见 §7.3a） |
+| stream-search | 搜索端点支持 `stream=1` 的 NDJSON 增量流（见 §7.3b） |
 
 规则：未知 caps 一律忽略并展示为"更多能力"；新 caps 只追加登记，防重名。
 

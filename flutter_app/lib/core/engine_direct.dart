@@ -232,6 +232,14 @@ class EngineDirect {
 
   /// 引擎是否支持 /thp/search 分页 + type=all（1.5.5+）
   static bool get supportsPaging => s.supportsPaging;
+
+  /// 引擎认 `mode` 参数（fuzzy/exact/deep）—— caps `search-mode`。
+  /// 老引擎（1.12.0 之前）不带这个 cap，前端就**不显示**模式开关，
+  /// 而不是显示了一个点了没反应的控件。
+  static bool get supportsSearchMode => caps.contains('search-mode');
+
+  /// 引擎支持 `stream=1` 的 NDJSON 增量流 —— caps `stream-search`。
+  static bool get supportsStream => caps.contains('stream-search');
   static String get lastError => s.message;
 
   static bool _autoConnecting = false;
@@ -778,9 +786,17 @@ class EngineDirect {
     int limit = 40,
     int budgetSec = 25,
     bool restart = false,
+    String mode = 'fuzzy',
+    bool deep = false,
   }) async {
+    // mode 只在引擎声明了 search-mode 时才发 —— 老引擎忽略未知参数虽无副作用，
+    // 但少发一个参数就少一处"版本漂移时行为不一致"的可能。
+    final modeQ = supportsSearchMode ? '&mode=${Uri.encodeComponent(mode)}' : '';
+    // deep：让引擎忽略时间预算上限（协议里等价于 full=1），配流式一路扫到底。
+    final deepQ = (deep || mode == 'deep') ? '&full=1' : '';
     final path = '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
-        '&page=$page&limit=$limit&budget=$budgetSec${restart ? '&restart=1' : ''}';
+        '&page=$page&limit=$limit&budget=$budgetSec$modeQ$deepQ'
+        '${restart ? '&restart=1' : ''}';
     try {
       final r = await _get(path, false, _searchTimeoutSec);
       return SearchPage.from(r);
@@ -795,12 +811,112 @@ class EngineDirect {
       }
       await _get(
           '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
-          '&page=1&limit=$limit&budget=$budgetSec',
+          '&page=1&limit=$limit&budget=$budgetSec$modeQ$deepQ',
           false,
           _searchTimeoutSec);
       final r = await _get(path, false, _searchTimeoutSec);
       return SearchPage.from(r);
     }
+  }
+
+  /// ★流式搜索（引擎 1.12.0+，caps `stream-search`）。
+  ///
+  /// 返回一个**持续产出**的流：引擎每扫完一块就推一行 NDJSON，这里逐行解成
+  /// [SearchPage] 往上游吐（`items` 是该块的**增量**）。调用方 `listen` 里
+  /// 直接 `_append`+去重即可，不需要自己翻页。
+  ///
+  /// 与 [searchPage] 的关系不是替换而是**并存**：
+  ///   · 引擎支持流式 → 用它。首条通常 1s 内到，而不是干等 12~22s 才一次性冒出来。
+  ///   · 引擎不支持 → 调用方继续用 [searchPage] 翻页（老行为不变）。
+  ///
+  /// 取消 = `sub.cancel()` → 底层 socket 断开 → 引擎侧写管道失败自然收手。
+  /// 这正是「用户按停」在协议层的表达，不需要额外的取消端点。
+  static Stream<SearchPage> searchStream({
+    required String type,
+    required String q,
+    String mode = 'fuzzy',
+    int limit = 40,
+    int budgetSec = 25,
+    bool restart = false,
+  }) {
+    final ctl = StreamController<SearchPage>();
+    http.Client? cli;
+    StreamSubscription<List<int>>? sub;
+    var closed = false;
+
+    void finish() {
+      if (closed) return;
+      closed = true;
+      sub?.cancel();
+      cli?.close();
+      if (!ctl.isClosed) ctl.close();
+    }
+
+    () async {
+      if (url.isEmpty) {
+        ctl.addError(Exception('未连接引擎'));
+        finish();
+        return;
+      }
+      try {
+        cli = _client();
+        final deepQ = (mode == 'deep') ? '&full=1' : '';
+        final path = '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
+            '&limit=$limit&budget=$budgetSec'
+            '&mode=${Uri.encodeComponent(mode)}$deepQ'
+            '${restart ? '&restart=1' : ''}&stream=1';
+        final req = http.Request('GET', Uri.parse('$url$path'));
+        final res = await cli!.send(req).timeout(const Duration(seconds: 20));
+        if (res.statusCode != 200) {
+          final body = await res.stream.bytesToString();
+          ctl.addError(HttpException('HTTP ${res.statusCode}：'
+              '${body.length > 200 ? body.substring(0, 200) : body}'));
+          finish();
+          return;
+        }
+        // ★NDJSON：按行切。BufferingStreamedResponse 已经做过一层缓冲，
+        //   这里再挂 utf8.decoder + LineSplitter，天然处理"半个多字节字符跨块"。
+        final lines = res.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
+        final doneCtl = Completer<void>();
+        sub = lines.listen((line) {
+          final t = line.trim();
+          if (t.isEmpty) return;
+          if (closed) return;
+          try {
+            final j = jsonDecode(t);
+            if (j is! Map) return;
+            final m = Map<String, dynamic>.from(j);
+            if (m['ok'] == false) {
+              final em = m['error'];
+              ctl.addError(Exception(
+                  '${em is Map ? (em['message'] ?? em['code']) : em}'));
+              return;
+            }
+            // 首行 type:"start" 只报进度，没有条 —— 也要吐出去，
+            // 否则界面在"连上了但还没扫出东西"这段时间是空白的（用户以为卡了）。
+            ctl.add(SearchPage.from({'data': m, 'raw': m}));
+          } catch (_) {
+            // 单行解析失败不致命：继续读下一行（流还在）
+          }
+        }, onError: (Object e, StackTrace st) {
+          if (!ctl.isClosed) ctl.addError(e);
+          if (!doneCtl.isCompleted) doneCtl.complete();
+        }, onDone: () {
+          if (!doneCtl.isCompleted) doneCtl.complete();
+        }, cancelOnError: false);
+        await doneCtl.future;
+        finish();
+      } catch (e) {
+        if (!ctl.isClosed) ctl.addError(e);
+        finish();
+      }
+    }();
+
+    // 调用方取消（用户按停）→ 断连
+    ctl.onCancel = finish;
+    return ctl.stream;
   }
 
   /// 目录/选集
