@@ -1,0 +1,18 @@
+{
+  "id": "recipe",
+  "name": "菜谱",
+  "icon": {
+    "app": "restaurant_menu",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "菜谱"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
