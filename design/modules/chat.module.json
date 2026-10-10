@@ -1,0 +1,18 @@
+{
+  "id": "chat",
+  "name": "聊天",
+  "icon": {
+    "app": "forum_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "聊天"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
