@@ -8473,100 +8473,105 @@ class _Vp extends State<VideoPlayPage> {
 // v4.1: 网站式底部导航 + 账号体系 + 下载中心 + 自动更新 + 本地播放器
 // ═══════════════════════════════════════════════════════════════
 
-// 模块注册表(与网站一致): key → (名称, 图标, 页面, 本地导入类型)
+// 模块注册表(与网站一致): key → (名称, 图标, 页面构造器, 本地导入类型)
 class ModuleDef {
   final String name;
   final IconData icon;
-  final Widget page;
+  final Widget Function() _build;
   final String? localKind;
-  const ModuleDef(this.name, this.icon, this.page, {this.localKind});
+  ModuleDef(this.name, this.icon, this._build, {this.localKind});
+
+  Widget? _cached;
+
+  /// ★阶段3 模块懒构造：首页只装导航壳 —— kModules 里存的是**闭包**，
+  /// 模块页首次进入才构造（State.initState 的加载/扫描也推迟到那一刻）。
+  /// 构造后缓存复用，切走再回来 State 不重建（与 _KeepAlivePage 语义一致）。
+  Widget get page => _cached ??= _build();
 }
 
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
-  '搜索': ModuleDef('搜索', Icons.search, const SearchSection()),
-  '小说': ModuleDef('小说', Icons.menu_book, const NovelSection(),
+  '搜索': ModuleDef('搜索', Icons.search,() => (const SearchSection())),
+  '小说': ModuleDef('小说', Icons.menu_book,() => (const NovelSection()),
       localKind: 'novel'),
-  '漫画': ModuleDef('漫画', Icons.photo_library, const ComicSection(),
+  '漫画': ModuleDef('漫画', Icons.photo_library,() => (const ComicSection()),
       localKind: 'comic'),
-  '视频': ModuleDef('视频', Icons.play_circle, const VideoSection(),
+  '视频': ModuleDef('视频', Icons.play_circle,() => (const VideoSection()),
       localKind: 'video'),
-  '音乐': ModuleDef('音乐', Icons.music_note, const MusicSection(),
+  '音乐': ModuleDef('音乐', Icons.music_note,() => (const MusicSection()),
       localKind: 'music'),
-  'AI': const ModuleDef('AI', Icons.smart_toy_outlined, AiSection()),
+  'AI': ModuleDef('AI', Icons.smart_toy_outlined,() => (AiSection())),
   // ★4.44.0 端网：前端/后端/插件/DSA 任意组合互相插线的地方。
   //   放在「核心」分类紧挨 AI —— 它是 AI 能力的延伸（让模型能指挥别的端）。
-  '端网': const ModuleDef('端网', Icons.hub_outlined, PeerPage()),
-  '聊天': const ModuleDef('聊天', Icons.forum_outlined, ChatHomePage()),
-  '游戏': const ModuleDef('游戏', Icons.sports_esports_outlined, GamesPage()),
-  '社区': const ModuleDef('社区', Icons.groups_outlined, CommunityPage()),
-  '论坛': const ModuleDef('论坛', Icons.article_outlined, ForumPage()),
-  '直播': const ModuleDef('直播', Icons.live_tv, LivePage()),
-  '浏览器': const ModuleDef('浏览器', Icons.language, BrowserPage()),
-  '相册': const ModuleDef('相册', Icons.photo_library_outlined, GalleryPage()),
-  '文件': const ModuleDef('文件', Icons.folder_outlined, FilesPage()),
-  '我的': ModuleDef('我的', Icons.person_outline, const ProfilePage()),
+  '端网': ModuleDef('端网', Icons.hub_outlined,() => (PeerPage())),
+  '聊天': ModuleDef('聊天', Icons.forum_outlined,() => (ChatHomePage())),
+  '游戏': ModuleDef('游戏', Icons.sports_esports_outlined,() => (GamesPage())),
+  '社区': ModuleDef('社区', Icons.groups_outlined,() => (CommunityPage())),
+  '论坛': ModuleDef('论坛', Icons.article_outlined,() => (ForumPage())),
+  '直播': ModuleDef('直播', Icons.live_tv,() => (LivePage())),
+  '浏览器': ModuleDef('浏览器', Icons.language,() => (BrowserPage())),
+  '相册': ModuleDef('相册', Icons.photo_library_outlined,() => (GalleryPage())),
+  '文件': ModuleDef('文件', Icons.folder_outlined,() => (FilesPage())),
+  '我的': ModuleDef('我的', Icons.person_outline,() => (const ProfilePage())),
   // ═══ 规划文档 v2.0 全量模块框架(骨架页, 功能按版本逐步落地) ═══
   // ── Work 模式 ──
   // ★原名「作业中心」极易被理解成"学生写作业"，实际是本地**任务调度运行时**
   //   (作业队列/步骤回放/定时调度/模板/归档/待确认审批)，故改名。
-  '自动化任务': ModuleDef('自动化任务', Icons.auto_mode_outlined, const JobCenterPage()),
+  '自动化任务': ModuleDef('自动化任务', Icons.auto_mode_outlined,() => (const JobCenterPage())),
   // ── 私有数据 ──
-  '笔记': const ModuleDef('笔记', Icons.edit_note, NotesPage()),
-  '待办': const ModuleDef('待办', Icons.check_circle_outline, TodoPage()),
-  '录音机': const ModuleDef('录音机', Icons.mic_none, RecorderPage()),
-  '日历': const ModuleDef('日历', Icons.calendar_month_outlined, CalendarPage()),
-  '提醒中心': const ModuleDef('提醒中心', Icons.alarm, RemindersPage()),
-  '日记': const ModuleDef('日记', Icons.book_outlined, DiaryPage()),
-  '记账': const ModuleDef(
-      '记账', Icons.account_balance_wallet_outlined, LedgerPage()),
-  '剪贴板': const ModuleDef('剪贴板', Icons.content_paste, ClipboardPage()),
-  '书签': const ModuleDef('书签', Icons.bookmark_border, BookmarksPage()),
-  '代码片段': const ModuleDef('代码片段', Icons.code, SnippetsPage()),
-  'Markdown': const ModuleDef('Markdown', Icons.text_fields, MarkdownPage()),
-  '健康记录': const ModuleDef('健康记录', Icons.favorite_border, HealthPage()),
+  '笔记': ModuleDef('笔记', Icons.edit_note,() => (NotesPage())),
+  '待办': ModuleDef('待办', Icons.check_circle_outline,() => (TodoPage())),
+  '录音机': ModuleDef('录音机', Icons.mic_none,() => (RecorderPage())),
+  '日历': ModuleDef('日历', Icons.calendar_month_outlined,() => (CalendarPage())),
+  '提醒中心': ModuleDef('提醒中心', Icons.alarm,() => (RemindersPage())),
+  '日记': ModuleDef('日记', Icons.book_outlined,() => (DiaryPage())),
+  '记账': ModuleDef(
+      '记账', Icons.account_balance_wallet_outlined,() => (LedgerPage())),
+  '剪贴板': ModuleDef('剪贴板', Icons.content_paste,() => (ClipboardPage())),
+  '书签': ModuleDef('书签', Icons.bookmark_border,() => (BookmarksPage())),
+  '代码片段': ModuleDef('代码片段', Icons.code,() => (SnippetsPage())),
+  'Markdown': ModuleDef('Markdown', Icons.text_fields,() => (MarkdownPage())),
+  '健康记录': ModuleDef('健康记录', Icons.favorite_border,() => (HealthPage())),
   '通讯录备份':
-      const ModuleDef('通讯录备份', Icons.contacts_outlined, ContactsBackupPage()),
-  '短信备份': const ModuleDef('短信备份', Icons.sms_outlined, SmsBackupPage()),
+      ModuleDef('通讯录备份', Icons.contacts_outlined,() => (ContactsBackupPage())),
+  '短信备份': ModuleDef('短信备份', Icons.sms_outlined,() => (SmsBackupPage())),
   // ── 内容消费 ──
-  '播客': const ModuleDef('播客', Icons.podcasts, PodcastPage()),
-  '有声书': ModuleDef('有声书', Icons.headphones_outlined, AudiobookPage()),
-  '广播': const ModuleDef('广播', Icons.radio, RadioPage()),
-  '短剧': ModuleDef('短剧', Icons.movie_outlined, ShortPlayPage()),
-  '壁纸': const ModuleDef('壁纸', Icons.wallpaper, WallpaperPage()),
-  '资讯': const ModuleDef('资讯', Icons.newspaper, NewsPage()),
-  '天气与快递': const ModuleDef('天气与快递', Icons.wb_sunny_outlined, WeatherPage()),
-  '菜谱': const ModuleDef('菜谱', Icons.restaurant_menu, RecipePage()),
+  '播客': ModuleDef('播客', Icons.podcasts,() => (PodcastPage())),
+  '有声书': ModuleDef('有声书', Icons.headphones_outlined,() => (AudiobookPage())),
+  '广播': ModuleDef('广播', Icons.radio,() => (RadioPage())),
+  '短剧': ModuleDef('短剧', Icons.movie_outlined,() => (ShortPlayPage())),
+  '壁纸': ModuleDef('壁纸', Icons.wallpaper,() => (WallpaperPage())),
+  '资讯': ModuleDef('资讯', Icons.newspaper,() => (NewsPage())),
+  '天气与快递': ModuleDef('天气与快递', Icons.wb_sunny_outlined,() => (WeatherPage())),
+  '菜谱': ModuleDef('菜谱', Icons.restaurant_menu,() => (RecipePage())),
   // ★原名「学习工具」名不副实：页面里只有"单词卡/背诵卡"一种功能，故改名。
-  '记忆卡': const ModuleDef('记忆卡', Icons.style_outlined, StudyPage()),
-  '课程表': const ModuleDef('课程表', Icons.table_chart_outlined, TimetablePage()),
+  '记忆卡': ModuleDef('记忆卡', Icons.style_outlined,() => (StudyPage())),
+  '课程表': ModuleDef('课程表', Icons.table_chart_outlined,() => (TimetablePage())),
   // ── 工具效率 ──
-  '翻译': const ModuleDef('翻译', Icons.translate, TranslatePage()),
-  '扫描仪': ModuleDef('扫描仪', Icons.document_scanner_outlined, ScannerPage()),
-  '二维码': const ModuleDef('二维码', Icons.qr_code_scanner, QrPage()),
-  '悬浮便签': const ModuleDef('悬浮便签', Icons.note_alt_outlined, QuickNotePage()),
-  '计算器': const ModuleDef('计算器', Icons.calculate_outlined, CalcPage()),
-  '白板': const ModuleDef('白板', Icons.draw_outlined, WhiteboardPage()),
+  '翻译': ModuleDef('翻译', Icons.translate,() => (TranslatePage())),
+  '扫描仪': ModuleDef('扫描仪', Icons.document_scanner_outlined,() => (ScannerPage())),
+  '二维码': ModuleDef('二维码', Icons.qr_code_scanner,() => (QrPage())),
+  '悬浮便签': ModuleDef('悬浮便签', Icons.note_alt_outlined,() => (QuickNotePage())),
+  '计算器': ModuleDef('计算器', Icons.calculate_outlined,() => (CalcPage())),
+  '白板': ModuleDef('白板', Icons.draw_outlined,() => (WhiteboardPage())),
   '文本工具箱':
-      const ModuleDef('文本工具箱', Icons.text_snippet_outlined, TextToolsPage()),
-  '传感器': const ModuleDef('传感器', Icons.sensors, SensorPage()),
-  '文件互传': ModuleDef('文件互传', Icons.send_to_mobile_outlined, FileSharePage()),
-  '远程打印': ModuleDef('远程打印', Icons.print_outlined, const RemotePrintPage()),
+      ModuleDef('文本工具箱', Icons.text_snippet_outlined,() => (TextToolsPage())),
+  '传感器': ModuleDef('传感器', Icons.sensors,() => (SensorPage())),
+  '文件互传': ModuleDef('文件互传', Icons.send_to_mobile_outlined,() => (FileSharePage())),
+  '远程打印': ModuleDef('远程打印', Icons.print_outlined,() => (const RemotePrintPage())),
   // ── 家庭/多端 ──
-  '共享相册': ModuleDef('共享相册', Icons.photo_library_outlined, SharedAlbumPage()),
-  '共享清单': ModuleDef('共享清单', Icons.checklist_outlined, SharedListPage()),
-  '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined, HomeCinemaPage()),
-  '家庭音乐库': ModuleDef('家庭音乐库', Icons.library_music_outlined, HomeMusicPage()),
-  '摄像头': ModuleDef('摄像头', Icons.videocam_outlined, CameraPage()),
-  '智能家居': ModuleDef('智能家居', Icons.home_outlined, const SmartHomePage()),
-  '设备互联': ModuleDef('设备互联', Icons.devices_outlined, DeviceLinkPage()),
-  '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined,
-      const CalendarPage(storageKey: 'family_calendar_events')),
+  '共享相册': ModuleDef('共享相册', Icons.photo_library_outlined,() => (SharedAlbumPage())),
+  '共享清单': ModuleDef('共享清单', Icons.checklist_outlined,() => (SharedListPage())),
+  '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined,() => (HomeCinemaPage())),
+  '家庭音乐库': ModuleDef('家庭音乐库', Icons.library_music_outlined,() => (HomeMusicPage())),
+  '摄像头': ModuleDef('摄像头', Icons.videocam_outlined,() => (CameraPage())),
+  '智能家居': ModuleDef('智能家居', Icons.home_outlined,() => (const SmartHomePage())),
+  '设备互联': ModuleDef('设备互联', Icons.devices_outlined,() => (DeviceLinkPage())),
+  '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined,() => (const CalendarPage(storageKey: 'family_calendar_events'))),
   // ── 聚合入口(一个模块装一类, 导航栏不再排长队) ──
-  '工具箱': const ModuleDef(
+  '工具箱': ModuleDef(
       '工具箱',
-      Icons.construction_outlined,
-      ModuleHubPage(
+      Icons.construction_outlined,() => (ModuleHubPage(
           name: '工具箱',
           icon: Icons.construction_outlined,
           desc: '效率工具聚合: 翻译/扫描/二维码/计算器等一处直达',
@@ -8581,11 +8586,10 @@ final Map<String, ModuleDef> kModules = {
             '传感器',
             '文件互传',
             '远程打印'
-          ])),
-  '家庭中心': const ModuleDef(
+          ]))),
+  '家庭中心': ModuleDef(
       '家庭中心',
-      Icons.home_work_outlined,
-      ModuleHubPage(
+      Icons.home_work_outlined,() => (ModuleHubPage(
           name: '家庭中心',
           icon: Icons.home_work_outlined,
           desc: '家庭/多端聚合: 共享相册/影院/智能家居等一处直达',
@@ -8598,41 +8602,37 @@ final Map<String, ModuleDef> kModules = {
             '智能家居',
             '设备互联',
             '家庭日历'
-          ])),
+          ]))),
   // ★2026-09-19 用户反馈"功能全拆开了、找的时候非常麻烦"→ 按**同一使用场景**合并：
   //   只有"同一件事的不同步骤/同类物"才合进一个入口，避免又造出一堆平级模块。
-  '学习中心': const ModuleDef(
+  '学习中心': ModuleDef(
       '学习中心',
-      Icons.school_outlined,
-      ModuleHubPage(
+      Icons.school_outlined,() => (ModuleHubPage(
           name: '学习中心',
           icon: Icons.school_outlined,
           desc: '学习聚合: 记忆卡(背单词/问答卡) + 课程表',
-          children: ['记忆卡', '课程表'])),
-  '音频中心': const ModuleDef(
+          children: ['记忆卡', '课程表']))),
+  '音频中心': ModuleDef(
       '音频中心',
-      Icons.headphones,
-      ModuleHubPage(
+      Icons.headphones,() => (ModuleHubPage(
           name: '音频中心',
           icon: Icons.headphones,
           desc: '「听」的聚合: 播客/有声书/广播电台一处直达（音乐播放器仍在「音乐」）',
-          children: ['播客', '有声书', '广播'])),
-  '记录中心': const ModuleDef(
+          children: ['播客', '有声书', '广播']))),
+  '记录中心': ModuleDef(
       '记录中心',
-      Icons.edit_note,
-      ModuleHubPage(
+      Icons.edit_note,() => (ModuleHubPage(
           name: '记录中心',
           icon: Icons.edit_note,
           desc: '随手写与临时存: 笔记/日记/便签/Markdown/代码片段/书签/剪贴板',
-          children: ['笔记', '日记', '悬浮便签', 'Markdown', '代码片段', '书签', '剪贴板'])),
-  '备份迁移': const ModuleDef(
+          children: ['笔记', '日记', '悬浮便签', 'Markdown', '代码片段', '书签', '剪贴板']))),
+  '备份迁移': ModuleDef(
       '备份迁移',
-      Icons.settings_backup_restore,
-      ModuleHubPage(
+      Icons.settings_backup_restore,() => (ModuleHubPage(
           name: '备份迁移',
           icon: Icons.settings_backup_restore,
           desc: '换机/存档: 通讯录与短信备份一处直达',
-          children: ['通讯录备份', '短信备份'])),
+          children: ['通讯录备份', '短信备份']))),
 };
 
 // ═══ 模块改名映射(旧键 → 新键) —— 已移入 core/module_registry.dart（键域规范化归注册表管）═══
