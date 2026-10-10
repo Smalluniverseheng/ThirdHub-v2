@@ -1,0 +1,18 @@
+{
+  "id": "wallpaper",
+  "name": "壁纸",
+  "icon": {
+    "app": "wallpaper",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "壁纸"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
