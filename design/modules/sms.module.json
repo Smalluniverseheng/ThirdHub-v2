@@ -1,0 +1,18 @@
+{
+  "id": "sms",
+  "name": "短信备份",
+  "icon": {
+    "app": "sms_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "短信备份"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
