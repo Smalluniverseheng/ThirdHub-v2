@@ -1,0 +1,18 @@
+{
+  "id": "podcast",
+  "name": "播客",
+  "icon": {
+    "app": "podcasts",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "播客"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
