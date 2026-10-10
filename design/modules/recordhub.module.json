@@ -1,0 +1,26 @@
+{
+  "id": "recordhub",
+  "name": "记录中心",
+  "icon": {
+    "app": "edit_note",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [
+    "notes",
+    "diary",
+    "quicknote",
+    "markdown",
+    "snippets",
+    "bookmarks",
+    "clipboard"
+  ],
+  "entry": {
+    "app": [
+      "记录中心"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
