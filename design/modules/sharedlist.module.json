@@ -1,0 +1,18 @@
+{
+  "id": "sharedlist",
+  "name": "共享清单",
+  "icon": {
+    "app": "checklist_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "共享清单"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
