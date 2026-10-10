@@ -20,6 +20,10 @@
 
 import 'package:flutter/material.dart';
 
+/// 断点/窗口档令牌在 `breakpoints.dart`（纯 Dart，供 tool/adaptive_selfcheck
+/// 做行为断言）—— 这里转出，既有 `import design_tokens.dart` 的用法不变。
+export 'breakpoints.dart';
+
 /// 间距量表（8 的倍数，沿用 STYLE_GUIDE 第 3 条）。
 class Gap {
   Gap._();
