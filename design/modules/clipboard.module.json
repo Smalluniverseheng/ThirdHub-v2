@@ -1,0 +1,18 @@
+{
+  "id": "clipboard",
+  "name": "剪贴板",
+  "icon": {
+    "app": "content_paste",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "剪贴板"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
