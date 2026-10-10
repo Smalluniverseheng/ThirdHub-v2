@@ -1,0 +1,18 @@
+{
+  "id": "radio",
+  "name": "广播",
+  "icon": {
+    "app": "radio",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "广播"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
