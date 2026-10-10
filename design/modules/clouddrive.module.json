@@ -1,0 +1,16 @@
+{
+  "id": "clouddrive",
+  "name": "云盘",
+  "icon": {
+    "app": null,
+    "web": "folder"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "clouddrive",
+    "webLoad": "./modules/board-clouddrive.js",
+    "webFn": "renderCloudDriveBoard"
+  }
+}
