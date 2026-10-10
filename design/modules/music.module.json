@@ -1,0 +1,16 @@
+{
+  "id": "music",
+  "name": "音乐",
+  "icon": {
+    "app": null,
+    "web": "music"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "music",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
