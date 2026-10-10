@@ -41,6 +41,13 @@ const exemptFiles = <String>[
   'pro_ai.dart', // "摘要引擎" 提示词
   'pro_browser.dart', // "翻译引擎" 提示词
   'browser_page.dart', // "搜索引擎"/"切换搜索引擎"
+
+  // ★ 2026-10-10 加：changelog_logic.dart 的 synonym 表是**识别用的历史 token**，
+  //   只参与 contains() 归类、从不显示给用户（显示用模块名「搜索」）。
+  //   它必须保留「书源/图源」等旧词，否则 273 条历史 changelog 条目
+  //   （如 4.42.0「书源导入提速」）归不进任何模块桶，changelog_selfcheck 会 FAIL。
+  //   两个闸门的要求都成立 → 与 job_center.dart 同类，作整文件豁免。
+  'changelog_logic.dart',
 ];
 
 String stripLineComment(String line) {
