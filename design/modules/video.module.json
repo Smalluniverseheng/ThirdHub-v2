@@ -1,0 +1,16 @@
+{
+  "id": "video",
+  "name": "视频",
+  "icon": {
+    "app": null,
+    "web": "film"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "video",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
