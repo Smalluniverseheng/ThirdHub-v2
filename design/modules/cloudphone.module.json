@@ -1,0 +1,16 @@
+{
+  "id": "cloudphone",
+  "name": "云设备",
+  "icon": {
+    "app": null,
+    "web": "phone"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "cloudphone",
+    "webLoad": "./modules/board-cloudphone.js",
+    "webFn": "renderCloudPhoneBoard"
+  }
+}
