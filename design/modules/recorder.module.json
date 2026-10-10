@@ -1,0 +1,18 @@
+{
+  "id": "recorder",
+  "name": "录音机",
+  "icon": {
+    "app": "mic_none",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "录音机"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
