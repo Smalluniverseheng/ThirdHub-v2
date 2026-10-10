@@ -1,0 +1,52 @@
+# ThirdHub v4 家庭后端 · docker-compose（NAS / Linux 服务器直接用这个）
+# ============================================================
+#  适用：群晖 / 威联通 / 极空间 / TrueNAS / 任意 Linux(Docker)
+#
+#  用法：
+#    1) 把 server/ 目录传到 NAS（或 git clone）
+#    2) cd server && docker compose up -d
+#    3) 浏览器开 https://<NAS的IP>:9527  （自签证书，点「继续访问」）
+#
+#  真机验证过：容器内 node:22-alpine + cheerio + bonjour-service，监听 0.0.0.0:9527
+# ============================================================
+services:
+  thirdhub-backend:
+    build: .
+    image: thirdhub-backend:0.8.7
+    container_name: thirdhub-backend
+    restart: unless-stopped
+
+    ports:
+      # IPv4 + IPv6 双栈对外（宿主是 IPv6 环境时可直接用公网 v6 访问）
+      - "9527:9527"
+
+    volumes:
+      # ★ 数据持久化：证书/密钥/下载/会话/设备表都在这里
+      #   挂到你 NAS 上想放的目录即可（下面两个写法二选一）
+      - ./data:/data
+      # - /volume1/docker/thirdhub:/data      # 群晖常见路径
+
+    environment:
+      - TH_PORT=9527
+      - TH_DATA_DIR=/data
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+      # 【可选】想让引擎/前端在局域网自动被 mDNS 发现，保持默认即可；
+      #        若 NAS 网络模式为 host，发现更可靠（见下 networks 注释）
+
+    # 【可选·推荐】NAS 上若想 mDNS/局域网发现最稳，改用 host 网络：
+    #   （注意：host 模式下 ports 映射会失效，端口即宿主端口）
+    # network_mode: host
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://127.0.0.1:9527/v1/meta"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
