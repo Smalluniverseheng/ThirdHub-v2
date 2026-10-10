@@ -48,6 +48,7 @@ import 'core/mini_modules9.dart';
 import 'core/mini_modules10.dart';
 import 'core/mini_modules11.dart';
 import 'core/neu.dart';
+import 'core/adaptive.dart';
 import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
@@ -5688,7 +5689,7 @@ class _Sh extends State<ShelfPage> {
   @override
   Widget build(BuildContext c) {
     final mOff = manual != null ? 1 : 0; // 说明书占第一格
-    return loading
+    final list = loading
         ? const Center(child: CircularProgressIndicator())
         : (mOff == 0 && items.isEmpty && local.isEmpty)
             ? Center(
@@ -5825,11 +5826,7 @@ class _Sh extends State<ShelfPage> {
                   final prog =
                       AppSettings.p.getInt('progress_${b.bookUrl}') ?? -1;
                   return GestureDetector(
-                      onTap: () => Navigator.push(
-                              c,
-                              MaterialPageRoute(
-                                  builder: (_) => widget.builder(b)))
-                          .then((_) => load()),
+                      onTap: () => _openDetail(c, b),
                       onLongPress: () async {
                         // 长按给一整套动作: 下载/续传、导出、删离线内容、移出书架。
                         // 此前这里只有「移出书架」一个确认框 —— 想离线还得先进详情页。
@@ -5948,6 +5945,28 @@ class _Sh extends State<ShelfPage> {
                                         : Colors.grey)),
                           ]));
                 });
+    // ★阶段2 展开态主从双栏：左书架 | 右详情（选中的书）。
+    // compact/medium 保持整页推入不变；只在 expanded（≥840）分栏，双栏避开铰链。
+    if (ScreenFit.cls != WindowClass.expanded) return list;
+    return MasterDetailFrame(
+        master: list,
+        detail: sel == null
+            ? Center(
+                child: Text(tr('点选左侧的书，详情在这里展开'),
+                    style: const TextStyle(color: Colors.grey, fontSize: 13)))
+            : widget.builder(sel!));
+  }
+
+  /// ★阶段2 主从双栏：展开态点书不再压栈，改为右侧详情栏内联显示。
+  Book? sel;
+
+  void _openDetail(BuildContext c, Book b) {
+    if (ScreenFit.cls == WindowClass.expanded) {
+      setState(() => sel = b);
+      return;
+    }
+    Navigator.push(c, MaterialPageRoute(builder: (_) => widget.builder(b)))
+        .then((_) => load());
   }
 
   /// 内置《使用说明书》格子：点开即读；长按可把它移出书架（移除是记住的）。
@@ -9358,6 +9377,8 @@ class _RootNavState extends State<RootNav> {
     ]);
     // 折叠屏展开/平板: 左侧 NavigationRail 双栏; 手机/手表: 底部导航
     if (ScreenFit.isWide) {
+      // ★阶段2 铰链感知：铰链落在侧栏区时内容整体右移让开铰链（不压缝）。
+      final hingeGap = railHingeGap(hingeOf(MediaQuery.of(c)));
       return Scaffold(
           body: Row(children: [
         NavigationRail(
@@ -9377,6 +9398,7 @@ class _RootNavState extends State<RootNav> {
                     label: Text(tr(kModules[k]!.name)))
             ]),
         const VerticalDivider(width: 1),
+        if (hingeGap > 0) SizedBox(width: hingeGap),
         Expanded(
             child: Center(
                 child: ConstrainedBox(
@@ -9434,9 +9456,10 @@ class _RootNavState extends State<RootNav> {
               Navigator.push(context, smoothRoute(page));
             });
 
-    showModalBottomSheet(
+    // ★阶段2 浮层停靠：手机仍是底部弹层；medium/expanded（平板/折叠屏展开/桌面）
+    // 改停靠式居中面板（dynamic_layouts 的 showAdaptiveModal，不手写两套分支）。
+    showAdaptiveSheet(
         context: context,
-        showDragHandle: true,
         builder: (c2) => SafeArea(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
               Padding(
@@ -12182,14 +12205,23 @@ void registerProBridges() {
 class ScreenFit {
   static double width(BuildContext c) => MediaQuery.of(c).size.width;
   static bool get isWatch => _w < 360;
-  static bool get isWide => _w >= 720;
+
+  /// ★阶段2：三档自造阈值（360/720）升级为 M3 窗口尺寸类（tokens.json 断点）。
+  /// compact ≤599 ｜ medium 600–839 ｜ expanded ≥840。判档逻辑在 design_tokens.dart。
+  static WindowClass get cls => windowClassOf(_w);
+
+  /// 侧栏形态（NavigationRail）从 medium 起 —— M3 规范即如此（旧阈值 720 偏保守）。
+  static bool get isWide => _w > Breakpoints.compactMax;
   static double _w = 400;
   static void update(BuildContext c) {
     _w = width(c);
   }
 
-  static double get pad => isWatch ? 8 : 14;
-  static double contentWidth(double w) => w >= 720 ? 900 : w;
+  /// 页面留白随档位走：手表 8 / compact 14 / medium 起 20。
+  static double get pad =>
+      isWatch ? 8 : (cls == WindowClass.compact ? 14 : 20);
+  static double contentWidth(double w) =>
+      w >= Breakpoints.expandedMin ? 900 : w;
 }
 
 // ── 子页面: 账号 ──
