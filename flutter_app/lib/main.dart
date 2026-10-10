@@ -48,8 +48,11 @@ import 'core/mini_modules9.dart';
 import 'core/mini_modules10.dart';
 import 'core/mini_modules11.dart';
 import 'core/neu.dart';
+import 'core/design_tokens.dart';
+import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/member_levels.dart';
 import 'core/module_registry.dart';
 import 'core/changelog.dart';
 import 'core/media_formats.dart';
@@ -457,7 +460,30 @@ class AppSettings {
       p.getString('theme_mode') ?? 'system'; // system|dark|light 默认跟随系统
   static int get accentColor =>
       p.getInt('accent_color') ?? 0xFF3B5BFD; // 强调色(网页端蓝)
+
+  /// ★ 皮肤 ID（design_tokens.dart 的 `Skin`）—— "UI 切换"的落地入口。
+  ///
+  /// 与 `accentColor` 的关系：accentColor 只换强调色、其余不动；
+  /// skin 换的是**整套**（强调色 + 明暗底色倾向 + 动效强度）。
+  /// 两者并存是因为旧版设置页已在用 accentColor，不能直接删（会丢用户旧配置）。
+  static String get skinId => p.getString('skin_id') ?? 'ocean';
+  static Future<void> setSkin(String v) async {
+    await p.setString('skin_id', v);
+    await sync();
+    onChanged?.call();
+  }
+
   static bool get splashAnim => p.getBool('splash_anim') ?? true; // 开屏动画
+
+  /// 动效强度：'full'(默认，带过冲) | 'calm'(轻) | 'off'(几乎无)。
+  /// 对应 2025 大厂普遍提供的"动效强度三档"。
+  static String get motionLevel => p.getString('motion_level') ?? 'full';
+  static Future<void> setMotionLevel(String v) async {
+    await p.setString('motion_level', v);
+    await sync();
+    onChanged?.call();
+  }
+
   static Future<void> setThemeMode(String v) async {
     await p.setString('theme_mode', v);
     await sync();
@@ -1547,7 +1573,11 @@ class _ThAppState extends State<ThApp> {
   @override
   void initState() {
     super.initState();
+    // ★ 把用户选的动效档位注入设计系统（design_tokens 不能依赖插件，
+    //   所以走静态注入）。放在 initState 里，保证第一帧就是对的档位。
+    Motion.level = AppSettings.motionLevel;
     AppSettings.onChanged = () {
+      Motion.level = AppSettings.motionLevel;
       if (mounted) setState(() {});
     };
     I18n.instance.addListener(_onLang);
@@ -1587,35 +1617,23 @@ class _ThAppState extends State<ThApp> {
     }
     final accent = Color(AppSettings.accentColor);
     final mode = AppSettings.themeModeStr;
+    // ★ 皮肤：优先用新的 `Skin` 体系（整套换），未设置时回落到旧的 accentColor。
+    //   这样既拿到"多皮肤"能力，又不破坏老用户的既有配置。
+    final skin = Skin.byId(AppSettings.skinId);
     ThemeData buildTheme(Brightness b) {
       final dark = b == Brightness.dark;
-      final scheme = ColorScheme.fromSeed(seedColor: accent, brightness: b);
-      return ThemeData(
-          useMaterial3: true,
-          brightness: b,
-          scaffoldBackgroundColor:
-              dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB),
-          colorScheme: scheme.copyWith(
-              primary: accent,
-              surface:
-                  dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB)),
-          cardTheme: CardThemeData(
-              elevation: 0,
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              color: dark ? const Color(0xFF181B22) : Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18))),
-          listTileTheme: const ListTileThemeData(minVerticalPadding: 4),
-          appBarTheme: AppBarTheme(
-              centerTitle: false,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              backgroundColor:
-                  dark ? const Color(0xFF0F1115) : const Color(0xFFF6F7FB)),
-          pageTransitionsTheme: const PageTransitionsTheme(builders: {
-            TargetPlatform.android: _SmoothTransitionsBuilder(),
-            TargetPlatform.iOS: _SmoothTransitionsBuilder(),
-          }));
+      // 皮肤还是默认 ocean 且用户改过 accentColor → 尊重旧设置（自建一套 Skin）
+      final Skin effective =
+          (skin.id == 'ocean' && accent.toARGB32() != skin.seed.toARGB32())
+              ? Skin(
+                  id: 'custom',
+                  name: '自定义',
+                  seed: accent,
+                  lightBg: const Color(0xFFF5F7FC),
+                  darkBg: const Color(0xFF0D1017),
+                )
+              : skin;
+      return buildSkinTheme(effective, b);
     }
 
     return MaterialApp(
@@ -2870,6 +2888,90 @@ class ProfileSubPage extends StatefulWidget {
 }
 
 class _Psub extends State<ProfileSubPage> {
+  /// ★2026-10-11 修「等级永远是'会员'两个字」：等级来自云端 `th_profiles.level`，
+  ///   而这个页面此前**压根没去拉 profile** —— 只有页面上那个刷新按钮才会拉一次。
+  ///   于是绝大多数用户看到的是写死的 '会员'，看不到自己到底是什么档。
+  ///   这里进来先拉一次（拿不到就静默兜底成游客，不弹错）。
+  bool _loadingLevel = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLevel();
+  }
+
+  Future<void> _loadLevel({bool force = false}) async {
+    if (!Cloud.loggedIn) return;
+    if (!force && Cloud.profileData.isNotEmpty) return; // 已有缓存，不重复打网络
+    if (_loadingLevel) return;
+    _loadingLevel = true;
+    try {
+      await Cloud.profile();
+    } catch (_) {
+      // 拉不到不是错误：下面会兜底成「游客」，且文案里写明是未同步状态
+    }
+    _loadingLevel = false;
+    if (mounted) setState(() {});
+  }
+
+  /// 当前账号的等级 id（未登录 → null，由 memberLevelById 兜底成游客）
+  String? get _levelId =>
+      Cloud.loggedIn ? (Cloud.profileData['level'] as String?) : null;
+
+  /// 到期时间（云端字段名是 expire_at；兼容 expireAt 写法）
+  String? get _expireAt {
+    final v = Cloud.profileData['expire_at'] ?? Cloud.profileData['expireAt'];
+    return v == null ? null : '$v';
+  }
+
+  MemberLevel get _level => memberLevelById(_levelId);
+
+  /// 等级说明弹层 —— **只有说明，没有收银台**。
+  /// 用户已明确：购买/充值统一在网页端，App 端只负责"显示你是什么档"。
+  Future<void> _showLevelInfo() async {
+    final MemberLevel cur = _level;
+    final int curRank = memberLevelRank(cur.id);
+    final StringBuffer sb = StringBuffer();
+    sb.writeln(logged
+        ? '当前等级：${cur.name}（${cur.nameEn}）'
+        : '当前等级：游客（未登录）');
+    sb.writeln('云存储额度：${memberStorageText(cur)}');
+    final String exp = _expireAt ?? '';
+    if (exp.isNotEmpty) sb.writeln('到期：$exp');
+    sb.writeln('');
+    sb.writeln('等级一览（由低到高）：');
+    for (final MemberLevel l in kMemberLevels) {
+      final bool isCur = l.id == cur.id;
+      final String mark = isCur ? ' ←当前' : '';
+      sb.writeln('${memberLevelRank(l.id) <= curRank ? "·" : "○"} '
+          '${l.name}（${l.nameEn}）· ${memberStorageText(l)}$mark');
+    }
+    sb.writeln('');
+    sb.writeln('★ 充值 / 升级请到网页端「会员中心」办理，'
+        '完成后回到本页下拉刷新即可同步到手机。');
+    if (!logged) sb.writeln('（先登录才能同步网页端的等级）');
+    if (!mounted) return;
+    await showDialog<void>(
+        context: context,
+        builder: (d) => AlertDialog(
+                title: const Text('会员等级'),
+                content: SingleChildScrollView(
+                    child: Text(sb.toString(),
+                        style: const TextStyle(fontSize: 12.5, height: 1.7))),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(d),
+                      child: const Text('知道了')),
+                  if (logged)
+                    FilledButton(
+                        onPressed: () async {
+                          Navigator.pop(d);
+                          await _loadLevel(force: true);
+                        },
+                        child: const Text('同步等级')),
+                ]));
+  }
+
   // 复制到剪贴板(邮箱/身份码这种"只能看不能改"的字段, 点一下就该能拿走)
   Future<void> _copy(String label, String v) async {
     if (v.isEmpty) return;
@@ -3048,15 +3150,34 @@ class _Psub extends State<ProfileSubPage> {
             Text(logged ? Cloud.email : '游客模式',
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 6),
-            Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                    color:
-                        (logged ? accent : Colors.grey).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6)),
-                child: Text(logged ? '会员' : '游客',
-                    style: TextStyle(
-                        fontSize: 10, color: logged ? accent : Colors.grey))),
+            // ★2026-10-11：徽章从写死的 '会员' 改为**真实等级名 + 对应配色**。
+            //   等级数据来自云端 th_profiles.level（6 档与网页端逐字一致，
+            //   见 core/member_levels.dart 与 tool/member_levels_selfcheck.dart）。
+            //   未登录仍显示「游客」——此时颜色取灰，不借用主题强调色。
+            Builder(builder: (ctx) {
+              final MemberLevel lv = _level;
+              final Color lvColor = logged
+                  ? Color(lv.colorValue)
+                  : Colors.grey;
+              return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: lvColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                          color: lvColor.withValues(alpha: 0.35), width: 1)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.workspace_premium_outlined,
+                        size: 12, color: lvColor),
+                    const SizedBox(width: 4),
+                    Text(logged ? lv.name : (lv.name.isEmpty ? '游客' : lv.name),
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: lvColor)),
+                  ]));
+            }),
             const SizedBox(height: 16),
           ])),
           Card(
@@ -3080,6 +3201,13 @@ class _Psub extends State<ProfileSubPage> {
                     '简介',
                     AppSettings.bio.isEmpty ? '这个人很懒，什么都没写' : AppSettings.bio,
                     () => _editField('bio', '简介', AppSettings.bio)),
+                const Divider(height: 1, indent: 16),
+                // ★2026-10-11 新增：等级 + 额度 + 到期一栏。
+                //   ★刻意**不做购买入口** —— 购买/充值只在网页端（用户既定分工）。
+                //   点击只弹一个说明框，告诉用户去哪升级。
+                row('会员等级', memberSubtitle(
+                    loggedIn: logged, levelId: _levelId, expireAt: _expireAt),
+                    () => _showLevelInfo()),
               ])),
           if (logged)
             Padding(
@@ -12675,6 +12803,42 @@ class _Ape extends State<AppearancePage> {
                   onSelectionChanged: (s) => AppSettings.setThemeMode(s.first)
                       .then((_) => setState(() {})))),
           const Divider(height: 1, indent: 56),
+          // ★ 皮肤选择（整套换：强调色 + 底色 + 动效强度）
+          //   与下面「强调色」并存：强调色只换一点，皮肤换一整
+          ListTile(
+              leading: const Icon(Icons.palette_outlined, size: 20),
+              title: Text(tr('界面皮肤'), style: const TextStyle(fontSize: 14)),
+              subtitle: Text(tr('整套配色与质感，一键切换'),
+                  style: const TextStyle(fontSize: 11)),
+              trailing: Text(Skin.byId(AppSettings.skinId).name,
+                  style: const TextStyle(fontSize: 12))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final sk in Skin.all) _skinSwatch(c, sk),
+              ],
+            ),
+          ),
+          const Divider(height: 1, indent: 56),
+          // ★ 动效强度三档（对标大厂普遍做法）
+          ListTile(
+              leading: const Icon(Icons.animation_outlined, size: 20),
+              title: Text(tr('动效强度'), style: const TextStyle(fontSize: 14)),
+              subtitle: Text(tr('关闭可提升低端机流畅度'),
+                  style: const TextStyle(fontSize: 11)),
+              trailing: SizedBox(
+                  width: 168,
+                  child: SpringSegments<String>(
+                    values: const ['full', 'calm', 'off'],
+                    labels: [tr('流畅'), tr('轻动效'), tr('关闭')],
+                    value: AppSettings.motionLevel,
+                    onChanged: (v) =>
+                        AppSettings.setMotionLevel(v).then((_) => setState(() {})),
+                  ))),
+          const Divider(height: 1, indent: 56),
           ListTile(
               leading: const Icon(Icons.color_lens_outlined, size: 20),
               title: Text(tr('强调色'), style: const TextStyle(fontSize: 14)),
@@ -12741,6 +12905,51 @@ class _Ape extends State<AppearancePage> {
               }),
         ])),
       ]));
+}
+
+// ── 皮肤色块（个性化页用）：当前皮肤加圈 + 名称 ──
+Widget _skinSwatch(BuildContext c, Skin sk) {
+  final bool sel = AppSettings.skinId == sk.id;
+  return GestureDetector(
+    onTap: () => AppSettings.setSkin(sk.id).then((_) {
+      if (c.mounted) (c as Element).markNeedsBuild();
+    }),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: Motion.durFor(c, Motion.durEffect),
+          curve: Motion.effect,
+          width: sel ? 46 : 40,
+          height: sel ? 46 : 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [sk.seed, Color.alphaBlend(Colors.white.withValues(alpha: 0.35), sk.seed)],
+            ),
+            border: Border.all(
+                color: sel
+                    ? Theme.of(c).colorScheme.onSurface
+                    : Colors.transparent,
+                width: 2.5),
+            boxShadow: sel ? Elev.accent(sk.seed) : null,
+          ),
+          child: sel
+              ? const Icon(Icons.check, size: 20, color: Colors.white)
+              : null,
+        ),
+        const SizedBox(height: 5),
+        Text(sk.name,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: sel ? 1 : 0.6),
+            )),
+      ],
+    ),
+  );
 }
 
 // ── 子页面: 导航 ──
@@ -13029,29 +13238,102 @@ class _Sy extends State<SystemPage> {
 }
 
 // ── 子页面: 云端 ──
-class CloudPage extends StatelessWidget {
+class CloudPage extends StatefulWidget {
   const CloudPage({super.key});
   @override
-  Widget build(BuildContext c) => Scaffold(
-      appBar: AppBar(title: Text(tr('云端'))),
-      body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
-        Card(
-            child: Column(children: [
-          ListTile(
-              leading: const Icon(Icons.cloud_outlined, size: 20),
-              title: Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
-              subtitle: Text(
-                  '用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / 1024KB · 进度存自己后端不占配额',
-                  style: const TextStyle(fontSize: 11))),
-          const Divider(height: 1, indent: 56),
-          ListTile(
-              leading: const Icon(Icons.workspace_premium_outlined, size: 20),
-              title: Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
-              subtitle:
-                  const Text('免费 · 会员体系冻结期', style: TextStyle(fontSize: 11)),
-              enabled: false),
-        ])),
-      ]));
+  State<CloudPage> createState() => _CloudPageState();
+}
+
+class _CloudPageState extends State<CloudPage> {
+  /// ★2026-10-11：此前这一栏写死「免费 · 会员体系冻结期」且 `enabled: false`
+  ///   —— 既不准（付费用户也显示"免费"），又不可点（看不到任何解释）。
+  ///   现在改为**读真实等级**（与个人资料页同一数据源 core/member_levels.dart），
+  ///   并明确把"去哪升级"写在这里。仍然**不提供购买入口**。
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (!Cloud.loggedIn || Cloud.profileData.isNotEmpty) return;
+    try {
+      await Cloud.profile();
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openLevel(String subtitle) async {
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('会员等级决定云存储额度与云端能力。');
+    sb.writeln('');
+    sb.writeln(subtitle);
+    sb.writeln('');
+    sb.writeln('等级一览（由低到高）：');
+    for (final MemberLevel l in kMemberLevels) {
+      sb.writeln('· ${l.name}（${l.nameEn}）· ${memberStorageText(l)}');
+    }
+    sb.writeln('');
+    sb.writeln('★ 充值 / 升级请到网页端的「会员中心」办理；'
+        '完成后回到本页下拉刷新即可同步。');
+    if (!mounted) return;
+    await showDialog<void>(
+        context: context,
+        builder: (d) => AlertDialog(
+                title: const Text('会员等级'),
+                content: SingleChildScrollView(
+                    child: Text(sb.toString(),
+                        style: const TextStyle(fontSize: 12.5, height: 1.7))),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(d),
+                      child: const Text('知道了')),
+                  if (Cloud.loggedIn)
+                    FilledButton(
+                        onPressed: () async {
+                          Navigator.pop(d);
+                          try {
+                            await Cloud.profile();
+                          } catch (_) {}
+                          if (mounted) setState(() {});
+                        },
+                        child: const Text('同步等级')),
+                ]));
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final bool logged = Cloud.loggedIn;
+    final String? levelId =
+        logged ? (Cloud.profileData['level'] as String?) : null;
+    final Object? expRaw =
+        Cloud.profileData['expire_at'] ?? Cloud.profileData['expireAt'];
+    final MemberLevel lv = memberLevelById(levelId);
+    final String levelLine = memberSubtitle(
+        loggedIn: logged, levelId: levelId, expireAt: expRaw == null ? null : '$expRaw');
+    return Scaffold(
+        appBar: AppBar(title: Text(tr('云端'))),
+        body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+          Card(
+              child: Column(children: [
+            ListTile(
+                leading: const Icon(Icons.cloud_outlined, size: 20),
+                title: Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
+                subtitle: Text(
+                    '用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / ${memberStorageText(lv)} · 进度存自己后端不占配额',
+                    style: const TextStyle(fontSize: 11))),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+                leading: Icon(Icons.workspace_premium_outlined,
+                    size: 20, color: Color(lv.colorValue)),
+                title: Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
+                subtitle: Text(levelLine,
+                    style: const TextStyle(fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _openLevel(levelLine)),
+          ])),
+        ]));
+  }
 }
 
 // ── 子页面: 关于(模块介绍 + 协议入口 + 致谢) ──
