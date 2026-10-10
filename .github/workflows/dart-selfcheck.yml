@@ -270,6 +270,21 @@ jobs:
       #     后端 routes-media.js 的 404 message、index.js 的自检横幅）。已全部改掉。
       #   反证：注入 `const String _fwProbe = "这里是换源测试文案";` → exit 1 并点名该行；
       #        还原后 exit 0。
+      #
+      #   ── 2026-10-10 第二轮修正（本地假绿，被"远端核查"抓出）──
+      #   D-1 `--scope=all` **根本不含网页端**：网页端是独立仓 D:/ai/deep seek，
+      #       不在 ThirdHub-v2 目录树里 → 上一版绿是"没扫到"，不是"扫到了干净"。
+      #       修法：新增 `--web=<网页端根>`，且**传了就必须扫到**（路径不存在直接 exit 1，
+      #       防止 CI 里写错路径变成永久假绿）。
+      #   D-2 `isCommentLine()` 只认注释**起始行**，`/* … *\/` 块内的**续行**漏判。
+      #       修法：加注释块状态机（`/*`…`*\/`、`<!--`…`-->`、三引号），
+      #       块内行统一走 WARN 通道（不出货但仍点名，便于逐步清零）。
+      #   实测远端复扫（对 GitHub Contents API 取回的内容套用同一把尺子）：
+      #       16 个出货面文件全部可读，命中 4 处 → 全在 category.js / novel-reader.js
+      #       的 JSDoc 续行里（正是 D-2），已改掉；复扫 0 命中。
       - name: forbidden-words（出货面用词：前端 + 后端 + 网页端，含用途分类白名单）
         working-directory: .
-        run: node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all
+        run: node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all --web="$TH_WEB_ROOT"
+        # TH_WEB_ROOT：网页端源码根。CI 里网页端不在本仓，故用变量注入；
+        # 未设置时该参数退化为空串 → 脚本判定"必须扫到"会失败，**这是有意的**
+        # （宁可红，也不要因为路径没配就悄悄不扫而假绿）。本机跑法见运行说明。
