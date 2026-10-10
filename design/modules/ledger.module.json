@@ -1,0 +1,18 @@
+{
+  "id": "ledger",
+  "name": "记账",
+  "icon": {
+    "app": "account_balance_wallet_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "记账"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
