@@ -1,0 +1,16 @@
+{
+  "id": "comic",
+  "name": "漫画",
+  "icon": {
+    "app": null,
+    "web": "comic"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "comic",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
