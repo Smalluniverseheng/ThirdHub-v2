@@ -1,0 +1,18 @@
+{
+  "id": "markdown",
+  "name": "Markdown",
+  "icon": {
+    "app": "text_fields",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "Markdown"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
