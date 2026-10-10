@@ -1,0 +1,18 @@
+{
+  "id": "forum",
+  "name": "论坛",
+  "icon": {
+    "app": "article_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "论坛"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
