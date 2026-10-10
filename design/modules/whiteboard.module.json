@@ -1,0 +1,18 @@
+{
+  "id": "whiteboard",
+  "name": "白板",
+  "icon": {
+    "app": "draw_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "白板"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
