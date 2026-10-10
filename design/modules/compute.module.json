@@ -1,0 +1,16 @@
+{
+  "id": "compute",
+  "name": "后端",
+  "icon": {
+    "app": null,
+    "web": "cpu"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "compute",
+    "webLoad": "./modules/compute.js",
+    "webFn": "renderCompute"
+  }
+}
