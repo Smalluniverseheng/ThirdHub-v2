@@ -1,0 +1,18 @@
+{
+  "id": "flashcard",
+  "name": "记忆卡",
+  "icon": {
+    "app": "style_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "记忆卡"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
