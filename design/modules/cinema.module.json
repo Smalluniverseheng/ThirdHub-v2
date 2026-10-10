@@ -1,0 +1,18 @@
+{
+  "id": "cinema",
+  "name": "家庭影院",
+  "icon": {
+    "app": "weekend_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "家庭影院"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
