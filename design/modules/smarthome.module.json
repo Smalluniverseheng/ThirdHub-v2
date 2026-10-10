@@ -1,0 +1,18 @@
+{
+  "id": "smarthome",
+  "name": "智能家居",
+  "icon": {
+    "app": "home_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "智能家居"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
