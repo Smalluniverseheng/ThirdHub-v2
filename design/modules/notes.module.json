@@ -1,0 +1,18 @@
+{
+  "id": "notes",
+  "name": "笔记",
+  "icon": {
+    "app": "edit_note",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "笔记"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
