@@ -1,0 +1,18 @@
+{
+  "id": "community",
+  "name": "社区",
+  "icon": {
+    "app": "groups_outlined",
+    "web": "users"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "社区"
+    ],
+    "web": "community",
+    "webLoad": "./modules/community.js",
+    "webFn": "renderCommunity"
+  }
+}
