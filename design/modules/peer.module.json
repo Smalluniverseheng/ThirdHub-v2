@@ -1,0 +1,18 @@
+{
+  "id": "peer",
+  "name": "端网",
+  "icon": {
+    "app": "hub_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "端网"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
