@@ -10,7 +10,8 @@
   "dependencies": {
     "cheerio": "^1.0.0",
     "selfsigned": "^2.4.1",
-    "bonjour-service": "^1.2.1"
+    "bonjour-service": "^1.2.1",
+    "undici": "^6.21.0"
   },
   "engines": {
     "node": ">=20"
