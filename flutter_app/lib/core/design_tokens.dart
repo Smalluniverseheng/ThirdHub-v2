@@ -45,6 +45,8 @@ class Radii {
   static BorderRadius get smAll => BorderRadius.circular(sm);
   static BorderRadius get mdAll => BorderRadius.circular(md);
   static BorderRadius get lgAll => BorderRadius.circular(lg);
+  /// 胶囊圆角（玻璃特效档的按钮用）
+  static BorderRadius get pillAll => BorderRadius.circular(pill);
 }
 
 /// 字号阶（Type Scale）。
@@ -212,10 +214,16 @@ class Elev {
       ];
 }
 
-/// 「皮肤」= 一套强调色 + 底色倾向 + 动效强度。
+/// 「皮肤」= 一套强调色 + 底色倾向 + 动效强度 + **特效档**。
 ///
 /// 这是"UI 切换"的落地物：用户可在设置里换皮肤，整站跟着变，
 /// 而不是只有明/暗两档。
+///
+/// ★★ 2026-10-11：皮肤定义**不再只属于 App** —— 唯一来源是仓库根的
+///   `design/tokens.json`，网页端 `css/theme.css` 读的是同一份定义。
+///   两端 id / 名称 / 种子色 / 底色 / 特效必须逐项一致，
+///   由 `tool/skin_parity_selfcheck.dart` 同时解析本文件与网页端 CSS 来把关。
+///   改这里 = 同时改 tokens.json 与 theme.css，否则闸门红。
 class Skin {
   const Skin({
     required this.id,
@@ -223,6 +231,7 @@ class Skin {
     required this.seed,
     required this.lightBg,
     required this.darkBg,
+    this.fx = SkinFx.none,
     this.vivid = true,
   });
 
@@ -231,14 +240,17 @@ class Skin {
   /// 展示名（**不用 emoji**，符合 STYLE_GUIDE 第 1 条）
   final String name;
 
-  /// 种子色（Material 3 动态取色源）
+  /// 种子色（Material 3 动态取色源）。对应 tokens.json 的 `seed`。
   final Color seed;
 
-  /// 明色底
+  /// 明色底。对应 tokens.json 的 `lightBg`。
   final Color lightBg;
 
-  /// 暗色底
+  /// 暗色底。对应 tokens.json 的 `darkBg`。
   final Color darkBg;
+
+  /// 特效档（圆角/边框/阴影/标题字形随它变）。对应 tokens.json 的 `fx`。
+  final SkinFx fx;
 
   /// 是否启用过冲动效（"炫酷档"）。关掉 = "正经档"。
   final bool vivid;
@@ -249,6 +261,16 @@ class Skin {
     seed: Color(0xFF2F6BFF),
     lightBg: Color(0xFFF5F7FC),
     darkBg: Color(0xFF0D1017),
+  );
+
+  /// ★2026-10-11 新增：简约黑白（tokens.json 里的 mono）
+  static const Skin mono = Skin(
+    id: 'mono',
+    name: '素白',
+    seed: Color(0xFF111111),
+    lightBg: Color(0xFFFFFFFF),
+    darkBg: Color(0xFF0B0B0C),
+    vivid: false,
   );
 
   static const Skin ink = Skin(
@@ -292,11 +314,61 @@ class Skin {
     darkBg: Color(0xFF180A11),
   );
 
-  /// 全部可选皮肤（设置页遍历它渲染选项）
-  static const List<Skin> all = [ocean, ink, jade, amber, violet, rose];
+  /// ★2026-10-11 新增：水墨（fx=ink）
+  static const Skin shuimo = Skin(
+    id: 'shuimo',
+    name: '水墨',
+    seed: Color(0xFF3A3A3A),
+    lightBg: Color(0xFFF6F3EC),
+    darkBg: Color(0xFF101010),
+    fx: SkinFx.ink,
+    vivid: false,
+  );
+
+  /// ★2026-10-11 新增：机甲（fx=neon）
+  static const Skin mecha = Skin(
+    id: 'mecha',
+    name: '机甲',
+    seed: Color(0xFF00E5FF),
+    lightBg: Color(0xFFEDF3F8),
+    darkBg: Color(0xFF060A12),
+    fx: SkinFx.neon,
+  );
+
+  /// ★2026-10-11 新增：玻璃（fx=glass）
+  static const Skin glass = Skin(
+    id: 'glass',
+    name: '玻璃',
+    seed: Color(0xFF5B8DEF),
+    lightBg: Color(0xFFF2F5FB),
+    darkBg: Color(0xFF0A0E17),
+    fx: SkinFx.glass,
+  );
+
+  /// 全部可选皮肤（设置页遍历它渲染选项）。
+  /// ★ 顺序即 UI 里的排列顺序，与 tokens.json 的 `skins` 数组顺序一致。
+  static const List<Skin> all = [
+    ocean, mono, ink, jade, amber, violet, rose, shuimo, mecha, glass,
+  ];
 
   static Skin byId(String? id) =>
       all.firstWhere((s) => s.id == id, orElse: () => ocean);
+}
+
+/// 特效档 —— 决定圆角/边框/阴影/标题字形这一组"风格量"。
+/// 与 tokens.json 的 `fx` 取值一一对应。
+enum SkinFx {
+  /// 无额外特效（绝大多数皮肤）
+  none,
+
+  /// 水墨：圆角收小、边框细、标题走衬线、去阴影只留线条
+  ink,
+
+  /// 机甲：卡片发光描边 + 强调色辉光 + 按钮直角化
+  neon,
+
+  /// 玻璃：卡片半透明 + 模糊、按钮胶囊化、渐变底
+  glass,
 }
 
 /// 由皮肤 + 亮度构造完整 `ThemeData`。
@@ -308,17 +380,54 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
   final Color bg = dark ? skin.darkBg : skin.lightBg;
   final ColorScheme scheme = ColorScheme.fromSeed(seedColor: skin.seed, brightness: b);
 
+  // ── 特效档决定的"风格量"（圆角 / 卡片色 / 边框 / 阴影）──────────────
+  //   ★ 这里就是"换皮肤不只是换颜色"的落点：同一个底色配不同 fx，
+  //     圆角、描边、透明度、是否有阴影都不一样，观感是两套东西。
+  final SkinFx fx = skin.fx;
+  final BorderRadius cardRadius = switch (fx) {
+    SkinFx.ink => Radii.smAll,      // 水墨：小圆角，接近直角
+    SkinFx.neon => Radii.smAll,     // 机甲：直角化
+    SkinFx.glass => Radii.lgAll,    // 玻璃：大圆角
+    SkinFx.none => Radii.lgAll,
+  };
+  final BorderRadius btnRadius = switch (fx) {
+    SkinFx.ink => const BorderRadius.all(Radius.circular(4)),
+    SkinFx.neon => const BorderRadius.all(Radius.circular(6)),
+    SkinFx.glass => Radii.pillAll,  // 玻璃：胶囊
+    SkinFx.none => Radii.mdAll,
+  };
   // 表面色带一点底色倾向：纯粹的统一底色才"高级"，
   // 页面里出现两种不同的灰是最显廉价的错误。
   final Color surface = bg;
-  final Color surfaceCard =
-      dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.045), bg)
-           : Color.alphaBlend(Colors.black.withValues(alpha: 0.018), bg);
+  Color surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.045), bg)
+                           : Color.alphaBlend(Colors.black.withValues(alpha: 0.018), bg);
+  if (fx == SkinFx.glass) {
+    // 玻璃：卡片更"浮"一点，靠模糊与描边拉开层次
+    surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.075), bg)
+                       : Color.alphaBlend(Colors.white.withValues(alpha: 0.55), bg);
+  }
+  // 机甲：卡片带一层极淡的强调色，配合霓虹描边
+  if (fx == SkinFx.neon) {
+    surfaceCard = Color.alphaBlend(skin.seed.withValues(alpha: dark ? 0.05 : 0.035), surfaceCard);
+  }
+  final BorderSide cardSide = switch (fx) {
+    SkinFx.neon => BorderSide(color: skin.seed.withValues(alpha: dark ? 0.45 : 0.30), width: 1),
+    SkinFx.ink => BorderSide(color: scheme.onSurface.withValues(alpha: 0.16), width: 1),
+    SkinFx.glass => BorderSide(color: Colors.white.withValues(alpha: dark ? 0.10 : 0.65), width: 1),
+    SkinFx.none => BorderSide.none,
+  };
+  // 标题字形：水墨走衬线（有"书卷气"），其余沿用默认无衬线
+  final TextStyle h1 = fx == SkinFx.ink
+      ? Types.h1.copyWith(fontFamily: 'serif', letterSpacing: 0.5)
+      : Types.h1;
+  final TextStyle h2 = fx == SkinFx.ink
+      ? Types.h2.copyWith(fontFamily: 'serif', letterSpacing: 0.4)
+      : Types.h2;
 
   final TextTheme text = const TextTheme().copyWith(
     displayLarge: Types.display,
-    headlineMedium: Types.h1,
-    titleLarge: Types.h2,
+    headlineMedium: h1,
+    titleLarge: h2,
     titleMedium: Types.title,
     bodyMedium: Types.body,
     bodySmall: Types.caption,
@@ -336,10 +445,20 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     canvasColor: surface,
     splashFactory: InkSparkle.splashFactory, // 安卓原生级涟漪
     cardTheme: CardThemeData(
-      elevation: 0,
+      // 阴影靠 elevation 触发；水墨明确要"无阴影"，所以给 0；机甲/玻璃各一档。
+      elevation: switch (fx) {
+        SkinFx.ink => 0,
+        SkinFx.neon => 6,
+        SkinFx.glass => 2,
+        SkinFx.none => 0,
+      },
       margin: const EdgeInsets.symmetric(vertical: 6),
       color: surfaceCard,
-      shape: RoundedRectangleBorder(borderRadius: Radii.lgAll),
+      shadowColor: skin.seed.withValues(alpha: 0.22),
+      shape: RoundedRectangleBorder(
+        borderRadius: cardRadius,
+        side: cardSide,
+      ),
     ),
     appBarTheme: AppBarTheme(
       centerTitle: false,
@@ -347,7 +466,7 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       scrolledUnderElevation: 0,
       backgroundColor: surface,
       surfaceTintColor: Colors.transparent,
-      titleTextStyle: Types.h2.copyWith(color: scheme.onSurface),
+      titleTextStyle: h2.copyWith(color: scheme.onSurface),
     ),
     listTileTheme: const ListTileThemeData(minVerticalPadding: 4),
     dividerTheme: DividerThemeData(
@@ -361,28 +480,28 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       fillColor: surfaceCard,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: Radii.mdAll,
+        borderRadius: btnRadius,
         borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: Radii.mdAll,
+        borderRadius: btnRadius,
         borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: Radii.mdAll,
+        borderRadius: btnRadius,
         borderSide: BorderSide(color: skin.seed, width: 1.6),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
+        shape: RoundedRectangleBorder(borderRadius: btnRadius),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         textStyle: Types.title,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
+        shape: RoundedRectangleBorder(borderRadius: btnRadius),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         side: BorderSide(color: scheme.onSurface.withValues(alpha: 0.14)),
       ),
