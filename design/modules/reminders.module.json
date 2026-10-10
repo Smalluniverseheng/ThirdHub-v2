@@ -1,0 +1,18 @@
+{
+  "id": "reminders",
+  "name": "提醒中心",
+  "icon": {
+    "app": "alarm",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "提醒中心"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
