@@ -1,0 +1,18 @@
+{
+  "id": "devicelink",
+  "name": "设备互联",
+  "icon": {
+    "app": "devices_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "设备互联"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
