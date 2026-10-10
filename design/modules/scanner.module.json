@@ -1,0 +1,18 @@
+{
+  "id": "scanner",
+  "name": "扫描仪",
+  "icon": {
+    "app": "document_scanner_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "扫描仪"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
