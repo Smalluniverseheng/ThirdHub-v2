@@ -1,0 +1,21 @@
+{
+  "id": "backuphub",
+  "name": "备份迁移",
+  "icon": {
+    "app": "settings_backup_restore",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [
+    "contacts",
+    "sms"
+  ],
+  "entry": {
+    "app": [
+      "备份迁移"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
