@@ -1,0 +1,16 @@
+{
+  "id": "grade",
+  "name": "成绩",
+  "icon": {
+    "app": null,
+    "web": "chart"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "grade",
+    "webLoad": "./modules/board-grade.js",
+    "webFn": "renderGradeBoard"
+  }
+}
