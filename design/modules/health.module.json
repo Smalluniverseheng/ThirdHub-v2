@@ -1,0 +1,18 @@
+{
+  "id": "health",
+  "name": "健康记录",
+  "icon": {
+    "app": "favorite_border",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "健康记录"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
