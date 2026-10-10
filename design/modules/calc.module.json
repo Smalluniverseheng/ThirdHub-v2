@@ -1,0 +1,18 @@
+{
+  "id": "calc",
+  "name": "计算器",
+  "icon": {
+    "app": "calculate_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "计算器"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
