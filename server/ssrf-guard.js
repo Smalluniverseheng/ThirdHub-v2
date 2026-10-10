@@ -256,7 +256,12 @@ async function assertPublicUrl(url, opts = {}) {
  * @param {RequestInit & {timeoutMs?: number, maxRedirects?: number, allowPrivate?: boolean}} [init]
  */
 async function safeFetch(url, init = {}) {
-  const { timeoutMs = 10000, maxRedirects = 5, allowPrivate, ...rest } = init;
+  const { timeoutMs = 10000, maxRedirects = 5, allowPrivate, moduleKey, ...rest } = init;
+  // ★ 阶段5「代理集中配置」：所有出站 fetch 统一从 proxy-config 走（一处配置处处生效）。
+  //   注意：**代理只改变"从哪出去"，不改变"能不能去"** —— 逐跳 SSRF 准入照旧执行，
+  //   走代理不构成放松。proxy-config 惰性 require 避免加载期循环依赖。
+  let proxyFetch = null;
+  try { proxyFetch = require('./proxy-config').fetchOutbound; } catch (_) {}
   let current = String(url);
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const gate = await assertPublicUrl(current, { allowPrivate });
@@ -266,7 +271,9 @@ async function safeFetch(url, init = {}) {
       err.reason = gate.reason;
       throw err;
     }
-    const r = await fetch(current, { ...rest, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+    const r = proxyFetch
+      ? await proxyFetch(current, { ...rest, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) }, moduleKey || 'content')
+      : await fetch(current, { ...rest, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
     const isRedirect = r.status >= 300 && r.status < 400 && r.headers.get('location');
     if (!isRedirect) return r;
     const loc = new URL(r.headers.get('location'), current).toString();
