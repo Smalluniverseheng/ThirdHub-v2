@@ -1,0 +1,18 @@
+{
+  "id": "texttools",
+  "name": "文本工具箱",
+  "icon": {
+    "app": "text_snippet_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "文本工具箱"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
