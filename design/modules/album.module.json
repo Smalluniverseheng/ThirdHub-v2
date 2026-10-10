@@ -1,0 +1,18 @@
+{
+  "id": "album",
+  "name": "相册",
+  "icon": {
+    "app": "photo_library_outlined",
+    "web": "image"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "相册"
+    ],
+    "web": "album",
+    "webLoad": "./modules/board-album.js",
+    "webFn": "renderAlbumBoard"
+  }
+}
