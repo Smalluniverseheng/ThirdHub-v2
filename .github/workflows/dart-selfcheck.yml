@@ -123,6 +123,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ★ 2026-10-10 加：checkout 网页端仓，让 forbidden-words 的 --web 有东西可扫。
+      #   此前 TH_WEB_ROOT 从未设置 → 该步骤是**永远的红**（设计如此，但等于没有闸门）。
+      #   现在真的拉下网页端源码，网页端用词回潮当天就会红。
+      - uses: actions/checkout@v4
+        with:
+          repository: Smalluniverseheng/ThirdHub
+          path: _web
+          fetch-depth: 1
+
+      # 让 forbidden-words 与本仓后续步骤都能拿到网页端路径（写成 env，避免各处重复拼）
+      - name: 导出网页端路径
+        run: echo "TH_WEB_ROOT=$GITHUB_WORKSPACE/_web" >> "$GITHUB_ENV"
+
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
 
