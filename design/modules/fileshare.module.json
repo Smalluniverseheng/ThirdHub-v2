@@ -1,0 +1,18 @@
+{
+  "id": "fileshare",
+  "name": "文件互传",
+  "icon": {
+    "app": "send_to_mobile_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "文件互传"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
