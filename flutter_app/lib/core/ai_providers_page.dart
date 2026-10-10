@@ -93,14 +93,14 @@ class _AiProv extends State<AiProvidersPage> {
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: ctrl, obscureText: true, decoration: const InputDecoration(hintText: 'sk-...', isDense: true)),
         if (msg != null) Padding(padding: const EdgeInsets.only(top: 8),
-          child: Text(msg!, style: TextStyle(fontSize: 11, color: msg!.startsWith('✓') ? Colors.green : Colors.redAccent))),
+          child: Text(msg!, style: TextStyle(fontSize: 11, color: msg!.startsWith('验证通过') || msg!.startsWith('识别成功') || msg!.startsWith('已确认') ? Colors.green : Colors.redAccent))),
         if (testing) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
         TextButton(onPressed: testing ? null : () async {
           setD(() { testing = true; msg = null; });
           final hit = await AiKeyDetect.testKey(p, ctrl.text.trim());
-          setD(() { testing = false; msg = hit != null ? '✓ 验证通过' : '验证失败 · Key 可能不属于该厂商(可保存后用自动识别)'; });
+          setD(() { testing = false; msg = hit != null ? '验证通过' : '验证失败 · Key 可能不属于该厂商(可保存后用自动识别)'; });
         }, child: const Text('验证')),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
     if (ok == true) { await AiRegistry.setKey(p.id, ctrl.text.trim()); await _load(); }
@@ -128,7 +128,7 @@ class _AiProv extends State<AiProvidersPage> {
           setD(() { busy = true; status = ''; hit = null; });
           final r = await AiKeyDetect.identify(key, onProgress: (s) => setD(() => status = s));
           if (r != null) { await AiRegistry.setKey(r.id, key); await _load(); }
-          setD(() { busy = false; hit = r; status = r != null ? '✓ 识别成功: 该 Key 属于「${r.name}」, 已保存' : '未识别到匹配厂商'; });
+          setD(() { busy = false; hit = r; status = r != null ? '识别成功: 该 Key 属于「${r.name}」, 已保存' : '未识别到匹配厂商'; });
         }, child: const Text('开始识别')),
       ])));
   }
@@ -156,7 +156,7 @@ class _AiProv extends State<AiProvidersPage> {
           if (!relay) { setD(() { busy = false; isRelay = false; status = '该 Key 未通过中转站探测(可能不是通用 Key)'; }); return; }
           final n = await AiKeyDetect.saveRelayKey(key);
           await _load();
-          setD(() { busy = false; isRelay = true; status = '✓ 已确认为中转站 Key · 已自动填到 $n 家厂商'; });
+          setD(() { busy = false; isRelay = true; status = '已确认为中转站 Key · 已自动填到 $n 家厂商'; });
         }, child: const Text('探测并保存')),
       ])));
   }
