@@ -1,0 +1,16 @@
+{
+  "id": "storage",
+  "name": "存储",
+  "icon": {
+    "app": null,
+    "web": "cloud"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "storage",
+    "webLoad": "./modules/board-storage.js",
+    "webFn": "renderStorageBoard"
+  }
+}
