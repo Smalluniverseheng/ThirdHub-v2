@@ -1,0 +1,22 @@
+{
+  "id": "audiohub",
+  "name": "音频中心",
+  "icon": {
+    "app": "headphones",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [
+    "podcast",
+    "read",
+    "radio"
+  ],
+  "entry": {
+    "app": [
+      "音频中心"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
