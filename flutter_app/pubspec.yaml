@@ -38,6 +38,11 @@ dependencies:
   record: ^6.0.0
   flutter_contacts: ^1.1.9
   sensors_plus: ^7.1.0
+  # 跨屏自适应布局（阶段2）。★ 钉死精确版本：0.x 包 API 未稳定，
+  # 升版必须重验 adaptive.dart 的用法（skin_parity/adaptive_selfcheck + CI 编译）。
+  # 选型证据：adaptive_navigation / adaptive_breakpoints / flutter_adaptive_scaffold
+  # 均已停维（pub.dev isDiscontinued=true，2026-10 查证），此为唯一存活的成熟方案。
+  dynamic_layouts: 0.7.0
 
 dev_dependencies:
   flutter_test:
