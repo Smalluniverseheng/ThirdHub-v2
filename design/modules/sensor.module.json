@@ -1,0 +1,18 @@
+{
+  "id": "sensor",
+  "name": "传感器",
+  "icon": {
+    "app": "sensors",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "传感器"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
