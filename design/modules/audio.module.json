@@ -1,0 +1,16 @@
+{
+  "id": "audio",
+  "name": "有声",
+  "icon": {
+    "app": null,
+    "web": "headphone"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "audio",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
