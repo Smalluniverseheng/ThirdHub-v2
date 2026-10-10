@@ -44,6 +44,7 @@ const List<String> webBoardIds = <String>[
   'clouddrive',
   'grade',
   'plugins',
+  'docs',
   'profile',
 ];
 
@@ -56,7 +57,7 @@ void main() {
   for (final i in issues) {
     print('    $i');
   }
-  ck('条目数 = 74', kModuleRegistry.length == 74);
+  ck('条目数 = 75', kModuleRegistry.length == 75);
   ck(
       'id 全部唯一',
       kModuleRegistry.map((e) => e.id).toSet().length ==
