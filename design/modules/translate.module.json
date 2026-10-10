@@ -1,0 +1,18 @@
+{
+  "id": "translate",
+  "name": "翻译",
+  "icon": {
+    "app": "translate",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "翻译"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
