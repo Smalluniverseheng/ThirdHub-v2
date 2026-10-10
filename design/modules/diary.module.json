@@ -1,0 +1,18 @@
+{
+  "id": "diary",
+  "name": "日记",
+  "icon": {
+    "app": "book_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "日记"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
