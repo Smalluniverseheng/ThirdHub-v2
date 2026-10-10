@@ -111,7 +111,7 @@ class EnginePlugin {
 
 /** Legado 书源（`data/sources.json`，本体是 JSON 规则，无需沙箱）。 */
 const legacyPlugin = new EnginePlugin({
-  id: 'legado', kinds: ['novel'], label: 'Legado 书源引擎',
+  id: 'legado', kinds: ['novel'], label: 'Legado 来源引擎',
   pick: (s) => !!(s && s.bookSourceUrl && !s.code),
   actions: {
     search: async (s, q) => ({ items: await engine.search(s, q) }),
@@ -133,7 +133,7 @@ const legacyPlugin = new EnginePlugin({
  *   宁可明确报错，也不猜 —— 猜错的表现正是"某类源永远搜不到"。
  */
 const drpyPlugin = new EnginePlugin({
-  id: 'drpy', kinds: ['video', 'live', 'audiobook', 'novel'], label: 'drpy 影视源引擎',
+  id: 'drpy', kinds: ['video', 'live', 'audiobook', 'novel'], label: 'drpy 影视来源引擎',
   pick: (s) => !!(s && s.code && s.format === 'drpy'),
   actions: {
     search: async (s, q) => drpyE.irSearch(await drpyE.runSource(s.code, 'search', [q])),
@@ -145,7 +145,7 @@ const drpyPlugin = new EnginePlugin({
 
 /** LX 音源（`data/music-sources.json` 里 `format === 'lx'`，39/39 都是）。 */
 const lxPlugin = new EnginePlugin({
-  id: 'lx', kinds: ['music'], label: 'LX 音源引擎',
+  id: 'lx', kinds: ['music'], label: 'LX 音乐来源引擎',
   pick: (s) => !!(s && s.code && s.format === 'lx'),
   actions: {
     search: async (s, q) => lxE.irSearch(await lxE.runLX(s.code,
@@ -173,7 +173,7 @@ const comicPlugin = new EnginePlugin({
 
 /** musicfree 音源（`engine-music.js` 兼容层；目前 `data/` 里暂无实例）。 */
 const musicfreePlugin = new EnginePlugin({
-  id: 'musicfree', kinds: ['music'], label: 'musicfree 音源引擎',
+  id: 'musicfree', kinds: ['music'], label: 'musicfree 音乐来源引擎',
   pick: (s) => !!(s && s.code && (s.format === 'musicfree' || s.format === 'musicfree-plugin')),
   actions: {
     search: async (s, q) => musicE.irSearch(await musicE.runPlugin(s.code, 'search', [q, 1, 'music'])),

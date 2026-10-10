@@ -145,7 +145,7 @@ function buildSandbox() {
       return { ok: r.status >= 200 && r.status < 300, status: r.status, headers: { get: k => r.headers[String(k).toLowerCase()] }, text: async () => r.body, json: async () => JSON.parse(r.body), arrayBuffer: async () => Buffer.from(r.body).buffer };
     },
     UI: {
-      showMessage(m) { console.log('[图源]', m); },
+      showMessage(m) { console.log('[来源]', m); },
       showDialog() {}, launchUrl() {}, showLoading() { return 1; }, cancelLoading() {},
       showInputDialog() { return null; }, showSelectDialog() { return null; }
     },
@@ -189,7 +189,7 @@ function loadSource(jsCode, keyHint) {
   const tail = m ? '\n;__export = (typeof ' + m[1] + ' !== "undefined") ? ' + m[1] + ' : null;' : '';
   vm.runInContext(code + tail, box, { timeout: 15000 });
   let source = null;
-  if (box.__export) { try { source = new box.__export(); } catch (e) { console.warn('图源实例化失败:', e.message); } }
+  if (box.__export) { try { source = new box.__export(); } catch (e) { console.warn('来源实例化失败:', e.message); } }
   if (!source && box.ComicSource.sources) {
     const keys = Object.keys(box.ComicSource.sources);
     if (keys.length) source = box.ComicSource.sources[keys[keys.length - 1]];
@@ -198,13 +198,13 @@ function loadSource(jsCode, keyHint) {
   if (!source.key) source.key = keyHint || source.name || 'src_' + Date.now();
   if (!source.name) source.name = source.key;
   sources[source.key] = source;
-  if (typeof source.init === 'function') { try { source.init(); } catch (e) { console.warn('图源init失败:', e.message); } }
+  if (typeof source.init === 'function') { try { source.init(); } catch (e) { console.warn('来源init失败:', e.message); } }
   return source;
 }
 
 async function loadSourceFromUrl(url, keyHint) {
   const r = await rawFetch(url);
-  if (r.status >= 400) throw new Error('下载图源失败: HTTP ' + r.status);
+  if (r.status >= 400) throw new Error('下载来源失败: HTTP ' + r.status);
   return loadSource(await r.text(), keyHint);
 }
 
@@ -218,7 +218,7 @@ function listSources() {
 
 async function search(sourceKey, keyword, options, page) {
   const src = sources[sourceKey];
-  if (!src || !src.search || !src.search.load) throw new Error('图源不支持搜索');
+  if (!src || !src.search || !src.search.load) throw new Error('来源不支持搜索');
   const res = await src.search.load(keyword, options || {}, page || 1);
   let list = [];
   if (Array.isArray(res)) list = res;
@@ -233,7 +233,7 @@ async function search(sourceKey, keyword, options, page) {
 
 async function explore(sourceKey, explorePage, page) {
   const src = sources[sourceKey];
-  if (!src || !src.explore) throw new Error('图源不支持探索');
+  if (!src || !src.explore) throw new Error('来源不支持探索');
   const pageData = src.explore[explorePage || 0];
   if (!pageData || !pageData.load) throw new Error('探索页不存在');
   const res = await pageData.load(page || 1);
@@ -250,7 +250,7 @@ async function explore(sourceKey, explorePage, page) {
 
 async function getComicDetails(sourceKey, comicId) {
   const src = sources[sourceKey];
-  if (!src || !src.comic || !src.comic.loadInfo) throw new Error('图源不支持详情');
+  if (!src || !src.comic || !src.comic.loadInfo) throw new Error('来源不支持详情');
   const det = await src.comic.loadInfo(comicId);
   if (!det) return null;
   let chapters = [];
@@ -268,7 +268,7 @@ async function getComicDetails(sourceKey, comicId) {
 
 async function getImages(sourceKey, comicId, epId) {
   const src = sources[sourceKey];
-  if (!src || !src.comic || !src.comic.loadPages) throw new Error('图源不支持加载图片');
+  if (!src || !src.comic || !src.comic.loadPages) throw new Error('来源不支持加载图片');
   const res = await src.comic.loadPages(comicId, epId);
   const urls = Array.isArray(res) ? res : (res.images || []);
   return {

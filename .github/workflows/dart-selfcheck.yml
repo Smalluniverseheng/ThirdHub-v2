@@ -252,3 +252,24 @@ jobs:
       - name: branding（内容来源类用词必须为零：引擎/换源/书源/图源，TTS 与专有名词豁免）
         working-directory: flutter_app
         run: dart run tool/branding_audit.dart
+
+      # 第 N+1 条 forbidden-words（2026-10-10 加）—— branding_audit 覆盖不到的那半边。
+      #
+      #   分工（两个闸门互补，不是重复）：
+      #     · `branding_audit.dart` = 前端 lib 的**语义分类**判定（豁免 TTS/浏览器/AI 专有名词），
+      #       强在"懂得哪些『引擎』是合法的"。
+      #     · `tools/forbidden-words.cjs` = **出货面 vs 合法用途**判定，并覆盖
+      #       **后端 server/ 与网页端 js/（branding_audit 完全不看这两处）**。
+      #       它按用例类型放行：i18n 字典 key、changelog 历史文本、旧引擎返回文本匹配串、
+      #       *.bak 备份文件 —— 这几类是**必须保留**的（删了会翻不出旧文本/篡改历史/匹配不上旧引擎）。
+      #
+      #   为什么需要它：用户问「你确定前端都没有违禁词了吧」时，
+      #   光有 branding_audit 只能答"前端 lib 干净"，**答不了"后端和网页端是否也干净"**。
+      #   实测（2026-10-10）：网页端出货面发现 7 处、后端 6 处 —— 全是真会被用户看到的文案
+      #   （网页端 category.js/backend-center.js/dsh-console.js/novel-reader.js 的界面字面量、
+      #     后端 routes-media.js 的 404 message、index.js 的自检横幅）。已全部改掉。
+      #   反证：注入 `const String _fwProbe = "这里是换源测试文案";` → exit 1 并点名该行；
+      #        还原后 exit 0。
+      - name: forbidden-words（出货面用词：前端 + 后端 + 网页端，含用途分类白名单）
+        working-directory: .
+        run: node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all

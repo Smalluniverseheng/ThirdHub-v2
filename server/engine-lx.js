@@ -70,9 +70,9 @@ async function loadScript(code) {
   vm.runInContext(code, sandbox, { timeout: 10000 });
   // 等脚本 inited(最多5秒)
   for (let i = 0; i < 50 && !inited; i++) await new Promise(r => setTimeout(r, 100));
-  if (!inited) throw new Error('音源未初始化(未调用 lx.send("inited"))' + tail(logs));
-  if (inited.status === false) throw new Error('音源初始化失败: ' + (inited.message || '') + tail(logs));
-  if (typeof handlers.request !== 'function') throw new Error('音源未注册 request 处理器');
+  if (!inited) throw new Error('来源未初始化(未调用 lx.send("inited"))' + tail(logs));
+  if (inited.status === false) throw new Error('来源初始化失败: ' + (inited.message || '') + tail(logs));
+  if (typeof handlers.request !== 'function') throw new Error('来源未注册 request 处理器');
   return { handlers, inited, logs };
 }
 
@@ -139,7 +139,7 @@ async function runLX(code, action, data = {}) {
     const declared = collectActions(inited);
     if (declared.size && !declared.has(action)) {
       return {
-        error: '该音源未声明支持 ' + action + '（其声明: ' + [...declared].join(',') + '）',
+        error: '该来源未声明支持 ' + action + '（其声明: ' + [...declared].join(',') + '）',
         unsupported: true,
         actions: [...declared],
       };

@@ -136,6 +136,9 @@ class _NovelReaderState extends State<NovelReaderPage> {
     if (t.contains('SOURCE_EMPTY') || t.contains('ContentEmpty') || t.contains('内容为空')) {
       return 'source_empty';
     }
+    // ★ 这里的『未找到内容源』是**旧引擎返回文本的匹配串**（不显示给用户），
+    //   不能改成"来源"——改了就连不上 1.13.0 之前的引擎，会被归到 unknown。
+    //   稳定 token 用英文 NEED_REGISTRATION（见项目铁律：状态标记不用文案）。
     if (t.contains('NEED_REGISTRATION') || t.contains('未找到内容源') || t.contains('未在数据库找到')) {
       return 'source_missing';
     }

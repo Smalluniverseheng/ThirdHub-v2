@@ -658,14 +658,14 @@ function startStorage() {
   checks.push(['依赖cheerio', (() => { try { require('cheerio'); return 'ok'; } catch (e) { return 'fail: npm install'; } })()]);
   try { require('bonjour-service'); checks.push(['依赖bonjour', 'ok']); } catch (e) { checks.push(['依赖bonjour', 'warn: mDNS不可用']); }
   checks.push(['drpy引擎', fs.existsSync(path.join(__dirname, 'vendor/drpy/drpy2.min.js')) ? 'ok' : 'warn: 缺vendor']);
-  checks.push(['书源', sources.length + '条']);
-  checks.push(['漫画源', comicSources.length + '条']);
-  checks.push(['影视源', drpySources.length + '条']);
+  checks.push(['小说来源', sources.length + '条']);
+  checks.push(['漫画来源', comicSources.length + '条']);
+  checks.push(['影视来源', drpySources.length + '条']);
   // ★第十六轮：BUILD-M1 验货清单里「自检横幅缺音源计数」—— 音源变量 `musicSources`
   // 早就在（:344 加载、:386 已注入 searchCtx），只是这一行从来没被补上。
   // 后果不是"少显示一行"，而是**音源为空时控制台完全不提示**：音乐模块点了没结果，
   // 排查时看不出是"源没入库"还是"引擎坏了"，只能去猜。
-  checks.push(['音源', musicSources.length + '条']);
+  checks.push(['音乐来源', musicSources.length + '条']);
   console.log('─── 自检 ───');
   for (const [k, v] of checks) console.log(`  ${k}: ${v}`);
   const fails = checks.filter(c => String(c[1]).startsWith('fail'));

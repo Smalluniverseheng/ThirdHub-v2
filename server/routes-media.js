@@ -50,7 +50,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   }
   if (p.startsWith('/v1/music/url')) {
     const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
-    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }}); return true; }
+    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'该来源不存在' }}); return true; }
     let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
     const r = await registry.run(s, 'url', item, '320k');
     if (r.error) { send(500, { object:'error', data:{ type:'source_error', message: r.error }}); return true; }
@@ -59,7 +59,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   }
   if (p.startsWith('/v1/music/lyric')) {
     const s = musicSources.find(x => x.id === u.searchParams.get('sourceId'));
-    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'音源不存在' }}); return true; }
+    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'该来源不存在' }}); return true; }
     let item = {}; try { item = JSON.parse(u.searchParams.get('item') || '{}'); } catch (e) {}
     const r = await registry.run(s, 'lyric', item);
     send(200, { object:'music-lyric', data: r });
@@ -101,7 +101,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   }
   if (p.startsWith('/v1/comic/info')) {
     const s = comicSources.find(x => x.id === u.searchParams.get('sourceId'));
-    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'图源不存在, 请先POST /v1/comic/sources导入' }}); return true; }
+    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'该来源不存在, 请先在资料库中接入来源' }}); return true; }
     const r = await registry.run(s, 'detail', { id: u.searchParams.get('id') });
     if (r.error) { send(500, { object:'error', data:{ type:'source_error', message: r.error }}); return true; }
     send(200, { object:'comic', data: { ...r, sourceId: s.id } });
@@ -109,7 +109,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   }
   if (p.startsWith('/v1/comic/pages')) {
     const s = comicSources.find(x => x.id === u.searchParams.get('sourceId'));
-    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'图源不存在' }}); return true; }
+    if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'该来源不存在' }}); return true; }
     const chapId = u.searchParams.get('chapterId') || '';
     const r = await registry.run(s, 'content', { id: chapId, chapterId: chapId });
     if (r.error) { send(500, { object:'error', data:{ type:'source_error', message: r.error }}); return true; }

@@ -24,11 +24,11 @@ let ready = false;
     try {
       if (m.code) rt.loadSource(m.code, m.key);
       else if (m.url) await rt.loadSourceFromUrl(m.url, m.key);
-      console.log('[venera] 图源已恢复:', m.key);
-    } catch (e) { console.warn('[venera] 图源恢复失败:', m.key, e.message); }
+      console.log('[venera] 来源已恢复:', m.key);
+    } catch (e) { console.warn('[venera] 来源恢复失败:', m.key, e.message); }
   }
   ready = true;
-  console.log('[venera] 图源就绪, 共 ' + rt.listSources().length + ' 个');
+  console.log('[venera] 来源就绪, 共 ' + rt.listSources().length + ' 个');
 })();
 
 function persistSources() {
@@ -132,7 +132,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/thp/chapters') {
       const raw = u.searchParams.get('id') || '';
       const i = raw.indexOf('::');
-      if (i < 0) return err(res, 'id 格式: 图源键::漫画ID');
+      if (i < 0) return err(res, 'id 格式: 来源键::漫画ID');
       const det = await rt.getComicDetails(raw.slice(0, i), raw.slice(i + 2));
       if (!det) return err(res, '详情为空', 404);
       return json(res, { object: 'list', data: {
@@ -144,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/thp/content') {
       const raw = u.searchParams.get('id') || '';
       const i = raw.indexOf('::');
-      if (i < 0) return err(res, 'id 格式: 图源键::漫画ID');
+      if (i < 0) return err(res, 'id 格式: 来源键::漫画ID');
       const r = await rt.getImages(raw.slice(0, i), raw.slice(i + 2), u.searchParams.get('chapter') || '');
       return json(res, { object: 'content', data: { images: r.images, pages: r.images, headers: r.headers } });
     }

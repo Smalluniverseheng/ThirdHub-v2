@@ -69,7 +69,7 @@ function buildSandbox() {
     aes: { encrypt: (t, k) => t, decrypt: (t, k) => t } // 占位: 需CryptoJS的源可后接
   };
 
-  const UI = { showMessage: (m) => console.log('[图源]', m) };
+  const UI = { showMessage: (m) => console.log('[来源]', m) };
   const Utils = { randomInt: (a, b) => Math.floor(Math.random() * (b - a + 1)) + a,
     createUuid: () => crypto.randomUUID() };
 
@@ -98,17 +98,17 @@ async function runSource(sourceCode, method, args = []) {
     if (!s && __className) {
       try { const C = eval(__className); if (typeof C === 'function') s = new C(); } catch(e) {}
     }
-    if (!s) { __result = { error: '图源未注册实例(需末尾new或export default class)' }; return; }
+    if (!s) { __result = { error: '来源未注册实例(需末尾new或export default class)' }; return; }
     __result = s[${JSON.stringify(method)}] ? s[${JSON.stringify(method)}].apply(s, ${JSON.stringify(args)}) : { error: '无此方法: ' + ${JSON.stringify(method)} };
   } catch (e) { __result = { error: String(e && e.message || e) }; }
 })();`;
   try {
     vm.runInContext(code + entry, box, { timeout: 30000 });
   } catch (e) {
-    return { error: '图源执行失败: ' + e.message };
+    return { error: '来源执行失败: ' + e.message };
   }
   try { return await Promise.resolve(box.__result); }
-  catch (e) { return { error: '图源方法异常: ' + e.message }; }
+  catch (e) { return { error: '来源方法异常: ' + e.message }; }
 }
 
 // ── IR 归一 ──

@@ -255,7 +255,7 @@ class _PmState extends State<PhotoMapPage> {
       final go = await ProKit.confirm(
         context,
         '需要自己的地图 Key',
-        '出于合规要求，App 不内置任何地图密钥，也不使用境外图源。\n\n'
+        '出于合规要求，App 不内置任何地图密钥，也不使用境外地图服务。\n\n'
             '想看带底图的地图，请自己申请一个腾讯位置服务的 Key（免费额度够个人用）：\n'
             '$kTmapApplyHint\n\n'
             '拿到后填进来即可。你想现在就填吗？',

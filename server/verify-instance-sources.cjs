@@ -34,7 +34,7 @@ function tailLogs(logs) {
 }
 
 async function verifyDrpy(list) {
-  console.log(`\n══ drpy 影视源（${list.length} 条，${ALL ? '全量实跑' : '抽前 ' + LIMIT + ' 条实跑'}）══`);
+  console.log(`\n══ drpy 影视来源（${list.length} 条，${ALL ? '全量实跑' : '抽前 ' + LIMIT + ' 条实跑'}）══`);
   const rows = [];
   for (const s of (ALL ? list : list.slice(0, LIMIT))) {
     if (s.enabled === false) {
@@ -59,7 +59,7 @@ async function verifyDrpy(list) {
 }
 
 async function verifyMusic(list) {
-  console.log(`\n══ 音源（${list.length} 条，${ALL ? '全量实跑' : '抽前 ' + LIMIT + ' 条实跑'}）══`);
+  console.log(`\n══ 音乐来源（${list.length} 条，${ALL ? '全量实跑' : '抽前 ' + LIMIT + ' 条实跑'}）══`);
   const rows = [];
   for (const s of (ALL ? list : list.slice(0, LIMIT))) {
     // 只声明 musicUrl 的音源**本来就不负责搜歌**，对它们跑 search 得出的"错误"

@@ -716,8 +716,8 @@ class EngineDirect {
                 '${p.truncated ? ' · 被预算截断(引擎源较多)' : ''}'));
         // ⑦ 源数量（引擎没装源 = 搜得到但永远 0 结果）
         final cnt = await sourceCount();
-        out.add(DiagItem('内容源数量', cnt > 0,
-            cnt > 0 ? '$cnt 个源已就绪' : '0 个源！请到资料库应用导入内容源（这是"能搜但没结果"的头号原因）'));
+        out.add(DiagItem('已接入来源数', cnt > 0,
+            cnt > 0 ? '$cnt 个来源已就绪' : '0 个来源！请到资料库应用添加来源（这是"能搜但没结果"的头号原因）'));
       } catch (e) {
         out.add(DiagItem('试搜 /thp/search', false, _describe(e)));
       }

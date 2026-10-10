@@ -17,14 +17,14 @@ async function runPlugin(code, method, args = []) {
   try {
     ${code}
     const plugin = module.exports;
-    if (!plugin || typeof plugin !== 'object') { __result = { error: '音源未module.exports' }; return; }
+    if (!plugin || typeof plugin !== 'object') { __result = { error: '来源未module.exports' }; return; }
     const fn = plugin[${JSON.stringify(method)}] || (plugin.default && plugin.default[${JSON.stringify(method)}]);
-    if (typeof fn !== 'function') { __result = { error: '音源无此方法: ' + ${JSON.stringify(method)} }; return; }
+    if (typeof fn !== 'function') { __result = { error: '来源无此方法: ' + ${JSON.stringify(method)} }; return; }
     __result = fn.apply(plugin, ${JSON.stringify(args)});
   } catch (e) { __result = { error: String(e && e.message || e) }; }
 })();`;
   try { vm.runInContext(entry, sandbox, { timeout: 20000 }); }
-  catch (e) { return { error: '音源执行失败: ' + e.message }; }
+  catch (e) { return { error: '来源执行失败: ' + e.message }; }
   try { return await Promise.resolve(sandbox.__result); }
   catch (e) { return { error: '方法异常: ' + e.message }; }
 }

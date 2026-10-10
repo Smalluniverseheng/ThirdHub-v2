@@ -10491,7 +10491,7 @@ class _Dct extends State<DownloadCenterTile> {
                         url: engineUrl,
                         icon: Icons.menu_book,
                         desc:
-                            '兼容"开源阅读"内容源格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
+                            '兼容"开源阅读"格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
         ListTile(
             dense: true,
             leading: const Icon(Icons.photo_library, size: 20),
@@ -10508,7 +10508,7 @@ class _Dct extends State<DownloadCenterTile> {
                         url: veneraUrl,
                         icon: Icons.photo_library,
                         desc:
-                            '兼容 venera JS 漫画源的独立资料库。支持内容源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
+                            '兼容 venera JS 格式的独立资料库。支持来源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
       ],
     ]);
   }
@@ -13368,7 +13368,7 @@ class _Ei extends State<EngineItemPage> {
                             child: Padding(
                                 padding: EdgeInsets.all(24),
                                 child: Text(
-                                    '资料库没有搜到这本书的其它来源\n（这取决于已接入的内容源，不是前端能补的）',
+                                    '资料库没有搜到这本书的其它来源\n（这取决于已接入的来源，不是前端能补的）',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: Colors.grey))));
                       }
