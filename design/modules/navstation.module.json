@@ -1,0 +1,16 @@
+{
+  "id": "navstation",
+  "name": "导航",
+  "icon": {
+    "app": null,
+    "web": "compass"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "navstation",
+    "webLoad": "./modules/nav-station.js",
+    "webFn": "renderNavStation"
+  }
+}
