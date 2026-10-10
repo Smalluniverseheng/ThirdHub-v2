@@ -1,0 +1,18 @@
+{
+  "id": "jobs",
+  "name": "自动化任务",
+  "icon": {
+    "app": "auto_mode_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "自动化任务"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
