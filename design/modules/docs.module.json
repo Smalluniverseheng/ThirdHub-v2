@@ -1,0 +1,16 @@
+{
+  "id": "docs",
+  "name": "帮助",
+  "icon": {
+    "app": null,
+    "web": "books"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "docs",
+    "webLoad": "./modules/docs.js",
+    "webFn": "renderDocsBoard"
+  }
+}
