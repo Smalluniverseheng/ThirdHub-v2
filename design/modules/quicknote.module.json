@@ -1,0 +1,18 @@
+{
+  "id": "quicknote",
+  "name": "悬浮便签",
+  "icon": {
+    "app": "note_alt_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "悬浮便签"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
