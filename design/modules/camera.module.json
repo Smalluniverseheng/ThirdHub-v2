@@ -1,0 +1,18 @@
+{
+  "id": "camera",
+  "name": "摄像头",
+  "icon": {
+    "app": "videocam_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "摄像头"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
