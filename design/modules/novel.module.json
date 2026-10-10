@@ -1,0 +1,16 @@
+{
+  "id": "novel",
+  "name": "小说",
+  "icon": {
+    "app": null,
+    "web": "book"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "novel",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
