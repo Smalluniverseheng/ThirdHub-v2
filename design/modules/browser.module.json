@@ -1,0 +1,18 @@
+{
+  "id": "browser",
+  "name": "浏览器",
+  "icon": {
+    "app": "language",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "浏览器"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
