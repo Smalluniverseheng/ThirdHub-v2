@@ -1,0 +1,18 @@
+{
+  "id": "todo",
+  "name": "待办",
+  "icon": {
+    "app": "check_circle_outline",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "待办"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
