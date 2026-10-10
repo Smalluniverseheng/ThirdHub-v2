@@ -1,0 +1,18 @@
+{
+  "id": "news",
+  "name": "资讯",
+  "icon": {
+    "app": "newspaper",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "资讯"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
