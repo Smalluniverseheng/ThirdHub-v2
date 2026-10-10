@@ -18,7 +18,7 @@ class AppLog {
     'account': '账号',
     'module': '模块',
     'transfer': '传输',
-    'engine': '引擎',
+    'engine': '资料库',
     'playback': '播放',
     'sync': '同步',
     'system': '系统',

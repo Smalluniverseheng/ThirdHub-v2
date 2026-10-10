@@ -275,7 +275,7 @@ class EngineDirect {
           name: savedName,
           caps: savedCaps,
           version: savedVer,
-          message: '正在校验引擎连接…');
+          message: '正在校验资料库连接…');
     }
     // 启动 THP 发现监听(全局常驻, 模块页随时可读设备列表)
     unawaited(ThpDiscovery.start());
@@ -310,7 +310,7 @@ class EngineDirect {
         state.value = EngineState(
             status: EngineStatus.connected,
             url: u,
-            name: nm.isEmpty ? (n.isEmpty ? 'THP 引擎' : n) : nm,
+            name: nm.isEmpty ? (n.isEmpty ? '资料库' : n) : nm,
             caps: cp,
             version: ver,
             message: '');
@@ -324,14 +324,14 @@ class EngineDirect {
     state.value = EngineState(
         status: EngineStatus.failed,
         url: u,
-        name: n.isEmpty ? 'THP 引擎' : n,
+        name: n.isEmpty ? '资料库' : n,
         caps: c,
-        message: '引擎当前不可达（${_describe(err)}）· 正在后台重试发现…');
+        message: '资料库当前不可达（${_describe(err)}）· 正在后台重试发现…');
     final found = await autoConnect(force: true);
     if (found && state.value.url != u) return; // 找到别的引擎，已切换
     if (!found) {
       state.value = state.value
-          .copyWith(message: '引擎不可达：${_describe(err)}\n请确认引擎 App 已启动且与本机同一局域网');
+          .copyWith(message: '资料库不可达：${_describe(err)}\n请确认资料库应用已启动且与本机同一局域网');
     }
   }
 
@@ -349,7 +349,7 @@ class EngineDirect {
     _autoConnecting = true;
     if (!connected) {
       state.value = state.value
-          .copyWith(status: EngineStatus.connecting, message: '正在发现局域网引擎…');
+          .copyWith(status: EngineStatus.connecting, message: '正在发现局域网资料库…');
     }
     try {
       await ThpDiscovery.start();
@@ -378,7 +378,7 @@ class EngineDirect {
         if (!connected) {
           state.value = state.value.copyWith(
               status: EngineStatus.connecting,
-              message: '广播未收到引擎，正在主动扫描本机与局域网…');
+              message: '广播未收到资料库，正在主动扫描本机与局域网…');
         }
         final hits = await ThpDiscovery.scan(
           subnetSweep: true,
@@ -398,11 +398,11 @@ class EngineDirect {
         if (!connected) {
           state.value = state.value.copyWith(
               status: EngineStatus.failed,
-              message: '未发现引擎（已尝试广播 + 主动扫描）。请确认：\n'
-                  '① 引擎 App 已打开并显示在运行（同机引擎也可）\n'
+              message: '未发现资料库（已尝试广播 + 主动扫描）。请确认：\n'
+                  '① 资料库应用已打开并显示在运行（同机资料库也可）\n'
                   '② 两台设备在同一局域网(WiFi)\n'
                   '③ 路由器未开启「AP 隔离」\n'
-                  '④ 已知地址可直接到「我的 → 引擎直连 → 手动填写地址」');
+                  '④ 已知地址可直接到「我的 → 资料库直连 → 手动填写地址」');
         }
         return false;
       }
@@ -423,7 +423,7 @@ class EngineDirect {
         }
         state.value = state.value.copyWith(
             status: EngineStatus.failed,
-            message: '发现 ${devs.length} 个引擎但都连不上：${_describe(e)}');
+            message: '发现 ${devs.length} 个资料库但都连不上：${_describe(e)}');
         return false;
       }
     } finally {
@@ -442,14 +442,14 @@ class EngineDirect {
       final nm = '${m['name'] ?? 'THP 引擎'}';
       final cp = [for (final x in (m['caps'] as List? ?? [])) '$x'];
       final ver = '${m['version'] ?? ''}';
-      // ★2026-09-28：握手成功后先判"这到底是引擎还是资源库"，再落 connected。
+      // ★2026-09-28：握手成功后先判"这到底是资料库还是资源库"，再落 connected。
       //   判定口径与 discover.dart 的 `ThpDevice.isLibrary` 逐字一致（caps 含 'library'），
       //   避免同一件事在两处各写一遍判定规则（历史教训：口径散落多处必然分叉）。
       //   资源库也带 m:novel/m:comic… 这些能力标签，所以不能只看 m:* —— 必须看 library 标记。
       if ('${m['role'] ?? ''}' == 'library' || cp.contains('library')) {
-        throw const NotAnEngineException('这个地址是「资源库」(:9527)，不是「引擎」(:1234)\n'
+        throw const NotAnEngineException('这个地址是「资源库」(:9527)，不是「资料库」(:1234)\n'
             '· 资源库请到「我的 → 系统 → 连接资源库」里填（它管的是源清单与账号）；\n'
-            '· 「引擎直连」要填引擎 App 的地址（引擎装在手机上时通常是 127.0.0.1:1234）。');
+            '· 「资料库直连」要填资料库应用的地址（资料库装在手机上时通常是 127.0.0.1:1234）。');
       }
       final p = await SharedPreferences.getInstance();
       await p.setString('engine_direct_url', u);
@@ -462,10 +462,10 @@ class EngineDirect {
           name: nm,
           caps: cp,
           version: ver);
-      // ★ 埋点必记"连上了**哪个**引擎"：本机能同时存在引擎(:1234)、
+      // ★ 埋点必记"连上了**哪个**资料库"：本机能同时存在引擎(:1234)、
       //   资源库(:9527)、后端(:9527 家族) 三类端点，用户报"搜不到东西"
       //   时，第一步就是确认他到底连的是哪一个、能力集是什么。
-      AppLog.engine('已连接引擎', d: {
+      AppLog.engine('已连接资料库', d: {
         'url': u,
         'name': nm,
         'version': ver,
@@ -481,20 +481,20 @@ class EngineDirect {
       // 保留上一状态的可读性：若之前是已连接，提示更明确
       if (from == EngineStatus.connected) {
         state.value =
-            state.value.copyWith(message: '与引擎的连接已断开：${_describe(e)}');
+            state.value.copyWith(message: '与资料库的连接已断开：${_describe(e)}');
       }
-      // ★ 失败原因必须落日志：界面只显示一行 toast，转瞬即逝；而"连不上引擎"
+      // ★ 失败原因必须落日志：界面只显示一行 toast，转瞬即逝；而"连不上资料库"
       //   有至少 5 种根因（明文 HTTP 被系统拦 / 地址填成资源库 / 引擎没启动 /
       //   不在同一网段 / 自签证书），只看得见一句"连接失败"根本无从下手。
       AppLog.warn(
-          'engine', from == EngineStatus.connected ? '与引擎的连接已断开' : '连接引擎失败',
+          'engine', from == EngineStatus.connected ? '与资料库的连接已断开' : '连接资料库失败',
           d: {'url': u, 'reason': _describe(e), 'errType': '${e.runtimeType}'});
       rethrow;
     }
   }
 
   static Future<void> disconnect() async {
-    AppLog.engine('已断开引擎连接', d: {'url': state.value.url});
+    AppLog.engine('已断开资料库连接', d: {'url': state.value.url});
     state.value = const EngineState();
     final p = await SharedPreferences.getInstance();
     await p.remove('engine_direct_url');
@@ -517,12 +517,12 @@ class EngineDirect {
   /// ★关键：明文被系统拦截与「连接被拒」在 Dart 里都是 ClientException/SocketException，
   ///   旧代码一律当成「连接过期」，于是真正的原因永远看不到。
   static String _describe(Object? e) {
-    if (e is TimeoutException) return '超时未响应（引擎可能正忙或已退出）';
+    if (e is TimeoutException) return '超时未响应（资料库可能正忙或已退出）';
     final t = '${e is Exception ? e.toString() : e}';
     if (t.contains('CLEARTEXT') || t.contains('not permitted')) {
       return '系统拦截了明文 HTTP（需更新到修复版 App）';
     }
-    if (t.contains('Connection refused')) return '连接被拒绝（引擎未在运行）';
+    if (t.contains('Connection refused')) return '连接被拒绝（资料库未在运行）';
     if (t.contains('Network is unreachable') ||
         t.contains('No route to host')) {
       return '网络不可达（检查是否同一 WiFi）';
@@ -544,7 +544,7 @@ class EngineDirect {
   ///   ①装了老引擎(<1.5.5，不认 limit)、或 ②单字符搜索(如"人")命中上千书源
   ///   导致引擎返回未截断的全量 JSON，bodyBytes 可达数 MB —— 在低端机上直接 OOM，
   ///   而 Dart 网络层崩掉时抛的正是 "Connection closed before full header"，
-  ///   被误读成"引擎连不上"。这里改成**流式读 + 超限即断**，把 OOM 变成一句可读提示。
+  ///   被误读成"资料库连不上"。这里改成**流式读 + 超限即断**，把 OOM 变成一句可读提示。
   static const _maxRespBytes = 4 * 1024 * 1024;
 
   /// 带上限地读流：完整读完返回字节，超过 [cap] 返回 null（并立即取消订阅停止下载）。
@@ -572,7 +572,7 @@ class EngineDirect {
 
   static Future<Map<String, dynamic>> _get(String path,
       [bool retried = false, int timeoutSec = 30]) async {
-    if (url.isEmpty) throw Exception('未连接引擎');
+    if (url.isEmpty) throw Exception('未连接资料库');
     final cli = _client();
     try {
       final req = http.Request('GET', Uri.parse('$url$path'));
@@ -583,14 +583,14 @@ class EngineDirect {
         try {
           await res.stream.drain<void>();
         } catch (_) {}
-        throw Exception('引擎响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > 4MB），'
+        throw Exception('资料库响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > 4MB），'
             '已中止以免内存溢出。请缩小关键词或加类型过滤');
       }
       // ② 流式读 + 上限
       final bytes = await _readCapped(res.stream, _maxRespBytes)
           .timeout(Duration(seconds: timeoutSec));
       if (bytes == null) {
-        throw Exception('引擎响应超过 4MB 上限，已中止以免内存溢出。'
+        throw Exception('资料库响应超过 4MB 上限，已中止以免内存溢出。'
             '请缩小关键词（单字搜索通常命中源最多）或加类型过滤');
       }
       if (res.statusCode != 200) {
@@ -638,7 +638,7 @@ class EngineDirect {
   /// 返回 null 表示成功，否则返回失败原因（给界面直接显示）。
   static Future<String?> connectManual(String input) async {
     var t = input.trim();
-    if (t.isEmpty) return '请输入引擎地址';
+    if (t.isEmpty) return '请输入资料库地址';
     if (!t.startsWith('http://') && !t.startsWith('https://')) t = 'http://$t';
     // 补默认端口
     try {
@@ -664,8 +664,8 @@ class EngineDirect {
     // ① 回环引擎（同机引擎 App）
     final loopOk =
         await ThpDiscovery.probeTcp('127.0.0.1', ThpDiscovery.kEnginePort, 500);
-    out.add(DiagItem('本机回环引擎 127.0.0.1:${ThpDiscovery.kEnginePort}', loopOk,
-        loopOk ? '通（本机跑着引擎 App）' : '未监听（本机没跑引擎，属正常）'));
+    out.add(DiagItem('本机回环资料库 127.0.0.1:${ThpDiscovery.kEnginePort}', loopOk,
+        loopOk ? '通（本机跑着资料库应用）' : '未监听（本机没跑资料库，属正常）'));
     // ② UDP 发现端口能否绑定（被占用 → 广播永远收不到）
     var udpOk = false;
     String udpMsg = '';
@@ -681,7 +681,7 @@ class EngineDirect {
     out.add(DiagItem('UDP 发现端口 19527', udpOk, udpMsg));
     // ③ 广播/扫描已知设备
     final known = available();
-    out.add(DiagItem('已知引擎设备', known.isNotEmpty,
+    out.add(DiagItem('已知资料库设备', known.isNotEmpty,
         known.isEmpty ? '暂无（可点「主动扫描」）' : known.map((d) => d.url).join('、')));
     // ④ 主动扫描
     final hits = await ThpDiscovery.scan(
@@ -716,13 +716,13 @@ class EngineDirect {
                 '${p.truncated ? ' · 被预算截断(引擎源较多)' : ''}'));
         // ⑦ 源数量（引擎没装源 = 搜得到但永远 0 结果）
         final cnt = await sourceCount();
-        out.add(DiagItem('引擎书源数量', cnt > 0,
-            cnt > 0 ? '$cnt 个源已就绪' : '0 个源！请到引擎 App 导入书源（这是"能搜但没结果"的头号原因）'));
+        out.add(DiagItem('内容源数量', cnt > 0,
+            cnt > 0 ? '$cnt 个源已就绪' : '0 个源！请到资料库应用导入内容源（这是"能搜但没结果"的头号原因）'));
       } catch (e) {
         out.add(DiagItem('试搜 /thp/search', false, _describe(e)));
       }
     } else {
-      out.add(DiagItem('/thp/meta 握手', false, '尚未连接任何引擎'));
+      out.add(DiagItem('/thp/meta 握手', false, '尚未连接任何资料库'));
     }
     return out;
   }
@@ -857,7 +857,7 @@ class EngineDirect {
 
     () async {
       if (url.isEmpty) {
-        ctl.addError(Exception('未连接引擎'));
+        ctl.addError(Exception('未连接资料库'));
         finish();
         return;
       }
@@ -989,7 +989,7 @@ class EngineDirect {
     final raw = r['raw'];
     if (raw is Map && raw['truncated'] == true) {
       final tot = raw['total'];
-      discoverNotice = '发现页结果被引擎时间预算截断'
+      discoverNotice = '发现页结果被资料库时间预算截断'
           '${tot != null ? '（共 $tot 个源，已返回可用部分）' : ''}';
     } else {
       discoverNotice = '';

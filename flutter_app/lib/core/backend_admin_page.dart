@@ -93,7 +93,7 @@ class _Ba extends State<BackendAdminPage> {
   Widget _enginesCard() {
     final builtin = (engines['builtin'] as List?) ?? [];
     final network = (engines['network'] as List?) ?? [];
-    return _card('引擎总览', Icons.memory, [
+    return _card('资料库总览', Icons.memory, [
       for (final e in builtin)
         Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
           Icon(e['status'] == 'online' ? Icons.check_circle : e['status'] == 'standby' ? Icons.pause_circle_outline : Icons.error_outline,
@@ -111,7 +111,7 @@ class _Ba extends State<BackendAdminPage> {
           Text(e['status'] == 'online' ? '在线' : '离线', style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ])),
       if (builtin.isEmpty && network.isEmpty)
-        const Text('暂无引擎数据', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const Text('暂无资料库数据', style: TextStyle(fontSize: 12, color: Colors.grey)),
     ]);
   }
 
@@ -202,7 +202,7 @@ class _Ba extends State<BackendAdminPage> {
   Widget _miscCard() {
     final voices = (ttsCap['voices'] as List?)?.length ?? 0;
     return _card('能力 & 反馈', Icons.miscellaneous_services_outlined, [
-      _kv('TTS 离线引擎(piper)', ttsCap['piper'] == true ? '已装' : '未装'),
+      _kv('TTS 离线资料库(piper)', ttsCap['piper'] == true ? '已装' : '未装'),
       _kv('TTS 在线(edge-tts)', ttsCap['edge'] == true ? '已装($voices 声音)' : '未装'),
       _kv('Python 执行', '可用(/v1/py, 供 AI 工具 run_python 调用)'),
       _kv('用户反馈', '${feedback.length} 条'),

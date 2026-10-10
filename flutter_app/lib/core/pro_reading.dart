@@ -308,9 +308,9 @@ class _ReadingPro extends ProPageState<ReadingProPage> {
   List<Widget> buildBody(BuildContext c) {
     final ranked = _ranked;
     return [
-      ProUI.card('R-2 换源',
+      ProUI.card('R-2 换一来源',
           [
-            ProUI.sw('自动换源', auto, (v) async {
+            ProUI.sw('自动换一来源', auto, (v) async {
               await SourceHealth.setAutoEnabled(v);
               touch(() => auto = v);
             },
@@ -343,7 +343,7 @@ class _ReadingPro extends ProPageState<ReadingProPage> {
                   child: const Text('标记失败', style: TextStyle(fontSize: 11)),
                 ),
               ),
-            if (ranked.isEmpty) ProUI.note('还没有换源统计。读过几章后这里会列出每条线路的成功率与耗时。'),
+            if (ranked.isEmpty) ProUI.note('还没有换一来源统计。读过几章后这里会列出每条线路的成功率与耗时。'),
             if (ranked.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -388,7 +388,7 @@ class _ReadingPro extends ProPageState<ReadingProPage> {
       ProUI.card('R-7 追更检查', [
         ProUI.row(Icons.add_alert_outlined, '登记在追的书',
             sub: '填书名 + 目录地址, 一键比对最新章节', onTap: () => _addFollow(c)),
-        ProUI.row(Icons.refresh, '立即检查全部', sub: '需要后端或引擎在线', onTap: () async {
+        ProUI.row(Icons.refresh, '立即检查全部', sub: '需要后端或资料库在线', onTap: () async {
           ProUI.toast(c, '检查中…');
           final n = await FollowUp.checkAll();
           await refresh();

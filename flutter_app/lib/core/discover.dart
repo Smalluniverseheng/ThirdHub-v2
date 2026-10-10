@@ -6,7 +6,7 @@
 // ★ 2026-09-19 修复「根本搜不到引擎 / 阅读连不上前端」的**发现层**根因
 // ══════════════════════════════════════════════════════════════════════════
 // 旧实现**只靠 UDP 广播**（引擎往 255.255.255.255:19527 发 HELLO）。
-// 这条路径下面这些常见环境里会**完全收不到**，而界面只显示"未发现引擎"，
+// 这条路径下面这些常见环境里会**完全收不到**，而界面只显示"未发现资料库"，
 // 用户无从判断是什么坏了：
 //   (a) **IPv6 优先 / IPv4 缺失的网络**（运营商 IPv6 单栈、部分 5G / 校园网）——
 //       引擎的广播目标是 IPv4 有限广播地址，IPv6 链路里根本不存在这条路径；
@@ -44,7 +44,7 @@ class ThpDevice {
   String get url => 'http://$host:$port';
   String get label => name.isNotEmpty
       ? name
-      : (isLibrary ? '资源库' : '引擎(${caps.join('/')})');
+      : (isLibrary ? '资源库' : '资料库(${caps.join('/')})');
 }
 
 class ThpDiscovery {
@@ -79,7 +79,7 @@ class ThpDiscovery {
         _ingest(utf8.decode(dg.data, allowMalformed: true).trim(), dg.address.address);
       });
       // 每 30s 清理 90s 没再见到的设备。★扫描发现的设备给更长的 TTL（更长 3 分钟），
-      //   因为扫描是用户显式触发的、不是持续性信号，清得太快会让"刚扫到的引擎"又消失。
+      //   因为扫描是用户显式触发的、不是持续性信号，清得太快会让"刚扫到的资料库"又消失。
       Timer.periodic(const Duration(seconds: 30), (_) {
         final now = DateTime.now();
         final before = devices.length;
@@ -196,7 +196,7 @@ class ThpDiscovery {
             }
           } else {
             // ★/16、/12 这类大网段（宿舍/企业网常见），穷举 254 个 /24 不现实。
-            //   策略：扫自己 /24 + **网关所在 /24** + 相邻 /24，都是"引擎最可能出现"的位置。
+            //   策略：扫自己 /24 + **网关所在 /24** + 相邻 /24，都是"资料库最可能出现"的位置。
             //   真正跨 /24 的引擎，最终靠引擎侧的**子网定向广播**发现（引擎侧已同步修）。
             final p24 = _prefix24(a.ip);
             if (swept24.add(p24)) { for (var i = 1; i <= 254; i++) cands.add('$p24.$i'); }
@@ -339,7 +339,7 @@ class ThpDiscovery {
       if (cp.isEmpty && port == kLibraryPort) cp.add('library');
       final ver = '${m['version'] ?? ''}';
       return ThpDevice(host, port, cp, DateTime.now(),
-          name: nm.isEmpty ? (port == kLibraryPort ? '资源库' : 'THP 引擎 v$ver') : nm,
+          name: nm.isEmpty ? (port == kLibraryPort ? '资源库' : '资料库 v$ver') : nm,
           scanned: true);
     } catch (_) {
       return null;

@@ -597,11 +597,11 @@ class _Sys extends ProPageState<SystemCenterPage> {
                 },
                 child: const Text('撤销', style: TextStyle(fontSize: 11))),
           ),
-        if (grants.isEmpty) ProUI.note('还没有授权记录。接入第三方引擎后其授权会登记在这里。'),
+        if (grants.isEmpty) ProUI.note('还没有授权记录。接入第三方资料库后其授权会登记在这里。'),
       ]),
 
-      ProUI.card('E-4 远程引擎', [
-        ProUI.row(Icons.hub_outlined, '手动添加远程引擎',
+      ProUI.card('E-4 远程资料库', [
+        ProUI.row(Icons.hub_outlined, '手动添加远程资料库',
             sub: '官方零分发; 自行添加即自担风险',
             onTap: () => _addEngine(c)),
         for (final e in engines)
@@ -619,7 +619,7 @@ class _Sys extends ProPageState<SystemCenterPage> {
                   await refresh();
                 }),
           ),
-      ], sub: '红线: 不分发引擎、不做推荐位、不审核内容'),
+      ], sub: '红线: 不分发资料库、不做推荐位、不审核内容'),
 
       ProUI.card('E-5 / E-6 付费与开发者', [
         ProUI.row(Icons.payments_outlined, 'PAYMENT_REQUIRED 处理演示',
@@ -816,13 +816,13 @@ class _Sys extends ProPageState<SystemCenterPage> {
 
   Future<void> _addEngine(BuildContext c) async {
     final ok = await ProKit.confirm(c, '风险提示',
-        '远程引擎由你自行添加。第三方引擎可能索取网络权限、记录你的访问行为, 也可能随时失效。\n\n本应用不提供、不推荐、不审核任何引擎, 使用后果自负。');
+        '远程资料库由你自行添加。第三方资料库可能索取网络权限、记录你的访问行为, 也可能随时失效。\n\n本应用不提供、不推荐、不审核任何资料库, 使用后果自负。');
     if (!ok || !c.mounted) return;
-    final base = await ProKit.prompt(c, '引擎地址', hint: 'https://host:port');
+    final base = await ProKit.prompt(c, '资料库地址', hint: 'https://host:port');
     if (base == null) return;
     final name = await ProKit.prompt(c, '名称', hint: '可选');
     await RemoteEngines.add(base, name ?? '');
-    await Grants.add(name ?? base, '远程引擎', note: base);
+    await Grants.add(name ?? base, '远程资料库', note: base);
     await refresh();
   }
 
@@ -1004,7 +1004,7 @@ POST 源记法:
                       fontFamily: 'monospace', fontSize: 11.5, height: 1.5)),
             ),
           ]),
-          ProUI.card('踩坑备忘(引擎侧与调用侧)', [
+          ProUI.card('踩坑备忘(资料库侧与调用侧)', [
             Padding(
               padding: const EdgeInsets.all(12),
               child: SelectableText(_capsNote,
@@ -1012,7 +1012,7 @@ POST 源记法:
                       fontFamily: 'monospace', fontSize: 11.5, height: 1.5)),
             ),
           ]),
-          ProUI.note('开发者接入只需实现上面三个端点; 本应用不代管、不托管任何引擎。'),
+          ProUI.note('开发者接入只需实现上面三个端点; 本应用不代管、不托管任何资料库。'),
         ],
       ),
     );

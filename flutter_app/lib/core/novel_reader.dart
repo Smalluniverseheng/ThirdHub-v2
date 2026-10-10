@@ -136,11 +136,11 @@ class _NovelReaderState extends State<NovelReaderPage> {
     if (t.contains('SOURCE_EMPTY') || t.contains('ContentEmpty') || t.contains('内容为空')) {
       return 'source_empty';
     }
-    if (t.contains('NEED_REGISTRATION') || t.contains('未找到书源') || t.contains('未在数据库找到')) {
+    if (t.contains('NEED_REGISTRATION') || t.contains('未找到内容源') || t.contains('未在数据库找到')) {
       return 'source_missing';
     }
     if (t.contains('章节不存在') || t.contains('HTTP 404')) return 'chapter_gone';
-    if (t.contains('未连接引擎') || t.contains('CLEARTEXT') || t.contains('未发现引擎')) {
+    if (t.contains('未连接资料库') || t.contains('CLEARTEXT') || t.contains('未发现资料库')) {
       return 'engine_down';
     }
     return 'unknown';
@@ -271,7 +271,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             label: '${((snap.data ?? 0.5) * 2).toStringAsFixed(1)}x',
             onChanged: (v) { TtsManager.setRate(v); setD(() {}); }))) ]),
         const SizedBox(height: 8),
-        const Align(alignment: Alignment.centerLeft, child: Text('朗读引擎', style: TextStyle(fontSize: 13))),
+        const Align(alignment: Alignment.centerLeft, child: Text('朗读资料库', style: TextStyle(fontSize: 13))),
         const SizedBox(height: 8),
         FutureBuilder<({String cur, List<TtsVendor> ready})>(
           future: () async {
@@ -304,7 +304,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             //   选了却不合成、只是静默降级，用户会以为"听书坏了"。
             //   所以未配置时这一项直接把人送到引导页。
             ChoiceChip(
-              label: Text(cur == 'opensource' ? '开源引擎 · 已选' : '开源引擎'),
+              label: Text(cur == 'opensource' ? '开源资料库 · 已选' : '开源资料库'),
               avatar: const Icon(Icons.memory, size: 16),
               selected: cur == 'opensource',
               onSelected: (_) async {
@@ -346,7 +346,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
             child: Text('后端合成失败已降级系统朗读: ${TtsManager.backendError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
         if (TtsManager.openSourceError.isNotEmpty)
           Padding(padding: const EdgeInsets.only(top: 6),
-            child: Text('开源引擎不可用已降级系统朗读: ${TtsManager.openSourceError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
+            child: Text('开源资料库不可用已降级系统朗读: ${TtsManager.openSourceError}', style: const TextStyle(fontSize: 10, color: Colors.orange))),
         // 在线厂商失败也要说出来。全句来自 TtsOnline.synthesize 抛出的可读文案
         // （Key 被拒 / 返回结构变了 / 连不上），比"朗读失败"四个字有用得多。
         if (TtsManager.onlineError.isNotEmpty)
@@ -370,13 +370,13 @@ class _NovelReaderState extends State<NovelReaderPage> {
             // 现在直接把人送到真正能填 Key 的那一页。
             Expanded(
                 child: Text(
-                    '语音厂商设置 · 内置 ${kTtsVendors.length} 家可填 Key 即用 / 自定义接口 / 开源引擎指引',
+                    '语音厂商设置 · 内置 ${kTtsVendors.length} 家可填 Key 即用 / 自定义接口 / 开源资料库指引',
                     style: const TextStyle(fontSize: 11, color: Colors.grey))),
             const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
           ]),
         ),
         const SizedBox(height: 6),
-        const Text('系统朗读离线免费; 后端合成走自己的后端(piper离线/edge-tts在线); 在线引擎需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
+        const Text('系统朗读离线免费; 后端合成走自己的后端(piper离线/edge-tts在线); 在线资料库需在 AI 模块配置对应厂商的 API Key', style: TextStyle(fontSize: 10, color: Colors.grey)),
       ])));
     }));
   }
@@ -401,7 +401,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
       if (text.trim().isEmpty && images.isEmpty) {
         _recordHealth(true, DateTime.now().difference(t0).inMilliseconds);
         _failKind = 'source_empty';
-        _failMsg = '引擎返回了这一章，但内容是空的。';
+        _failMsg = '资料库返回了这一章，但内容是空的。';
         text = '';
       } else {
         _recordHealth(true, DateTime.now().difference(t0).inMilliseconds);
@@ -442,7 +442,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('换源失败：$e')));
+            SnackBar(content: Text('换一来源失败：$e')));
       }
     } finally {
       if (mounted) setState(() => _swapping = false);

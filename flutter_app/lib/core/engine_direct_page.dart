@@ -69,17 +69,17 @@ class _Ed extends State<EngineDirectPage> {
         ? EngineDirect.url.replaceFirst(RegExp(r'^https?://'), '')
         : '');
     final input = await showDialog<String>(context: context, builder: (c) => AlertDialog(
-      title: const Text('手动填写引擎地址', style: TextStyle(fontSize: 16)),
+      title: const Text('手动填写资料库地址', style: TextStyle(fontSize: 16)),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         TextField(controller: ctl, autofocus: true,
           keyboardType: TextInputType.url,
           decoration: const InputDecoration(
             hintText: '例：192.168.1.5  或  [240e::1]:1234',
-            helperText: '省略端口默认 1234（引擎）',
+            helperText: '省略端口默认 1234（资料库）',
             helperStyle: TextStyle(fontSize: 11),
             isDense: true)),
         const SizedBox(height: 8),
-        const Text('引擎 App 的「关于」页会显示本机地址；也可在路由器 DHCP 列表里找。',
+        const Text('资料库应用的「关于」页会显示本机地址；也可在路由器 DHCP 列表里找。',
           style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.4)),
       ]),
       actions: [
@@ -165,20 +165,20 @@ class _Ed extends State<EngineDirectPage> {
   };
   String _t(EngineState s) => switch (s.status) {
     EngineStatus.connected => '已连接：${s.name}',
-    EngineStatus.connecting => '正在连接引擎…',
-    EngineStatus.failed => s.url.isEmpty ? '未连接引擎' : '引擎离线：${s.name}',
-    EngineStatus.idle => '未连接引擎',
+    EngineStatus.connecting => '正在连接资料库…',
+    EngineStatus.failed => s.url.isEmpty ? '未连接资料库' : '资料库离线：${s.name}',
+    EngineStatus.idle => '未连接资料库',
   };
 
   @override Widget build(BuildContext c) =>
     ValueListenableBuilder<EngineState>(
       valueListenable: EngineDirect.state,
       builder: (c, st, _) => Scaffold(
-        appBar: AppBar(title: const Text('引擎直连'),
+        appBar: AppBar(title: const Text('资料库直连'),
           actions: [ IconButton(icon: const Icon(Icons.refresh, size: 20),
             tooltip: '重新探测/连接', onPressed: busy ? null : _retry) ]),
         body: ListView(padding: const EdgeInsets.all(12), children: [
-          const Text('不经过后端, 前端直接连接局域网引擎搜索与发现(THP 协议)',
+          const Text('不经过后端, 前端直接连接局域网资料库搜索与发现(THP 协议)',
             style: TextStyle(fontSize: 11, color: Colors.grey)),
           const SizedBox(height: 10),
           // 当前连接
@@ -238,17 +238,17 @@ class _Ed extends State<EngineDirectPage> {
               label: const Text('一键自检', style: TextStyle(fontSize: 12)))),
           ]),
           const SizedBox(height: 10),
-          Row(children: [ const Text('发现的引擎（广播 + 主动扫描）', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          Row(children: [ const Text('发现的资料库（广播 + 主动扫描）', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const Spacer(),
             if (busy) const SizedBox(width: 14, height: 14,
               child: CircularProgressIndicator(strokeWidth: 2)) ]),
           const SizedBox(height: 6),
           if (EngineDirect.available().isEmpty)
             Padding(padding: const EdgeInsets.all(24), child: Column(children: [
-              const Text('暂未发现引擎',
+              const Text('暂未发现资料库',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 6),
-              const Text('引擎 App 启动后会广播(THP UDP 19527)；\n'
+              const Text('资料库应用启动后会广播(THP UDP 19527)；\n'
                   '若广播被网络环境屏蔽，点下面「主动扫描」直连探测：',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.5)),
@@ -406,9 +406,9 @@ class _Edv extends State<EngineDiscoverView> {
             color: st.status == EngineStatus.failed ? Colors.redAccent : Colors.grey),
           const SizedBox(height: 12),
           Text(switch (st.status) {
-            EngineStatus.connecting => '正在连接引擎…',
-            EngineStatus.failed => '引擎不可达',
-            _ => '发现页需要先连接引擎',
+            EngineStatus.connecting => '正在连接资料库…',
+            EngineStatus.failed => '资料库不可达',
+            _ => '发现页需要先连接资料库',
           }, style: const TextStyle(color: Colors.grey)),
           if (st.message.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -423,7 +423,7 @@ class _Edv extends State<EngineDiscoverView> {
           // 已发现但未连上的引擎: 直接一键连接
           if (!loading && devs.isNotEmpty) ...[
             const SizedBox(height: 14),
-            const Text('局域网发现的引擎', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            const Text('局域网发现的资料库', style: TextStyle(fontSize: 11, color: Colors.grey)),
             const SizedBox(height: 6),
             for (final d in devs)
               Card(child: ListTile(dense: true,
@@ -436,7 +436,7 @@ class _Edv extends State<EngineDiscoverView> {
           ],
           if (!loading && devs.isEmpty) ...[
             const SizedBox(height: 8),
-            const Text('未发现引擎: 请确认引擎已启动并与本机在同一局域网\n(引擎启动后会自动广播 THP UDP 19527)',
+            const Text('未发现资料库: 请确认资料库已启动并与本机在同一局域网\n(资料库启动后会自动广播 THP UDP 19527)',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey)),
           ],
           const SizedBox(height: 12),
@@ -445,7 +445,7 @@ class _Edv extends State<EngineDiscoverView> {
           const SizedBox(height: 6),
           TextButton(onPressed: () => Navigator.push(c,
             MaterialPageRoute(builder: (_) => const EngineDirectPage())),
-            child: const Text('引擎直连管理', style: TextStyle(fontSize: 12))),
+            child: const Text('资料库直连管理', style: TextStyle(fontSize: 12))),
         ]))));
     }
     final curTags = sources.isEmpty
@@ -456,7 +456,7 @@ class _Edv extends State<EngineDiscoverView> {
       Padding(padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
         child: Row(children: [
           Expanded(child: TextField(controller: q,
-            decoration: const InputDecoration(hintText: '在引擎中搜索…', isDense: true,
+            decoration: const InputDecoration(hintText: '在资料库搜索…', isDense: true,
               border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
               contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
             onSubmitted: _search)),

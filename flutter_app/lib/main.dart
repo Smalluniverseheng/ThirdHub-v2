@@ -514,7 +514,7 @@ class AppSettings {
   //   上游引擎本来就同时具备「严格匹配」与「宽松关联」两种语义，前端过滤只能
   //   在**已经拿回来的结果**上做事 —— 那既费流量又费时间，而且改不了引擎的
   //   扫描行为（比如精确搜索本就该"够量即停"，扫描策略完全不同）。
-  //   所以这里只决定"发什么 mode 给引擎"，过滤与扫描都由引擎做。
+  //   所以这里只决定"发什么 mode 给资料库"，过滤与扫描都由引擎做。
   //
   //   · fuzzy 模糊（默认）—— 源站返回什么就是什么，与 4.64.x 行为完全一致
   //   · exact 精确        —— 引擎侧再收一道：书名或作者必须真的含关键词
@@ -1448,7 +1448,7 @@ class ConsentPage extends StatelessWidget {
                                           ]),
                                       const SizedBox(height: 10),
                                       const Text(
-                                          'ThirdHub 是纯播放器：不收集、不上传您的任何个人信息；AI 密钥等敏感数据仅加密保存在本机。THP 引擎是用户自制的协议插件，与本软件相互独立。',
+                                          'ThirdHub 是纯播放器：不收集、不上传您的任何个人信息；AI 密钥等敏感数据仅加密保存在本机。资料库是用户自制的协议插件，与本软件相互独立。',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                               fontSize: 12.5,
@@ -2028,7 +2028,7 @@ class _Conn extends State<ConnectLibraryPage> {
       //   历史缺陷（模拟器实测留存）：密钥留空也一路"连接成功"，
       //   因为免鉴权的 /v1/meta 探通了 → 存盘 → 之后每次搜索都 401，
       //   而 401 被 `Api.get` 当正常 body 解析 → 界面显示"没有找到相关内容"。
-      //   用户以为"引擎搜不到内容"，其实是密钥没生效 —— 必须在这里挡住。
+      //   用户以为"资料库搜不到内容"，其实是密钥没生效 —— 必须在这里挡住。
       await Api.probeAuth(base: baseC.text.trim(), token: tokenC.text.trim());
 
       final p = await SharedPreferences.getInstance();
@@ -2124,7 +2124,7 @@ class _Conn extends State<ConnectLibraryPage> {
                                 TextStyle(fontSize: 12, color: Colors.grey))),
                     const SizedBox(height: 6),
                     if (ThpDiscovery.list().isEmpty)
-                      const Text('暂未发现 · 资源库/引擎开机后会自动广播',
+                      const Text('暂未发现 · 资源库/资料库开机后会自动广播',
                           style: TextStyle(fontSize: 11, color: Colors.grey))
                     else
                       for (final d in ThpDiscovery.list())
@@ -2641,7 +2641,7 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
             entry(Icons.record_voice_over_outlined, '语音朗读',
-                value: '引擎 · 厂商 · 试听', page: const TtsSettingsPage()),
+                value: '资料库 · 厂商 · 试听', page: const TtsSettingsPage()),
             _sep(),
             // 密钥库也是**全局**设置：AI 与语音共用同一把 Key，
             // 「在 AI 里填过的小米 Key，语音自动带上」这件事就落在这里。
@@ -2652,7 +2652,7 @@ class _Pf extends State<ProfilePage> {
                 value: Api.base.isEmpty ? '未连接' : '已连接',
                 page: const BackendAdminPage()),
             _sep(),
-            entry(Icons.extension_outlined, '引擎直连',
+            entry(Icons.extension_outlined, '资料库直连',
                 value: EngineDirect.connected ? '已连接' : '',
                 page: const EngineDirectPage()),
             _sep(),
@@ -2836,11 +2836,11 @@ class HelpPage extends StatelessWidget {
             child: const Column(children: [
               ListTile(
                   dense: true,
-                  title: Text('后端/引擎连不上?',
+                  title: Text('后端/资料库连不上?',
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                      '确认手机与后端在同一局域网; 后端已启动且指纹已确认; 引擎靠局域网广播自动发现, 无需配置',
+                      '确认手机与后端在同一局域网; 后端已启动且指纹已确认; 资料库靠局域网广播自动发现, 无需配置',
                       style: TextStyle(fontSize: 11.5))),
               Divider(height: 1, indent: 16),
               ListTile(
@@ -2856,7 +2856,7 @@ class HelpPage extends StatelessWidget {
                   title: Text('内容从哪来?',
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  subtitle: Text('ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的引擎提供',
+                  subtitle: Text('ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的资料库提供',
                       style: TextStyle(fontSize: 11.5))),
             ])),
       ]));
@@ -3417,7 +3417,7 @@ class _Eng extends State<EnginesPage> {
                     Text(
                         e['kind'] == 'network'
                             ? (e['id'] ?? '')
-                            : (e['detail'] ?? '内置引擎'),
+                            : (e['detail'] ?? '内置资料库'),
                         style:
                             const TextStyle(fontSize: 11, color: Colors.grey)),
                   ])),
@@ -3469,10 +3469,10 @@ class _Eng extends State<EnginesPage> {
             child: const Icon(Icons.settings_input_antenna,
                 size: 34, color: Colors.blueAccent)),
         const SizedBox(height: 16),
-        const Text('暂无网络引擎在线',
+        const Text('暂无网络资料库在线',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        const Text('安装 ThirdHub 阅读引擎 / venera 漫画引擎后,\n同一局域网下会自动配对出现在这里',
+        const Text('安装 ThirdHub 阅读资料库 / venera 漫画资料库后,\n同一局域网下会自动配对出现在这里',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.5)),
         const SizedBox(height: 16),
@@ -3490,7 +3490,7 @@ class _Eng extends State<EnginesPage> {
             Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                 child: Text(
-                    '内置引擎 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络引擎 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
+                    '内置资料库 ${meta['builtinOnline'] ?? 0}/${meta['builtinTotal'] ?? 0} 在线 · 网络资料库 ${meta['networkOnline'] ?? 0}/${meta['networkTotal'] ?? 0} 在线 · 10秒自动刷新',
                     style: const TextStyle(fontSize: 12, color: Colors.grey))),
             for (final e in builtin) engineCard(Map<String, dynamic>.from(e)),
             if (network.isNotEmpty)
@@ -3610,7 +3610,7 @@ class _Tools extends State<ToolsSection> {
                                     builder: (_) =>
                                         NetDiskPage(baseUrl: Api.base)))),
                         const SizedBox(height: 4),
-                        statusRow('下载引擎 aria2', st!['aria2'] ?? '?', 6800),
+                        statusRow('下载资料库 aria2', st!['aria2'] ?? '?', 6800),
                         const SizedBox(height: 4),
                         Text(st!['hint'] ?? '',
                             style: const TextStyle(
@@ -4573,8 +4573,8 @@ class _Home extends State<SearchSection> {
           await go();
           return;
         }
-        throw Exception('未连接引擎或资源库\n引擎启动后会自动发现；'
-            '若长时间未发现，请到「我的 → 引擎直连」查看具体原因');
+        throw Exception('未连接本地资料库\n资料库启动后会自动发现；'
+            '若长时间未发现，请到「我的 → 资料库直连」查看具体原因');
       }
     } on ApiAuthError catch (e) {
       // ★不准再把"密钥不对"显示成"没搜到"。给出可操作的下一步。
@@ -4705,7 +4705,7 @@ class _Home extends State<SearchSection> {
 
   // 顶部汇总: 逐类上屏过程中也能看出「已回几类 / 还在搜 / 引擎一共多少条」
   //
-  // ★2026-09-25 模拟器实测修正：这里此前**无条件**渲染"来自引擎「…」· THP 直连"，
+  // ★2026-09-25 模拟器实测修正：这里此前**无条件**渲染"来自资料库「…」· THP 直连"，
   //   但它被调用的时机只看 `engItems != null` —— 而 `go()` 一开始就把 `engItems = []`
   //   （非 null），于是**走资源库（家庭后端）分支时也照样顶着"THP 直连"的标签**，
   //   引擎名还是空的 → 屏幕上出现「来自引擎「」· THP 直连 · 已返回 0 条」。
@@ -4794,7 +4794,7 @@ class _Home extends State<SearchSection> {
                 : null,
             title: Text('${it['name'] ?? it['title'] ?? ''}'),
             // ★4.51.0 副标题补全：此前只显示 author，把引擎一起送来的 **标签(kind)** 与
-            // **来源(sourceName)** 全丢了 —— 用户那句"前端和引擎之间丢失了太多信息"指的就是这里。
+            // **来源(sourceName)** 全丢了 —— 用户那句"前端和资料库之间丢失了太多信息"指的就是这里。
             // 三者用 · 连接，空的自动跳过（引擎可以不发这两个扩展字段，不能显示成空白或 null）。
             subtitle: Text(
                 [
@@ -5291,15 +5291,15 @@ Widget searchEmptyState({
   }
   if (needConn) {
     return _searchEmptyBox(
-        Icons.link_off, '还没连上内容来源', '「$kind」的内容由引擎 App 或家庭后端提供，两者任连其一即可开始搜索。',
+        Icons.link_off, '还没连上内容来源', '「$kind」的内容由资料库应用或家庭后端提供，两者任连其一即可开始搜索。',
         onFix: onFix);
   }
   return _searchEmptyBox(Icons.search_off, '没有找到相关$kind',
-      '已经连上来源，但这一条确实没有命中。常见原因是引擎里还没有导入可用的源，换一个关键词也可以再试试。');
+      '已经连上来源，但这一条确实没有命中。常见原因是资料库还没有导入可用的源，换一个关键词也可以再试试。');
 }
 
 Widget _searchEmptyBox(IconData icon, String title, String sub,
-        {VoidCallback? onFix, String fixLabel = '去连接引擎'}) =>
+        {VoidCallback? onFix, String fixLabel = '去连接资料库'}) =>
     Padding(
       padding: const EdgeInsets.fromLTRB(28, 44, 28, 28),
       child: Column(children: [
@@ -5373,7 +5373,7 @@ class _NSR extends State<NovelSearchResults> {
           return;
         }
         if (mounted) setState(() => needConn = true);
-        throw Exception('未连接引擎或资源库');
+        throw Exception('未连接本地资料库');
       }
     } catch (e) {
       if (mounted)
@@ -6305,7 +6305,7 @@ class _CSR extends State<ComicSearchResults> {
           return;
         }
         if (mounted) setState(() => needConn = true);
-        throw Exception('未连接引擎或资源库');
+        throw Exception('未连接本地资料库');
       }
     } catch (e) {
       if (mounted)
@@ -6826,7 +6826,7 @@ class _MSR extends State<MusicSearchResults> {
           return;
         }
         if (mounted) setState(() => needConn = true);
-        throw Exception('未连接引擎或资源库');
+        throw Exception('未连接本地资料库');
       }
     } catch (e) {
       if (mounted)
@@ -7791,7 +7791,7 @@ class _Live extends State<LivePage> {
                             ? _searchEmptyBox(
                                 needConn ? Icons.link_off : Icons.search_off,
                                 needConn ? '还没连上内容来源' : '没有找到相关频道',
-                                '直播频道由引擎 App 或家庭后端提供，两者任连其一即可；\n也可以在「我的 → 引擎直连」里查看当前连接状态。',
+                                '直播频道由资料库应用或家庭后端提供，两者任连其一即可；\n也可以在「我的 → 资料库直连」里查看当前连接状态。',
                                 onFix: needConn
                                     ? () => Navigator.push(
                                         c,
@@ -7923,7 +7923,7 @@ class _VSR extends State<VideoSearchResults> {
           return;
         }
         if (mounted) setState(() => needConn = true);
-        throw Exception('未连接引擎或资源库');
+        throw Exception('未连接本地资料库');
       }
     } catch (e) {
       if (mounted)
@@ -10334,14 +10334,14 @@ class DownloadCenterTile extends StatefulWidget {
       'Flutter 纯播放器前端(本应用)',
       '$_base/thirdhub-app.apk',
       Icons.phone_android,
-      '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'
+      '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与资料库获取内容。'
     ),
     (
       '第三方后端',
       '手机内嵌 Node.js 后端',
       '$_base/thirdhub-backend.apk',
       Icons.dns,
-      '在手机上运行的资源库后端: 内容源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。'
+      '在手机上运行的资源库后端: 本地资料库 + 局域网共享 + TLS 加密。装好后前端自动发现。'
     ),
     (
       '电脑版后端 · Windows',
@@ -10428,14 +10428,14 @@ class _Dct extends State<DownloadCenterTile> {
         'Flutter 纯播放器前端(本应用) · 最新 ${av.isEmpty ? '读取中…' : 'v$av'}',
         appUrl,
         Icons.phone_android,
-        '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与引擎获取内容。'
+        '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与资料库获取内容。'
       ),
       (
         '第三方后端',
         '手机内嵌 Node.js 后端 · 最新 ${bv.isEmpty ? '读取中…' : 'v$bv'}',
         backendUrl,
         Icons.dns,
-        '在手机上运行的资源库后端: 内容源引擎 + 局域网共享 + TLS 加密。装好后前端自动发现。登录同一账号后, 后端设备跟随账号云端找回。'
+        '在手机上运行的资源库后端: 本地资料库 + 局域网共享 + TLS 加密。装好后前端自动发现。登录同一账号后, 后端设备跟随账号云端找回。'
       ),
       ...DownloadCenterTile.products.skip(2),
     ];
@@ -10478,7 +10478,7 @@ class _Dct extends State<DownloadCenterTile> {
         ListTile(
             dense: true,
             leading: const Icon(Icons.menu_book, size: 20),
-            title: const Text('开源阅读引擎', style: TextStyle(fontSize: 13)),
+            title: const Text('开源阅读资料库', style: TextStyle(fontSize: 13)),
             subtitle: Text('THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}',
                 style: const TextStyle(fontSize: 10)),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -10486,16 +10486,16 @@ class _Dct extends State<DownloadCenterTile> {
                 c,
                 MaterialPageRoute(
                     builder: (_) => ProductDetailPage(
-                        name: '开源阅读引擎${ev.isEmpty ? '' : ' v$ev'}',
-                        sub: 'Legado 书源引擎(THP 直连)',
+                        name: '开源阅读资料库${ev.isEmpty ? '' : ' v$ev'}',
+                        sub: 'Legado 本地资料库(THP 直连)',
                         url: engineUrl,
                         icon: Icons.menu_book,
                         desc:
-                            '兼容"开源阅读"书源格式的独立引擎。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
+                            '兼容"开源阅读"内容源格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
         ListTile(
             dense: true,
             leading: const Icon(Icons.photo_library, size: 20),
-            title: const Text('venera 漫画引擎', style: TextStyle(fontSize: 13)),
+            title: const Text('venera 漫画资料库', style: TextStyle(fontSize: 13)),
             subtitle: Text('THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}',
                 style: const TextStyle(fontSize: 10)),
             trailing: const Icon(Icons.chevron_right, size: 18),
@@ -10503,12 +10503,12 @@ class _Dct extends State<DownloadCenterTile> {
                 c,
                 MaterialPageRoute(
                     builder: (_) => ProductDetailPage(
-                        name: 'venera 漫画引擎${vv.isEmpty ? '' : ' v$vv'}',
-                        sub: 'venera JS 漫画源引擎(THP 直连)',
+                        name: 'venera 漫画资料库${vv.isEmpty ? '' : ' v$vv'}',
+                        sub: 'venera JS 漫画源资料库(THP 直连)',
                         url: veneraUrl,
                         icon: Icons.photo_library,
                         desc:
-                            '兼容 venera JS 漫画源的独立引擎。支持图源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
+                            '兼容 venera JS 漫画源的独立资料库。支持内容源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
       ],
     ]);
   }
@@ -12952,7 +12952,7 @@ class _Sy extends State<SystemPage> {
           ListTile(
               leading: const Icon(Icons.dns_outlined, size: 20),
               title: const Text('资源库状态', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('查看后端与在线引擎', style: TextStyle(fontSize: 11)),
+              subtitle: const Text('查看后端与在线资料库', style: TextStyle(fontSize: 11)),
               onTap: () => Navigator.push(c, smoothRoute(const EnginesPage()))),
           const Divider(height: 1, indent: 56),
           ListTile(
@@ -13058,9 +13058,9 @@ class CloudPage extends StatelessWidget {
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
   static const _features = {
-    '搜索': '全局聚合搜索 · 同时检索资源库与局域网引擎 · 结果按模块分类',
+    '搜索': '全局聚合搜索 · 同时检索资源库与局域网资料库 · 结果按模块分类',
     '小说': '书架/历史/发现 · 沉浸阅读器(字体/主题/翻页) · 音量键翻页 · 本地导入',
-    '漫画': '条漫/翻页双模式 · 引擎直连阅读 · 本地漫画导入',
+    '漫画': '条漫/翻页双模式 · 资料库直连阅读 · 本地漫画导入',
     '视频': '片库/历史/发现 · 断点续播 · 选集连播 · 本地播放',
     '音乐': '歌单/收藏/历史 · 通知栏控制 · LRC同步歌词 · 断点续播',
     'AI': '多模型六分类 · 统一密钥库 · 思考链 · 联网搜索 · MCP · 消息排队',
@@ -13308,7 +13308,7 @@ class _Ei extends State<EngineItemPage> {
       : (chapters.length < _chapPreview ? chapters.length : _chapPreview);
 
   /// 从条目里取"来源标识"：优先扩展字段 sourceName，没有就退回 id/ref 的 host。
-  /// 后者保证"引擎没给 sourceName"时换源列表仍然能把不同站分开，而不是全挤成一条。
+  /// 后者保证"资料库没给 sourceName"时换源列表仍然能把不同站分开，而不是全挤成一条。
   static String _srcOf(Map<String, dynamic> it) {
     final s = '${it['sourceName'] ?? it['source'] ?? ''}'.trim();
     if (s.isNotEmpty) return s;
@@ -13348,7 +13348,7 @@ class _Ei extends State<EngineItemPage> {
                         return Center(
                             child: Padding(
                                 padding: const EdgeInsets.all(24),
-                                child: Text('换源失败: ${snap.error}',
+                                child: Text('换一来源失败: ${snap.error}',
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
                                         color: Colors.redAccent))));
@@ -13368,14 +13368,14 @@ class _Ei extends State<EngineItemPage> {
                             child: Padding(
                                 padding: EdgeInsets.all(24),
                                 child: Text(
-                                    '引擎里没有搜到这本书的其它来源\n（换源依赖源侧收录，不是前端能补的）',
+                                    '资料库没有搜到这本书的其它来源\n（这取决于已接入的内容源，不是前端能补的）',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: Colors.grey))));
                       }
                       return ListView(shrinkWrap: true, children: [
                         Padding(
                             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                            child: Text('换源 · 同一本书的其它来源（${list.length}）',
+                            child: Text('换一来源 · 同一本书的其它来源（${list.length}）',
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 14))),
@@ -13499,11 +13499,11 @@ class _Ei extends State<EngineItemPage> {
       appBar: AppBar(
           title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
-            // ★4.51.0 换源（用户点名"来源 + 换源"）
+            // ★4.51.0 换源（用户点名"来源 + 换一来源"）
             if (_canSwitch)
               IconButton(
                   icon: const Icon(Icons.swap_horiz, size: 21),
-                  tooltip: '换源',
+                  tooltip: '换一来源',
                   onPressed: _switchSource),
             // 引擎条目此前没有任何收藏入口 —— 而「片库 / 历史」的空态正是叫用户
             // 来这里点书签。补上它，那句引导才成立。
@@ -13583,7 +13583,7 @@ class _Ei extends State<EngineItemPage> {
                                                               .symmetric(
                                                               horizontal: 3)),
                                               ])),
-                                    // ★4.51.0 来源行：此前只写"来自 <引擎名>"，把**源名**丢了；换源入口挂在同一行
+                                    // ★4.51.0 来源行：此前只写"来自 <资料库名>"，把**源名**丢了；换源入口挂在同一行
                                     Padding(
                                         padding: const EdgeInsets.only(top: 6),
                                         child: Row(children: [
@@ -13602,7 +13602,7 @@ class _Ei extends State<EngineItemPage> {
                                                     padding:
                                                         EdgeInsets.symmetric(
                                                             horizontal: 4),
-                                                    child: Text('换源',
+                                                    child: Text('换一来源',
                                                         style: TextStyle(
                                                             fontSize: 10,
                                                             color: Colors

@@ -737,7 +737,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     }
     if (!_sttReady) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机没有可用的语音识别服务（需系统自带语音引擎）')));
+        const SnackBar(content: Text('本机没有可用的语音识别服务（需系统自带语音资料库）')));
       return;
     }
     setState(() => _voiceMode = true);
@@ -775,7 +775,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
 
   // 长按消息: 复制 / 朗读 / 停止 / 语音设置
   //
-  // ★ 副标题原来写死"系统离线语音引擎, 无需联网" —— 但 TtsManager 实际走的是
+  // ★ 副标题原来写死"系统离线语音资料库, 无需联网" —— 但 TtsManager 实际走的是
   //   用户在「语音朗读设置」里选定的引擎（可能是某个在线厂商）。写死会让人
   //   以为自己配的 Key 没生效，于是反复去改 Key。这里改成显示**真实**引擎。
   void _msgActions(BuildContext c, String text) {
@@ -786,12 +786,12 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); }),
       FutureBuilder<String>(future: TtsManager.engineLabel(), builder: (_, snap) => ListTile(
         leading: const Icon(Icons.record_voice_over_outlined), title: const Text('朗读这条'),
-        subtitle: Text('当前引擎：${snap.data ?? '…'}', style: const TextStyle(fontSize: 11)),
+        subtitle: Text('当前资料库：${snap.data ?? '…'}', style: const TextStyle(fontSize: 11)),
         onTap: () { Navigator.pop(c2); TtsManager.speak(text); })),   // 走当前引擎，不再强制系统朗读
       ListTile(leading: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent), title: const Text('停止朗读'),
         onTap: () { Navigator.pop(c2); TtsManager.stop(); }),
       ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('语音朗读设置'),
-        subtitle: const Text('换引擎 / 给厂商填 Key / 试听', style: TextStyle(fontSize: 11)),
+        subtitle: const Text('换资料库 / 给厂商填 Key / 试听', style: TextStyle(fontSize: 11)),
         onTap: () async { Navigator.pop(c2);
           await Navigator.push(c, MaterialPageRoute(builder: (_) => const TtsSettingsPage())); }),
     ])));

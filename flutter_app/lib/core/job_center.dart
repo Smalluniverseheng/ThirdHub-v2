@@ -667,8 +667,8 @@ class _JobCenterPageState extends State<JobCenterPage> {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('关于「维护/开发类作业」', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
       const SizedBox(height: 6),
-      Text('批量 URL 替换 / 索引重建 / 规则批量测试 / 生成修复代码 这四项需要读取并改写**源引擎**的内部数据, '
-        '前端是纯播放器、不含源与引擎, 所以它们必须由引擎侧 (ThirdHub-Engine) 暴露接口后才能跑。'
+      Text('批量 URL 替换 / 索引重建 / 规则批量测试 / 生成修复代码 这四项需要读取并改写**源资料库**的内部数据, '
+        '前端是纯播放器、不含源与资料库, 所以它们必须由资料库侧 (ThirdHub-Engine) 暴露接口后才能跑。'
         '当前自动化任务已把前端能独立完成的部分(缓存/统计/巡检/备份/调度/审批/续跑)全部落实。',
         style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.6)),
     ])));
