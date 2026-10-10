@@ -2931,6 +2931,9 @@ class _Psub extends State<ProfileSubPage> {
   Future<void> _showLevelInfo() async {
     final MemberLevel cur = _level;
     final int curRank = memberLevelRank(cur.id);
+    // ★ 用 Cloud.loggedIn 而不是 build() 里的局部变量 logged ——
+    //   这是方法不是 build 的内部闭包，拿不到那个局部量（analyze 会报 undefined_identifier）。
+    final bool logged = Cloud.loggedIn;
     final StringBuffer sb = StringBuffer();
     sb.writeln(logged
         ? '当前等级：${cur.name}（${cur.nameEn}）'
