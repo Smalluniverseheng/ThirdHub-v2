@@ -1,0 +1,18 @@
+{
+  "id": "files",
+  "name": "文件",
+  "icon": {
+    "app": "folder_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "文件"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
