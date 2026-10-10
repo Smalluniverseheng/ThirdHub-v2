@@ -1,0 +1,18 @@
+{
+  "id": "print",
+  "name": "远程打印",
+  "icon": {
+    "app": "print_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "远程打印"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
