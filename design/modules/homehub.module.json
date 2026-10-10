@@ -1,0 +1,27 @@
+{
+  "id": "homehub",
+  "name": "家庭中心",
+  "icon": {
+    "app": "home_work_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [
+    "sharedalbum",
+    "sharedlist",
+    "cinema",
+    "homemusic",
+    "camera",
+    "smarthome",
+    "devicelink",
+    "famcalendar"
+  ],
+  "entry": {
+    "app": [
+      "家庭中心"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
