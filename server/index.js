@@ -480,11 +480,6 @@ async function handle(req, res, body) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token, X-TH-Enc');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  /* ★ 2026-10-10 补（安全审计 R-11）：防点击劫持与 Referer 泄露。
-     `nosniff` 原本已有；这三条是一次性补全的「基础三件套」。 */
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
@@ -575,6 +570,35 @@ async function handle(req, res, body) {
     }
   }
 
+  // ── 出站代理集中配置（阶段5「后端网关 + 立体互连」）──
+  // 用户原话：「代理集中配置」—— 一处配置、后端所有出站请求（引擎抓内容 / AI / 下载）
+  // 统一生效，而不是每个模块各连各的。收口在 proxy-config.js，safeFetch 统一走它。
+  //
+  // 安全边界：GET 也要求配对 token（代理地址是用户隐私，连"地址带账号密码"都
+  // 不能匿名泄露）；响应用 masked() 打码，明文只落 data/proxy.json。
+  if (p === '/v1/proxy' || p === '/v1/proxy/diag') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { object:'error', data:{ type:'unauthorized', message:'需要配对 token' }});
+    }
+    const pc = require('./proxy-config');
+    if (!pc._inited) { pc.init({ DATA }); pc._inited = true; }
+    if (req.method === 'GET') {
+      return send(200, { v: 1, object: 'proxy', data: p === '/v1/proxy/diag' ? pc.diag() : pc.masked() });
+    }
+    if (req.method === 'POST') {
+      try {
+        const d = JSON.parse(body || '{}');
+        const r = pc.update(d);
+        if (!r.ok) return send(400, { object:'error', data:{ type:'invalid_proxy_config', message: r.error }});
+        console.log('[proxy] 配置更新 enabled=' + r.cfg.enabled + ' mode=' + r.cfg.mode);
+        return send(200, { v: 1, object: 'proxy', data: { saved: true, config: pc.masked() }});
+      } catch (e) {
+        return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }});
+      }
+    }
+    return send(405, { object:'error', data:{ type:'method_not_allowed', message:'仅 GET/POST' }});
+  }
+
   // ── 设备自注册（★ 必须放在鉴权闸门之前）──
   // 历史缺陷：这里注释一直写"免鉴权"，但代码块被排在 `x-th-token` 闸门之后，
   // 于是任何还没拿到密钥的局域网设备/引擎自注册都直接被 401 挡死 ——
@@ -645,11 +669,6 @@ async function handle(req, res, body) {
        现在一律走 escapeHtml，且 /raw 的 filename 也过一次 safeHeaderValue
        防响应头注入（CR/LF）。 */
     const safeName = escapeHtml(rec.name);
-    /* ★ 2026-10-10 补（安全审计 R-12）：分享页**不需要任何脚本**，
-       给最强的 CSP。这样即使将来又漏转义一处（R-03 那类），
-       浏览器也会拒绝执行内联脚本 —— 纵深防御，不是替代转义。 */
-    res.setHeader('Content-Security-Policy',
-      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     const dlName = encodeURIComponent(safeHeaderValue(rec.name || 'file'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
