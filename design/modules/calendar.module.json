@@ -1,0 +1,18 @@
+{
+  "id": "calendar",
+  "name": "日历",
+  "icon": {
+    "app": "calendar_month_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "日历"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
