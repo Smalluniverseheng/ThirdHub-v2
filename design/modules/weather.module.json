@@ -1,0 +1,18 @@
+{
+  "id": "weather",
+  "name": "天气与快递",
+  "icon": {
+    "app": "wb_sunny_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "天气与快递"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
