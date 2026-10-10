@@ -1,0 +1,18 @@
+{
+  "id": "sharedalbum",
+  "name": "共享相册",
+  "icon": {
+    "app": "photo_library_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "共享相册"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
