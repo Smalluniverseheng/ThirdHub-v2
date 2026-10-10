@@ -1,0 +1,18 @@
+{
+  "id": "homemusic",
+  "name": "家庭音乐库",
+  "icon": {
+    "app": "library_music_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "家庭音乐库"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
