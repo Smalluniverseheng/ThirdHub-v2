@@ -68,6 +68,7 @@ const List<ModuleRegEntry> kModuleRegistry = <ModuleRegEntry>[
   ModuleRegEntry('clouddrive', '云盘', [], 'clouddrive'),
   ModuleRegEntry('grade', '成绩', [], 'grade'),
   ModuleRegEntry('plugins', '插件', [], 'plugins'),
+  ModuleRegEntry('docs', '帮助', [], 'docs'),
   // ── App 独有模块（网页端 filter 丢弃，但 mergeNavIds 保序保留）──
   ModuleRegEntry('peer', '端网', ['端网'], null),
   ModuleRegEntry('chat', '聊天', ['聊天'], null),
