@@ -1,0 +1,18 @@
+{
+  "id": "shortplay",
+  "name": "短剧",
+  "icon": {
+    "app": "movie_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "短剧"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
