@@ -1,0 +1,18 @@
+{
+  "id": "live",
+  "name": "直播",
+  "icon": {
+    "app": "live_tv",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "直播"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
