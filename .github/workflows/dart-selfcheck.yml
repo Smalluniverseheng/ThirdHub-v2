@@ -131,6 +131,8 @@ jobs:
           repository: Smalluniverseheng/ThirdHub
           path: _web
           fetch-depth: 1
+          # ★ 网页端是**私有仓**，默认 GITHUB_TOKEN 读不到 → 必须用 PAT。
+          token: ${{ secrets.TH_FLUTTER_TOKEN }}
 
       # 让 forbidden-words 与本仓后续步骤都能拿到网页端路径（写成 env，避免各处重复拼）
       - name: 导出网页端路径
