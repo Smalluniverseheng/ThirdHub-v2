@@ -1,0 +1,18 @@
+{
+  "id": "contacts",
+  "name": "通讯录备份",
+  "icon": {
+    "app": "contacts_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "通讯录备份"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
