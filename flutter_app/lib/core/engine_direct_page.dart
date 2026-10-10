@@ -30,7 +30,7 @@ class _Ed extends State<EngineDirectPage> {
     setState(() { busy = true; msg = ''; });
     try {
       await EngineDirect.connect(d.url);
-      setState(() => msg = '✓ 已连接「${EngineDirect.name}」');
+      setState(() => msg = '已连接「${EngineDirect.name}」');
     } catch (e) {
       // connect() 已把原因写进 state.message，这里只补充动作提示
       setState(() => msg = '连接失败：${EngineDirect.lastError}');
@@ -41,7 +41,7 @@ class _Ed extends State<EngineDirectPage> {
   Future<void> _retry() async {
     setState(() { busy = true; msg = ''; });
     await EngineDirect.retry();
-    if (mounted) setState(() { busy = false; msg = EngineDirect.connected ? '✓ 已重新连接' : ''; });
+    if (mounted) setState(() { busy = false; msg = EngineDirect.connected ? '已重新连接' : ''; });
   }
 
   /// 主动扫描（不依赖广播）。★覆盖广播必失效的四种环境：
@@ -56,7 +56,7 @@ class _Ed extends State<EngineDirectPage> {
       setState(() { busy = false;
         msg = hits.isEmpty
           ? '扫描完成：${ThpDiscovery.lastScanProbed} 个探针 / ${ThpDiscovery.lastScanMs}ms，未发现 THP 服务'
-          : '✓ 发现 ${hits.length} 个：${hits.map((d) => '${d.host}:${d.port}').join('、')}'; });
+          : '发现 ${hits.length} 个：${hits.map((d) => '${d.host}:${d.port}').join('、')}'; });
     } catch (e) {
       if (mounted) setState(() { busy = false; msg = '扫描失败：$e'; });
     }
@@ -91,7 +91,7 @@ class _Ed extends State<EngineDirectPage> {
     final err = await EngineDirect.connectManual(input);
     if (!mounted) return;
     setState(() { busy = false;
-      msg = err == null ? '✓ 已连接「${EngineDirect.name}」' : '连接失败：$err'; });
+      msg = err == null ? '已连接「${EngineDirect.name}」' : '连接失败：$err'; });
   }
 
   /// 一键自检：把「连不上/搜不到」从玄学变成可读结论。
@@ -223,7 +223,7 @@ class _Ed extends State<EngineDirectPage> {
                       label: const Text('重试连接', style: TextStyle(fontSize: 12))))),
               if (msg.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6),
                 child: Text(msg, style: TextStyle(fontSize: 11,
-                  color: msg.startsWith('✓') ? Colors.green : Colors.redAccent))),
+                  color: (msg.startsWith('已连接') || msg.startsWith('已重新连接') || msg.startsWith('发现')) ? Colors.green : Colors.redAccent))),
             ]))),
           const SizedBox(height: 10),
           Row(children: [
