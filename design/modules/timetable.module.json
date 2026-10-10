@@ -1,0 +1,18 @@
+{
+  "id": "timetable",
+  "name": "课程表",
+  "icon": {
+    "app": "table_chart_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "课程表"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
