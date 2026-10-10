@@ -1,0 +1,15 @@
+# 排除体积大 / 运行时生成 / 不该进镜像的东西
+node_modules
+node_modules.msh-partial
+data
+*.log
+server.log
+.git
+.github
+.DS_Store
+*.bak
+*.bak-*
+_backup*
+*.tmp
+vendor/aria2/aria2c
+vendor/cloudreve/cloudreve
