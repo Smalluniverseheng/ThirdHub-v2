@@ -1,0 +1,18 @@
+{
+  "id": "snippets",
+  "name": "代码片段",
+  "icon": {
+    "app": "code",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "代码片段"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
