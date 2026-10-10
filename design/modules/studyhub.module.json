@@ -1,0 +1,21 @@
+{
+  "id": "studyhub",
+  "name": "学习中心",
+  "icon": {
+    "app": "school_outlined",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [
+    "flashcard",
+    "timetable"
+  ],
+  "entry": {
+    "app": [
+      "学习中心"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
