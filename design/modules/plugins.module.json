@@ -1,0 +1,16 @@
+{
+  "id": "plugins",
+  "name": "插件",
+  "icon": {
+    "app": null,
+    "web": "plug"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "plugins",
+    "webLoad": "./modules/board-plugins.js",
+    "webFn": "renderPluginsBoard"
+  }
+}
