@@ -1,0 +1,18 @@
+{
+  "id": "ai",
+  "name": "AI",
+  "icon": {
+    "app": "smart_toy_outlined",
+    "web": "robot"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "AI"
+    ],
+    "web": "ai",
+    "webLoad": "./modules/ai-chat.js",
+    "webFn": "renderAIChat"
+  }
+}
