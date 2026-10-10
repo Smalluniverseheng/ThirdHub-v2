@@ -1,0 +1,18 @@
+{
+  "id": "qr",
+  "name": "二维码",
+  "icon": {
+    "app": "qr_code_scanner",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "二维码"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
