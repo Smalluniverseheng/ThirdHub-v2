@@ -43,15 +43,15 @@ input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line)
 // ── i18n: 前后端自由切换语言(存localStorage, data-i18n属性+tr()双轨) ──
 const I18N_DICT={
 en:{ '管理':' sources','加载中':'Loading...','控制台':'Console','输入访问密钥(thsec_...)解锁':'Enter access key (thsec_...) to unlock','连接':'Connect',
-'书源':'Book sources','影视源':'Video sources','图源':'Comic sources','音源':'Music sources','搜索测试':'Search test',
+'内容源':'Content sources','视频源':'Content sources','漫画源':'Content sources','音频源':'Content sources','搜索测试':'Search test',
 '反馈':'Feedback','刷新':'Refresh','暂无反馈':'No feedback yet','收起图片':'Hide images','查看图片':'View images','联系方式':'Contact','设备':'Device',
-'存储服务':'Storage services','网盘 Cloudreve':'Cloudreve','下载引擎 aria2':'aria2 engine','运行中':'running','未安装':'not installed',
+'存储服务':'Storage services','网盘 Cloudreve':'Cloudreve','下载工具 aria2':'aria2','运行中':'running','未安装':'not installed',
 '下载任务':'Downloads','粘贴下载链接(HTTP/磁力/种子URL)':'Paste download URL (HTTP/magnet/torrent)','已添加下载':'Download added',
 '相册同步':'Photo sync','密钥库':'Key vault','导出全部(JSON备份)':'Export all (JSON backup)',
 '空。粘贴源JSON导入, 或命令行跑 import-*.js 批量导入。':'Empty. Paste source JSON, or run import-*.js in terminal.',
 '启用':'Enable','停用':'Disable','导入':'Import','语言':'Language','已停止, 点按重启':'Stopped, tap to restart'},
 ja:{'控制台':'コンソール','输入访问密钥(thsec_...)解锁':'アクセスキー(thsec_...)を入力','连接':'接続',
-'书源':'書籍ソース','影视源':'動画ソース','图源':'漫画ソース','音源':'音楽ソース','搜索测试':'検索テスト',
+'内容源':'コンテンツソース','视频源':'コンテンツソース','漫画源':'コンテンツソース','音频源':'コンテンツソース','搜索测试':'検索テスト',
 '反馈':'フィードバック','刷新':'更新','暂无反馈':'フィードバックはありません','收回图片':'画像を隠す','查看图片':'画像を見る','联系方式':'連絡先','设备':'端末',
 '存储服务':'ストレージ','运行中':'稼働中','未安装':'未インストール','下载任务':'ダウンロード',
 '相册同步':'写真同期','密钥库':'キーボルト','导出全部(JSON备份)':'全てエクスポート','启用':'有効','停用':'無効','导入':'インポート'}};
@@ -60,7 +60,7 @@ function tr(s){return (I18N_DICT[LANG]||{})[s]||s}
 function setLang(l){LANG=l;localStorage.th_lang=l;applyI18n();boot()}
 function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=tr(el.dataset.i18n)})}
 const $=s=>document.querySelector(s);let T=localStorage.th_token||'';
-const kinds=[['book','书源'],['video','影视源'],['comic','图源'],['music','音源'],['test','搜索测试'],['feedback','反馈']];let cur='book';
+const kinds=[['book','内容源'],['video','内容源'],['comic','内容源'],['music','内容源'],['test','搜索测试'],['feedback','反馈']];let cur='book';
 async function api(p,opt={}){opt.headers=Object.assign({'X-TH-Token':T},opt.headers||{});
   const r=await fetch(p,opt);if(r.status===401){lock(true);throw new Error('401')}return r.json()}
 // 图片端点要带 X-TH-Token 头，<img src> 给不了头 → 必须 fetch 成 blob 再换对象 URL。
@@ -78,8 +78,8 @@ async function boot(){
     $('#tabs').innerHTML=kinds.map(k=>`<button data-k="${k[0]}" class="${k[0]===cur?'on':''}">${tr(k[1])}</button>`).join('');
     $('#tabs').onclick=e=>{cur=e.target.dataset.k;boot()};
     $('#body').innerHTML=`<div class="card"><div>
-      <span class="stat">书源 <b>${s.data.sources.total}</b><span class="mut">(${s.data.sources.enabled}启用)</span></span>
-      <span class="stat">影视源 <b>${s.data.stats?.videoSources??'?'}${''}</b></span>
+      <span class="stat">内容源 <b>${s.data.sources.total}</b><span class="mut">(${s.data.sources.enabled}启用)</span></span>
+      <span class="stat">视频源 <b>${s.data.stats?.videoSources??'?'}${''}</b></span>
       <span class="stat">内存 <b>${s.data.memory}</b></span>
       <span class="stat">运行 <b>${Math.floor(s.data.uptime/60)}分</b></span></div>
       <div class="bar"><i style="width:${s.data.sources.enabled&&s.data.sources.total?Math.round(s.data.sources.enabled/s.data.sources.total*100):0}%"></i></div></div>
@@ -90,7 +90,7 @@ async function boot(){
         <div style="display:flex;gap:8px"><input id="tq" placeholder="书名/剧名/歌名/漫画名" style="margin-top:0" onkeydown="if(event.key==='Enter')testSearch()">
         <button class="sm" onclick="testSearch()">搜全部</button></div><div id="tres" class="mut" style="margin-top:8px">输入关键词, 同时搜书+漫+影+音</div></div>`
       :`<div class="card"><h3 style="margin-bottom:6px">${tr(kinds.find(k=>k[0]===cur)[1])}${tr('管理')}</h3><div id="srclist">${tr('加载中')}</div>
-      <h4 style="margin:12px 0 6px" class="mut">导入(${cur==='book'?'书源JSON(单条/数组)':'{name, code} JSON'})</h4>
+      <h4 style="margin:12px 0 6px" class="mut">导入(${cur==='book'?'内容源JSON(单条/数组)':'{name, code} JSON'})</h4>
       <textarea id="imp" placeholder='粘贴JSON…'></textarea><br><br>
       <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`}
     `;

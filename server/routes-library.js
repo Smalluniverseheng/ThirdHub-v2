@@ -26,7 +26,7 @@ async function handle(req, res, body, u, p, send, ctx) {
         intro: d.intro || '', kind: d.kind || '', tocUrl: d.tocUrl || u.searchParams.get('url'), sourceId: u.searchParams.get('sourceId') }});
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
-    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'内容源不存在' }});
     try { return send(200, { object:'novel', data: await engine.detail(s, u.searchParams.get('url')) }); }
     catch (e) { return send(500, { object:'error', data:{ type:'source_error', message: String(e.message||e) }}); }
   }
@@ -40,7 +40,7 @@ async function handle(req, res, body, u, p, send, ctx) {
       return send(200, { object:'list', data: chapters.filter(c => c.name && c.url) });
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
-    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'内容源不存在' }});
     const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
     const cached = tocGet(ck); if (cached) return send(200, { object:'list', data: cached, meta: { cached: true }});
     const t0 = Date.now();
@@ -67,7 +67,7 @@ async function handle(req, res, body, u, p, send, ctx) {
       return send(200, { object:'novel-content', data: { text: Array.isArray(text) ? text.join('\n\n') : String(text), chapterUrl: u.searchParams.get('url') }});
     } catch (e) { return send(502, { object:'error', data:{ type:'source_error', message:'Legado不可达' }}); } }
     const s = sources.find(x => x.bookSourceUrl === u.searchParams.get('sourceId'));
-    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'书源不存在' }});
+    if (!s) return send(404, { object:'error', data:{ type:'source_error', message:'内容源不存在' }});
     const ck = s.bookSourceUrl + '|' + u.searchParams.get('url');
     const cached = contentCache.get(ck);
     if (cached && Date.now() - cached.at < 1800000) return send(200, { object:'novel-content', data: cached.data, meta: { cached: true }});

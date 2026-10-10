@@ -116,7 +116,7 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p.startsWith('/v1/sources/toggle') && req.method === 'POST') {
     const id = u.searchParams.get('id');
     const s = sources.find(x => x.bookSourceUrl === id);
-    if (!s) return send(404, { object:'error', data:{ type:'not_found', message:'书源不存在' }});
+    if (!s) return send(404, { object:'error', data:{ type:'not_found', message:'内容源不存在' }});
     s.enabled = s.enabled === false ? true : false; saveSources(sources);
     return send(200, { object:'meta', data: { id, enabled: s.enabled }});
   }

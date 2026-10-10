@@ -13,13 +13,13 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p === '/v1/engines') {
     const hget = (id) => { const h = health.get(id); return h ? { ...h, rate: (h.ok + h.fail) ? Math.round(h.ok / (h.ok + h.fail) * 100) : 100 } : null; };
     const builtin = [
-      { id: 'engine-book', name: '书源引擎', kind: 'builtin', icon: 'book', caps: ['novel.search', 'novel.detail', 'novel.toc', 'novel.content'],
+      { id: 'engine-book', name: '小说内容源', kind: 'builtin', icon: 'book', caps: ['novel.search', 'novel.detail', 'novel.toc', 'novel.content'],
         status: 'online', sources: sources.filter(s => s.enabled !== false).length, health: hget('__book__') },
-      { id: 'engine-drpy', name: '影视引擎 (drpy)', kind: 'builtin', icon: 'movie', caps: ['video.search', 'video.detail', 'video.play'],
+      { id: 'engine-drpy', name: '影视内容源 (drpy)', kind: 'builtin', icon: 'movie', caps: ['video.search', 'video.detail', 'video.play'],
         status: fs.existsSync(path.join(__dirname, 'vendor/drpy/drpy2.min.js')) ? 'online' : 'error', sources: drpySources.length },
-      { id: 'engine-comic', name: '漫画引擎 (Venera)', kind: 'builtin', icon: 'palette', caps: ['comic.search', 'comic.info', 'comic.pages'],
+      { id: 'engine-comic', name: '漫画内容源 (Venera)', kind: 'builtin', icon: 'palette', caps: ['comic.search', 'comic.info', 'comic.pages'],
         status: 'online', sources: comicSources.length },
-      { id: 'engine-music', name: '音源引擎 (MusicFree)', kind: 'builtin', icon: 'music', caps: ['music.search', 'music.play', 'music.lyric'],
+      { id: 'engine-music', name: '音乐内容源 (MusicFree)', kind: 'builtin', icon: 'music', caps: ['music.search', 'music.play', 'music.lyric'],
         status: 'online', sources: musicSources.length },
       { id: 'engine-storage', name: '存储服务', kind: 'builtin', icon: 'cloud', caps: ['disk.file', 'download.task'],
         status: storageState.cloudreve === 'running' || storageState.aria2 === 'running' ? 'online' : 'standby',
