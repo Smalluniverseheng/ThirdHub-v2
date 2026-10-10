@@ -1,0 +1,22 @@
+{
+  "id": "read",
+  "name": "阅读",
+  "icon": {
+    "app": "menu_book",
+    "web": "books"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "小说",
+      "漫画",
+      "音乐",
+      "视频",
+      "有声书"
+    ],
+    "web": "read",
+    "webLoad": "./modules/board-media.js",
+    "webFn": "renderMediaBoard"
+  }
+}
