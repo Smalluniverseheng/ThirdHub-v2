@@ -480,6 +480,11 @@ async function handle(req, res, body) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token, X-TH-Enc');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  /* ★ 2026-10-10 补（安全审计 R-11）：防点击劫持与 Referer 泄露。
+     `nosniff` 原本已有；这三条是一次性补全的「基础三件套」。 */
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
@@ -640,6 +645,11 @@ async function handle(req, res, body) {
        现在一律走 escapeHtml，且 /raw 的 filename 也过一次 safeHeaderValue
        防响应头注入（CR/LF）。 */
     const safeName = escapeHtml(rec.name);
+    /* ★ 2026-10-10 补（安全审计 R-12）：分享页**不需要任何脚本**，
+       给最强的 CSP。这样即使将来又漏转义一处（R-03 那类），
+       浏览器也会拒绝执行内联脚本 —— 纵深防御，不是替代转义。 */
+    res.setHeader('Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     const dlName = encodeURIComponent(safeHeaderValue(rec.name || 'file'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
