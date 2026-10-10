@@ -1,0 +1,18 @@
+{
+  "id": "bookmarks",
+  "name": "书签",
+  "icon": {
+    "app": "bookmark_border",
+    "web": null
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "书签"
+    ],
+    "web": null,
+    "webLoad": null,
+    "webFn": null
+  }
+}
