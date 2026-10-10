@@ -1,0 +1,18 @@
+{
+  "id": "game",
+  "name": "游戏",
+  "icon": {
+    "app": "sports_esports_outlined",
+    "web": "game"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [
+      "游戏"
+    ],
+    "web": "game",
+    "webLoad": "./modules/board-game.js",
+    "webFn": "renderGameBoard"
+  }
+}
