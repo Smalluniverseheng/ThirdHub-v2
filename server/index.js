@@ -81,6 +81,15 @@ const lx = require('./engine-lx');
 const comic = require('./engine-comic');
 const music = require('./engine-music');
 const { Bonjour } = require('bonjour-service');
+/* ★ 2026-10-10：出货面安全工具唯一收口点（HTML 转义 / 头净化 / 常量时间比较 / 限速） */
+const { escapeHtml, safeHeaderValue, timingEqual, makeLimiter } = require('./safe');
+
+/* ★ 2026-10-10：/v1/pair 的护栏。
+   pair 端点**免鉴权且在闸门之前**（这是设计如此 —— 没配对的设备必须能注册），
+   所以它必须自带限速，否则就是"对外无限写盘口"。
+   每 IP 10 分钟内最多 30 次；设备表硬上限 200 台（超了淘汰最久未见的）。 */
+const pairLimiter = makeLimiter({ windowMs: 10 * 60 * 1000, max: 30, maxKeys: 4000 });
+const MAX_DEVICES = 200;
 
 const DATA = path.join(__dirname, 'data');
 fs.mkdirSync(DATA, { recursive: true });
@@ -288,6 +297,21 @@ const DEVICES_FILE = path.join(DATA, 'devices.json');
 function loadDevices() { try { return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8')); } catch (e) { return []; } }
 function saveDevices(d) { fs.writeFileSync(DEVICES_FILE, JSON.stringify(d, null, 2)); }
 let devices = loadDevices();
+
+// ─── 连接通道配置（用户自己填的 DDNS / 隧道 / 反代 / 手动地址）───
+//
+// 为什么放在后端而不是只存前端设置：
+//   后端是"对外提供服务"的那一端，它得知道**自己该以什么身份被访问**，
+//   才能把正确的可连地址广播/回给前端。前端只存一份的话，
+//   换设备连就丢了。
+const NET_CFG_FILE = path.join(DATA, 'net-channels.json');
+function loadNetCfg() {
+  try { return JSON.parse(fs.readFileSync(NET_CFG_FILE, 'utf8')); } catch (e) { return {}; }
+}
+function saveNetCfg(c) { fs.writeFileSync(NET_CFG_FILE, JSON.stringify(c, null, 2)); }
+let netCfg = loadNetCfg();
+// 只允许这 4 个键，防止前端塞任意字段进来（保存时也过滤）
+const NET_CFG_KEYS = ['ddns', 'tunnel', 'proxy', 'manual'];
 // ★ 清理历史遗留的"自己"条目：早期版本没过滤自身回环广播，把自己的 instanceId
 //   写进了 devices.json。存量不清掉的话，前端引擎列表会长期挂一个点不动的幽灵引擎。
 (function purgeSelfDevice() {
@@ -432,10 +456,30 @@ const agentCtx = { DATA, SECRET };
 async function handle(req, res, body) {
   const u = new URL(req.url, 'https://localhost');
   const p = u.pathname;
-  // CORS: 局域网工具, 放行所有源(正式版收紧)
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token');
+  // CORS：★ 2026-10-10 收紧
+  // 原实现 `req.headers.origin || '*'` **回显任意来源**且带 Allow-Credentials 语义，
+  // 等于把家庭后端对任意网站开放。注释写着「正式版收紧」但一直没收 —— 注释不是安全措施。
+  // 现在：只放行 (a) 无 Origin 的同源/本机请求，(b) 本机回环来源，
+  //       (c) 用户自己在 TH_CORS_ORIGINS 里显式列出的来源（逗号分隔）。
+  // 说明：局域网设备/引擎走的是**无 Origin** 的原生 HTTP 客户端，不受影响。
+  const corsAllow = (() => {
+    const extra = String(process.env.TH_CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const origin = req.headers.origin;
+    if (!origin) return '*';                       // 本机/原生客户端：无 Origin，安全
+    if (extra.includes(origin)) return origin;
+    try {
+      const h = new URL(origin).hostname;
+      if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.localhost')) return origin;
+      // 局域网私有网段的网页端（192.168 / 10. / 172.16-31）也是自家设备
+      if (/^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return origin;
+    } catch (e) { /* 非法 Origin → 不放行 */ }
+    return 'null';
+  })();
+  res.setHeader('Access-Control-Allow-Origin', corsAllow);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token, X-TH-Enc');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
@@ -461,18 +505,99 @@ async function handle(req, res, body) {
     encrypted: true, time: Date.now()
   }});
 
+  // ── 多通道清单（★ 免鉴权，但**只回地址与可用性，不回任何密钥/内容列表**）──
+  // 用户第 7 条需求：「主网要支持多种形式的，不是只做一种，让用户有超级多的选择」。
+  // 这里把"这个后端现在能用哪几种方式连进来"一次性告诉前端，由**用户**选，
+  // 而不是我们把某一种写死。
+  //
+  // 安全边界（很重要，别扩）：只暴露
+  //   · 本机地址（局域网/公网 IPv6）—— 这些地址本来就在网络上可探测
+  //   · 用户自己配置的 DDNS/隧道/反代地址 —— 是他自己填的
+  // 绝不暴露：token、fingerprint（在 /v1/meta 已按需给）、任何内容源、设备列表。
+  if (p === '/v1/channels' && req.method === 'GET') {
+    try {
+      const ch = require('./channels');
+      const r = ch.probeChannels({
+        /* ★ 2026-10-10 修：这里原写 `PORT || 9527`，但 index.js 里根本没有 PORT 这个
+           标识符（端口在 L765 硬编码 9527）→ 运行时 ReferenceError，
+           表现为 /v1/channels 恒返回 channels_failed "PORT is not defined"。
+           自检当时只 grep 源码字符串，抓不到这类**运行时**错误 —— 教训：
+           形状断言不能替代行为断言。 */
+        port: Number(process.env.TH_PORT) || 9527,
+        ddns: netCfg.ddns || '',
+        tunnel: netCfg.tunnel || '',
+        proxy: netCfg.proxy || '',
+        manual: netCfg.manual || '',
+      });
+      return send(200, { v: 1, object: 'channels', data: {
+        channels: r.channels,
+        available: r.available,
+        total: r.total,
+        // 给前端的"推荐"：优先公网 IPv6（出门也能用），否则局域网
+        preferred: (r.channels.find(c => c.kind === 'wan6' && c.available) ||
+                    r.channels.find(c => c.kind === 'lan4' && c.available) ||
+                    r.channels.find(c => c.available) || {}).endpoint || '',
+        ipv6: {
+          group: ch.MDNS_GROUP,        // IPv6 没有广播，只有组播（见 channels.js 注释）
+          hasGlobal: !!ch.bestGlobalIPv6(),
+          addresses: r.addresses.filter(a => a.family === 6).map(a => ({
+            address: a.address, scope: a.scope, iface: a.iface,
+          })),
+        },
+      }});
+    } catch (e) {
+      return send(500, { object:'error', data:{ type:'channels_failed', message: String(e.message) }});
+    }
+  }
+
+  if (p === '/v1/channels' && req.method === 'POST') {
+    // ★ 这是**写**操作（改配置），必须过鉴权 —— 与 GET 不同。
+    //   放在这里之前，闸门已经校验过 x-th-token（见下方 authGate）；
+    //   若顺序被后人挪动，本分支里的显式校验是第二道保险。
+    // ★ 2026-10-10：常量时间比较（原 `!==` 会因提前 return 泄露前缀长度）
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { object:'error', data:{ type:'unauthorized', message:'需要配对 token' }});
+    }
+    try {
+      const d = JSON.parse(body || '{}');
+      for (const k of NET_CFG_KEYS) {
+        if (typeof d[k] === 'string') netCfg[k] = d[k].trim();
+      }
+      saveNetCfg(netCfg);
+      return send(200, { object:'meta', data: { saved: true, cfg: netCfg }});
+    } catch (e) {
+      return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }});
+    }
+  }
+
   // ── 设备自注册（★ 必须放在鉴权闸门之前）──
   // 历史缺陷：这里注释一直写"免鉴权"，但代码块被排在 `x-th-token` 闸门之后，
   // 于是任何还没拿到密钥的局域网设备/引擎自注册都直接被 401 挡死 ——
   // 「前端发现引擎」和「我的-扫一扫绑定后端」两条链路都会表现为"连不上/没反应"。
   // 安全性由"调用设备 API 时再校验设备 token"兜住；注册本身不回传任何秘密。
   if (p === '/v1/pair' && req.method === 'POST') {
+    /* ★ 2026-10-10 安全修复（存储放大 DoS）：
+       原实现每次调用都 `devices.push` + `saveDevices` **全量写盘**，
+       且 devices 数组**没有上限** —— 任何能打到 9527 的人都能用循环
+       把磁盘写满、把内存撑爆，而该端点在鉴权闸门**之前**（免鉴权）。
+       修法：① 每 IP 限速 ② 设备总数上限 ③ 重复 URL 视为更新而非新增。 */
+    if (!pairLimiter(req.socket.remoteAddress || '-')) {
+      return send(429, { object:'error', data:{ type:'too_many_requests', message:'注册过于频繁，请稍后再试' }});
+    }
     try {
       const d = JSON.parse(body || '{}');
       if (!d.device_url || !d.device_type) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺device_url/type' }});
       const existing = devices.find(x => x.device_url === d.device_url);
-      if (existing) Object.assign(existing, d, { last_seen: Date.now() });
-      else devices.push({ ...d, paired_at: Date.now(), last_seen: Date.now() });
+      if (existing) {
+        Object.assign(existing, d, { last_seen: Date.now() });
+      } else {
+        if (devices.length >= MAX_DEVICES) {
+          // 满了：淘汰最久未见的一台，而不是无限增长
+          devices.sort((a, b) => (a.last_seen || 0) - (b.last_seen || 0));
+          devices.shift();
+        }
+        devices.push({ ...d, paired_at: Date.now(), last_seen: Date.now() });
+      }
       saveDevices(devices);
       console.log(`[pair] ${d.device_type} @ ${d.device_url}`);
       return send(200, { object:'meta', data: { paired: true, total: devices.length }});
@@ -498,18 +623,28 @@ async function handle(req, res, body) {
         return res.end('<html><body style="font-family:sans-serif;padding:32px"><h3>文件已从后端删除</h3></body></html>');
       }
       const buf = fs.readFileSync(fp);
+      const dlName = encodeURIComponent(safeHeaderValue(rec.name || 'file'));
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
         'Content-Length': buf.length,
-        'Content-Disposition': 'attachment; filename="' + encodeURIComponent(rec.name || 'file') + '"'
+        'Content-Disposition': 'attachment; filename="' + dlName + '"'
       });
       return res.end(buf);
     }
     const size = (rec.size / 1048576).toFixed(2) + ' MB';
+    /* ★ 2026-10-10 安全修复（存储型 XSS）：
+       原先直接拼 `rec.name` 进 HTML —— 分享名里的 `<img src=x onerror=...>`
+       会被浏览器执行。分享页 `/s/*` 在鉴权闸门**之前**，等于对外开了个
+       XSS 投放口。同函数里 /raw 分支用了 encodeURIComponent（说明作者知道
+       要处理，但漏了这一处）—— 典型「修一处漏一处」。
+       现在一律走 escapeHtml，且 /raw 的 filename 也过一次 safeHeaderValue
+       防响应头注入（CR/LF）。 */
+    const safeName = escapeHtml(rec.name);
+    const dlName = encodeURIComponent(safeHeaderValue(rec.name || 'file'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<title>' + rec.name + '</title></head><body style="font-family:system-ui,sans-serif;padding:28px;line-height:1.7">'
-      + '<h3 style="margin:0 0 6px">' + rec.name + '</h3>'
+      + '<title>' + safeName + '</title></head><body style="font-family:system-ui,sans-serif;padding:28px;line-height:1.7">'
+      + '<h3 style="margin:0 0 6px">' + safeName + '</h3>'
       + '<p style="color:#666;font-size:13px">' + size + ' · 由 ThirdHub 后端分享</p>'
       + '<p><a href="/s/' + sid + '/raw" style="display:inline-block;padding:10px 18px;border-radius:22px;'
       + 'background:#3B5BFD;color:#fff;text-decoration:none">下载</a></p></body></html>');
@@ -534,7 +669,8 @@ async function handle(req, res, body) {
   }
 
   // 其余全需鉴权
-  if (req.headers['x-th-token'] !== SECRET) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+  // ★ 2026-10-10：常量时间比较（防时序侧信道）
+  if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
   // ── 媒体路由(音乐/漫画/影视): server/routes-media.js ──
   if (await media.handle(req, res, body, u, p, send, mediaCtx)) return;
   // ── 管理台(引擎总览/存储/下载任务): server/routes-admin.js ──
