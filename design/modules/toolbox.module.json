@@ -1,0 +1,29 @@
+{
+  "id": "toolbox",
+  "name": "工具",
+  "icon": {
+    "app": "construction_outlined",
+    "web": "briefcase"
+  },
+  "version": "1.0.0",
+  "deps": [
+    "translate",
+    "scanner",
+    "qr",
+    "quicknote",
+    "calc",
+    "whiteboard",
+    "texttools",
+    "sensor",
+    "fileshare",
+    "print"
+  ],
+  "entry": {
+    "app": [
+      "工具箱"
+    ],
+    "web": "toolbox",
+    "webLoad": "./modules/toolbox.js",
+    "webFn": "renderToolbox"
+  }
+}
