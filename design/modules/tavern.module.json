@@ -1,0 +1,16 @@
+{
+  "id": "tavern",
+  "name": "酒馆",
+  "icon": {
+    "app": null,
+    "web": "drama"
+  },
+  "version": "1.0.0",
+  "deps": [],
+  "entry": {
+    "app": [],
+    "web": "tavern",
+    "webLoad": "./modules/tavern.js",
+    "webFn": "renderTavern"
+  }
+}
