@@ -578,7 +578,7 @@ class EngineDirect {
     //   判定口径收口在 core/apple_gate.dart（AppleGate.allowEngineEndpoint），
     //   这里只执行 —— 将来谁加了新端点，iOS 上会被这里拦住而不是漏到审核。
     if (!currentGate().allowEngineEndpoint(path)) {
-      throw Exception('iOS 版仅允许引擎提供纯数据（Apple 4.7.2），已拦截：$path');
+      throw Exception('iOS 版仅允许资料库提供纯数据（Apple 4.7.2），已拦截：$path');
     }
     final cli = _client();
     try {
