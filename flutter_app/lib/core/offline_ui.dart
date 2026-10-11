@@ -89,18 +89,11 @@ class OfflineUI {
                             : Icons.download_for_offline,
                         color: Colors.blueAccent),
                     title: Text(
-                        has ? '继续下载（缺 ${m!.total - m.done} 章）' : '下载全书，离线也能读'),
+                        has ? '继续下载（缺 ${m.total - m.done} 章）' : '下载全书，离线也能读'),
                     subtitle: const Text('逐章抓取并存到本机，中途可取消、再点会接着下',
                         style: TextStyle(fontSize: 11, color: Colors.grey)),
                     onTap: () => Navigator.pop(c2, actDownload)),
-              if (canOffline && has)
-                ListTile(
-                    leading:
-                        const Icon(Icons.ios_share, color: Colors.teal),
-                    title: const Text('导出为单个 txt'),
-                    subtitle: const Text('合成一个文件，方便拷去电脑或别的阅读器',
-                        style: TextStyle(fontSize: 11, color: Colors.grey)),
-                    onTap: () => Navigator.pop(c2, actExport)),
+              // ★M4e：动作按使用频率排序 —— 下载 > 删除 > 导出 > 移出书架。
               if (canOffline && has)
                 ListTile(
                     leading: const Icon(Icons.delete_sweep_outlined,
@@ -109,6 +102,14 @@ class OfflineUI {
                     subtitle: const Text('书留在书架，只是不再占用本机空间',
                         style: TextStyle(fontSize: 11, color: Colors.grey)),
                     onTap: () => Navigator.pop(c2, actDeleteOffline)),
+              if (canOffline && has)
+                ListTile(
+                    leading:
+                        const Icon(Icons.ios_share, color: Colors.teal),
+                    title: const Text('导出为单个 txt'),
+                    subtitle: const Text('合成一个文件，方便拷去电脑或别的阅读器',
+                        style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    onTap: () => Navigator.pop(c2, actExport)),
               ListTile(
                   leading:
                       const Icon(Icons.bookmark_remove, color: Colors.redAccent),
@@ -275,10 +276,44 @@ class _MdState extends State<_MediaDownloadDialog> {
   StreamSubscription<OfflineProgress>? sub;
   String result = 'cancel';
 
+  // ★M4c：传输测速（只服务"有字节进度"的模式：单文件 / HLS；
+  //   漫画按"页"显示进度，不算速度）。指数平滑，避免数字跳动。
+  DateTime _speedT0 = DateTime.now();
+  int _speedBytes0 = 0;
+  double _speedBps = 0;
+  String _speedLabel = ''; // 例："1.2 MB/s"
+  String _etaLabel = ''; // 例："剩约 3 分钟"
+
+  void _tickSpeed(OfflineProgress x) {
+    if (widget.pages != null) return; // 页模式不显示速度
+    if (x.status != 'running') return;
+    final now = DateTime.now();
+    final dtMs = now.difference(_speedT0).inMilliseconds;
+    if (dtMs < 400 || x.bytes < _speedBytes0) return;
+    final inst = (x.bytes - _speedBytes0) * 1000 / dtMs;
+    _speedBps = _speedBps <= 0 ? inst : (_speedBps * 0.6 + inst * 0.4);
+    _speedT0 = now;
+    _speedBytes0 = x.bytes;
+    _speedLabel =
+        _speedBps >= 32 * 1024 ? '${MediaOfflinePlan.bytesLabel(_speedBps.round())}/s' : '';
+    if (x.totalBytes > 0 && x.bytes < x.totalBytes && _speedBps > 2048) {
+      final secs = (x.totalBytes - x.bytes) / _speedBps;
+      _etaLabel = secs < 45
+          ? '很快就好'
+          : secs < 90
+              ? '剩约 1 分钟'
+              : '剩约 ${(secs / 60).round()} 分钟';
+    } else {
+      _etaLabel = ''; // HLS 无总量（或还没测准）时不猜剩余时间
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final pages = widget.pages;
+    // ★HLS 分流（规划册 H1）：m3u8 走「拉清单 → 逐片下载 → 合并成单文件」流程；
+    //   直播/加密流在 IO 层被拒绝（判定口径在 HlsPlan，这里不做判定）。
     sub = (pages != null
             ? MediaOfflineStore.downloadPages(
                 key: widget.itemKey,
@@ -287,17 +322,29 @@ class _MdState extends State<_MediaDownloadDialog> {
                 subtitle: widget.subtitle,
                 coverUrl: widget.coverUrl,
                 headers: widget.headers)
-            : MediaOfflineStore.downloadFile(
-                kind: widget.kind,
-                key: widget.itemKey,
-                title: widget.title,
-                url: widget.url,
-                subtitle: widget.subtitle,
-                coverUrl: widget.coverUrl,
-                headers: widget.headers))
+            : HlsPlan.isHls(widget.url)
+                ? MediaOfflineStore.downloadHls(
+                    kind: widget.kind,
+                    key: widget.itemKey,
+                    title: widget.title,
+                    url: widget.url,
+                    subtitle: widget.subtitle,
+                    coverUrl: widget.coverUrl,
+                    headers: widget.headers)
+                : MediaOfflineStore.downloadFile(
+                    kind: widget.kind,
+                    key: widget.itemKey,
+                    title: widget.title,
+                    url: widget.url,
+                    subtitle: widget.subtitle,
+                    coverUrl: widget.coverUrl,
+                    headers: widget.headers))
         .listen((x) {
       if (!mounted) return;
-      setState(() => p = x);
+      setState(() {
+        p = x;
+        _tickSpeed(x);
+      });
       result = x.status;
       if (x.finished) {
         Future.delayed(const Duration(milliseconds: 700), () {
@@ -342,7 +389,12 @@ class _MdState extends State<_MediaDownloadDialog> {
         Text(
             isPages && p.total > 0
                 ? '第 ${p.done + p.failed} / ${p.total} 页${p.failed > 0 ? '（${p.failed} 页没取到）' : ''}'
-                : '下到本机后，断网也能看',
+                : (p.running && (_speedLabel.isNotEmpty || _etaLabel.isNotEmpty))
+                    ? [
+                        if (_speedLabel.isNotEmpty) _speedLabel,
+                        if (_etaLabel.isNotEmpty) _etaLabel,
+                      ].join(' · ')
+                    : '下到本机后，断网也能看',
             style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ]),
       actions: [
