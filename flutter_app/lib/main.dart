@@ -3963,7 +3963,8 @@ class _Tools extends State<ToolsSection> {
                                             fontSize: 10, color: Colors.grey)),
                                 ])),
                       if (active.isEmpty && waiting.isEmpty)
-                        Text(tr('暂无任务'),
+                        Text(tr('暂无任务\n下载与同步任务会显示在这里'),
+                            textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ]))),
         const AlbumSyncCard(),
@@ -5549,7 +5550,9 @@ class _Hp extends State<HistoryPage> {
       ? const Center(child: CircularProgressIndicator())
       : items.isEmpty
           ? const Center(
-              child: Text('暂无阅读历史', style: TextStyle(color: Colors.grey)))
+              child: Text('还没有阅读记录\n打开任意一本小说，阅读时长会自动记在这里',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, height: 1.5)))
           : ListView(children: [
               for (final b in items)
                 ListTile(
@@ -6396,13 +6399,7 @@ class _T extends State<TocPage> {
           //   入口本身就是 2.1 完整性问题，所以是整个按钮不渲染，不是禁用）。
           if (OfflineUI.batchDownloadAllowed)
             IconButton(
-                icon: Icon(
-                    complete
-                        ? Icons.download_done
-                        : hasOff
-                            ? Icons.downloading
-                            : Icons.download_for_offline,
-                    color: hasOff ? Colors.blueAccent : null),
+                icon: offlineActionIcon(done: complete, busy: hasOff && !complete),
                 tooltip: complete
                     ? '已离线 ${offTotal}章'
                     : hasOff
@@ -7256,6 +7253,10 @@ class _MPlay extends State<MusicPlayPage> {
 
   /// 这首歌的离线稳定键。
   String get _musicKey => 'music:${cur['url'] ?? cur['id'] ?? cur['name']}';
+
+  // ★M4b：离线按钮三态（与视频/小说/漫画同一套规范）。
+  bool _offSaving = false;
+  bool _offDone = false;
   String lyric = '';
   // LRC 歌词: (毫秒, 文本) 有序列表; 纯文本歌词则只有一行无法同步
   List<({int ms, String text})> lrc = [];
@@ -7304,6 +7305,10 @@ class _MPlay extends State<MusicPlayPage> {
         Book(cur['name'] ?? '', cur['artist'] ?? '', cur['coverUrl'] ?? '', '',
             cur['url'] ?? cur['id'] ?? '', curSource),
         'music');
+    // ★M4b：进来先查这首歌是否已离线（按钮三态）。
+    unawaited(MediaOfflineStore.has(_musicKey).then((v) {
+      if (mounted) setState(() => _offDone = v);
+    }));
   }
 
   Future<void> _loadQueue() async {
@@ -7753,7 +7758,6 @@ class _MPlay extends State<MusicPlayPage> {
         duration: const Duration(seconds: 1)));
   }
 
-  @override
   /// 保存这首歌到本机（断网也能听）。
   Future<void> _saveOfflineM() async {
     final url = _resolvedUrl ?? '';
@@ -7762,6 +7766,7 @@ class _MPlay extends State<MusicPlayPage> {
           const SnackBar(content: Text('播放地址还没解析出来，等歌开始播再保存')));
       return;
     }
+    setState(() => _offSaving = true); // ★M4b：按钮进入"下载中"态
     final s = await OfflineUI.mediaDownload(context,
         kind: 'music',
         key: _musicKey,
@@ -7770,6 +7775,10 @@ class _MPlay extends State<MusicPlayPage> {
         subtitle: '${cur['artist'] ?? ''}',
         coverUrl: '${cur['coverUrl'] ?? ''}');
     if (!mounted) return;
+    setState(() {
+      _offSaving = false;
+      if (s == 'done') _offDone = true;
+    });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(s == 'done'
             ? '已保存到本机，断网也能听'
@@ -7785,8 +7794,8 @@ class _MPlay extends State<MusicPlayPage> {
             // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
             if (OfflineUI.batchDownloadAllowed)
               IconButton(
-                  icon: const Icon(Icons.download_for_offline),
-                  tooltip: '保存到本机（断网也能听）',
+                  icon: offlineActionIcon(done: _offDone, busy: _offSaving),
+                  tooltip: _offDone ? '已保存到本机' : '保存到本机（断网也能听）',
                   onPressed: _saveOfflineM),
             IconButton(
                 icon: const Icon(Icons.favorite_border),
@@ -7853,8 +7862,9 @@ class _MPlay extends State<MusicPlayPage> {
                 // 歌词页: LRC同步高亮+自动滚动; 无时间戳则整段展示
                 lyric.isEmpty
                     ? const Center(
-                        child:
-                            Text('暂无歌词', style: TextStyle(color: Colors.grey)))
+                        child: Text('暂无歌词\n这首歌没有找到歌词',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey, height: 1.5)))
                     : lrc.isEmpty
                         ? SingleChildScrollView(
                             padding: const EdgeInsets.all(20),
@@ -8487,6 +8497,16 @@ class _Vp extends State<VideoPlayPage> {
   bool _pipOk = false;
   bool _pipLastPlaying = false;
   int _pipGen = 0;
+
+  // ★M4a：画面区横滑调进度的状态（拖动中只预览时间、松手才真正 seek）。
+  //   与"选集横滑"不冲突：手势只包画面区，选集条在下方自己的区域。
+  String _seekHint = '';
+  Timer? _hintTimer;
+  int _dragTarget = -1; // -1 = 不在拖动中
+
+  // ★M4b：离线按钮三态（未下 / 下载中 / 已下）——与其它三处入口同一套规范。
+  bool _offSaving = false;
+  bool _offDone = false;
   double get _aspect {
     final v = _vc;
     if (v == null || !v.value.isInitialized) return 16 / 9;
@@ -8501,6 +8521,10 @@ class _Vp extends State<VideoPlayPage> {
   void initState() {
     super.initState();
     initPlayer();
+    // ★M4b：进来先查这一集是否已离线（按钮三态：已下显示 download_done）。
+    unawaited(MediaOfflineStore.has(_videoKey).then((v) {
+      if (mounted) setState(() => _offDone = v);
+    }));
   }
 
   Future<void> initPlayer() async {
@@ -8575,11 +8599,33 @@ class _Vp extends State<VideoPlayPage> {
     Pip.updatePlaying(_pipLastPlaying);
   }
 
+  // ★M4a：画面区手势辅助（双击 ±10s / 横滑调进度 / 拖动预览的秒表格式）
+  void _seekBySec(int seconds) {
+    final v = _vc;
+    if (v == null || !v.value.isInitialized) return;
+    final t = v.value.position + Duration(seconds: seconds);
+    v.seekTo(t < Duration.zero ? Duration.zero : t);
+    HapticFeedback.selectionClick();
+    _hintTimer?.cancel();
+    setState(() => _seekHint =
+        seconds > 0 ? '快进 ${seconds}s ▶▶' : '◀◀ 快退 ${-seconds}s');
+    _hintTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _seekHint = '');
+    });
+  }
+
+  static String _fmtClock(int s) {
+    final m = s ~/ 60;
+    final r = s % 60;
+    return '$m:${r.toString().padLeft(2, '0')}';
+  }
+
   @override
   void dispose() {
     Pip.releaseAuto(_pipGen);
     Pip.onToggle = null;
     Pip.inPip.value = false;
+    _hintTimer?.cancel();
     _vc?.removeListener(_onPipTick);
     _cc?.dispose();
     _vc?.dispose();
@@ -8657,6 +8703,7 @@ class _Vp extends State<VideoPlayPage> {
           const SnackBar(content: Text('播放地址还没解析出来，等画面出来后再保存')));
       return;
     }
+    setState(() => _offSaving = true); // ★M4b：按钮进入"下载中"态
     final s = await OfflineUI.mediaDownload(context,
         kind: 'video',
         key: _videoKey,
@@ -8664,6 +8711,10 @@ class _Vp extends State<VideoPlayPage> {
         url: url,
         subtitle: widget.title);
     if (!mounted) return;
+    setState(() {
+      _offSaving = false;
+      if (s == 'done') _offDone = true;
+    });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(s == 'done'
             ? '已保存到本机，断网也能看'
@@ -8681,8 +8732,9 @@ class _Vp extends State<VideoPlayPage> {
             // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
             if (OfflineUI.batchDownloadAllowed)
               IconButton(
-                  icon: const Icon(Icons.download_for_offline, size: 20),
-                  tooltip: '保存到本机（断网也能看）',
+                  icon: offlineActionIcon(
+                      done: _offDone, busy: _offSaving, size: 20),
+                  tooltip: _offDone ? '已保存到本机' : '保存到本机（断网也能看）',
                   onPressed: _saveOffline),
             if (_pipOk)
               IconButton(
@@ -8709,9 +8761,66 @@ class _Vp extends State<VideoPlayPage> {
           : loading
               ? const Center(child: CircularProgressIndicator())
               : Column(children: [
-                  AspectRatio(
-                      aspectRatio: _cc!.aspectRatio ?? 16 / 9,
-                      child: Chewie(controller: _cc!)),
+                  // ★M4a：画面区手势（横滑调进度 / 双击 ±10s）。
+                  //   只包画面区 —— 下方选集条的横滑在它自己的区域里，互不干扰。
+                  Stack(children: [
+                    GestureDetector(
+                        onDoubleTapDown: (d) {
+                          final w = MediaQuery.of(context).size.width;
+                          _seekBySec(
+                              d.globalPosition.dx < w / 2 ? -10 : 10);
+                        },
+                        onDoubleTap: () {},
+                        onHorizontalDragStart: (_) {
+                          _dragTarget = _vc?.value.position.inSeconds ?? 0;
+                        },
+                        onHorizontalDragUpdate: (d) {
+                          final total = _vc?.value.duration.inSeconds ?? 0;
+                          if (total <= 0 || _dragTarget < 0) return;
+                          final t = (_dragTarget + d.delta.dx / 3.2)
+                              .clamp(0, total.toDouble())
+                              .round();
+                          _hintTimer?.cancel();
+                          setState(() {
+                            _dragTarget = t;
+                            _seekHint =
+                                '⇨ ${_fmtClock(t)} / ${_fmtClock(total)}';
+                          });
+                        },
+                        onHorizontalDragEnd: (_) {
+                          if (_dragTarget >= 0) {
+                            _vc?.seekTo(Duration(seconds: _dragTarget));
+                            HapticFeedback.selectionClick();
+                          }
+                          _dragTarget = -1;
+                          _hintTimer?.cancel();
+                          _hintTimer = Timer(
+                              const Duration(milliseconds: 800), () {
+                            if (mounted) setState(() => _seekHint = '');
+                          });
+                        },
+                        child: AspectRatio(
+                            aspectRatio: _cc!.aspectRatio ?? 16 / 9,
+                            child: Chewie(controller: _cc!))),
+                    if (_seekHint.isNotEmpty)
+                      Positioned(
+                          top: 10,
+                          left: 0,
+                          right: 0,
+                          child: IgnorePointer(
+                              child: Center(
+                                  child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 6),
+                                      decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius:
+                                              BorderRadius.circular(18)),
+                                      child: Text(_seekHint,
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 13)))))),
+                  ]),
                   if (widget.episodes.isNotEmpty)
                     SizedBox(
                         height: 56,
@@ -11789,6 +11898,26 @@ class _Lnr extends State<LocalNovelReader> {
   }
 }
 
+/// ★M4b：离线按钮三态统一规范 —— 四处入口（小说/视频/音乐/漫画）同一套图标与颜色：
+///   未下 = download_for_offline（随主题色）→ 下载中 = downloading（主色）
+///   → 已下 = download_done（绿）。
+///   以后新加入口直接用这个，别再各写各的三元表达式。
+Widget offlineActionIcon(
+        {required bool done, required bool busy, double size = 20}) =>
+    Icon(
+      done
+          ? Icons.download_done
+          : busy
+              ? Icons.downloading
+              : Icons.download_for_offline,
+      size: size,
+      color: done
+          ? Colors.green
+          : busy
+              ? Colors.blueAccent
+              : null,
+    );
+
 // ═══ 本地视频库 + 播放器 ═══
 class LocalVideosPage extends StatefulWidget {
   const LocalVideosPage({super.key});
@@ -11863,9 +11992,10 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   String get _posKey => 'vpos_${widget.item['path']}';
   Timer? _posTimer;
   bool _fs = false;
-  // 双击快进/快退提示
+  // 双击快进/快退 + 横滑调进度的提示（★M4a：横滑 = 拖动预览、松手才 seek）
   String _seekHint = '';
   Timer? _hintTimer;
+  int _dragTarget = -1; // -1 = 不在拖动中
   // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
   List<String> _subs = <String>[];
   List<Cue> _cues = <Cue>[];
@@ -12079,6 +12209,20 @@ class _Lvp extends State<LocalVideoPlayerPage> {
     });
   }
 
+  /// ★M4a：绝对跳转（横滑松手时用）。
+  void _seekToSec(int sec) {
+    final c = ctrl;
+    if (c == null || !c.value.isInitialized) return;
+    c.seekTo(Duration(seconds: sec));
+    HapticFeedback.selectionClick();
+  }
+
+  static String _fmtClock(int s) {
+    final m = s ~/ 60;
+    final r = s % 60;
+    return '$m:${r.toString().padLeft(2, '0')}';
+  }
+
   void _toggleFs() {
     setState(() => _fs = !_fs);
     SystemChrome.setPreferredOrientations(_fs
@@ -12179,6 +12323,30 @@ class _Lvp extends State<LocalVideoPlayerPage> {
                 _seekBy(d.globalPosition.dx < w / 2 ? -10 : 10);
               },
               onDoubleTap: () {},
+              // ★M4a：横滑调进度（与双击 ±10s 并存）；拖动预览、松手才 seek。
+              onHorizontalDragStart: (_) {
+                _dragTarget = ctrl?.value.position.inSeconds ?? 0;
+              },
+              onHorizontalDragUpdate: (d) {
+                final total = ctrl?.value.duration.inSeconds ?? 0;
+                if (total <= 0 || _dragTarget < 0) return;
+                final t = (_dragTarget + d.delta.dx / 3.2)
+                    .clamp(0, total.toDouble())
+                    .round();
+                _hintTimer?.cancel();
+                setState(() {
+                  _dragTarget = t;
+                  _seekHint = '⇨ ${_fmtClock(t)} / ${_fmtClock(total)}';
+                });
+              },
+              onHorizontalDragEnd: (_) {
+                if (_dragTarget >= 0) _seekToSec(_dragTarget);
+                _dragTarget = -1;
+                _hintTimer?.cancel();
+                _hintTimer = Timer(const Duration(milliseconds: 800), () {
+                  if (mounted) setState(() => _seekHint = '');
+                });
+              },
               child: Stack(alignment: Alignment.center, children: [
                 AspectRatio(
                     aspectRatio: ctrl!.value.aspectRatio,
@@ -14532,11 +14700,7 @@ class _Ecr extends State<EngineComicReader> {
             // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
             if (OfflineUI.batchDownloadAllowed)
               IconButton(
-                  icon: Icon(
-                      _fromLocal
-                          ? Icons.download_done
-                          : Icons.download_for_offline,
-                      size: 20),
+                  icon: offlineActionIcon(done: _fromLocal, busy: false, size: 20),
                   tooltip:
                       _fromLocal ? '本话已保存到本机' : '保存本话到本机（断网也能看）',
                   onPressed: _saveOfflineC),
