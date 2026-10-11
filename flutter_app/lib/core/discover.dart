@@ -54,10 +54,18 @@ class ThpDiscovery {
   static Stream<void> get onChange => _chg.stream;
   static bool _running = false;
 
-  /// THP 服务的众所周知端口：引擎 :1234 / 资源库 :9527
+  /// THP 服务的众所周知端口：小说引擎 :1234 / 资源库 :9527
   static const kEnginePort = 1234;
   static const kLibraryPort = 9527;
-  static const kPorts = <int>[kEnginePort, kLibraryPort];
+  /// ★2026-10-11：补齐其它引擎端口 —— 漫画 :1235 / 音乐 :1236 / 影视 :9978。
+  ///   背景：漫画与影视引擎此前**没有 UDP 广播**（已在本轮引擎侧补上），
+  ///   且影视沿用 TVBox 遥控服务的既定端口 9978（不改，保遥控生态）。
+  ///   这一组端口是"广播被 AP 隔离/跨网段"时的扫描兜底 —— 探测到非 THP
+  ///   服务会被 _probeMeta 忽略，所以放开端口集不会误认。
+  static const kComicPort = 1235;
+  static const kMusicPort = 1236;
+  static const kVideoPort = 9978;
+  static const kPorts = <int>[kEnginePort, kComicPort, kMusicPort, kVideoPort, kLibraryPort];
 
   /// 最近一次扫描的统计（诊断页展示用）
   static int lastScanProbed = 0;
