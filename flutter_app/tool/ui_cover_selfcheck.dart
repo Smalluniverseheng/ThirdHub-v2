@@ -190,7 +190,10 @@ void main() {
     final bad = tails.length - readerLike;
     ck('★ main.dart 剩余的 Image.network 全部是阅读器正文图',
         bad == 0, 'bad=$bad reader=$readerLike total=${tails.length}');
-    ck('main.dart 阅读器正文图数量符合预期（4）', readerLike == 4,
+    // 3 = L6928 + L6941（阅读页直读 Api.img(images[i])）+ L14513（EngineComicReader._img()
+    // 的统一入口，传 images[i]）。2026-10-11 修复：_img() 曾传本地别名 p，
+    // 识别不到被误判；改成完整表达式后计数 2 → 3。
+    ck('main.dart 阅读器正文图数量符合预期（3）', readerLike == 3,
         'reader=$readerLike');
     // 失败时直接给出**行号 + 紧跟的源码**，省掉"再grep一遍找是哪处"的往返。
     if (bad > 0) {
