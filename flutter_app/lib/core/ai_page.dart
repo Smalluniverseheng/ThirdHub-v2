@@ -346,8 +346,48 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     return out.isEmpty ? jsonEncode(result) : out;
   }
 
+  // ── 5.1.2(i) 第三方 AI 数据披露（Apple 2025-11 新增）──────────────────
+  // 指南原文："you must clearly disclose where personal data will be shared with
+  // third parties, including with third-party AI, and obtain explicit permission
+  // before doing so." ⇒ 发送前必须**先披露、拿到显式同意**，不能事后补一句。
+  // 同意落 prefs 只问一次；欢迎页另有常驻披露文案兜底（新用户/换设备都看得见）。
+  static const _disclosureOkKey = 'ai_disclosure_ok';
+
+  Future<bool> _ensureAiDisclosure() async {
+    final p = await SharedPreferences.getInstance();
+    if (p.getBool(_disclosureOkKey) == true) return true;
+    if (!mounted) return false;
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (c2) => AlertDialog(
+              title: const Text('AI 数据使用说明'),
+              content: const Text(
+                  'AI 功能由第三方大模型服务提供（如 OpenAI、Google、DeepSeek 等，'
+                  '取决于你选择的模型）。\n\n'
+                  '· 你输入的文字、对话上下文与联网搜索内容会发送到所选第三方 AI '
+                  '服务商进行处理，用于生成回复；\n'
+                  '· 这些内容会离开本设备，请勿输入密码、身份证号等敏感信息；\n'
+                  '· 各服务商的隐私政策以其官方公布为准。\n\n'
+                  '同意后才可使用 AI 对话。',
+                  style: TextStyle(fontSize: 13, height: 1.6)),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(c2, false),
+                    child: const Text('暂不使用')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(c2, true),
+                    child: const Text('同意并继续')),
+              ],
+            ));
+    if (ok != true) return false;
+    await p.setBool(_disclosureOkKey, true);
+    return true;
+  }
+
   Future<void> _send() async {
     final text = input.text.trim(); if (text.isEmpty || session == null) return;
+    // ★ 5.1.2(i)：发送前先披露并取得显式同意。拒绝 → 不发送（内容不出设备）。
+    if (!await _ensureAiDisclosure()) return;
     // 生成中 → 进入排队(Kimi 同款)
     if (sending) { input.clear(); setState(() => _queue.add(text));
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入排队, 上一条完成后自动发送')));
@@ -585,6 +625,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         style: const TextStyle(color: Colors.grey, fontSize: 12)),
       const SizedBox(height: 4),
       const Text('左滑边缘或点菜单打开抽屉: 历史/模型/智能体/灵感', style: TextStyle(color: Colors.grey, fontSize: 11)),
+      // ★ 5.1.2(i) 常驻披露：第三方 AI 数据流向必须"看得见"（首次同意弹层之外的兜底）
+      const SizedBox(height: 14),
+      const Text('AI 回复由第三方大模型服务生成 · 你输入的内容会发送给所选 AI 服务商处理',
+          textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 10.5)),
     ])));
   }
 
