@@ -114,6 +114,39 @@ class Cloud {
     await _save();
   }
 
+  /// 删除账号（Apple 5.1.1：有账号体系就必须 **App 内**能删号，只给邮箱/网页会被拒）。
+  ///
+  /// 走 Supabase 的 SECURITY DEFINER 函数 `th_delete_account`
+  /// （supabase/account-delete.sql）：一次清掉该用户在全部用户表的数据行
+  /// + `auth.users` 里的登录身份（级联清 sessions/identities）。
+  ///
+  /// ★ 刻意**直连 Supabase 而不经过自托管后端**：审核时设备上没有我们的
+  ///   9527 后端，删号也必须照样能用。后端侧痕迹（/v1/pair 设备注册）由
+  ///   UI 层 best-effort 调 `/v1/account/delete` 清理，清不到不影响删号成功。
+  /// ★ 不可逆。调用方必须先做二次确认。
+  static Future<void> deleteAccount() async {
+    if (!loggedIn) throw Exception('尚未登录，无号可删');
+    final uid = userId;
+    final r = await http.post(Uri.parse('$base/rest/v1/rpc/th_delete_account'),
+        headers: _authHeaders);
+    // 函数 returns void → PostgREST 常回 204/空体；200 也算成功
+    if (r.statusCode != 200 && r.statusCode != 204) {
+      // 失败时**保留登录态**：用户要能重试或继续用，不能把号"半删"在本地
+      AppLog.warn('account', '删除账号失败', d: {
+        'status': r.statusCode,
+        'reason': () {
+          final t = utf8.decode(r.bodyBytes);
+          return t.length > 160 ? t.substring(0, 160) : t;
+        }(),
+      });
+      throw Exception('删除账号失败（HTTP ${r.statusCode}）');
+    }
+    AppLog.account('删除账号成功', d: {
+      'uid': uid.length >= 8 ? uid.substring(0, 8) : uid,
+    });
+    await signOut();
+  }
+
   static Future<Map<String, dynamic>> profile() async {
     if (!loggedIn) return {};
     // ★ 必须是 th_profiles，不是 profiles。
