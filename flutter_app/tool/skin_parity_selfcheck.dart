@@ -269,7 +269,7 @@ void main(List<String> args) {
 
   // ══ 5. 逐项比对 ══
   print('== 1. 表体完整性 ==');
-  ck('tokens.json 皮肤数 = 10', tokSkins.length == 10);
+  ck('tokens.json 皮肤数 = 11', tokSkins.length == 11);
   ck('id 无重复', tokSkins.map((s) => s.id).toSet().length == tokSkins.length);
   ck('id 全为小写 ascii',
       tokSkins.every((s) => RegExp(r'^[a-z]+$').hasMatch(s.id)));
@@ -282,7 +282,7 @@ void main(List<String> args) {
 
   final String tokIds = tokSkins.map((s) => s.id).join(',');
   print('== 2. App 端 design_tokens.dart ==');
-  ck('Skin 常量数 = 10', dartByName.length == 10);
+  ck('Skin 常量数 = 11', dartByName.length == 11);
   ck('all 顺序 = tokens.json 顺序',
       dartSkins.map((s) => s.id).join(',') == tokIds);
   ck('SkinFx 枚举 = fx 词表', dartFxValues.join(',') == tokFxKeys.join(','));
@@ -307,7 +307,7 @@ void main(List<String> args) {
 
   if (skinsJsSrc != null) {
     print('== 3. 网页端 js/skins.js ==');
-    ck('SKINS 数 = 10', webSkins.length == 10);
+    ck('SKINS 数 = 11', webSkins.length == 11);
     ck('SKINS 顺序 = tokens.json 顺序',
         webSkins.map((s) => s.id).join(',') == tokIds);
     ck('DEFAULT_SKIN = tokens.json 首个皮肤',
@@ -344,7 +344,7 @@ void main(List<String> args) {
 
   if (themeCssSrc != null) {
     print('== 4. 网页端 css/theme.css ==');
-    ck('data-skin 规则数 = 10', cssSkins.length == 10);
+    ck('data-skin 规则数 = 11', cssSkins.length == 11);
     for (final SkinRec t in tokSkins) {
       final SkinRec? c = cssSkins[t.id];
       if (c == null) {
@@ -364,7 +364,7 @@ void main(List<String> args) {
         nonNoneFx.every(cssFxBlocks.contains));
     ck('data-fx 规则块没有词表外的档',
         cssFxBlocks.every((f) => tokFxKeys.contains(f)));
-    ck('带特效的皮肤（shuimo/mecha/glass）在 CSS 里有对应 data-fx',
+    ck('带特效的皮肤（shuimo/mecha/glass/comic）在 CSS 里有对应 data-fx',
         tokSkins
             .where((s) => s.fx != 'none')
             .every((s) => cssFxBlocks.contains(s.fx)));
