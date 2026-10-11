@@ -540,6 +540,16 @@ async function handle(req, res, body, u) {
       save();
       return ok(res, { account: user, created: !exists, role: REG.accounts[user].role }, {}, ridHdr);
     }
+    // ★ 5.1.1 删号链路：账号生命周期的最后一环（建了就要能删）。
+    //   DELETE 的 body 不是所有客户端都发，所以账号名 body.account / ?account= 都收。
+    if (req.method === 'DELETE') {
+      const user = String((d && d.account) || (u && u.query && u.query.account) || '').trim();
+      if (!user) return err(res, 'BAD_REQUEST', '缺 account', 400, ridHdr);
+      if (!REG.accounts[user]) return err(res, 'NOT_FOUND', '账号不存在: ' + user, 404, ridHdr);
+      delete REG.accounts[user];
+      save();
+      return ok(res, { account: user, deleted: true }, {}, ridHdr);
+    }
   }
 
   // ── 诊断：一条命令看清"现在有几端、各自能力、可达地址"──
