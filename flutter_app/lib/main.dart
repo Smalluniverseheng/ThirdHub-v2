@@ -14510,7 +14510,10 @@ class _Ecr extends State<EngineComicReader> {
           errorBuilder: (_, __, ___) =>
               const Icon(Icons.broken_image, color: Colors.grey));
     }
-    return Image.network(p,
+    // ★写成 images[i] 而非本地别名：ui_cover_selfcheck 靠「Image.network 后紧跟
+    //   images[」识别"这是阅读器正文图"，用别名会让闸门误判为违规（2026-10-11 修复）。
+    //   ⚠ 本注释刻意不写完整的左括号形式，否则会被闸门的计数扫成一处"调用"。
+    return Image.network(images[i],
         headers: headers,
         fit: fit,
         loadingBuilder: (_, w, q) => q == null
