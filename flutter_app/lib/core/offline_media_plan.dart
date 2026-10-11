@@ -15,8 +15,9 @@
 //     media.mp4           视频或音频（ext 按 URL 推断：mp4/mkv/mp3/flac…）
 //     pages/p_00001.jpg   漫画逐页（5 位补零，文件管理器排序 == 阅读顺序）
 //
-// ★ 直播 / HLS（.m3u8）**不支持整文件保存** —— 它是分片流，不是文件。
-//   判定口径收口在 [MediaOfflinePlan.isStreamOnly]，UI 层照它提示，不许各判各的。
+// ★ 直播**不支持整文件保存**（边播边生成、没有完整分片列表）；但**点播 HLS（.m3u8）
+//   支持** —— 拉清单 → 逐分片下载 → 边下边拼成单文件。判定与解析全在 [HlsPlan]
+//   （纯函数，可自检）。旧的「所有 m3u8 一律拒绝」口径已升级（2026-10-11 · 规划册 H1）。
 library;
 
 import 'offline_plan.dart';
@@ -212,3 +213,149 @@ class MediaOfflineMeta {
 }
 
 int _intOf(Object? v) => v is int ? v : (int.tryParse('$v') ?? 0);
+
+/// ─────────────── HLS（m3u8）解析：点播可整存 / 直播不可 ───────────────
+///
+/// 背景（2026-10-11 · 规划册 H1）：此前把**所有** m3u8 一律拒绝（"分片流不能整存"），
+/// 但点播剧集大部分正是 m3u8，拒绝过宽。HLS 规范里点播与直播有**唯一可靠信号**：
+///   点播（VOD）清单含 `#EXT-X-ENDLIST`（"不会再有新分片了"）→ 可以整存；
+///   直播 / 滚动清单没有它 → 边播边生成，整存没有意义 → 仍然拒绝。
+/// 判定放**运行时**（拉一次清单就知道），不靠 URL 猜。
+///
+/// 还有两类要拦：
+///   · 加密流（`#EXT-X-KEY` 且 `METHOD≠NONE`）：分片是密文，直接拼接播不了，
+///     解密链路不值得做 → 明确拒绝并给清楚理由；
+///   · master 清单（多码率）：含 `#EXT-X-STREAM-INF`，自身没有分片 ——
+///     解析器返回 [HlsManifest.childPlaylists]，IO 层往下拉一层（最多两层）。
+///
+/// 纯函数、零 IO：输入（清单文本 + 基地址），输出 [HlsManifest]。
+class HlsPlan {
+  /// 是不是 m3u8 / m3u 地址（含 query 也认）。
+  static bool isHls(String url) {
+    final p = url.split('?').first.split('#').first.toLowerCase();
+    return p.endsWith('.m3u8') || p.endsWith('.m3u');
+  }
+
+  /// 解析清单。[baseUrl] 用于把相对分片地址还原成绝对地址。
+  /// 非 HLS 文本（没有 `#EXTM3U`）→ null。
+  static HlsManifest? parse(String text, String baseUrl) {
+    final lines = text.split('\n').map((l) => l.trim()).toList();
+    if (!lines.any((l) => l.startsWith('#EXTM3U'))) return null;
+
+    var isVod = false;
+    var encrypted = false;
+    var isMaster = false;
+    String? initSegment;
+    final segments = <String>[];
+    final children = <String>[];
+    var pendingVariant = false;
+
+    String abs(String uri) {
+      try {
+        return Uri.parse(baseUrl).resolve(uri).toString();
+      } catch (_) {
+        return uri;
+      }
+    }
+
+    for (final l in lines) {
+      if (l.isEmpty) continue;
+      if (l == '#EXT-X-ENDLIST') {
+        isVod = true;
+        continue;
+      }
+      if (l.startsWith('#EXT-X-KEY:')) {
+        // METHOD=NONE 表示这一段不加密（可覆盖之前的加密标记？不 —— 有任一加密段
+        // 就没法整段直接拼，按"含加密 KEY 即拒绝"处理最安全）。
+        if (!l.contains('METHOD=NONE')) encrypted = true;
+        continue;
+      }
+      if (l.startsWith('#EXT-X-STREAM-INF')) {
+        isMaster = true;
+        pendingVariant = true;
+        continue;
+      }
+      if (l.startsWith('#EXT-X-MAP:')) {
+        final m = RegExp(r'URI="([^"]+)"').firstMatch(l);
+        if (m != null) initSegment = abs(m.group(1)!); // fMP4 的 init 段，拼在最前
+        continue;
+      }
+      if (l.startsWith('#')) continue; // 其它标签（EXTINF/EXT-X-TARGETDURATION…）跳过
+      // 普通 URI 行：master 里是子清单，媒体清单里是分片
+      if (isMaster) {
+        if (pendingVariant) {
+          children.add(abs(l));
+          pendingVariant = false;
+        }
+      } else {
+        segments.add(abs(l));
+      }
+    }
+
+    return HlsManifest(
+      isMaster: isMaster,
+      isVod: isVod,
+      encrypted: encrypted,
+      initSegment: initSegment,
+      segments: List.unmodifiable(segments),
+      childPlaylists: List.unmodifiable(children),
+      mergedExt: _mergedExtOf(segments),
+    );
+  }
+
+  /// 合并后的文件扩展名：按多数分片的扩展名判。
+  ///   .ts → ts（经典 HLS，Android ExoPlayer 可播）｜.m4s/.mp4 → mp4（fMP4）
+  ///   .aac → aac（纯音频流）｜判不出 → ts（保守，HLS 最常见容器）
+  static String _mergedExtOf(List<String> segs) {
+    var ts = 0, m4 = 0, aac = 0;
+    for (final s in segs) {
+      final p = s.split('?').first.toLowerCase();
+      if (p.endsWith('.m4s') || p.endsWith('.mp4') || p.endsWith('.m4v')) {
+        m4++;
+      } else if (p.endsWith('.aac')) {
+        aac++;
+      } else if (p.endsWith('.ts')) {
+        ts++;
+      }
+    }
+    if (m4 > ts && m4 >= aac && m4 > 0) return 'mp4';
+    if (aac > ts && aac > 0) return 'aac';
+    return 'ts';
+  }
+}
+
+/// HLS 清单的解析结果（不可变）。
+class HlsManifest {
+  const HlsManifest({
+    required this.isMaster,
+    required this.isVod,
+    required this.encrypted,
+    required this.initSegment,
+    required this.segments,
+    required this.childPlaylists,
+    required this.mergedExt,
+  });
+
+  /// master（多码率总清单）——自身无分片，要去 [childPlaylists] 再拉一层。
+  final bool isMaster;
+
+  /// 点播（含 `#EXT-X-ENDLIST`）。false = 直播 / 滚动清单，不可整存。
+  final bool isVod;
+
+  /// 含加密分段（`#EXT-X-KEY` 且非 METHOD=NONE）。
+  final bool encrypted;
+
+  /// fMP4 的初始化段（`#EXT-X-MAP` 的 URI），拼接时放最前；无则 null。
+  final String? initSegment;
+
+  /// 媒体分片绝对 URL（不含 init 段）。
+  final List<String> segments;
+
+  /// master 清单里的子清单绝对 URL（按出现顺序 = 码率从高到低通常如此）。
+  final List<String> childPlaylists;
+
+  /// 合并文件扩展名：ts / mp4 / aac。
+  final String mergedExt;
+
+  int get count => segments.length;
+}
