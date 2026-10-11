@@ -633,6 +633,54 @@ async function handle(req, res, body) {
     } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
   }
 
+  // ★ /v1/pair 的 delete 链路（5.1.1）：注销设备注册。
+  //   以前只有注册（POST）与 UDP BYE —— 设备换了/账号删了，注册记录永远留在
+  //   devices.json 里（"幽灵设备"）。鉴权与 /v1/proxy 同款内联校验：
+  //   DELETE 会丢数据，不能跟 POST 一样免鉴权。
+  if (p === '/v1/pair' && req.method === 'DELETE') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { object:'error', data:{ type:'unauthorized', message:'需要配对 token' }});
+    }
+    try {
+      const d = JSON.parse(body || '{}');
+      const url = String(d.device_url || '');
+      if (!url) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺device_url' }});
+      const before = devices.length;
+      devices = devices.filter(x => x.device_url !== url);
+      const removed = before - devices.length;
+      if (removed) saveDevices(devices);
+      console.log(`[pair] 注销 ${url}（${removed} 条）`);
+      return send(200, { object:'meta', data: { removed, total: devices.length }});
+    } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+
+  // ── 5.1.1 删号：后端侧痕迹清理（Apple「App 内删除账号」链路的一环）──
+  // 账号本体在 Supabase（客户端直连 rpc/th_delete_account 删除，**不依赖后端在线**
+  // ——审核机上没有我们的后端，删号必须照样能用）。后端这里清的是**本端痕迹**：
+  //   · devices.json 里该账号的设备注册（/v1/pair 注册时带 user_id 字段就能对上；
+  //     注册端点 Object.assign 原样收字段，无需改注册侧）
+  //   · 调用方显式列出的 device_urls（老注册没有 user_id 字段，由客户端补名单）
+  if (p === '/v1/account/delete' && req.method === 'POST') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { object:'error', data:{ type:'unauthorized', message:'需要配对 token' }});
+    }
+    try {
+      const d = JSON.parse(body || '{}');
+      const uid = String(d.user_id || '');
+      const urls = Array.isArray(d.device_urls) ? d.device_urls.map(String) : [];
+      if (!uid && urls.length === 0) {
+        return send(400, { object:'error', data:{ type:'invalid_request', message:'缺 user_id/device_urls' }});
+      }
+      const before = devices.length;
+      devices = devices.filter(x =>
+        !(uid && x.user_id && String(x.user_id) === uid) && !urls.includes(x.device_url));
+      const removed = before - devices.length;
+      if (removed) saveDevices(devices);
+      console.log(`[account] 删号痕迹清理 uid=${uid || '-'} 注销设备 ${removed} 台`);
+      return send(200, { object:'meta', data: { removed, total: devices.length }});
+    } catch (e) { return send(400, { object:'error', data:{ type:'invalid_request', message: String(e.message) }}); }
+  }
+
   // ── v4.40.0 分享链(免鉴权, 但只对"被显式分享过"的 hash 开放) ──
   // 设计: 分享 id 是随机 10 位十六进制, 不可枚举; 撤销 = 删 shares.json 里那条。
   if (p.startsWith('/s/')) {
