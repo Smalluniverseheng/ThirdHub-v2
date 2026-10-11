@@ -349,10 +349,20 @@ class Skin {
     fx: SkinFx.glass,
   );
 
+  /// ★2026-10-11 新增：漫画（fx=comic）——粗描边、硬阴影、弹跳转场
+  static const Skin comic = Skin(
+    id: 'comic',
+    name: '漫画',
+    seed: Color(0xFFE8342A),
+    lightBg: Color(0xFFFFFDF7),
+    darkBg: Color(0xFF171213),
+    fx: SkinFx.comic,
+  );
+
   /// 全部可选皮肤（设置页遍历它渲染选项）。
   /// ★ 顺序即 UI 里的排列顺序，与 tokens.json 的 `skins` 数组顺序一致。
   static const List<Skin> all = [
-    ocean, mono, ink, jade, amber, violet, rose, shuimo, mecha, glass,
+    ocean, mono, ink, jade, amber, violet, rose, shuimo, mecha, glass, comic,
   ];
 
   static Skin byId(String? id) =>
@@ -368,11 +378,14 @@ enum SkinFx {
   /// 水墨：圆角收小、边框细、标题走衬线、去阴影只留线条
   ink,
 
-  /// 机甲：卡片发光描边 + 强调色辉光 + 按钮直角化
+  /// 机甲：卡片发光描边 + 强调色辉光 + 按钮直角化 + **机械滑动转场**（快进精准刹停）
   neon,
 
   /// 玻璃：卡片半透明 + 模糊、按钮胶囊化、渐变底
   glass,
+
+  /// 漫画：粗描边 + 硬阴影、**弹跳弹出转场**（夸张过冲，像分镜弹出）
+  comic,
 }
 
 /// 由皮肤 + 亮度构造完整 `ThemeData`。
@@ -392,12 +405,14 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     SkinFx.ink => Radii.smAll,      // 水墨：小圆角，接近直角
     SkinFx.neon => Radii.smAll,     // 机甲：直角化
     SkinFx.glass => Radii.lgAll,    // 玻璃：大圆角
+    SkinFx.comic => Radii.mdAll,    // 漫画：中圆角 + 粗描边（分镜框感）
     SkinFx.none => Radii.lgAll,
   };
   final BorderRadius btnRadius = switch (fx) {
     SkinFx.ink => const BorderRadius.all(Radius.circular(4)),
     SkinFx.neon => const BorderRadius.all(Radius.circular(6)),
     SkinFx.glass => Radii.pillAll,  // 玻璃：胶囊
+    SkinFx.comic => const BorderRadius.all(Radius.circular(8)),
     SkinFx.none => Radii.mdAll,
   };
   // 表面色带一点底色倾向：纯粹的统一底色才"高级"，
@@ -418,6 +433,12 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     SkinFx.neon => BorderSide(color: skin.seed.withValues(alpha: dark ? 0.45 : 0.30), width: 1),
     SkinFx.ink => BorderSide(color: scheme.onSurface.withValues(alpha: 0.16), width: 1),
     SkinFx.glass => BorderSide(color: Colors.white.withValues(alpha: dark ? 0.10 : 0.65), width: 1),
+    // 漫画：2px 粗描边（分镜框）——亮色用墨黑、暗色用纸白，黑白对比是漫画印刷的灵魂
+    SkinFx.comic => BorderSide(
+        color: dark
+            ? Colors.white.withValues(alpha: 0.85)
+            : scheme.onSurface.withValues(alpha: 0.88),
+        width: 2),
     SkinFx.none => BorderSide.none,
   };
   // 标题字形：水墨走衬线（有"书卷气"），其余沿用默认无衬线
@@ -454,6 +475,7 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
         SkinFx.ink => 0,
         SkinFx.neon => 6,
         SkinFx.glass => 2,
+        SkinFx.comic => 0, // 漫画靠粗描边立住，不用投影
         SkinFx.none => 0,
       },
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -530,13 +552,26 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: Radii.lgAll),
     ),
-    // 页面转场统一走弹簧曲线
-    pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: _SpringPageTransition(),
-      TargetPlatform.iOS: _SpringPageTransition(),
+    // 页面转场按特效档分派 —— 这就是"效果皮肤"与"颜色皮肤"的分水岭：
+    //   机甲（neon） = 机械滑动（快启动 → 匀速推进 → 精准刹停，伺服感）
+    //   漫画（comic）= 弹跳弹出（夸张过冲，像分镜砸进画面）
+    //   其余         = 弹簧滑动（M3 Expressive 默认，不改变既有观感）
+    pageTransitionsTheme: PageTransitionsTheme(builders: {
+      TargetPlatform.android: _pageTransitionFor(fx),
+      TargetPlatform.iOS: _pageTransitionFor(fx),
     }),
   );
 }
+
+/// 按特效档选择页面转场（"效果皮肤"的唯一分派点）。
+///
+/// ★ 新增效果皮肤 = 在这里加一条分支 + 写一个 PageTransitionsBuilder 子类，
+///   不要在页面里写 if (皮肤=='x') —— 分派只此一处，保证不漏页。
+PageTransitionsBuilder _pageTransitionFor(SkinFx fx) => switch (fx) {
+      SkinFx.neon => const _MechaPageTransition(),
+      SkinFx.comic => const _ComicPageTransition(),
+      _ => const _SpringPageTransition(),
+    };
 
 /// 弹簧式页面转场：新页**带轻微过冲**滑入 + 旧页淡出。
 ///
@@ -567,6 +602,85 @@ class _SpringPageTransition extends PageTransitionsBuilder {
       child: FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Motion.effect),
         child: child,
+      ),
+    );
+  }
+}
+
+/// 机械制动曲线：快启动 → 匀速推进 → 精准刹停。
+///
+/// 与弹簧曲线的区别：弹簧是"过冲回弹"（果冻感），机械是"快进 + 刹车"
+/// （伺服电机的到位感）——这正是机甲皮肤"机械滑动"的来源。
+class _MechanicalCurve extends Curve {
+  const _MechanicalCurve();
+
+  @override
+  double transformInternal(double t) {
+    // 前 72% 时间走完 92% 行程（急速推进）；后 28% 时间做"刹车"段（缓出收尾）。
+    if (t < 0.72) return (t / 0.72) * 0.92;
+    final double u = (t - 0.72) / 0.28;
+    return 0.92 + 0.08 * Curves.easeOutCubic.transform(u);
+  }
+}
+
+/// 机甲转场：整页快速滑入 + 精准刹停（无回弹、无缩放，位移更大 → "闸门"感）。
+class _MechaPageTransition extends PageTransitionsBuilder {
+  const _MechaPageTransition();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (Motion.reduced(context)) return child;
+    final Animation<double> slide = CurvedAnimation(
+      parent: animation,
+      curve: const _MechanicalCurve(),
+      reverseCurve: Curves.easeInCubic,
+    );
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.22, 0),
+        end: Offset.zero,
+      ).animate(slide),
+      child: child,
+    );
+  }
+}
+
+/// 漫画转场：弹跳弹出 —— 分镜"砸"进画面（夸张过冲 + 轻微放大）。
+class _ComicPageTransition extends PageTransitionsBuilder {
+  const _ComicPageTransition();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (Motion.reduced(context)) return child;
+    // backOut 经典参数：过冲后回落，像漫画分镜弹进画格
+    final Animation<double> pop = CurvedAnimation(
+      parent: animation,
+      curve: const Cubic(0.34, 1.56, 0.64, 1.0),
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Motion.effect),
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.90, end: 1.0).animate(pop),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.0, 0.045),
+            end: Offset.zero,
+          ).animate(pop),
+          child: child,
+        ),
       ),
     );
   }
