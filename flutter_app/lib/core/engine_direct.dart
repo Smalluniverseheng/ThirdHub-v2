@@ -32,6 +32,7 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'discover.dart';
 import 'app_log.dart';
+import 'apple_gate.dart';
 
 /// 连到的是「资源库」而不是「引擎」。
 ///
@@ -573,6 +574,12 @@ class EngineDirect {
   static Future<Map<String, dynamic>> _get(String path,
       [bool retried = false, int timeoutSec = 30]) async {
     if (url.isEmpty) throw Exception('未连接资料库');
+    // ★ 4.7.2 运行时闸门（阶段6）：iOS 上引擎只当纯 HTTP 数据源。
+    //   判定口径收口在 core/apple_gate.dart（AppleGate.allowEngineEndpoint），
+    //   这里只执行 —— 将来谁加了新端点，iOS 上会被这里拦住而不是漏到审核。
+    if (!currentGate().allowEngineEndpoint(path)) {
+      throw Exception('iOS 版仅允许引擎提供纯数据（Apple 4.7.2），已拦截：$path');
+    }
     final cli = _client();
     try {
       final req = http.Request('GET', Uri.parse('$url$path'));
