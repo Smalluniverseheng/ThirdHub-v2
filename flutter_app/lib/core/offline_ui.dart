@@ -14,6 +14,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'apple_gate.dart';
+import 'offline_media_plan.dart';
+import 'offline_media_store.dart';
 import 'offline_plan.dart';
 import 'offline_store.dart';
 
@@ -25,9 +28,15 @@ class OfflineUI {
   static const String actExport = 'export'; // 导出成单个 txt
   static const String actCancel = 'cancel';
 
+  /// ★阶段6 平台门（Apple 过审 5.2.3）：iOS 不开放批量下载 —— 这里是**唯一收口**，
+  ///   三个入口（书架长按 / 详情页按钮 / 加书架顺带下载）都走本文件，闸门放这里
+  ///   不会漏判。单章缓存是阅读器正常行为，不受此闸约束。
+  static bool get batchDownloadAllowed => currentGate().allowBatchDownload;
+
   /// 下载全书（带进度弹窗、可取消）。返回最终状态：done/partial/error/cancel。
   static Future<String> download(BuildContext c, Map<String, dynamic> book,
       {String kind = 'novel'}) async {
+    if (!batchDownloadAllowed) return 'blocked';
     final s = await showDialog<String>(
         context: c,
         barrierDismissible: false,
@@ -72,7 +81,7 @@ class OfflineUI {
                             : OfflinePlan.describe(m),
                         style:
                             const TextStyle(fontSize: 12, color: Colors.grey))),
-              if (canOffline && !complete)
+              if (canOffline && !complete && batchDownloadAllowed)
                 ListTile(
                     leading: Icon(
                         has
@@ -122,6 +131,37 @@ class OfflineUI {
     final m = await OfflineStore.metaOf(bookUrl, name: name);
     if (m == null) return null;
     return OfflinePlan.describe(m);
+  }
+
+  /// 媒体保存到本机（视频一集 / 音乐一首 / 漫画一话）。返回 done/partial/error/cancel/blocked。
+  ///
+  /// [pages] 非空 = 漫画逐页模式；为空则按 [url] 整文件下载。
+  /// 与小说同一道 iOS 平台门（Apple 5.2.3）：闸门在这，调用点不用再判。
+  static Future<String> mediaDownload(
+    BuildContext c, {
+    required String kind,
+    required String key,
+    required String title,
+    String url = '',
+    List<String>? pages,
+    String subtitle = '',
+    String coverUrl = '',
+    Map<String, String> headers = const {},
+  }) async {
+    if (!batchDownloadAllowed) return 'blocked';
+    final s = await showDialog<String>(
+        context: c,
+        barrierDismissible: false,
+        builder: (c2) => _MediaDownloadDialog(
+            kind: kind,
+            itemKey: key,
+            title: title,
+            url: url,
+            pages: pages,
+            subtitle: subtitle,
+            coverUrl: coverUrl,
+            headers: headers));
+    return s ?? 'cancel';
   }
 }
 
@@ -206,5 +246,219 @@ class _DlState extends State<_DownloadDialog> {
           TextButton(onPressed: () => Navigator.of(c).pop(result), child: const Text('好')),
       ],
     );
+  }
+}
+
+/// 媒体进度弹窗：跑 [MediaOfflineStore] 的下载流，跑完自动关。
+/// 单文件模式按字节进度（"3.2 MB / 12.4 MB"），漫画模式按页进度（"第 8/20 页"）。
+class _MediaDownloadDialog extends StatefulWidget {
+  final String kind, itemKey, title, url, subtitle, coverUrl;
+  final List<String>? pages;
+  final Map<String, String> headers;
+  const _MediaDownloadDialog({
+    required this.kind,
+    required this.itemKey,
+    required this.title,
+    required this.url,
+    this.pages,
+    this.subtitle = '',
+    this.coverUrl = '',
+    this.headers = const {},
+  });
+  @override
+  State<_MediaDownloadDialog> createState() => _MdState();
+}
+
+class _MdState extends State<_MediaDownloadDialog> {
+  OfflineProgress p = const OfflineProgress(
+      total: 0, done: 0, failed: 0, status: 'running', message: '准备中…');
+  StreamSubscription<OfflineProgress>? sub;
+  String result = 'cancel';
+
+  @override
+  void initState() {
+    super.initState();
+    final pages = widget.pages;
+    sub = (pages != null
+            ? MediaOfflineStore.downloadPages(
+                key: widget.itemKey,
+                title: widget.title,
+                pages: pages,
+                subtitle: widget.subtitle,
+                coverUrl: widget.coverUrl,
+                headers: widget.headers)
+            : MediaOfflineStore.downloadFile(
+                kind: widget.kind,
+                key: widget.itemKey,
+                title: widget.title,
+                url: widget.url,
+                subtitle: widget.subtitle,
+                coverUrl: widget.coverUrl,
+                headers: widget.headers))
+        .listen((x) {
+      if (!mounted) return;
+      setState(() => p = x);
+      result = x.status;
+      if (x.finished) {
+        Future.delayed(const Duration(milliseconds: 700), () {
+          if (mounted) Navigator.of(context).pop(x.status);
+        });
+      }
+    }, onError: (Object e) {
+      if (!mounted) return;
+      setState(() => p = OfflineProgress(
+          total: p.total,
+          done: p.done,
+          failed: p.failed,
+          status: 'error',
+          message: '下载出错：$e'));
+      result = 'error';
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (mounted) Navigator.of(context).pop('error');
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    sub?.cancel(); // 关弹窗/离开页面都要掐断，否则后台继续下、继续写盘
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final isPages = widget.pages != null;
+    return AlertDialog(
+      title: Text(p.finished ? '保存到本机' : '正在保存《${widget.title}》'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+                value: p.total > 0 ? p.ratio : null, minHeight: 6)),
+        const SizedBox(height: 12),
+        Text(p.message.isEmpty ? '准备中…' : p.message,
+            style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 4),
+        Text(
+            isPages && p.total > 0
+                ? '第 ${p.done + p.failed} / ${p.total} 页${p.failed > 0 ? '（${p.failed} 页没取到）' : ''}'
+                : '下到本机后，断网也能看',
+            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ]),
+      actions: [
+        if (!p.finished)
+          TextButton(
+              onPressed: () {
+                sub?.cancel();
+                Navigator.of(c).pop('cancel');
+              },
+              child: const Text('取消')),
+        if (p.finished)
+          TextButton(
+              onPressed: () => Navigator.of(c).pop(result), child: const Text('好')),
+      ],
+    );
+  }
+}
+
+/// 离线内容管理页：小说（offline_books）+ 媒体（offline_media）一处看、一处删。
+/// 不 import main.dart（与 offline_ui 的纪律一致），用 Navigator.pop 回调即可。
+class MediaOfflinePage extends StatefulWidget {
+  const MediaOfflinePage({super.key});
+  @override
+  State<MediaOfflinePage> createState() => _MediaOfflinePageState();
+}
+
+class _MediaOfflinePageState extends State<MediaOfflinePage> {
+  List<OfflineMeta> books = [];
+  List<MediaOfflineMeta> media = [];
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    books = await OfflineStore.list();
+    media = await MediaOfflineStore.list();
+    if (mounted) setState(() => loading = false);
+  }
+
+  static const _kindIcon = {
+    'video': Icons.videocam_outlined,
+    'music': Icons.music_note,
+    'comic': Icons.menu_book_outlined,
+    'novel': Icons.book_outlined,
+  };
+
+  @override
+  Widget build(BuildContext c) {
+    final totalBytes = media.fold<int>(0, (n, m) => n + m.bytes);
+    return Scaffold(
+        appBar: AppBar(
+            title: const Text('离线内容'),
+            actions: [
+              if (books.isNotEmpty || media.isNotEmpty)
+                Center(
+                    child: Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Text(
+                            '${books.length + media.length} 项 · ${MediaOfflinePlan.bytesLabel(totalBytes)}',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey))))
+            ]),
+        body: loading
+            ? const Center(child: CircularProgressIndicator())
+            : (books.isEmpty && media.isEmpty)
+                ? const Center(
+                    child: Text('还没有离线内容\n看书/看剧/听歌时点「保存到本机」，断网也能用',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey)))
+                : ListView(children: [
+                    if (media.isNotEmpty)
+                      const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: Text('视频 / 音乐 / 漫画',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey))),
+                    for (final m in media)
+                      ListTile(
+                          leading: Icon(_kindIcon[m.kind] ?? Icons.folder_outlined),
+                          title: Text(m.title,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(MediaOfflinePlan.describe(m),
+                              style: const TextStyle(fontSize: 11)),
+                          trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.redAccent),
+                              onPressed: () async {
+                                await MediaOfflineStore.remove(m.key,
+                                    title: m.title);
+                                _load();
+                              })),
+                    if (books.isNotEmpty)
+                      const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: Text('小说',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey))),
+                    for (final b in books)
+                      ListTile(
+                          leading: const Icon(Icons.book_outlined),
+                          title: Text(b.name,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(OfflinePlan.describe(b),
+                              style: const TextStyle(fontSize: 11)),
+                          trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.redAccent),
+                              onPressed: () async {
+                                await OfflineStore.remove(b.bookUrl,
+                                    name: b.name);
+                                _load();
+                              })),
+                  ]));
   }
 }
