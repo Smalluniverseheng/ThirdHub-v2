@@ -1,7 +1,7 @@
 # ThirdHub v4 — 安卓主客户端 + 家庭后端
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.68.0**（versionCode 50600），安装包约 **29 MB**（**arm64-v8a 单 ABI**）。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.69.0**（versionCode 50610），安装包约 **29 MB**（**arm64-v8a 单 ABI**）。
 > ★体积口径（2026-09-28 定）：分发通道的 Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
 > 而双 ABI 通用包是 **54,371,575 B（51.85 MiB）→ 塞不进去**（实测上游 400 `EntityTooLarge`，且会出现「清单写成功、包没传上」的分叉）。
 > 故 push 默认只打 `android-arm64`；32 位（armeabi-v7a）按需 `workflow_dispatch abis=android-arm` 出包，
@@ -18,7 +18,7 @@
 
 | 产品线 | 源码位置 | 仓库 | 包名 | 当前版本 | 体积 | 谁是主力 |
 |---|---|---|---|---|---|---|
-| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.68.0** | ~29 MB | **★ 用户在用的主线** |
+| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.69.0** | ~29 MB | **★ 用户在用的主线** |
 | Android 轻壳版 | `ThirdHub-Android` | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 备用 |
 | 完全体客户端（旁支） | `D:/ai/thirdhub-flutter` | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | **旁支，已搁置** |
 | 漫画稳定版（第二代） | `OmniHub-Android` | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | 历史存档 |
@@ -86,14 +86,16 @@ STYLE_GUIDE.md        UI 规范（铁律：禁用 emoji）
 
 ## 三、变更前必读的三条铁律
 
-### 1. 版本号只改一个地方，但要同步 5 处
+### 1. 版本号只改一个地方，但要同步 3 处
 
 唯一来源：`flutter_app/lib/core/app_version.dart` 的 `kAppVersion` / `kAppCode`。
 改完必须手工同步：
 
 - `flutter_app/pubspec.yaml` 的 `version: x.y.z+code`
-- `server/mcp-registry.js`
-- `server/routes-data.js`（**两处**）
+- 本 `README.md`（两处：顶部版本行 + 产品线表格）
+
+（`server/` 侧**不需要**：0.8.4 起后端版本号已收归 `server/package.json` 单一来源，
+`routes-data.js` / `mcp-registry.js` 运行期读取，不再手工同步。）
 
 改完 `grep` 全仓确认无残留旧版本字面量，**且必须重新出包**（改的是 Dart 代码，不是配置）。
 
