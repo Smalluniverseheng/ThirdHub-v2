@@ -29,6 +29,7 @@ import 'package:path_provider/path_provider.dart';
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
+import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
 import 'core/local_tools.dart';
 import 'core/manual_book.dart';
@@ -366,6 +367,19 @@ class Api {
   static Future<Map<String, dynamic>> get(String path) async {
     final r = await client()
         .get(Uri.parse('$base$path'), headers: {'X-TH-Token': token});
+    return _unwrap(r, path);
+  }
+
+  /// 明文 JSON POST（不走 AES 信封）——给不带秘密的控制类请求用
+  /// （如删号时清 /v1/pair 设备注册：body 里只有 user_id，密钥在请求头上）。
+  static Future<Map<String, dynamic>> post(
+      String path, Map<String, dynamic> body) async {
+    final r = await client().post(Uri.parse('$base$path'),
+        headers: {
+          'X-TH-Token': token,
+          'Content-Type': 'application/json; charset=utf-8'
+        },
+        body: jsonEncode(body));
     return _unwrap(r, path);
   }
 
@@ -2368,6 +2382,110 @@ class _ParticlesPainter extends CustomPainter {
   bool shouldRepaint(_ParticlesPainter old) => true;
 }
 
+/// 删除账号（Apple 5.1.1）统一入口：手输「删除」二次确认 → 清后端痕迹(尽力) → 删 Supabase 账号。
+///
+/// 「我的」页与「个人资料」页共用这一个函数 —— 两处各写一遍 dialog
+/// = 两处口径漂移（删的东西不一样 / 确认强度不一样），删号这种不可逆操作禁不起漂移。
+/// 确认强度：必须手输「删除」二字才亮红钮（防误触；删除不可逆）。
+Future<void> confirmDeleteAccount(BuildContext context,
+    {VoidCallback? after}) async {
+  final ctrl = TextEditingController();
+  var phrase = '';
+  var ok = false;
+  await showDialog<void>(
+      context: context,
+      builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+            return AlertDialog(
+              title: const Text('删除账号'),
+              content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        '将永久删除账号 ${Cloud.email} 及云端全部数据：\n'
+                        '书架 · 阅读进度 · 历史 · 收藏 · 设置 · 设备绑定 · 个人资料。\n\n'
+                        '此操作不可恢复。',
+                        style: const TextStyle(fontSize: 13, height: 1.6)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                          labelText: '输入「删除」以确认',
+                          border: OutlineInputBorder()),
+                      onChanged: (v) => setD(() => phrase = v.trim()),
+                    ),
+                  ]),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(c2),
+                    child: const Text('取消')),
+                FilledButton(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: Colors.redAccent),
+                    onPressed: phrase == '删除'
+                        ? () {
+                            ok = true;
+                            Navigator.pop(c2);
+                          }
+                        : null,
+                    child: const Text('永久删除')),
+              ],
+            );
+          }));
+  ctrl.dispose();
+  if (!ok || !context.mounted) return;
+
+  // 进行中提示：删号要打两三个网络请求（秒级），不弹进度框界面就像卡死
+  showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+          content: Row(children: [
+        SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4)),
+        SizedBox(width: 14),
+        Text('正在删除账号…'),
+      ])));
+  try {
+    // ① 后端痕迹（/v1/pair 的设备注册）—— 尽力清理；后端不在线不影响删号成功，
+    //    审核机上根本没有我们的后端，删号必须在"无后端"时照样可用。
+    try {
+      if (Api.base.isNotEmpty) {
+        await Api
+            .post('/v1/account/delete', {'user_id': Cloud.userId})
+            .timeout(const Duration(seconds: 6));
+      }
+    } catch (_) {}
+    // ② Supabase 账号 + 全部云端数据（不可逆的那一步）；成功后 Cloud 内部已清登录态
+    await Cloud.deleteAccount();
+    if (context.mounted) Navigator.pop(context); // 关进度框
+    // 先提示再 after 回调：after 可能会 pop 掉本 context 所在的页面，
+    // 之后再 showSnackBar 就会因 context 失效被静默跳过（用户看不到任何反馈）。
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('账号已删除，云端数据已清除')));
+    }
+    after?.call();
+  } catch (e) {
+    if (context.mounted) Navigator.pop(context); // 关进度框
+    if (context.mounted) {
+      showDialog<void>(
+          context: context,
+          builder: (c2) => AlertDialog(
+                  title: const Text('删除失败'),
+                  content: Text('$e\n\n账号未被删除，你可以稍后重试。'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c2),
+                        child: const Text('知道了')),
+                  ]));
+    }
+  }
+}
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
   @override
@@ -2711,6 +2829,21 @@ class _Pf extends State<ProfilePage> {
                   if (mounted) setState(() {});
                 },
                 child: const Text('退出登录')),
+            // ★ 5.1.1（Apple）：账号体系必须 App 内可删号。
+            //   与「退出登录」并列放在登录后区域；确认强度见 confirmDeleteAccount。
+            const SizedBox(height: 10),
+            OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(23))),
+                onPressed: () => confirmDeleteAccount(context,
+                    after: () {
+                      if (mounted) setState(() {});
+                    }),
+                child: const Text('删除账号')),
           ],
           const SizedBox(height: 12),
           Center(
@@ -3230,6 +3363,29 @@ class _Psub extends State<ProfileSubPage> {
                           padding: EdgeInsets.symmetric(vertical: 14),
                           child: Center(
                               child: Text('退出登录',
+                                  style: TextStyle(
+                                      color: Colors.redAccent, fontSize: 15)))),
+                    ))),
+          // ★ 5.1.1（Apple）：删号入口（与「退出登录」分离——两者不可逆性天差地别，
+          //   绝不能合并成一个按钮）。删完 pop 回「我的」。
+          if (logged)
+            Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Card(
+                    margin: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: const BorderSide(color: Colors.redAccent)),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => confirmDeleteAccount(c,
+                          after: () {
+                            if (c.mounted) Navigator.pop(c);
+                          }),
+                      child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Center(
+                              child: Text('删除账号',
                                   style: TextStyle(
                                       color: Colors.redAccent, fontSize: 15)))),
                     ))),
@@ -4117,7 +4273,14 @@ class _Home extends State<SearchSection> {
   Map<String, dynamic>? agg;
   bool loading = false;
   List<Map<String, dynamic>>? engItems; // THP 引擎直连搜索结果(已连引擎时替代后端结果)
-  int typeFilter = 0; // 0全部 1小说 2漫画 3视频 4音乐
+  // 0全部 1小说 2漫画 3视频 4音乐
+  // ★ 5.2.3/§5.3（iOS）：第三方影视采集收口 —— 无「全部/视频」（见 _typeIdx），
+  //   初始类型随之落「小说」。判定收口在 core/apple_gate.dart。
+  int typeFilter = currentGate().allowThirdPartyVideoSources ? 0 : 1;
+
+  /// 当前平台可选的类型下标。iOS 无「全部」（聚合必含视频）也无「视频」。
+  List<int> get _typeIdx =>
+      currentGate().allowThirdPartyVideoSources ? [0, 1, 2, 3, 4] : [1, 2, 4];
   List<String> history = [];
   // ★2026-09-19 逐类上屏 + 客户端分页（引擎一次已返回全部结果，首屏不必一次画上千条）
   static const _pageSize = 40;
@@ -4592,6 +4755,12 @@ class _Home extends State<SearchSection> {
   Future<void> go() async {
     final q = ctrl.text.trim();
     if (q.isEmpty) return;
+    // 防御归一：iOS 上就算别处把 typeFilter 拨成了 0(全部)/3(视频)也收回来
+    //（「全部」聚合必含视频、等于第三方影视采集入口，§5.3 收口）。
+    if (!currentGate().allowThirdPartyVideoSources &&
+        (typeFilter == 0 || typeFilter == 3)) {
+      typeFilter = 1;
+    }
     _record(q);
     final mySeq = ++_seq;
     setState(() {
@@ -4987,7 +5156,8 @@ class _Home extends State<SearchSection> {
             child: Align(
                 alignment: Alignment.centerLeft,
                 child: Wrap(spacing: 6, children: [
-                  for (var i = 0; i < typeNames.length; i++)
+                  // 只列当前平台放行的类型（iOS 无「全部/视频」——第三方影视采集收口）
+                  for (var i in _typeIdx)
                     ChoiceChip(
                         label: Text(typeNames[i],
                             style: const TextStyle(fontSize: 12)),
@@ -6162,7 +6332,10 @@ class _T extends State<TocPage> {
     await Book.add(widget.book, 'novel', target: t);
     // ★「下载到本机」必须真的把正文抓下来。此前这里只把书名写进书架(shelf_ 正文
     //   一个字都没下)，所以"下载到本机"名不副实 —— 断网再点开只有一句取内容失败。
-    if ((t == 'local' || t == 'both') && mounted) {
+    // ★阶段6 平台门：iOS 不做批量下载（Apple 5.2.3），照常入架但跳过整本抓取。
+    if ((t == 'local' || t == 'both') &&
+        OfflineUI.batchDownloadAllowed &&
+        mounted) {
       final s = await OfflineUI.download(context, widget.book.toJson(),
           kind: 'novel');
       if (mounted) _checkOffline();
@@ -6218,20 +6391,23 @@ class _T extends State<TocPage> {
     final complete = hasOff && offDone == offTotal;
     return Scaffold(
         appBar: AppBar(title: Text(widget.book.name), actions: [
-          IconButton(
-              icon: Icon(
-                  complete
-                      ? Icons.download_done
-                      : hasOff
-                          ? Icons.downloading
-                          : Icons.download_for_offline,
-                  color: hasOff ? Colors.blueAccent : null),
-              tooltip: complete
-                  ? '已离线 ${offTotal}章'
-                  : hasOff
-                      ? '继续离线下载'
-                      : '下载全书到本机（断网也能读）',
-              onPressed: _doDownload),
+          // ★阶段6 平台门：iOS 不显示批量下载按钮（Apple 5.2.3 —— 出现但不可用的
+          //   入口本身就是 2.1 完整性问题，所以是整个按钮不渲染，不是禁用）。
+          if (OfflineUI.batchDownloadAllowed)
+            IconButton(
+                icon: Icon(
+                    complete
+                        ? Icons.download_done
+                        : hasOff
+                            ? Icons.downloading
+                            : Icons.download_for_offline,
+                    color: hasOff ? Colors.blueAccent : null),
+                tooltip: complete
+                    ? '已离线 ${offTotal}章'
+                    : hasOff
+                        ? '继续离线下载'
+                        : '下载全书到本机（断网也能读）',
+                onPressed: _doDownload),
           IconButton(icon: const Icon(Icons.bookmark_add), onPressed: save),
           Text('  ${chapters.length}章  ',
               style: const TextStyle(color: Colors.grey))
@@ -7818,35 +7994,48 @@ class VideoSection extends StatefulWidget {
 class _Vs extends State<VideoSection> {
   int sub = 0;
   @override
-  Widget build(BuildContext c) => Column(children: [
-        Row(children: [
-          const SizedBox(width: 40),
-          Expanded(
-              child: Center(
-                  child: SegmentedButton<int>(segments: [
-            ButtonSegment(value: 0, label: segLabel('片库')),
-            ButtonSegment(value: 1, label: segLabel('历史')),
-            ButtonSegment(value: 2, label: segLabel('发现')),
-            ButtonSegment(value: 3, label: segLabel('搜索'))
-          ], selected: {
-            sub
-          }, onSelectionChanged: (s) => setState(() => sub = s.first)))),
-          SizedBox(width: 40, child: modMenuBtn(c))
-        ]),
+  Widget build(BuildContext c) {
+    // ★ 5.2.3 / §5.3（iOS）：第三方影视聚合的「发现/搜索」入口关闭，
+    //   只留用户自有的片库/历史。判定收口在 core/apple_gate.dart
+    //   （allowThirdPartyVideoSources），这里只执行。
+    final thirdParty = currentGate().allowThirdPartyVideoSources;
+    final pages = <Widget>[
+      const ShelfPage(kind: 'video', builder: _videoDetail),
+      HistoryPage(kind: 'video', builder: _videoDetail),
+      if (thirdParty)
+        EngineDiscoverView(
+            type: 'video',
+            onOpen: (it) => Navigator.push(
+                c,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        EngineItemPage(type: 'video', item: it)))),
+      if (thirdParty) const ModuleSearchTab(tab: 3),
+    ];
+    final segs = <ButtonSegment<int>>[
+      ButtonSegment(value: 0, label: segLabel('片库')),
+      ButtonSegment(value: 1, label: segLabel('历史')),
+      if (thirdParty) ButtonSegment(value: 2, label: segLabel('发现')),
+      if (thirdParty) ButtonSegment(value: 3, label: segLabel('搜索')),
+    ];
+    final cur = sub.clamp(0, pages.length - 1);
+    return Column(children: [
+      Row(children: [
+        const SizedBox(width: 40),
         Expanded(
-            child: [
-          const ShelfPage(kind: 'video', builder: _videoDetail),
-          HistoryPage(kind: 'video', builder: _videoDetail),
-          EngineDiscoverView(
-              type: 'video',
-              onOpen: (it) => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          EngineItemPage(type: 'video', item: it)))),
-          const ModuleSearchTab(tab: 3),
-        ][sub]),
-      ]);
+            child: Center(
+                child: SegmentedButton<int>(
+                    segments: segs,
+                    selected: {
+                      cur
+                    },
+                    onSelectionChanged: (s) =>
+                        setState(() => sub = s.first)))),
+        SizedBox(width: 40, child: modMenuBtn(c))
+      ]),
+      Expanded(child: pages[cur]),
+    ]);
+  }
 }
 
 // 直播: drpy直播源搜索频道→直接播放(m3u8直播流)
@@ -9114,8 +9303,12 @@ class _RootNavState extends State<RootNav> {
     final migrated =
         migrateModuleKeys(saved).where((k) => kModules.containsKey(k)).toList();
     if (!migrated.contains('我的')) migrated.add('我的');
+    // ★ 5.2.3/§5.3（iOS）：第三方采集类模块整体不进导航（如「直播」）。
+    //   只滤**显示**，回写仍用 migrated 全量 —— 平台门不该改写用户的模块意愿，
+    //   否则 iOS 端一启动就把「直播」从共享布局里抹掉，Android 端跟着丢。
+    final visible = migrated.where((k) => currentGate().allowModule(k)).toList();
     setState(() {
-      enabled = migrated;
+      enabled = visible;
       if (idx >= enabled.length) idx = 0;
     });
     // 迁移结果回写，避免每次启动都重算（也避免旧键一直在盘里）
@@ -10083,7 +10276,8 @@ Future<void> showNavSettings(BuildContext c) async {
   final p = await SharedPreferences.getInstance();
   final saved = migrateModuleKeys(p.getStringList('nav_modules') ?? ['我的']);
   final order = <String>[
-    ...saved.where((k) => kModules.containsKey(k))
+    // ★ iOS：第三方采集类模块（直播）不进选择器 —— 平台门收口（§5.3）
+    ...saved.where((k) => kModules.containsKey(k) && currentGate().allowModule(k))
   ]; // 已启用(可拖动排序)
   final sel = order.toSet();
   // 未启用模块按分类树状分组
@@ -10092,6 +10286,8 @@ Future<void> showNavSettings(BuildContext c) async {
     if (sel.contains(k)) continue;
     // ★4.58.0 归并：子模块不再单独出现在"可添加"清单里（它已在所属聚合模块内）。
     if (kModuleHubOf.containsKey(k)) continue;
+    // ★ iOS：不提供添加（否则等于"第三方采集源入口"，§5.3 收口）
+    if (!currentGate().allowModule(k)) continue;
     byCat.putIfAbsent(moduleCat(k), () => []).add(k);
   }
   await showDialog(
@@ -10231,6 +10427,12 @@ class AccountTile extends StatefulWidget {
 
 class _At extends State<AccountTile> {
   bool busy = false;
+  // ★ 4.8 接线位（Apple）：「若有第三方/社交登录，必须同时提供 Sign in with Apple」。
+  //   当前**只有邮箱密码登录（第一方账号）→ 4.8 未触发**，所以这里刻意不放
+  //   Apple 登录按钮 —— 放一个不能用的按钮是 2.1「完整性」违规（占位=拒审）。
+  //   将来接入任何社交登录时：把 core/apple_gate.dart 的 kHasThirdPartyLogin
+  //   置 true（needsSignInWithApple 随之变 true），**同一次提交里**在此对话框
+  //   补「Sign in with Apple」按钮 + 真实的 Apple 登录实现，缺一不可。
   Future<void> _auth(bool isLogin) async {
     final mailC = TextEditingController();
     final passC = TextEditingController();
@@ -10628,7 +10830,9 @@ class _Dct extends State<DownloadCenterTile> {
                         url: p.$3,
                         icon: p.$4,
                         desc: p.$5)))),
-      if (admin) ...[
+      // ★ 4.7.2（iOS）：引擎安装/装载入口一律不开放（allowEngineInstall）。
+      //   引擎包在 iOS 上既装不了也不该"引导安装"——判定收口在 core/apple_gate.dart。
+      if (admin && currentGate().allowEngineInstall) ...[
         ListTile(
             dense: true,
             leading: const Icon(Icons.menu_book, size: 20),
