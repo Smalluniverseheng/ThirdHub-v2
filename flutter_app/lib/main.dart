@@ -10770,7 +10770,7 @@ class _At extends State<AccountTile> {
   }
 }
 
-// ═══ 下载中心: 产品列表(前端/后端/引擎/网页版), 点击进详情页再下载 ═══
+// ═══ 下载中心: 产品列表(移动端/桌面端/引擎/网页版), 点击进详情页再下载 ═══
 class DownloadCenterTile extends StatefulWidget {
   const DownloadCenterTile({super.key});
   static const _base =
@@ -10778,31 +10778,31 @@ class DownloadCenterTile extends StatefulWidget {
   static const products = [
     (
       '第三方聚合',
-      'Flutter 纯播放器前端(本应用)',
+      '移动端播放器前端(本应用)',
       '$_base/thirdhub-app.apk',
       Icons.phone_android,
-      '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过后端与资料库获取内容。'
+      '聚合 AI 对话 / 小说 / 漫画 / 视频 / 音乐 / 直播 / 相册 / 文件管理器。纯播放器设计, 不内置任何源, 通过桌面端与资料库获取内容。'
     ),
     (
-      '第三方后端',
-      '手机内嵌 Node.js 后端',
+      '桌面端 · 手机内嵌',
+      '手机内嵌 Node.js 桌面端',
       '$_base/thirdhub-backend.apk',
       Icons.dns,
-      '在手机上运行的资源库后端: 本地资料库 + 局域网共享 + TLS 加密。装好后前端自动发现。'
+      '在手机上运行的桌面端(数据中心): 本地资料库 + 局域网共享 + TLS 加密。装好后移动端自动发现。'
     ),
     (
-      '电脑版后端 · Windows',
-      '一键安装脚本 · 把电脑变成资源库服务器',
+      '桌面端 · Windows',
+      '一键安装脚本 · 把电脑变成桌面端',
       '$_base/install-windows.ps1',
       Icons.computer,
-      '在 Windows 电脑上跑后端: 下载脚本后用管理员 PowerShell 执行即可(自动装 Node、部署、注册开机自启)。与手机后端同一账号体系。'
+      '在 Windows 电脑上运行桌面端: 下载脚本后用管理员 PowerShell 执行即可(自动装 Node、部署、注册开机自启)。与手机内嵌版同一账号体系。'
     ),
     (
-      '电脑版后端 · Linux',
+      '桌面端 · Linux',
       '一键安装脚本 · systemd 常驻',
       '$_base/install-linux.sh',
       Icons.terminal,
-      '在 Linux 服务器/电脑上跑后端: 下载脚本后 bash 执行(自动装 Node、部署、systemd 常驻)。适合长期挂机当家庭服务器。'
+      '在 Linux/电脑上运行桌面端: 下载脚本后 bash 执行(自动装 Node、部署、systemd 常驻)。适合长期挂机当数据中心。'
     ),
     (
       '网页版',
