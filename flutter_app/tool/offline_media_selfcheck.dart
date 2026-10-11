@@ -120,6 +120,85 @@ void main() {
       MediaOfflinePlan.slugOf('http://a/b', name: 'X') ==
           MediaOfflinePlan.slugOf('http://a/b', name: 'X'));
 
+  // ── 8. HLS（m3u8）解析：点播/直播/加密/多码率/fMP4（规划册 H1）──
+  // 判定口径：含 #EXT-X-ENDLIST = 点播（可整存）；没有 = 直播（拒绝）。
+  const vodM3u8 = '''#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXTINF:9.009,
+seg1.ts
+#EXTINF:9.009,
+http://cdn.example.com/dir/seg2.ts
+#EXTINF:8.0,
+../up/seg3.ts?token=1
+#EXT-X-ENDLIST''';
+  final h1 = HlsPlan.parse(vodM3u8, 'https://cdn.example.com/live/index.m3u8');
+  ck('[hls] 点播识别（有 ENDLIST）', h1 != null && h1.isVod);
+  ck('[hls] 分片计数（3 片）', h1!.segments.length == 3);
+  ck('[hls] 相对路径还原为绝对',
+      h1.segments[0] == 'https://cdn.example.com/live/seg1.ts');
+  ck('[hls] 带域名分片保持',
+      h1.segments[1] == 'http://cdn.example.com/dir/seg2.ts');
+  ck('[hls] 上跳路径还原（并保留 query）',
+      h1.segments[2] == 'https://cdn.example.com/up/seg3.ts?token=1');
+  ck('[hls] 扩展名推断 ts', h1.mergedExt == 'ts');
+  ck('[hls] 非加密', !h1.encrypted);
+  ck('[hls] 非 master', !h1.isMaster);
+
+  const liveM3u8 = '''#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+live1.ts
+#EXTINF:4.0,
+live2.ts''';
+  final h2 = HlsPlan.parse(liveM3u8, 'https://x/a.m3u8');
+  ck('[hls] 直播识别（无 ENDLIST → 不可整存）', h2 != null && !h2.isVod);
+
+  const encM3u8 = '''#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="k.key"
+#EXTINF:5,
+a.ts
+#EXT-X-ENDLIST''';
+  ck('[hls] 加密流识别', HlsPlan.parse(encM3u8, 'https://x/a.m3u8')!.encrypted);
+  const keyNoneM3u8 = '''#EXTM3U
+#EXT-X-KEY:METHOD=NONE
+#EXTINF:5,
+a.ts
+#EXT-X-ENDLIST''';
+  ck('[hls] METHOD=NONE 不算加密',
+      !HlsPlan.parse(keyNoneM3u8, 'https://x/a.m3u8')!.encrypted);
+
+  const masterM3u8 = '''#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=800000
+low.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2400000
+high.m3u8''';
+  final h3 = HlsPlan.parse(masterM3u8, 'https://x/master.m3u8');
+  ck('[hls] master 识别', h3 != null && h3.isMaster);
+  ck('[hls] master 子清单计数', h3!.childPlaylists.length == 2);
+  ck('[hls] master 子清单绝对化',
+      h3.childPlaylists[0] == 'https://x/low.m3u8');
+  ck('[hls] master 没有分片', h3.segments.isEmpty);
+
+  const fmp4M3u8 = '''#EXTM3U
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:5,
+seg1.m4s
+#EXTINF:5,
+seg2.m4s
+#EXT-X-ENDLIST''';
+  final h4 = HlsPlan.parse(fmp4M3u8, 'https://x/a.m3u8');
+  ck('[hls] fMP4 init 段单独抽', h4!.initSegment == 'https://x/init.mp4');
+  ck('[hls] fMP4 分片不含 init', h4.segments.length == 2);
+  ck('[hls] fMP4 合并扩展名 = mp4', h4.mergedExt == 'mp4');
+
+  ck('[hls] 非 HLS 文本 parse = null',
+      HlsPlan.parse('hello world', 'https://x/a') == null);
+  ck('[hls] isHls 认 .m3u8 带 query',
+      HlsPlan.isHls('http://a/x.m3u8?token=1'));
+  ck('[hls] isHls 认 .m3u', HlsPlan.isHls('http://a/x.m3u'));
+  ck('[hls] isHls 不认 .mp4', !HlsPlan.isHls('http://a/x.mp4'));
+
   print('');
   print(fails == 0
       ? 'offline_media_selfcheck: 全部通过'
