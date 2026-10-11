@@ -100,6 +100,7 @@ import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
 import 'core/tts_settings_page.dart';
+import 'core/offline_media_store.dart';
 import 'core/offline_store.dart';
 import 'core/offline_ui.dart';
 
@@ -7249,6 +7250,12 @@ class _MPlay extends State<MusicPlayPage> {
   final AudioPlayer player = AudioPlayer();
   bool loading = true;
   String? err;
+
+  /// 解析后的播放直链（保存到本机用）。
+  String? _resolvedUrl;
+
+  /// 这首歌的离线稳定键。
+  String get _musicKey => 'music:${cur['url'] ?? cur['id'] ?? cur['name']}';
   String lyric = '';
   // LRC 歌词: (毫秒, 文本) 有序列表; 纯文本歌词则只有一行无法同步
   List<({int ms, String text})> lrc = [];
@@ -7440,6 +7447,14 @@ class _MPlay extends State<MusicPlayPage> {
           err = '暂时无法播放这首歌';
         });
         return;
+      }
+      // 本地优先：这首歌保存过就播本地文件（断网/引擎关了照样听）。
+      // 本地导入的歌本来就带本地路径，不参与查询。
+      if (!playUrl.startsWith('/') && !playUrl.startsWith('file://')) {
+        _resolvedUrl = playUrl;
+        final lf = await MediaOfflineStore.localFileOf(_musicKey,
+            title: '${cur['name'] ?? ''}');
+        if (lf != null) playUrl = lf.path;
       }
       final mediaItem = MediaItem(
           id: '${cur['id'] ?? playUrl}',
@@ -7739,10 +7754,40 @@ class _MPlay extends State<MusicPlayPage> {
   }
 
   @override
+  /// 保存这首歌到本机（断网也能听）。
+  Future<void> _saveOfflineM() async {
+    final url = _resolvedUrl ?? '';
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('播放地址还没解析出来，等歌开始播再保存')));
+      return;
+    }
+    final s = await OfflineUI.mediaDownload(context,
+        kind: 'music',
+        key: _musicKey,
+        title: '${cur['name'] ?? '这首歌'}',
+        url: url,
+        subtitle: '${cur['artist'] ?? ''}',
+        coverUrl: '${cur['coverUrl'] ?? ''}');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(s == 'done'
+            ? '已保存到本机，断网也能听'
+            : s == 'cancel'
+                ? '已停止保存（再点会接着下）'
+                : '没保存成功')));
+  }
+
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(
           title: Text(cur['name'] ?? '', style: const TextStyle(fontSize: 15)),
           actions: [
+            // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
+            if (OfflineUI.batchDownloadAllowed)
+              IconButton(
+                  icon: const Icon(Icons.download_for_offline),
+                  tooltip: '保存到本机（断网也能听）',
+                  onPressed: _saveOfflineM),
             IconButton(
                 icon: const Icon(Icons.favorite_border),
                 tooltip: '收藏到歌单架',
@@ -8432,6 +8477,12 @@ class _Vp extends State<VideoPlayPage> {
   ChewieController? _cc;
   bool loading = true;
   String? err;
+
+  /// 解析后的直链缓存（保存到本机用；播放前解析出来的那个地址就是它）。
+  String? _resolvedUrl;
+
+  /// 这一集的离线稳定键。
+  String get _videoKey => 'video:${widget.sourceId}:${widget.epUrl}';
   // 画中画（与本地播放器同一套机制，见 core/pip.dart）
   bool _pipOk = false;
   bool _pipLastPlaying = false;
@@ -8471,7 +8522,13 @@ class _Vp extends State<VideoPlayPage> {
         });
         return;
       }
-      _vc = VideoPlayerController.networkUrl(Uri.parse(url));
+      _resolvedUrl = url;
+      // 本地优先：这集保存过就播本地文件 —— 断网/引擎关了照样能看。
+      final lf = await MediaOfflineStore.localFileOf(_videoKey,
+          title: widget.title);
+      _vc = lf != null
+          ? VideoPlayerController.file(lf)
+          : VideoPlayerController.networkUrl(Uri.parse(url));
       await _vc!.initialize();
       final speed =
           double.tryParse(AppSettings.p.getString('video_speed') ?? '1.0') ??
@@ -8592,10 +8649,41 @@ class _Vp extends State<VideoPlayPage> {
                   aspectRatio: _cc!.aspectRatio ?? 16 / 9,
                   child: Chewie(controller: _cc!))));
 
+  /// 保存这一集到本机（断网也能看）。
+  Future<void> _saveOffline() async {
+    final url = _resolvedUrl ?? '';
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('播放地址还没解析出来，等画面出来后再保存')));
+      return;
+    }
+    final s = await OfflineUI.mediaDownload(context,
+        kind: 'video',
+        key: _videoKey,
+        title: widget.title.isEmpty ? '本集' : widget.title,
+        url: url,
+        subtitle: widget.title);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(s == 'done'
+            ? '已保存到本机，断网也能看'
+            : s == 'partial'
+                ? '没保存完整，可再点一次补'
+                : s == 'cancel'
+                    ? '已停止保存（再点会接着下）'
+                    : '没保存成功')));
+  }
+
   Widget _buildFull(BuildContext c) => Scaffold(
       appBar: AppBar(
           title: Text(widget.title, style: const TextStyle(fontSize: 15)),
           actions: [
+            // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
+            if (OfflineUI.batchDownloadAllowed)
+              IconButton(
+                  icon: const Icon(Icons.download_for_offline, size: 20),
+                  tooltip: '保存到本机（断网也能看）',
+                  onPressed: _saveOffline),
             if (_pipOk)
               IconButton(
                   icon: const Icon(Icons.picture_in_picture_alt, size: 20),
@@ -9712,6 +9800,9 @@ class _RootNavState extends State<RootNav> {
                 proEntry(c2, Icons.play_circle_outline, '最近播放', '',
                     const RecentPlayPage()),
               ],
+              if (key == '小说' || key == '漫画' || key == '视频' || key == '音乐')
+                proEntry(c2, Icons.download_for_offline_outlined, '离线内容',
+                    '已保存到本机 · 断网也能用', const MediaOfflinePage()),
               if (key == '漫画')
                 proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',
                     const ReadStatsPage()),
@@ -14318,6 +14409,13 @@ class _Ecr extends State<EngineComicReader> {
   String err = '';
   bool paged = false;
   final PageController pc = PageController();
+
+  /// 本话的离线稳定键。
+  String get _chapKey => 'comic:${widget.comicName}:$chapUrl';
+
+  /// 当前 images 是不是本地文件路径（本话已保存过）。
+  bool _fromLocal = false;
+
   @override
   void initState() {
     super.initState();
@@ -14347,6 +14445,17 @@ class _Ecr extends State<EngineComicReader> {
       images = [for (final e in raw) '$e'];
       headers = Map<String, String>.from(d['headers'] ?? d['header'] ?? {});
       if (images.isEmpty) err = '本话没有图片';
+      // 本地优先：本话保存过就直接读本地图片（断网/引擎关了照样看）。
+      if (images.isNotEmpty) {
+        final local = await MediaOfflineStore.localPagesOf(_chapKey,
+            title: '${widget.comicName} · $chapName');
+        if (local.isNotEmpty) {
+          images = [for (final f in local) f.path];
+          _fromLocal = true;
+        } else {
+          _fromLocal = false;
+        }
+      }
     } catch (e) {
       err = '$e';
     }
@@ -14360,12 +14469,74 @@ class _Ecr extends State<EngineComicReader> {
     _load();
   }
 
+  /// 保存本话到本机（断网也能看）。
+  Future<void> _saveOfflineC() async {
+    if (_fromLocal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本话已经保存过了')));
+      return;
+    }
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本话还没有图片，等加载出来再保存')));
+      return;
+    }
+    final s = await OfflineUI.mediaDownload(context,
+        kind: 'comic',
+        key: _chapKey,
+        title: '${widget.comicName} · $chapName',
+        pages: List<String>.from(images),
+        headers: headers,
+        coverUrl: '');
+    if (!mounted) return;
+    if (s == 'done') _load(); // 下完切到本地图片，验证真能离线读
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(s == 'done'
+            ? '本话已保存到本机，断网也能看'
+            : s == 'partial'
+                ? '部分页没取到，可再点一次补'
+                : s == 'cancel'
+                    ? '已停止保存（再点会接着下）'
+                    : '没保存成功')));
+  }
+
+  /// 页图渲染：本地路径走 Image.file，联网走 Image.network（带防盗链头）。
+  Widget _img(int i, {BoxFit fit = BoxFit.contain}) {
+    final p = images[i];
+    final local = _fromLocal || p.startsWith('/') || p.startsWith('file:');
+    if (local) {
+      return Image.file(File(p.replaceFirst('file://', '')),
+          fit: fit,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.broken_image, color: Colors.grey));
+    }
+    return Image.network(p,
+        headers: headers,
+        fit: fit,
+        loadingBuilder: (_, w, q) => q == null
+            ? w
+            : const Center(child: CircularProgressIndicator()),
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.broken_image, color: Colors.grey));
+  }
+
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(
           title: Text('${widget.comicName} · $chapName',
               maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
+            if (OfflineUI.batchDownloadAllowed)
+              IconButton(
+                  icon: Icon(
+                      _fromLocal
+                          ? Icons.download_done
+                          : Icons.download_for_offline,
+                      size: 20),
+                  tooltip:
+                      _fromLocal ? '本话已保存到本机' : '保存本话到本机（断网也能看）',
+                  onPressed: _saveOfflineC),
             IconButton(
                 icon: Icon(paged ? Icons.view_day : Icons.chrome_reader_mode,
                     size: 20),
@@ -14387,17 +14558,7 @@ class _Ecr extends State<EngineComicReader> {
                       controller: pc,
                       itemCount: images.length,
                       itemBuilder: (_, i) => InteractiveViewer(
-                          child: Center(
-                              child: Image.network(images[i],
-                                  headers: headers,
-                                  fit: BoxFit.contain,
-                                  loadingBuilder: (_, w, p) => p == null
-                                      ? w
-                                      : const Center(
-                                          child: CircularProgressIndicator()),
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                      Icons.broken_image,
-                                      color: Colors.grey)))))
+                          child: Center(child: _img(i))))
                   : ListView.builder(
                       itemCount: images.length + 1,
                       itemBuilder: (_, i) {
@@ -14418,20 +14579,7 @@ class _Ecr extends State<EngineComicReader> {
                                           child: const Text('下一话')),
                                   ]));
                         }
-                        return Image.network(images[i],
-                            headers: headers,
-                            fit: BoxFit.fitWidth,
-                            loadingBuilder: (_, w, p) => p == null
-                                ? w
-                                : Container(
-                                    height: 160,
-                                    alignment: Alignment.center,
-                                    child: const CircularProgressIndicator()),
-                            errorBuilder: (_, __, ___) => Container(
-                                height: 120,
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.broken_image,
-                                    color: Colors.grey)));
+                        return _img(i, fit: BoxFit.fitWidth);
                       }),
       bottomNavigationBar: paged && !loading && err.isEmpty
           ? BottomAppBar(
