@@ -212,10 +212,17 @@ class MediaOfflineStore {
     String sourceId,
     Map<String, String> headers,
   ) async {
-    void push(int total, int done, int failed, String status, String msg) {
+    void push(int total, int done, int failed, String status, String msg,
+        {int bytes = 0, int totalBytes = 0}) {
       if (!c.isClosed) {
         c.add(OfflineProgress(
-            total: total, done: done, failed: failed, status: status, message: msg));
+            total: total,
+            done: done,
+            failed: failed,
+            status: status,
+            message: msg,
+            bytes: bytes,
+            totalBytes: totalBytes));
       }
     }
 
@@ -290,7 +297,8 @@ class MediaOfflineStore {
             ? (got * 1000 ~/ totalBytes).clamp(0, 999)
             : 0;
         push(1000, permille, 0, 'running',
-            '${MediaOfflinePlan.bytesLabel(got)} / ${totalBytes > 0 ? MediaOfflinePlan.bytesLabel(totalBytes) : '?'}');
+            '${MediaOfflinePlan.bytesLabel(got)} / ${totalBytes > 0 ? MediaOfflinePlan.bytesLabel(totalBytes) : '?'}',
+            bytes: got, totalBytes: totalBytes);
       });
 
       final bytes = await dest.length();
@@ -351,10 +359,17 @@ class MediaOfflineStore {
     String sourceId,
     Map<String, String> headers,
   ) async {
-    void push(int total, int done, int failed, String status, String msg) {
+    void push(int total, int done, int failed, String status, String msg,
+        {int bytes = 0, int totalBytes = 0}) {
       if (!c.isClosed) {
         c.add(OfflineProgress(
-            total: total, done: done, failed: failed, status: status, message: msg));
+            total: total,
+            done: done,
+            failed: failed,
+            status: status,
+            message: msg,
+            bytes: bytes,
+            totalBytes: totalBytes));
       }
     }
 
@@ -456,6 +471,258 @@ class MediaOfflineStore {
       push(0, 0, 0, 'error', '下载失败：$e');
     } finally {
       if (!c.isClosed) await c.close();
+    }
+  }
+
+  /// 下载 HLS（m3u8 点播流）：拉清单 → 逐分片下载 → 边下边拼成单文件。返回进度流。
+  ///
+  /// ★ 直播拒绝：清单无 `#EXT-X-ENDLIST` → 报错退出（口径在 `HlsPlan`，这里只执行）。
+  /// ★ 断点续传：`.part` 边上放一个 `.part.done` 记「已写进多少片」；重跑从断点继续
+  ///   （每片先 flush 写盘、再记账 —— 中断最多重下一片，不会写出坏文件）。
+  /// ★ 加密流拒绝：分片是密文，拼出来播不了。
+  static Stream<OfflineProgress> downloadHls({
+    required String kind,
+    required String key,
+    required String title,
+    required String url,
+    String subtitle = '',
+    String coverUrl = '',
+    String sourceId = 'engine',
+    Map<String, String> headers = const {},
+  }) {
+    final c = StreamController<OfflineProgress>();
+    final cancel = _CancelFlag();
+    c.onListen = () {
+      unawaited(_runHls(
+          c, cancel, kind, key, title, url, subtitle, coverUrl, sourceId,
+          headers));
+    };
+    c.onCancel = () {
+      cancel.cancelled = true;
+    };
+    return c.stream;
+  }
+
+  static Future<void> _runHls(
+    StreamController<OfflineProgress> c,
+    _CancelFlag cancel,
+    String kind,
+    String key,
+    String title,
+    String url,
+    String subtitle,
+    String coverUrl,
+    String sourceId,
+    Map<String, String> headers,
+  ) async {
+    void push(int total, int done, int failed, String status, String msg,
+        {int bytes = 0, int totalBytes = 0}) {
+      if (!c.isClosed) {
+        c.add(OfflineProgress(
+            total: total,
+            done: done,
+            failed: failed,
+            status: status,
+            message: msg,
+            bytes: bytes,
+            totalBytes: totalBytes));
+      }
+    }
+
+    try {
+      if (key.trim().isEmpty || url.trim().isEmpty) {
+        push(0, 0, 0, 'error', '没有可下载的地址');
+        return;
+      }
+      push(0, 0, 0, 'running', '读取流清单…');
+
+      // ① 拉清单（master → 最多再下一层）
+      var base = url;
+      var text = await _fetchText(base, headers, cancel);
+      var man = HlsPlan.parse(text, base);
+      if (man == null) {
+        push(0, 0, 0, 'error', '这个地址不是可识别的 m3u8 清单');
+        return;
+      }
+      if (man.isMaster) {
+        if (man.childPlaylists.isEmpty) {
+          push(0, 0, 0, 'error', '多码率清单里没有可用的子清单');
+          return;
+        }
+        base = man.childPlaylists.first;
+        text = await _fetchText(base, headers, cancel);
+        final m2 = HlsPlan.parse(text, base);
+        if (m2 == null || m2.isMaster) {
+          push(0, 0, 0, 'error', '子清单解析失败');
+          return;
+        }
+        man = m2;
+      }
+      if (man.encrypted) {
+        push(0, 0, 0, 'error', '这是加密流（分片加密），没法直接保存');
+        return;
+      }
+      if (!man.isVod) {
+        push(0, 0, 0, 'error',
+            '这是直播流：边播边生成、没有完整分片列表，没法整存。\n点播内容（有完整剧集/片长的）才能保存');
+        return;
+      }
+      final segs = <String>[
+        if (man.initSegment != null) man.initSegment!,
+        ...man.segments,
+      ];
+      if (segs.isEmpty) {
+        push(0, 0, 0, 'error', '清单里没有分片');
+        return;
+      }
+
+      // ② 落盘路径与断点
+      final dir = await _createDir(key, title);
+      final fname = MediaOfflinePlan.mediaFileName(man.mergedExt);
+      final dest = File('${dir.path}/$fname');
+      final part = File('${dest.path}.part');
+      final side = File('${dest.path}.part.done');
+
+      if (await _doneFile(dest)) {
+        final bytes = await dest.length();
+        await _saveMeta(
+            dir,
+            MediaOfflineMeta(
+              key: key,
+              kind: kind,
+              title: title,
+              subtitle: subtitle,
+              coverUrl: coverUrl,
+              sourceId: sourceId,
+              status: 'done',
+              at: MediaOfflinePlan.stamp(),
+              total: 1,
+              done: 1,
+              failed: 0,
+              bytes: bytes,
+              files: [fname],
+            ));
+        push(1, 1, 0, 'done', '已经离线过了');
+        return;
+      }
+
+      var doneCount = 0;
+      if (await part.exists()) {
+        try {
+          doneCount = int.tryParse((await side.readAsString()).trim()) ?? 0;
+        } catch (_) {
+          doneCount = 0;
+        }
+        if (doneCount < 0 || doneCount > segs.length) doneCount = 0;
+      }
+
+      var meta = MediaOfflineMeta(
+        key: key,
+        kind: kind,
+        title: title,
+        subtitle: subtitle,
+        coverUrl: coverUrl,
+        sourceId: sourceId,
+        status: 'running',
+        at: MediaOfflinePlan.stamp(),
+        total: segs.length,
+        done: doneCount,
+        failed: 0,
+        files: [fname],
+      );
+      await _saveMeta(dir, meta);
+      push(segs.length, doneCount, 0, 'running',
+          '共 ${segs.length} 片；下完会自动合并成一个文件');
+
+      // ③ 逐片下载 → 追加写盘（先落盘再记账，中断最多重下一片）
+      final sink = part.openWrite(
+          mode: doneCount > 0 ? FileMode.append : FileMode.write);
+      try {
+        for (var i = doneCount; i < segs.length; i++) {
+          if (cancel.cancelled) throw const _Cancelled();
+          final buf = await _fetchBytes(segs[i], headers, cancel);
+          sink.add(buf);
+          await sink.flush(); // 先落盘
+          await side.writeAsString('${i + 1}'); // 再记账
+          doneCount = i + 1;
+          meta = meta.copyWith(
+              done: doneCount, at: MediaOfflinePlan.stamp());
+          await _saveMeta(dir, meta);
+          var got = 0;
+          try {
+            got = await part.length();
+          } catch (_) {}
+          push(segs.length, doneCount, 0, 'running',
+              '已下 $doneCount/${segs.length} 片 · ${MediaOfflinePlan.bytesLabel(got)}',
+              bytes: got);
+        }
+      } finally {
+        try {
+          await sink.close();
+        } catch (_) {}
+      }
+      if (!await _doneFile(part)) throw Exception('下载到的内容是空的');
+      if (await dest.exists()) await dest.delete();
+      await part.rename(dest.path);
+      try {
+        await side.delete();
+      } catch (_) {}
+      final bytes = await dest.length();
+      meta = meta.copyWith(
+          status: 'done',
+          done: segs.length,
+          bytes: bytes,
+          at: MediaOfflinePlan.stamp());
+      await _saveMeta(dir, meta);
+      push(segs.length, segs.length, 0, 'done',
+          '已保存到本机 · ${MediaOfflinePlan.bytesLabel(bytes)}（${segs.length} 片已合并）');
+    } on _Cancelled {
+      final dir = await findDir(key, title: title);
+      if (dir != null) {
+        final m = await metaOf(key, title: title);
+        if (m != null && m.status == 'running') {
+          await _saveMeta(
+              dir, m.copyWith(status: 'partial', at: MediaOfflinePlan.stamp()));
+        }
+      }
+    } catch (e) {
+      push(0, 0, 0, 'error', '下载失败：$e');
+    } finally {
+      if (!c.isClosed) await c.close();
+    }
+  }
+
+  /// 拉一段文本（m3u8 清单）。编码按 UTF-8（HLS 规范要求）。
+  static Future<String> _fetchText(
+      String url, Map<String, String> headers, _CancelFlag cancel) async {
+    final b = await _fetchBytes(url, headers, cancel, maxBytes: 4 << 20);
+    return utf8.decode(b, allowMalformed: true);
+  }
+
+  /// 拉一段二进制（一个分片/清单）。单片入内存（HLS 分片是独立编解码单元，尺寸可控）；
+  /// [maxBytes] 防御性上限 —— 坏地址不会把内存拉爆。
+  static Future<List<int>> _fetchBytes(
+      String url, Map<String, String> headers, _CancelFlag cancel,
+      {int maxBytes = 256 << 20}) async {
+    final client =
+        HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    try {
+      final rq = await client.getUrl(Uri.parse(url));
+      headers.forEach((k, v) {
+        if (k.toLowerCase() != 'range') rq.headers.set(k, v);
+      });
+      rq.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      final rs = await rq.close();
+      if (rs.statusCode != 200) throw Exception('HTTP ${rs.statusCode}');
+      final out = <int>[];
+      await for (final chunk in rs) {
+        if (cancel.cancelled) throw const _Cancelled();
+        out.addAll(chunk);
+        if (out.length > maxBytes) throw Exception('内容过大，已中止');
+      }
+      return out;
+    } finally {
+      client.close(force: true);
     }
   }
 
