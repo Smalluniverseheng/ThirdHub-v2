@@ -35,12 +35,21 @@ class OfflineProgress {
   /// 给用户看的一句话（"正在下载 第 12/320 章"、"已离线 320 章"）。
   final String message;
 
+  /// 已下载字节数（单文件 / HLS 下载喂给弹窗算「速度 + 剩余时间」；
+  /// 章节与整页模式恒 0 —— 那两种弹窗按"章/页"显示就够了）。
+  final int bytes;
+
+  /// 已知的总字节数（服务器给了 Content-Length 才有；HLS 合并流未知，恒 0）。
+  final int totalBytes;
+
   const OfflineProgress({
     required this.total,
     required this.done,
     required this.failed,
     required this.status,
     this.message = '',
+    this.bytes = 0,
+    this.totalBytes = 0,
   });
 
   bool get running => status == 'running';
@@ -59,6 +68,8 @@ class OfflineProgress {
     int? failed,
     String? status,
     String? message,
+    int? bytes,
+    int? totalBytes,
   }) =>
       OfflineProgress(
         total: total ?? this.total,
@@ -66,6 +77,8 @@ class OfflineProgress {
         failed: failed ?? this.failed,
         status: status ?? this.status,
         message: message ?? this.message,
+        bytes: bytes ?? this.bytes,
+        totalBytes: totalBytes ?? this.totalBytes,
       );
 
   Map<String, dynamic> toJson() => {
