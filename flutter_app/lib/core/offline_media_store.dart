@@ -138,6 +138,9 @@ class MediaOfflineStore {
     final out = <MediaOfflineMeta>[];
     await for (final e in root.list(followLinks: false)) {
       if (e is! Directory) continue;
+      // ★回收站不进列表（.trash 里的 meta 不该被当成"已离线"）。
+      final dirName = e.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (dirName == MediaOfflinePlan.trashDirName) continue;
       final f = File('${e.path}/${MediaOfflinePlan.metaFile}');
       if (!await f.exists()) continue;
       try {
@@ -149,13 +152,84 @@ class MediaOfflineStore {
     return out;
   }
 
-  /// 删掉这条记录的全部内容。目录一起删，不留空壳。
-  static Future<void> remove(String key, {String title = ''}) async {
+  /// ★2026-10-12：**软删进回收站**（删除可撤销）—— 目录 rename 到 `.trash/<slug>__<时间>`。
+  /// [restore] 可还原（搬回原位）；超过 7 天由 [cleanTrash] 自动清掉。
+  /// rename 是原子操作：撤销只是搬回来，不会让用户重下几十 MB。
+  static Future<bool> remove(String key,
+      {String title = '', bool permanent = false}) async {
     final dir = await findDir(key, title: title);
-    if (dir == null) return;
+    if (dir == null) return false;
+    // permanent=true（超限自动清理用）：直接删、不进回收站——
+    // 自动清理的东西堆回收站没意义（7 天后还是清）。
+    if (permanent) {
+      try {
+        await dir.delete(recursive: true);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
     try {
-      await dir.delete(recursive: true);
+      final root = await _root();
+      final trash = Directory('${root.path}/${MediaOfflinePlan.trashDirName}');
+      if (!await trash.exists()) await trash.create(recursive: true);
+      final slug = dir.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      await dir.rename(
+          '${trash.path}/${MediaOfflinePlan.trashName(slug, DateTime.now())}');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 撤销删除：把该 key 最近一次进回收站的记录搬回原位。
+  /// 记录还在（没删成功/删的不是它）→ 直接回 true；找不到 → false。
+  static Future<bool> restore(String key, {String title = ''}) async {
+    if (await findDir(key, title: title) != null) return true;
+    final root = await _root();
+    final trash = Directory('${root.path}/${MediaOfflinePlan.trashDirName}');
+    if (!await trash.exists()) return false;
+    final hash = MediaOfflinePlan.hashOf(key);
+    String? newest;
+    DateTime? newestAt;
+    await for (final e in trash.list(followLinks: false)) {
+      if (e is! Directory) continue;
+      final n = e.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (n != hash && !n.endsWith('_$hash')) continue;
+      final t = MediaOfflinePlan.trashTimeOf(n) ?? DateTime(2000);
+      if (newestAt == null || t.isAfter(newestAt)) {
+        newest = e.path;
+        newestAt = t;
+      }
+    }
+    if (newest == null) return false;
+    try {
+      await Directory(newest).rename(
+          '${root.path}/${MediaOfflinePlan.trashSlugOf(newest.split('/').last)}');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 清掉回收站里超过 [days] 天（默认 7 天）的项。返回清了几项。
+  static Future<int> cleanTrash({int days = 7}) async {
+    final root = await _root();
+    final trash = Directory('${root.path}/${MediaOfflinePlan.trashDirName}');
+    if (!await trash.exists()) return 0;
+    var n = 0;
+    try {
+      await for (final e in trash.list(followLinks: false)) {
+        if (e is! Directory) continue;
+        final name = e.uri.pathSegments.where((s) => s.isNotEmpty).last;
+        if (!MediaOfflinePlan.trashExpired(name, days: days)) continue;
+        try {
+          await e.delete(recursive: true);
+          n++;
+        } catch (_) {}
+      }
     } catch (_) {}
+    return n;
   }
 
   /// 目录实际占用字节数（清单里的 bytes 可能过时，删文件后以这个为准）。
