@@ -433,6 +433,9 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
   /// ★M3：离线存储上限（MB；0 = 不限）。默认 20GB。
   int _limitMb = 20480;
 
+  /// ★L1（2026-10-12）：小说离线总占用（加载时扫目录算；书量少，代价可忽略）。
+  int novelBytes = 0;
+
   // ★2026-10-12：多选批量删除模式。_sel 里是 'm:<key>'（媒体）/ 'n:<bookUrl>'（小说）——
   // 加前缀是因为两边的 key 都是裸字符串，可能撞车。
   bool _selectMode = false;
@@ -470,7 +473,62 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
   Future<void> _load() async {
     books = await OfflineStore.list();
     media = await MediaOfflineStore.list();
+    // ★L1：小说占用（单独 try——算不出不拖垮整页）。
+    try {
+      var n = 0;
+      for (final b in books) {
+        n += await OfflineStore.bytesOf(b.bookUrl, name: b.name);
+      }
+      novelBytes = n;
+    } catch (_) {
+      novelBytes = 0;
+    }
     if (mounted) setState(() => loading = false);
+  }
+
+  /// ★L1（2026-10-12）：离线存储统计卡 —— 媒体（蓝）+ 小说（青）两段占比，
+  /// 上限做分母；无内容时零高度。
+  Widget _storageCard(BuildContext c) {
+    final mediaBytes = media.fold<int>(0, (n, m) => n + m.bytes);
+    final total = mediaBytes + novelBytes;
+    if (total <= 0) return const SizedBox.shrink();
+    final limit = _limitMb <= 0 ? 0 : _limitMb * 1024 * 1024;
+    final mFlex = mediaBytes * 1000 ~/ total;
+    return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.sd_storage_outlined, size: 15, color: Colors.grey),
+            const SizedBox(width: 6),
+            Text('离线占用 ${MediaOfflinePlan.bytesLabel(total)}',
+                style: const TextStyle(fontSize: 12)),
+            const Spacer(),
+            Text(limit > 0 ? '上限 ${MediaOfflinePlan.bytesLabel(limit)}' : '不限制',
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          ]),
+          const SizedBox(height: 6),
+          ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: SizedBox(
+                  height: 6,
+                  child: Row(children: [
+                    if (mediaBytes > 0)
+                      Expanded(
+                          flex: mFlex < 1 ? 1 : mFlex,
+                          child: Container(color: Colors.blueAccent)),
+                    if (novelBytes > 0)
+                      Expanded(
+                          flex: (1000 - mFlex) < 1 ? 1 : 1000 - mFlex,
+                          child: Container(color: Colors.teal)),
+                  ]))),
+          const SizedBox(height: 4),
+          Text(
+              '媒体 ${MediaOfflinePlan.bytesLabel(mediaBytes)} · '
+              '小说 ${MediaOfflinePlan.bytesLabel(novelBytes)}'
+              '${limit > 0 ? ' · 已用 ${(total * 100 / limit).clamp(0, 999).toStringAsFixed(0)}%' : ''}',
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ]));
   }
 
   /// ★M1：下载任务段 —— 进行中（可取消）+ 最近失败（可重试）；无任务时零高度。
@@ -594,17 +652,36 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
 
   /// ★M3：超上限则自动清理最旧的媒体离线记录（当前只统计"媒体"；小说离线后续纳入）。
   Future<void> _maybeAutoCleanup() async {
-    if (_limitMb <= 0 || media.isEmpty) return;
-    final items = [
-      for (final m in media) (key: m.key, bytes: m.bytes, at: m.at),
+    if (_limitMb <= 0 || (media.isEmpty && books.isEmpty)) return;
+    // ★L1（2026-10-12）：小说离线也纳入超限统计与清理（小说现算占用——只在检查时付代价）。
+    final items = <({String key, int bytes, String at})>[
+      for (final m in media) (key: 'm:${m.key}', bytes: m.bytes, at: m.at),
     ];
+    for (final b in books) {
+      try {
+        items.add((
+          key: 'n:${b.bookUrl}',
+          bytes: await OfflineStore.bytesOf(b.bookUrl, name: b.name),
+          at: b.at,
+        ));
+      } catch (_) {}
+    }
     final plan = OfflinePlan.planCleanup(items, _limitMb * 1024 * 1024);
     if (plan.isEmpty) return;
     for (final k in plan) {
-      final t = media
-          .firstWhere((x) => x.key == k, orElse: () => media.first)
-          .title;
-      await MediaOfflineStore.remove(k, title: t, permanent: true); // 自动清理不进回收站
+      if (k.startsWith('n:')) {
+        final url = k.substring(2);
+        final b =
+            books.firstWhere((x) => x.bookUrl == url, orElse: () => books.first);
+        await OfflineStore.remove(url, name: b.name);
+      } else {
+        final key = k.startsWith('m:') ? k.substring(2) : k;
+        final t = media
+            .firstWhere((x) => x.key == key, orElse: () => media.first)
+            .title;
+        await MediaOfflineStore.remove(key,
+            title: t, permanent: true); // 自动清理不进回收站
+      }
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -809,6 +886,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
         body: loading
             ? const Center(child: CircularProgressIndicator())
             : Column(children: [
+                _storageCard(c),
                 _queueSection(c),
                 Expanded(
                     child: (books.isEmpty && media.isEmpty)
