@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'apple_gate.dart';
+import 'dialog_kit.dart';
 import 'download_queue.dart';
 import 'offline_media_plan.dart';
 import 'offline_media_store.dart';
@@ -432,6 +433,11 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
   /// ★M3：离线存储上限（MB；0 = 不限）。默认 20GB。
   int _limitMb = 20480;
 
+  // ★2026-10-12：多选批量删除模式。_sel 里是 'm:<key>'（媒体）/ 'n:<bookUrl>'（小说）——
+  // 加前缀是因为两边的 key 都是裸字符串，可能撞车。
+  bool _selectMode = false;
+  final Set<String> _sel = {};
+
   @override
   void initState() {
     super.initState();
@@ -482,9 +488,15 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
             const Spacer(),
             if (q.finished.isNotEmpty)
               TextButton(
-                  onPressed: () {
-                    q.clearFinished();
-                    setState(() {});
+                  onPressed: () async {
+                    final ok = await confirmDanger(context,
+                        title: '清空完成记录？',
+                        content: '只清任务列表里的记录，已下载的内容不受影响。',
+                        okLabel: '清空');
+                    if (ok) {
+                      q.clearFinished();
+                      setState(() {});
+                    }
                   },
                   child: const Text('清记录', style: TextStyle(fontSize: 11))),
           ])),
@@ -592,13 +604,171 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
       final t = media
           .firstWhere((x) => x.key == k, orElse: () => media.first)
           .title;
-      await MediaOfflineStore.remove(k, title: t);
+      await MediaOfflineStore.remove(k, title: t, permanent: true); // 自动清理不进回收站
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('离线空间超过上限，已自动清理 ${plan.length} 项（最早下载的优先）')));
     await _load();
   }
+
+  // ───────── ★2026-10-12：多选批量 + 删除可撤销 ─────────
+
+  void _snack(String s) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  }
+
+  /// 删除成功后的「撤销」提示（5 秒窗口；撤销 = 从回收站搬回）。
+  void _snackWithUndo(String text, String key, String title) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+            label: '撤销',
+            onPressed: () async {
+              final ok = await MediaOfflineStore.restore(key, title: title);
+              if (!mounted) return;
+              _snack(ok ? '已恢复' : '恢复失败（可能已过期或被清掉）');
+              if (ok) await _load();
+            })));
+  }
+
+  /// 批量撤销（SnackBar 一个「撤销」恢复全部媒体项）。
+  void _snackWithUndoBatch(String text, List<(String, String)> keys) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+            label: '撤销',
+            onPressed: () async {
+              var ok = 0;
+              for (final e in keys) {
+                if (await MediaOfflineStore.restore(e.$1, title: e.$2)) ok++;
+              }
+              if (!mounted) return;
+              _snack('已恢复 $ok/${keys.length} 项');
+              await _load();
+            })));
+  }
+
+  void _exitSelect() {
+    setState(() {
+      _selectMode = false;
+      _sel.clear();
+    });
+  }
+
+  /// 单选删除：媒体软删（可撤销）；小说直接删（没有回收站）。
+  Future<void> _deleteOne(String tag, String key, String title) async {
+    if (tag.startsWith('m:')) {
+      final ok = await MediaOfflineStore.remove(key, title: title);
+      if (!ok) {
+        _snack('删除失败，重试一下');
+        return;
+      }
+      await _load();
+      _snackWithUndo('已删除《$title》', key, title);
+    } else {
+      await OfflineStore.remove(key, name: title);
+      await _load();
+      _snack('已删除《$title》（小说离线没有回收站，不可撤销）');
+    }
+  }
+
+  /// 多选删除（确认弹窗走统一危险规范）。
+  Future<void> _deleteSelected() async {
+    if (_sel.isEmpty) return;
+    final mediaTags = _sel.where((t) => t.startsWith('m:')).toList();
+    final novelTags = _sel.where((t) => t.startsWith('n:')).toList();
+    final ok = await confirmDanger(
+        context,
+        title: '删除 ${_sel.length} 项？',
+        content: mediaTags.isNotEmpty
+            ? '媒体离线 ${mediaTags.length} 项先移入回收站（5 秒内可撤销）；'
+                '小说离线 ${novelTags.length} 项直接删除、不可恢复。'
+            : '小说离线共 ${novelTags.length} 项，直接删除、不可恢复。');
+    if (!ok || !mounted) return;
+    var n = 0;
+    final restored = <(String, String)>[];
+    for (final t in mediaTags) {
+      final key = t.substring(2);
+      final m = media.firstWhere((x) => x.key == key, orElse: () => media.first);
+      if (await MediaOfflineStore.remove(key, title: m.title)) {
+        n++;
+        restored.add((key, m.title));
+      }
+    }
+    for (final t in novelTags) {
+      final url = t.substring(2);
+      final b = books.firstWhere((x) => x.bookUrl == url, orElse: () => books.first);
+      await OfflineStore.remove(url, name: b.name);
+      n++;
+    }
+    await _load();
+    _exitSelect();
+    if (restored.isNotEmpty) {
+      _snackWithUndoBatch('已删除 $n 项', restored);
+    } else {
+      _snack('已删除 $n 项（小说离线不可撤销）');
+    }
+  }
+
+  /// 多选模式下的行（选中圈 + 高亮；点击/长按都切换选中）。
+  Widget _selectTile(String tag, String title,
+      {Widget? leadingIcon, Widget? subtitle}) {
+    final on = _sel.contains(tag);
+    return ListTile(
+        selected: on,
+        selectedTileColor:
+            Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+        leading: Icon(
+            on ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: on ? Theme.of(context).colorScheme.primary : Colors.grey),
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: subtitle,
+        onTap: () => _toggleSel(tag),
+        onLongPress: () => _toggleSel(tag));
+  }
+
+  void _toggleSel(String tag) {
+    setState(() {
+      if (!_sel.add(tag)) _sel.remove(tag);
+    });
+  }
+
+  /// 多选态的 AppBar（全选/反选 + 红色删除）。
+  AppBar _selectAppBar() => AppBar(
+      leading: IconButton(
+          icon: const Icon(Icons.close), tooltip: '退出多选', onPressed: _exitSelect),
+      title: Text('已选 ${_sel.length} 项'),
+      actions: [
+        IconButton(
+            icon: const Icon(Icons.select_all),
+            tooltip: '全选 / 全不选',
+            onPressed: () {
+              final all = <String>{
+                for (final m in media) 'm:${m.key}',
+                for (final b in books) 'n:${b.bookUrl}',
+              };
+              setState(() {
+                if (_sel.length == all.length) {
+                  _sel.clear();
+                } else {
+                  _sel.addAll(all);
+                }
+              });
+            }),
+        Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('删除'),
+                onPressed: _sel.isEmpty ? null : _deleteSelected)),
+      ]);
 
   static const _kindIcon = {
     'video': Icons.videocam_outlined,
@@ -611,23 +781,31 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
   Widget build(BuildContext c) {
     final totalBytes = media.fold<int>(0, (n, m) => n + m.bytes);
     return Scaffold(
-        appBar: AppBar(
-            title: const Text('离线内容'),
-            actions: [
-              if (books.isNotEmpty || media.isNotEmpty)
-                Center(
-                    child: Padding(
-                        padding: const EdgeInsets.only(right: 2),
-                        child: Text(
-                            '${books.length + media.length} 项 · ${MediaOfflinePlan.bytesLabel(totalBytes)}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)))),
-              // ★M3：离线存储上限（点开可调；超限自动清理最旧的）。
-              IconButton(
-                  icon: const Icon(Icons.storage_outlined, size: 20),
-                  tooltip: '离线存储上限',
-                  onPressed: _editLimit),
-            ]),
+        appBar: _selectMode
+            ? _selectAppBar()
+            : AppBar(
+                title: const Text('离线内容'),
+                actions: [
+                  if (books.isNotEmpty || media.isNotEmpty) ...[
+                    Center(
+                        child: Padding(
+                            padding: const EdgeInsets.only(right: 2),
+                            child: Text(
+                                '${books.length + media.length} 项 · ${MediaOfflinePlan.bytesLabel(totalBytes)}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)))),
+                    // ★2026-10-12：多选批量删除入口。
+                    IconButton(
+                        icon: const Icon(Icons.checklist, size: 20),
+                        tooltip: '多选删除',
+                        onPressed: () => setState(() => _selectMode = true)),
+                  ],
+                  // ★M3：离线存储上限（点开可调；超限自动清理最旧的）。
+                  IconButton(
+                      icon: const Icon(Icons.storage_outlined, size: 20),
+                      tooltip: '离线存储上限',
+                      onPressed: _editLimit),
+                ]),
         body: loading
             ? const Center(child: CircularProgressIndicator())
             : Column(children: [
@@ -646,20 +824,29 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey))),
                     for (final m in media)
-                      ListTile(
-                          leading: Icon(_kindIcon[m.kind] ?? Icons.folder_outlined),
+                      _selectMode
+                          ? _selectTile(
+                              'm:${m.key}',
+                              m.title,
+                              leadingIcon: Icon(
+                                  _kindIcon[m.kind] ?? Icons.folder_outlined),
+                              subtitle: Text(MediaOfflinePlan.describe(m),
+                                  style: const TextStyle(fontSize: 11)))
+                          : ListTile(
+                              leading: Icon(
+                                  _kindIcon[m.kind] ?? Icons.folder_outlined),
                           title: Text(m.title,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(MediaOfflinePlan.describe(m),
                               style: const TextStyle(fontSize: 11)),
-                          trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Colors.redAccent),
-                              onPressed: () async {
-                                await MediaOfflineStore.remove(m.key,
-                                    title: m.title);
-                                _load();
-                              })),
+                          trailing: _selectMode
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      color: Colors.redAccent),
+                                  tooltip: '删除（5 秒内可撤销）',
+                                  onPressed: () => _deleteOne(
+                                      'm:${m.key}', m.key, m.title))),
                     if (books.isNotEmpty)
                       const Padding(
                           padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -667,20 +854,27 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey))),
                     for (final b in books)
-                      ListTile(
-                          leading: const Icon(Icons.book_outlined),
-                          title: Text(b.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(OfflinePlan.describe(b),
-                              style: const TextStyle(fontSize: 11)),
-                          trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Colors.redAccent),
-                              onPressed: () async {
-                                await OfflineStore.remove(b.bookUrl,
-                                    name: b.name);
-                                _load();
-                              })),
+                      _selectMode
+                          ? _selectTile(
+                              'n:${b.bookUrl}',
+                              b.name,
+                              leadingIcon: const Icon(Icons.book_outlined),
+                              subtitle: Text(OfflinePlan.describe(b),
+                                  style: const TextStyle(fontSize: 11)))
+                          : ListTile(
+                              leading: const Icon(Icons.book_outlined),
+                              title: Text(b.name,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(OfflinePlan.describe(b),
+                                  style: const TextStyle(fontSize: 11)),
+                          trailing: _selectMode
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      color: Colors.redAccent),
+                                  tooltip: '删除（小说离线不可撤销）',
+                                  onPressed: () => _deleteOne(
+                                      'n:${b.bookUrl}', b.bookUrl, b.name))),
                   ])),
               ]));
   }
