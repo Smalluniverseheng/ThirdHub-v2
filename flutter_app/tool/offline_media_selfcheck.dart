@@ -216,6 +216,34 @@ seg2.m4s
   ck('[cleanup] 恰好等于限 → 不删',
       OfflinePlan.planCleanup(items, 600).isEmpty);
 
+  // ── 10. 回收站规则（删除可撤销 · 纯函数）──
+  final now = DateTime(2026, 10, 12, 11, 30, 5);
+  final tn = MediaOfflinePlan.trashName('某剧_abc123', now);
+  ck('[trash] 目录名 = slug + 14 位时间戳',
+      tn == '某剧_abc123__20261012113005');
+  ck('[trash] 时间往返（解析 = 写入）',
+      MediaOfflinePlan.trashTimeOf(tn) == now);
+  ck('[trash] slug 还原（`__` 前的部分）',
+      MediaOfflinePlan.trashSlugOf(tn) == '某剧_abc123');
+  ck('[trash] 无 `__` → slug 原样',
+      MediaOfflinePlan.trashSlugOf('plain') == 'plain');
+  ck('[trash] 坏时间戳 → null',
+      MediaOfflinePlan.trashTimeOf('x__notadate') == null);
+  ck('[trash] 坏时间戳视为过期（宁可早清）',
+      MediaOfflinePlan.trashExpired('x__notadate'));
+  final fresh =
+      MediaOfflinePlan.trashName('a_b', DateTime.now().subtract(const Duration(days: 6)));
+  ck('[trash] 6 天前 → 未过期（撤销窗口内）',
+      !MediaOfflinePlan.trashExpired(fresh));
+  final old =
+      MediaOfflinePlan.trashName('a_b', DateTime.now().subtract(const Duration(days: 8)));
+  ck('[trash] 8 天前 → 过期（自动清）',
+      MediaOfflinePlan.trashExpired(old));
+  final over = MediaOfflinePlan.trashName(
+      'a_b', DateTime.now().subtract(const Duration(days: 7, hours: 1)));
+  ck('[trash] 7 天 + 1 小时 → 过期（边界严格 >）',
+      MediaOfflinePlan.trashExpired(over));
+
   print('');
   print(fails == 0
       ? 'offline_media_selfcheck: 全部通过'
