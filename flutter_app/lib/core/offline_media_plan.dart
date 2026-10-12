@@ -63,6 +63,57 @@ class MediaOfflinePlan {
     return m == null ? null : int.tryParse(m.group(1)!);
   }
 
+  // ─────────────── 回收站（2026-10-12：删除可撤销）───────────────
+  //
+  // 设计取舍：为什么是"rename 进 .trash"而不是"先记 key、撤销时重下"——
+  //   媒体离线动辄几十上百 MB，误删后重下既费流量又费时间；rename 是**原子**的，
+  //   撤销只是搬回来（秒级）。过期清理由 [trashExpired] 判定（默认 7 天）。
+  // 目录名：`<slug>__<yyyyMMddHHmmss>`（时间戳用于过期判定；slug 可还原原位）。
+  static const String trashDirName = '.trash';
+
+  /// 回收站里的目录名（slug + 双下划线 + 14 位时间戳）。
+  static String trashName(String slug, DateTime when) =>
+      '${slug}__${_trashStamp(when)}';
+
+  static String _trashStamp(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}'
+      '${d.month.toString().padLeft(2, '0')}'
+      '${d.day.toString().padLeft(2, '0')}'
+      '${d.hour.toString().padLeft(2, '0')}'
+      '${d.minute.toString().padLeft(2, '0')}'
+      '${d.second.toString().padLeft(2, '0')}';
+
+  /// 回收站目录名 → 时间（解析不出回 null）。null 由 [trashExpired] 视为"即清"。
+  static DateTime? trashTimeOf(String name) {
+    final i = name.indexOf('__');
+    if (i < 0) return null;
+    final s = name.substring(i + 2);
+    if (s.length < 14) return null;
+    final y = int.tryParse(s.substring(0, 4));
+    final mo = int.tryParse(s.substring(4, 6));
+    final d = int.tryParse(s.substring(6, 8));
+    final h = int.tryParse(s.substring(8, 10));
+    final mi = int.tryParse(s.substring(10, 12));
+    final se = int.tryParse(s.substring(12, 14));
+    if (y == null || mo == null || d == null || h == null || mi == null || se == null) {
+      return null;
+    }
+    return DateTime(y, mo, d, h, mi, se);
+  }
+
+  /// 是否过期（超过 [days] 天）。时间戳解析不出的一律视为过期（宁可早清、不堆垃圾）。
+  static bool trashExpired(String name, {int days = 7}) {
+    final t = trashTimeOf(name);
+    if (t == null) return true;
+    return DateTime.now().difference(t) > Duration(days: days);
+  }
+
+  /// 回收站目录名 → 原 slug（`__` 前的部分；没有 `__` 则原样返回）。
+  static String trashSlugOf(String name) {
+    final i = name.indexOf('__');
+    return i < 0 ? name : name.substring(0, i);
+  }
+
   static String _clean(String ext) {
     final e = ext.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     return e.isEmpty ? 'bin' : e;
