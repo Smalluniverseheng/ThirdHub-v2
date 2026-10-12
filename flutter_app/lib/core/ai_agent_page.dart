@@ -340,7 +340,8 @@ class _MemoryTabState extends State<_MemoryTab> {
       ])),
     const Divider(height: 1),
     Expanded(child: AiMemory.entries.isEmpty
-      ? const Center(child: Text('还没有记忆条目', style: TextStyle(fontSize: 12, color: Colors.grey)))
+      ? const Center(child: Text('还没有记忆条目\n和智能体聊几次、或让它记住事情，就会出现在这里',
+          textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)))
       : ListView.builder(padding: const EdgeInsets.all(10), itemCount: AiMemory.entries.length,
           itemBuilder: (_, i) {
             final e = AiMemory.entries[i];
