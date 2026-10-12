@@ -13,8 +13,10 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'apple_gate.dart';
+import 'download_queue.dart';
 import 'offline_media_plan.dart';
 import 'offline_media_store.dart';
 import 'offline_plan.dart';
@@ -425,17 +427,177 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
   List<OfflineMeta> books = [];
   List<MediaOfflineMeta> media = [];
   bool loading = true;
+  StreamSubscription<void>? _qsub;
+
+  /// ★M3：离线存储上限（MB；0 = 不限）。默认 20GB。
+  int _limitMb = 20480;
 
   @override
   void initState() {
     super.initState();
+    _initLimit();
     _load();
+    // ★M1：下载队列变化实时刷新本页（进行中/失败/完成都动）。
+    _qsub = DownloadQueue.i.onChange.listen((_) {
+      if (!mounted) return;
+      setState(() {});
+      // 队列清空时刷新离线列表（刚完成的任务已进离线库）+ 检查上限。
+      if (DownloadQueue.i.active.isEmpty) {
+        _load().then((_) => _maybeAutoCleanup());
+      }
+    });
+  }
+
+  Future<void> _initLimit() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _limitMb = p.getInt('offline_limit_mb') ?? 20480);
+    await _maybeAutoCleanup();
+  }
+
+  @override
+  void dispose() {
+    _qsub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
     books = await OfflineStore.list();
     media = await MediaOfflineStore.list();
     if (mounted) setState(() => loading = false);
+  }
+
+  /// ★M1：下载任务段 —— 进行中（可取消）+ 最近失败（可重试）；无任务时零高度。
+  Widget _queueSection(BuildContext c) {
+    final q = DownloadQueue.i;
+    final active = List<DlJob>.from(q.active);
+    final failed = q.finished.where((j) => j.state == DlState.error).toList();
+    if (active.isEmpty && failed.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(children: [
+            const Text('下载任务',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Spacer(),
+            if (q.finished.isNotEmpty)
+              TextButton(
+                  onPressed: () {
+                    q.clearFinished();
+                    setState(() {});
+                  },
+                  child: const Text('清记录', style: TextStyle(fontSize: 11))),
+          ])),
+      for (final j in active)
+        ListTile(
+          dense: true,
+          leading: Icon(
+              j.state == DlState.running
+                  ? Icons.downloading
+                  : Icons.schedule,
+              color: j.state == DlState.running
+                  ? Colors.blueAccent
+                  : Colors.blueGrey),
+          title: Text(j.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 3),
+                LinearProgressIndicator(
+                    value: j.total > 0 ? j.ratio : null, minHeight: 4),
+                const SizedBox(height: 2),
+                Text(
+                    j.message.isEmpty
+                        ? j.state.zh
+                        : '${j.state.zh} · ${j.message}',
+                    style: const TextStyle(fontSize: 11)),
+              ]),
+          trailing: IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: '取消',
+              onPressed: () {
+                q.cancel(j.id);
+                setState(() {});
+              }),
+        ),
+      for (final j in failed)
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.error_outline, color: Colors.redAccent),
+          title: Text(j.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('失败：${j.message}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11)),
+          trailing: IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              tooltip: '重试',
+              onPressed: () {
+                q.retry(j.id);
+                setState(() {});
+              }),
+        ),
+      const Divider(height: 8),
+    ]);
+  }
+
+  /// ★M3：离线存储上限设置（0 = 不限）。
+  Future<void> _editLimit() async {
+    final cur = _limitMb;
+    final opts = <int>[0, 5120, 10240, 20480, 51200];
+    const labels = <int, String>{
+      0: '不限制',
+      5120: '5 GB',
+      10240: '10 GB',
+      20480: '20 GB（推荐）',
+      51200: '50 GB',
+    };
+    final totalNow = media.fold<int>(0, (n, m) => n + m.bytes);
+    final pick = await showDialog<int>(
+        context: context,
+        builder: (c2) => SimpleDialog(
+                title: const Text('离线存储上限'),
+                children: [
+                  for (final o in opts)
+                    RadioListTile<int>(
+                        value: o,
+                        groupValue: cur,
+                        title: Text(labels[o] ?? '$o MB'),
+                        onChanged: (v) => Navigator.pop(c2, v)),
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 2, 24, 10),
+                      child: Text(
+                          '超出上限时自动清理最早的离线内容（最早下载的优先删）。'
+                          '当前媒体离线占用 ${MediaOfflinePlan.bytesLabel(totalNow)}。',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey))),
+                ]));
+    if (pick == null || !mounted) return;
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('offline_limit_mb', pick);
+    if (!mounted) return;
+    setState(() => _limitMb = pick);
+    await _maybeAutoCleanup();
+  }
+
+  /// ★M3：超上限则自动清理最旧的媒体离线记录（当前只统计"媒体"；小说离线后续纳入）。
+  Future<void> _maybeAutoCleanup() async {
+    if (_limitMb <= 0 || media.isEmpty) return;
+    final items = [
+      for (final m in media) (key: m.key, bytes: m.bytes, at: m.at),
+    ];
+    final plan = OfflinePlan.planCleanup(items, _limitMb * 1024 * 1024);
+    if (plan.isEmpty) return;
+    for (final k in plan) {
+      final t = media
+          .firstWhere((x) => x.key == k, orElse: () => media.first)
+          .title;
+      await MediaOfflineStore.remove(k, title: t);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('离线空间超过上限，已自动清理 ${plan.length} 项（最早下载的优先）')));
+    await _load();
   }
 
   static const _kindIcon = {
@@ -455,20 +617,28 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
               if (books.isNotEmpty || media.isNotEmpty)
                 Center(
                     child: Padding(
-                        padding: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.only(right: 2),
                         child: Text(
                             '${books.length + media.length} 项 · ${MediaOfflinePlan.bytesLabel(totalBytes)}',
                             style: const TextStyle(
-                                fontSize: 12, color: Colors.grey))))
+                                fontSize: 12, color: Colors.grey)))),
+              // ★M3：离线存储上限（点开可调；超限自动清理最旧的）。
+              IconButton(
+                  icon: const Icon(Icons.storage_outlined, size: 20),
+                  tooltip: '离线存储上限',
+                  onPressed: _editLimit),
             ]),
         body: loading
             ? const Center(child: CircularProgressIndicator())
-            : (books.isEmpty && media.isEmpty)
-                ? const Center(
-                    child: Text('还没有离线内容\n看书/看剧/听歌时点「保存到本机」，断网也能用',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey)))
-                : ListView(children: [
+            : Column(children: [
+                _queueSection(c),
+                Expanded(
+                    child: (books.isEmpty && media.isEmpty)
+                        ? const Center(
+                            child: Text('还没有离线内容\n看书/看剧/听歌时点「保存到本机」，断网也能用',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey)))
+                        : ListView(children: [
                     if (media.isNotEmpty)
                       const Padding(
                           padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -511,6 +681,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
                                     name: b.name);
                                 _load();
                               })),
-                  ]));
+                  ])),
+              ]));
   }
 }
