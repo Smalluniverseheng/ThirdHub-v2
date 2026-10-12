@@ -199,6 +199,23 @@ seg2.m4s
   ck('[hls] isHls 认 .m3u', HlsPlan.isHls('http://a/x.m3u'));
   ck('[hls] isHls 不认 .mp4', !HlsPlan.isHls('http://a/x.mp4'));
 
+  // ── 9. 离线清理计划（M3 · 纯函数）──
+  const items = [
+    (key: 'a', bytes: 100, at: '2026-10-01 10:00'),
+    (key: 'b', bytes: 200, at: '2026-10-02 10:00'),
+    (key: 'c', bytes: 300, at: '2026-10-03 10:00'),
+  ];
+  ck('[cleanup] 不超限 → 空计划', OfflinePlan.planCleanup(items, 1000).isEmpty);
+  ck('[cleanup] 0/负数 = 不限',
+      OfflinePlan.planCleanup(items, 0).isEmpty &&
+          OfflinePlan.planCleanup(items, -5).isEmpty);
+  ck('[cleanup] 超限 → 最旧优先逐步删（a,b）',
+      OfflinePlan.planCleanup(items, 450).join(',') == 'a,b');
+  ck('[cleanup] 边界：删到刚好 ≤ 限（只删 a）',
+      OfflinePlan.planCleanup(items, 500).join(',') == 'a');
+  ck('[cleanup] 恰好等于限 → 不删',
+      OfflinePlan.planCleanup(items, 600).isEmpty);
+
   print('');
   print(fails == 0
       ? 'offline_media_selfcheck: 全部通过'
