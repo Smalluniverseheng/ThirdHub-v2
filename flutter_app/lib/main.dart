@@ -105,6 +105,8 @@ import 'core/offline_media_plan.dart';
 import 'core/offline_store.dart';
 import 'core/offline_ui.dart';
 import 'core/download_queue.dart';
+import 'core/dialog_kit.dart';
+import 'core/playback_settings_page.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -8516,6 +8518,11 @@ class _Vp extends State<VideoPlayPage> {
   Timer? _posTimer;
   bool _autoNextArmed = false; // 防"自动连播"重复触发（listener 会多次回调）
   double _priorSpeed = 1.0; // 长按 2x 前的倍速（松开要还原）
+  // ★播放设置开关（2026-10-12；默认全开，设置页可关）。
+  bool _resumeOn = true;
+  bool _autoNextOn = true;
+  bool _longPressOn = true;
+  int _seekStep = 10;
   double get _aspect {
     final v = _vc;
     if (v == null || !v.value.isInitialized) return 16 / 9;
@@ -8529,6 +8536,11 @@ class _Vp extends State<VideoPlayPage> {
   @override
   void initState() {
     super.initState();
+    final pf = AppSettings.p;
+    _resumeOn = pf.getBool('play_resume') ?? true;
+    _autoNextOn = pf.getBool('play_autonext') ?? true;
+    _longPressOn = pf.getBool('play_longpress_2x') ?? true;
+    _seekStep = pf.getInt('play_seek_step') ?? 10;
     initPlayer();
     // ★M4b：进来先查这一集是否已离线（按钮三态：已下显示 download_done）。
     unawaited(MediaOfflineStore.has(_videoKey).then((v) {
@@ -8565,7 +8577,9 @@ class _Vp extends State<VideoPlayPage> {
       await _vc!.initialize();
       // ★播放器优化：续播 —— 上次看到哪就从哪继续（播完清位；少于 5 秒/接近结尾不恢复）。
       final savedSec = AppSettings.p.getInt(_posKey) ?? 0;
-      if (savedSec > 5 && savedSec < _vc!.value.duration.inSeconds - 5) {
+      if (_resumeOn &&
+          savedSec > 5 &&
+          savedSec < _vc!.value.duration.inSeconds - 5) {
         await _vc!.seekTo(Duration(seconds: savedSec));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -8642,7 +8656,7 @@ class _Vp extends State<VideoPlayPage> {
     if (v == null || !v.value.isInitialized) return;
     if (v.value.isCompleted) {
       AppSettings.p.remove(_posKey);
-      if (hasNext && _autoNextArmed) {
+      if (_autoNextOn && hasNext && _autoNextArmed) {
         _autoNextArmed = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -8874,12 +8888,14 @@ class _Vp extends State<VideoPlayPage> {
                     GestureDetector(
                         onDoubleTapDown: (d) {
                           final w = MediaQuery.of(context).size.width;
-                          _seekBySec(
-                              d.globalPosition.dx < w / 2 ? -10 : 10);
+                          _seekBySec(d.globalPosition.dx < w / 2
+                              ? -_seekStep
+                              : _seekStep);
                         },
                         onDoubleTap: () {},
                         // ★播放器优化：长按 2x 快放（松开还原为原倍速）。
                         onLongPressStart: (_) {
+                          if (!_longPressOn) return;
                           _priorSpeed = _vc?.value.playbackSpeed ?? 1.0;
                           _vc?.setPlaybackSpeed(2.0);
                           _hintTimer?.cancel();
@@ -10038,6 +10054,9 @@ class _RootNavState extends State<RootNav> {
                 proEntry(c2, Icons.bar_chart_outlined, '阅读统计', '',
                     const ReadStatsPage()),
               if (key == '视频' || key == '音乐') ...[
+                // ★播放设置（2026-10-12）：续播/连播/长按 2x/步长/倍速收拢一处。
+                proEntry(c2, Icons.tune_outlined, '播放设置',
+                    '续播 · 自动连播 · 长按 2x · 步长 · 倍速', const PlaybackSettingsPage()),
                 proEntry(c2, Icons.cast_outlined, tr('影音进阶'),
                     tr('投屏 DLNA · 下载归一 · 画中画'), const MediaProPage()),
                 proEntry(c2, Icons.play_circle_outline, '最近播放', '',
@@ -12192,6 +12211,9 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   Timer? _hintTimer;
   int _dragTarget = -1; // -1 = 不在拖动中
   double _priorSpeed = 1.0; // ★播放器优化：长按 2x 前的倍速
+  bool _longPressOn = true; // ★播放设置（2026-10-12，默认开）
+  bool _resumeLocalOn = true;
+  int _seekStep = 10;
   // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
   List<String> _subs = <String>[];
   List<Cue> _cues = <Cue>[];
@@ -12215,6 +12237,10 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   @override
   void initState() {
     super.initState();
+    final pf = AppSettings.p;
+    _longPressOn = pf.getBool('play_longpress_2x') ?? true;
+    _resumeLocalOn = pf.getBool('play_resume_local') ?? true;
+    _seekStep = pf.getInt('play_seek_step') ?? 10;
     _init();
     Recents.add('video', '${widget.item['name'] ?? ''}',
         target: '${widget.item['path'] ?? ''}');
@@ -12226,7 +12252,9 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       await ctrl!.initialize();
       // 断点续播
       final saved = AppSettings.p.getInt(_posKey) ?? 0;
-      if (saved > 5 && saved < ctrl!.value.duration.inSeconds - 10) {
+      if (_resumeLocalOn &&
+          saved > 5 &&
+          saved < ctrl!.value.duration.inSeconds - 10) {
         await ctrl!.seekTo(Duration(seconds: saved));
       }
       chewie = ChewieController(
@@ -12516,11 +12544,12 @@ class _Lvp extends State<LocalVideoPlayerPage> {
           ? GestureDetector(
               onDoubleTapDown: (d) {
                 final w = MediaQuery.of(context).size.width;
-                _seekBy(d.globalPosition.dx < w / 2 ? -10 : 10);
+                _seekBy(d.globalPosition.dx < w / 2 ? -_seekStep : _seekStep);
               },
               onDoubleTap: () {},
               // ★播放器优化：长按 2x（松开还原为原倍速）。
               onLongPressStart: (_) {
+                if (!_longPressOn) return;
                 _priorSpeed = ctrl?.value.playbackSpeed ?? 1.0;
                 ctrl?.setPlaybackSpeed(2.0);
                 _hintTimer?.cancel();
