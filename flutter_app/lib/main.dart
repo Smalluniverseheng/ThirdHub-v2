@@ -2796,6 +2796,15 @@ class _Pf extends State<ProfilePage> {
                 value: Api.base.isEmpty ? '未连接' : '已连接',
                 page: const BackendAdminPage()),
             _sep(),
+            // ★2026-10-12：云端「管理后台」（站长管理：用户 / 订单 / 定价；
+            //   admin.html 自带登录，App 内浏览器页打开，不跳出应用）。
+            entry(Icons.admin_panel_settings_outlined, '管理后台',
+                value: '云端管理 · 用户 / 订单 / 定价',
+                onTap: () => Navigator.push(
+                    context,
+                    smoothRoute(const BrowserPage(
+                        initialUrl: 'https://thirdhub.pages.dev/admin.html')))),
+            _sep(),
             entry(Icons.extension_outlined, '资料库直连',
                 value: EngineDirect.connected ? '已连接' : '',
                 page: const EngineDirectPage()),
