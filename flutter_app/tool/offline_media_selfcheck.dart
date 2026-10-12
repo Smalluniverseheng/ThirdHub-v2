@@ -244,6 +244,18 @@ seg2.m4s
   ck('[trash] 7 天 + 1 小时 → 过期（边界严格 >）',
       MediaOfflinePlan.trashExpired(over));
 
+  // ── 11. 混源清理（L1：媒体 m: + 小说 n: 同池、跨源最旧优先）──
+  const mixed = [
+    (key: 'n:书一', bytes: 50, at: '2026-10-01 08:00'),
+    (key: 'm:视频一', bytes: 400, at: '2026-10-03 08:00'),
+    (key: 'n:书二', bytes: 60, at: '2026-10-02 08:00'),
+  ];
+  ck('[cleanup] 混源：不超限不删', OfflinePlan.planCleanup(mixed, 1000).isEmpty);
+  ck('[cleanup] 混源：超一点只删最旧（n:书一）',
+      OfflinePlan.planCleanup(mixed, 480).join(',') == 'n:书一');
+  ck('[cleanup] 混源：跨源按时间序删（n:书一, n:书二）',
+      OfflinePlan.planCleanup(mixed, 450).join(',') == 'n:书一,n:书二');
+
   print('');
   print(fails == 0
       ? 'offline_media_selfcheck: 全部通过'
