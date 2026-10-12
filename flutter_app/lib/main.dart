@@ -7877,7 +7877,7 @@ class _MPlay extends State<MusicPlayPage> {
                 // 歌词页: LRC同步高亮+自动滚动; 无时间戳则整段展示
                 lyric.isEmpty
                     ? const Center(
-                        child: Text('暂无歌词\n这首歌没有找到歌词',
+                        child: Text('暂无歌词\n这首歌没有找到，换一首试试',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Colors.grey, height: 1.5)))
                     : lrc.isEmpty
@@ -8532,6 +8532,33 @@ class _Vp extends State<VideoPlayPage> {
   bool _autoNextOn = true;
   bool _longPressOn = true;
   int _seekStep = 10;
+  // ★视频定时关闭（2026-10-12）
+  DateTime? _sleepEnd;
+  Timer? _sleepTimer;
+
+  Future<void> _sleepSheetV() async {
+    final r = await showVideoSleepSheet(context, _sleepEnd);
+    if (r == null || !mounted) return;
+    if (r <= 0) {
+      _sleepTimer?.cancel();
+      setState(() => _sleepEnd = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已取消定时关闭')));
+      return;
+    }
+    _sleepTimer?.cancel();
+    setState(() => _sleepEnd = DateTime.now().add(Duration(minutes: r)));
+    _sleepTimer = Timer(Duration(minutes: r), () {
+      _vc?.pause();
+      if (mounted) {
+        setState(() => _sleepEnd = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('定时关闭：已暂停播放')));
+      }
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$r 分钟后自动暂停')));
+  }
   double get _aspect {
     final v = _vc;
     if (v == null || !v.value.isInitialized) return 16 / 9;
@@ -8705,6 +8732,7 @@ class _Vp extends State<VideoPlayPage> {
     Pip.inPip.value = false;
     _hintTimer?.cancel();
     _posTimer?.cancel();
+    _sleepTimer?.cancel();
     _savePos(); // 退出前落一次进度（续播的关键一笔）
     _vc?.removeListener(_onVcTick);
     _vc?.removeListener(_onPipTick);
@@ -8866,6 +8894,14 @@ class _Vp extends State<VideoPlayPage> {
                   icon: const Icon(Icons.playlist_add, size: 20),
                   tooltip: '下载全部 ${widget.episodes.length} 集',
                   onPressed: _downloadAllEpisodes),
+            // ★视频定时关闭（2026-10-12）。
+            IconButton(
+                icon: Icon(
+                    _sleepEnd == null ? Icons.bedtime_outlined : Icons.bedtime,
+                    size: 20,
+                    color: _sleepEnd == null ? null : Colors.blueAccent),
+                tooltip: '定时关闭',
+                onPressed: _sleepSheetV),
             if (_pipOk)
               IconButton(
                   icon: const Icon(Icons.picture_in_picture_alt, size: 20),
@@ -12121,6 +12157,39 @@ void _initDownloadQueue() {
   unawaited(q.restore());
 }
 
+/// ★视频定时关闭的共用弹层（2026-10-12，在线/本地两个视频播放器一套交互，
+/// 与音乐播放器的「睡眠定时」同款语义）。
+/// 返回：>0 = 分钟数；-1 = 取消现有定时；null = 未选（关掉了）。
+Future<int?> showVideoSleepSheet(BuildContext c, DateTime? end) {
+  return showModalBottomSheet<int>(
+      context: c,
+      showDragHandle: true,
+      builder: (c2) => SafeArea(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text('定时关闭',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            if (end != null)
+              ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.bedtime, color: Colors.blueAccent),
+                  title: Text(
+                      '将于 ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')} 自动暂停',
+                      style: const TextStyle(fontSize: 13)),
+                  trailing: TextButton(
+                      onPressed: () => Navigator.pop(c2, -1),
+                      child: const Text('取消'))),
+            for (final m in [10, 20, 30, 45, 60, 90])
+              ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.timer_outlined, size: 20),
+                  title: Text('$m 分钟后暂停'),
+                  onTap: () => Navigator.pop(c2, m)),
+            const SizedBox(height: 6),
+          ])));
+}
+
 /// ★M4b：离线按钮三态统一规范 —— 四处入口（小说/视频/音乐/漫画）同一套图标与颜色：
 ///   未下 = download_for_offline（随主题色）→ 下载中 = downloading（主色）
 ///   → 已下 = download_done（绿）。
@@ -12223,6 +12292,33 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   bool _longPressOn = true; // ★播放设置（2026-10-12，默认开）
   bool _resumeLocalOn = true;
   int _seekStep = 10;
+  // ★视频定时关闭（2026-10-12）
+  DateTime? _sleepEnd;
+  Timer? _sleepTimer;
+
+  Future<void> _sleepSheetV() async {
+    final r = await showVideoSleepSheet(context, _sleepEnd);
+    if (r == null || !mounted) return;
+    if (r <= 0) {
+      _sleepTimer?.cancel();
+      setState(() => _sleepEnd = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已取消定时关闭')));
+      return;
+    }
+    _sleepTimer?.cancel();
+    setState(() => _sleepEnd = DateTime.now().add(Duration(minutes: r)));
+    _sleepTimer = Timer(Duration(minutes: r), () {
+      ctrl?.pause();
+      if (mounted) {
+        setState(() => _sleepEnd = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('定时关闭：已暂停播放')));
+      }
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$r 分钟后自动暂停')));
+  }
   // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
   List<String> _subs = <String>[];
   List<Cue> _cues = <Cue>[];
@@ -12405,6 +12501,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   void dispose() {
     _posTimer?.cancel();
     _hintTimer?.cancel();
+    _sleepTimer?.cancel();
     _cueTimer?.cancel();
     // 离开视频页必须收回「允许自动进画中画」——不收回的话，在列表页按 Home 也会缩窗。
     // 这里不能 await（dispose 是同步的），但通道调用是即发即走，原生侧不依赖返回值。
@@ -12496,6 +12593,14 @@ class _Lvp extends State<LocalVideoPlayerPage> {
             title: Text(widget.item['name'] ?? '',
                 style: const TextStyle(fontSize: 14)),
             actions: [
+              // ★视频定时关闭（2026-10-12）。
+              IconButton(
+                  icon: Icon(
+                      _sleepEnd == null ? Icons.bedtime_outlined : Icons.bedtime,
+                      size: 20,
+                      color: _sleepEnd == null ? null : Colors.blueAccent),
+                  tooltip: '定时关闭',
+                  onPressed: _sleepSheetV),
               if (_pipOk)
                 IconButton(
                     icon: const Icon(Icons.picture_in_picture_alt, size: 20),
