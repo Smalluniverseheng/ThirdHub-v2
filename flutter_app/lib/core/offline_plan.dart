@@ -346,6 +346,30 @@ class OfflinePlan {
 
   static bool isDone(OfflineMeta m) => m.total > 0 && m.done >= m.total;
 
+  /// ★M3（2026-10-12）：离线清理计划（纯函数，可自检）。
+  ///
+  /// 按「最旧优先」（at 升序）挑出要删的记录，直到剩余总量 ≤ [limitBytes]。
+  /// [limitBytes] ≤ 0 表示不限（返回空计划）。条目是 `(key, bytes, at)` 三元组
+  /// （`at` 用 'yyyy-MM-dd HH:mm' 字符串——同格式字典序即时间序）。
+  /// ★只**规划**不执行：删文件交给调用方（IO 层），本函数保持纯、可测。
+  static List<String> planCleanup(
+      List<({String key, int bytes, String at})> items, int limitBytes) {
+    if (limitBytes <= 0) return const [];
+    var total = 0;
+    for (final it in items) {
+      total += it.bytes;
+    }
+    if (total <= limitBytes) return const [];
+    final sorted = [...items]..sort((a, b) => a.at.compareTo(b.at));
+    final out = <String>[];
+    for (final it in sorted) {
+      if (total <= limitBytes) break;
+      out.add(it.key);
+      total -= it.bytes;
+    }
+    return out;
+  }
+
   /// 书架上那行小字：「已离线 320/320 章」/「离线 12/320 章」/「离线失败」。
   static String describe(OfflineMeta m) {
     if (m.status == 'error' && m.done == 0) return '离线失败';
