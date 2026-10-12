@@ -101,8 +101,10 @@ import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
 import 'core/tts_settings_page.dart';
 import 'core/offline_media_store.dart';
+import 'core/offline_media_plan.dart';
 import 'core/offline_store.dart';
 import 'core/offline_ui.dart';
+import 'core/download_queue.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -279,6 +281,8 @@ Future<void> main() async {
   await Cloud.init();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
+  // ★M1：下载队列 —— 注入执行器 + 持久化 + 恢复上次未完成任务。
+  _initDownloadQueue();
   // 通知栏音乐控制(锁屏/通知栏播放键)
   try {
     await JustAudioBackground.init(
@@ -8507,6 +8511,11 @@ class _Vp extends State<VideoPlayPage> {
   // ★M4b：离线按钮三态（未下 / 下载中 / 已下）——与其它三处入口同一套规范。
   bool _offSaving = false;
   bool _offDone = false;
+
+  // ★播放器优化（10-12）：在线视频的进度记忆 + 播完自动连播 + 长按 2x。
+  Timer? _posTimer;
+  bool _autoNextArmed = false; // 防"自动连播"重复触发（listener 会多次回调）
+  double _priorSpeed = 1.0; // 长按 2x 前的倍速（松开要还原）
   double get _aspect {
     final v = _vc;
     if (v == null || !v.value.isInitialized) return 16 / 9;
@@ -8554,6 +8563,19 @@ class _Vp extends State<VideoPlayPage> {
           ? VideoPlayerController.file(lf)
           : VideoPlayerController.networkUrl(Uri.parse(url));
       await _vc!.initialize();
+      // ★播放器优化：续播 —— 上次看到哪就从哪继续（播完清位；少于 5 秒/接近结尾不恢复）。
+      final savedSec = AppSettings.p.getInt(_posKey) ?? 0;
+      if (savedSec > 5 && savedSec < _vc!.value.duration.inSeconds - 5) {
+        await _vc!.seekTo(Duration(seconds: savedSec));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('已从上次位置继续 ${_fmtClock(savedSec)}'),
+              duration: const Duration(seconds: 2)));
+        }
+      }
+      // ★播放器优化：位置记忆（每 3 秒）+ 播完自动连播下一集。
+      _vc!.addListener(_onVcTick);
+      _posTimer = Timer.periodic(const Duration(seconds: 3), (_) => _savePos());
       final speed =
           double.tryParse(AppSettings.p.getString('video_speed') ?? '1.0') ??
               1.0;
@@ -8599,6 +8621,39 @@ class _Vp extends State<VideoPlayPage> {
     Pip.updatePlaying(_pipLastPlaying);
   }
 
+  // ★播放器优化（10-12）：在线视频的进度记忆与自动连播 ——
+  /// 进度记忆键（opos_ 前缀与本地视频的 vpos_ 区分）。
+  String get _posKey => 'opos_${widget.sourceId}_${widget.epUrl}';
+
+  /// 每 3 秒落一次进度；播完清位（下次从头 —— 重看才是重看）。
+  void _savePos() {
+    final v = _vc;
+    if (v == null || !v.value.isInitialized) return;
+    if (v.value.isCompleted) {
+      AppSettings.p.remove(_posKey);
+      return;
+    }
+    AppSettings.p.setInt(_posKey, v.value.position.inSeconds);
+  }
+
+  /// 监听播放器：播完 → 清位 + 自动连播下一集（armed 防重复）。
+  void _onVcTick() {
+    final v = _vc;
+    if (v == null || !v.value.isInitialized) return;
+    if (v.value.isCompleted) {
+      AppSettings.p.remove(_posKey);
+      if (hasNext && _autoNextArmed) {
+        _autoNextArmed = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('本集播完，自动播放下一集'),
+              duration: Duration(seconds: 2)));
+          goEpisode(idx + 1);
+        }
+      }
+    }
+  }
+
   // ★M4a：画面区手势辅助（双击 ±10s / 横滑调进度 / 拖动预览的秒表格式）
   void _seekBySec(int seconds) {
     final v = _vc;
@@ -8626,6 +8681,9 @@ class _Vp extends State<VideoPlayPage> {
     Pip.onToggle = null;
     Pip.inPip.value = false;
     _hintTimer?.cancel();
+    _posTimer?.cancel();
+    _savePos(); // 退出前落一次进度（续播的关键一笔）
+    _vc?.removeListener(_onVcTick);
     _vc?.removeListener(_onPipTick);
     _cc?.dispose();
     _vc?.dispose();
@@ -8695,6 +8753,49 @@ class _Vp extends State<VideoPlayPage> {
                   aspectRatio: _cc!.aspectRatio ?? 16 / 9,
                   child: Chewie(controller: _cc!))));
 
+  /// ★H3（2026-10-12）：把全部剧集提交到下载队列（后台顺序下载，进度在「离线内容」里看）。
+  Future<void> _downloadAllEpisodes() async {
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (c2) => AlertDialog(
+                title: const Text('下载全部集'),
+                content: Text('将按顺序下载全部 ${widget.episodes.length} 集'
+                    '（每集大小视清晰度而定）。\n\n'
+                    '下载在后台进行，可在「离线内容」里查看进度、随时取消；'
+                    '每集下完自动保存，断网也能看。'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(c2, false),
+                      child: const Text('取消')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(c2, true),
+                      child: const Text('开始下载')),
+                ]));
+    if (ok != true || !mounted) return;
+    var n = 0;
+    for (var i = 0; i < widget.episodes.length; i++) {
+      final ep = widget.episodes[i];
+      final epUrl = '${ep['url'] ?? ''}';
+      if (epUrl.isEmpty) continue;
+      DownloadQueue.i.submit(DlJob(
+        id: DownloadQueue.i.newId(),
+        kind: 'video',
+        key: 'video:${widget.sourceId}:$epUrl',
+        title: '${ep['name'] ?? '第${i + 1}集'}',
+        payload: {
+          'sourceId': widget.sourceId,
+          'flag': '${ep['flag'] ?? ''}',
+          'epUrl': epUrl,
+          'subtitle': '${ep['name'] ?? ''}',
+        },
+      ));
+      n++;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('已加入下载队列（$n 集）—— 进度到「离线内容」里看')));
+  }
+
   /// 保存这一集到本机（断网也能看）。
   Future<void> _saveOffline() async {
     final url = _resolvedUrl ?? '';
@@ -8736,6 +8837,12 @@ class _Vp extends State<VideoPlayPage> {
                       done: _offDone, busy: _offSaving, size: 20),
                   tooltip: _offDone ? '已保存到本机' : '保存到本机（断网也能看）',
                   onPressed: _saveOffline),
+            // ★H3：下载全部集（走下载队列，后台顺序下载）。
+            if (widget.episodes.length > 1 && OfflineUI.batchDownloadAllowed)
+              IconButton(
+                  icon: const Icon(Icons.playlist_add, size: 20),
+                  tooltip: '下载全部 ${widget.episodes.length} 集',
+                  onPressed: _downloadAllEpisodes),
             if (_pipOk)
               IconButton(
                   icon: const Icon(Icons.picture_in_picture_alt, size: 20),
@@ -8771,6 +8878,21 @@ class _Vp extends State<VideoPlayPage> {
                               d.globalPosition.dx < w / 2 ? -10 : 10);
                         },
                         onDoubleTap: () {},
+                        // ★播放器优化：长按 2x 快放（松开还原为原倍速）。
+                        onLongPressStart: (_) {
+                          _priorSpeed = _vc?.value.playbackSpeed ?? 1.0;
+                          _vc?.setPlaybackSpeed(2.0);
+                          _hintTimer?.cancel();
+                          setState(() => _seekHint = '2x 快放中');
+                        },
+                        onLongPressEnd: (_) {
+                          _vc?.setPlaybackSpeed(_priorSpeed);
+                          _hintTimer?.cancel();
+                          _hintTimer =
+                              Timer(const Duration(milliseconds: 350), () {
+                            if (mounted) setState(() => _seekHint = '');
+                          });
+                        },
                         onHorizontalDragStart: (_) {
                           _dragTarget = _vc?.value.position.inSeconds ?? 0;
                         },
@@ -11898,6 +12020,79 @@ class _Lnr extends State<LocalNovelReader> {
   }
 }
 
+/// ★M1（2026-10-12）：下载队列的**执行器与持久化接线**。
+///
+/// 队列本体零 Flutter 依赖（`core/download_queue.dart`，可被纯 Dart 自检）；
+/// "真正怎么下"在这里注入 —— 因为要用到 Api（后端解析）/ EngineDirect（引擎）/ stores。
+/// 三种任务：video（先解析直链再分流 HLS/整文件）、comic（先拉页列表再逐页下）、
+/// music 等（payload 自带直链）。
+void _initDownloadQueue() {
+  final q = DownloadQueue.i;
+  q.persistSave = (json) {
+    unawaited(AppSettings.p.setString('dl_queue', json));
+  };
+  q.persistLoad = () async => AppSettings.p.getString('dl_queue');
+  q.runner = (job) async* {
+    if (job.kind == 'video') {
+      // 视频：先解析直链（与播放页同一接口），再按直链类型分流 HLS / 整文件。
+      final sid = '${job.payload['sourceId'] ?? ''}';
+      final flag = '${job.payload['flag'] ?? ''}';
+      final epUrl = '${job.payload['epUrl'] ?? ''}';
+      final r = await Api.get(
+          '/v1/video/play?sourceId=${Uri.encodeComponent(sid)}&flag=${Uri.encodeComponent(flag)}&id=${Uri.encodeComponent(epUrl)}');
+      final url = r['data']?['url'] as String? ?? '';
+      if (url.isEmpty) throw Exception('${r['data']?['message'] ?? '解析失败'}');
+      final stream = HlsPlan.isHls(url)
+          ? MediaOfflineStore.downloadHls(
+              kind: 'video',
+              key: job.key,
+              title: job.title,
+              url: url,
+              subtitle: '${job.payload['subtitle'] ?? ''}')
+          : MediaOfflineStore.downloadFile(
+              kind: 'video',
+              key: job.key,
+              title: job.title,
+              url: url,
+              subtitle: '${job.payload['subtitle'] ?? ''}');
+      await for (final p in stream) {
+        yield DlRunProgress(
+            done: p.done, total: p.total, message: p.message, bytes: p.bytes);
+      }
+    } else if (job.kind == 'comic') {
+      // 漫画：先向引擎拉本话页列表（与阅读器 _content 同一调用），再逐页下载。
+      final itemId = '${job.payload['itemId'] ?? ''}';
+      final chapter = '${job.payload['chapter'] ?? ''}';
+      final comicName = '${job.payload['comicName'] ?? ''}';
+      final r = await EngineDirect.content('comic', itemId, chapter);
+      final raw = (r['images'] as List? ?? []);
+      final pages = [for (final e in raw) '$e'];
+      if (pages.isEmpty) throw Exception('本话没有图片');
+      final hdrs = Map<String, String>.from(r['headers'] ?? {});
+      await for (final p in MediaOfflineStore.downloadPages(
+          key: job.key,
+          title: job.title,
+          pages: pages,
+          subtitle: comicName,
+          headers: hdrs)) {
+        yield DlRunProgress(
+            done: p.done, total: p.total, message: p.message, bytes: p.bytes);
+      }
+    } else {
+      // 音乐等：直链已在提交时放进 payload。
+      final url = '${job.payload['url'] ?? ''}';
+      if (url.isEmpty) throw Exception('没有可下载的地址');
+      await for (final p in MediaOfflineStore.downloadFile(
+          kind: job.kind, key: job.key, title: job.title, url: url)) {
+        yield DlRunProgress(
+            done: p.done, total: p.total, message: p.message, bytes: p.bytes);
+      }
+    }
+  };
+  // 恢复上次未完成任务（running 降级 queued，靠断点续传接着下）。
+  unawaited(q.restore());
+}
+
 /// ★M4b：离线按钮三态统一规范 —— 四处入口（小说/视频/音乐/漫画）同一套图标与颜色：
 ///   未下 = download_for_offline（随主题色）→ 下载中 = downloading（主色）
 ///   → 已下 = download_done（绿）。
@@ -11996,6 +12191,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
   String _seekHint = '';
   Timer? _hintTimer;
   int _dragTarget = -1; // -1 = 不在拖动中
+  double _priorSpeed = 1.0; // ★播放器优化：长按 2x 前的倍速
   // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
   List<String> _subs = <String>[];
   List<Cue> _cues = <Cue>[];
@@ -12323,6 +12519,20 @@ class _Lvp extends State<LocalVideoPlayerPage> {
                 _seekBy(d.globalPosition.dx < w / 2 ? -10 : 10);
               },
               onDoubleTap: () {},
+              // ★播放器优化：长按 2x（松开还原为原倍速）。
+              onLongPressStart: (_) {
+                _priorSpeed = ctrl?.value.playbackSpeed ?? 1.0;
+                ctrl?.setPlaybackSpeed(2.0);
+                _hintTimer?.cancel();
+                setState(() => _seekHint = '2x 快放中');
+              },
+              onLongPressEnd: (_) {
+                ctrl?.setPlaybackSpeed(_priorSpeed);
+                _hintTimer?.cancel();
+                _hintTimer = Timer(const Duration(milliseconds: 350), () {
+                  if (mounted) setState(() => _seekHint = '');
+                });
+              },
               // ★M4a：横滑调进度（与双击 ±10s 并存）；拖动预览、松手才 seek。
               onHorizontalDragStart: (_) {
                 _dragTarget = ctrl?.value.position.inSeconds ?? 0;
@@ -14200,6 +14410,48 @@ class _Ei extends State<EngineItemPage> {
     if (mounted) setState(() => loading = false);
   }
 
+  /// ★H3（2026-10-12）：把整部漫画提交到下载队列（逐话排队；进度在「离线内容」里看）。
+  Future<void> _downloadAllChapters() async {
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (c2) => AlertDialog(
+                title: const Text('下载整部'),
+                content: Text('将按顺序下载全部 ${chapters.length} 话'
+                    '（逐页保存，体积视章节长度而定）。\n\n'
+                    '下载在后台进行，可在「离线内容」里查看进度、随时取消。'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(c2, false),
+                      child: const Text('取消')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(c2, true),
+                      child: const Text('开始下载')),
+                ]));
+    if (ok != true || !mounted) return;
+    var n = 0;
+    for (var i = 0; i < chapters.length; i++) {
+      final ch = chapters[i];
+      final chapter = '${ch['url'] ?? ch['id'] ?? i}';
+      final chapTitle = '${ch['name'] ?? '第${i + 1}话'}';
+      DownloadQueue.i.submit(DlJob(
+        id: DownloadQueue.i.newId(),
+        kind: 'comic',
+        // ★key 与 EngineComicReader._chapKey 完全同口径（comic:comicName:chapUrl）——
+        //   否则"下载整部"的产物阅读器认不出来（不会走本地）。
+        key: 'comic:$name:$chapter',
+        title: '$name · $chapTitle',
+        payload: {
+          'itemId': id,
+          'chapter': chapter,
+          'comicName': name,
+          'chapName': chapTitle,
+        },
+      ));
+      n++;
+    }
+    _toast('已加入下载队列（$n 话）—— 进度到「离线内容」里看');
+  }
+
   Future<Map<String, dynamic>> _content(String chapter) async {
     final d = await EngineDirect.content(widget.type, id, chapter);
     if (d['pages'] != null && d['images'] == null)
@@ -14296,6 +14548,14 @@ class _Ei extends State<EngineItemPage> {
                       size: 21),
                   tooltip: shelved ? '已在书架' : '加入书架',
                   onPressed: _addShelf),
+            // ★H3：下载整部（走下载队列，后台逐话下载）。
+            if (widget.type == 'comic' &&
+                chapters.length > 1 &&
+                OfflineUI.batchDownloadAllowed)
+              IconButton(
+                  icon: const Icon(Icons.playlist_add, size: 21),
+                  tooltip: '下载整部 ${chapters.length} 话',
+                  onPressed: _downloadAllChapters),
           ]),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -14668,8 +14928,25 @@ class _Ecr extends State<EngineComicReader> {
                     : '没保存成功')));
   }
 
+  /// ★播放器优化：下一张页图的预加载记录（每张只预热一次；本地/联网都覆盖）。
+  final Set<int> _precached = {};
+
+  void _precacheNext(int i) {
+    final next = i + 1;
+    if (next >= images.length || !_precached.add(next)) return;
+    final p = images[next];
+    try {
+      if (_fromLocal || p.startsWith('/') || p.startsWith('file:')) {
+        precacheImage(FileImage(File(p.replaceFirst('file://', ''))), context);
+      } else {
+        precacheImage(NetworkImage(p, headers: headers), context);
+      }
+    } catch (_) {/* 预加载失败不影响正常渲染 */}
+  }
+
   /// 页图渲染：本地路径走 Image.file，联网走 Image.network（带防盗链头）。
   Widget _img(int i, {BoxFit fit = BoxFit.contain}) {
+    _precacheNext(i); // ★播放器优化：看当前页时预热下一张
     final p = images[i];
     final local = _fromLocal || p.startsWith('/') || p.startsWith('file:');
     if (local) {
