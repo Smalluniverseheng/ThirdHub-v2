@@ -479,6 +479,11 @@ async function handle(req, res, body) {
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TH-Token, X-TH-Enc');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  /* ★2026-10-13：Chrome「私有网络访问（PNA, Private Network Access）」——
+     https 页面 fetch http://127.0.0.1 会先发带 Access-Control-Request-Private-Network
+     的预检；不回这个头 → 整个本地后端探测被浏览器拦掉（网页端巡检实测）。
+     本服务只服务本机/局域网，显式放行。 */
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
