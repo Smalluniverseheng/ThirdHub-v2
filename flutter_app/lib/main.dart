@@ -54,7 +54,6 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
-import 'core/heartbeat.dart';
 import 'core/member_levels.dart';
 import 'core/module_registry.dart';
 import 'core/changelog.dart';
@@ -101,6 +100,7 @@ import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
 import 'core/tts_settings_page.dart';
+import 'core/asr_settings_page.dart';
 import 'core/offline_media_store.dart';
 import 'core/offline_media_plan.dart';
 import 'core/offline_store.dart';
@@ -282,8 +282,6 @@ Future<void> main() async {
   IntentRouter.init();
   runApp(SplashApp(anim: AppSettings.splashAnim));
   await Cloud.init();
-  // ★2026-10-13：用户在线心跳（每 60s；未登录自动跳过）
-  Heartbeat.start();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
   // ★M1：下载队列 —— 注入执行器 + 持久化 + 恢复上次未完成任务。
@@ -2789,6 +2787,12 @@ class _Pf extends State<ProfilePage> {
             // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
             entry(Icons.record_voice_over_outlined, '语音朗读',
                 value: '资料库 · 厂商 · 试听', page: const TtsSettingsPage()),
+            _sep(),
+            // ★2026-10-13：语音识别（把语音转文字）——与语音朗读并列的全局设置。
+            //   厂商层支持小米 MiMo / 阿里百炼 / 火山 / 百度 / 自托管 Whisper；
+            //   Key 与 AI、语音朗读共用统一密钥库。
+            entry(Icons.mic_none, '语音识别',
+                value: '厂商 · Key · 试录', page: const AsrSettingsPage()),
             _sep(),
             // 密钥库也是**全局**设置：AI 与语音共用同一把 Key，
             // 「在 AI 里填过的小米 Key，语音自动带上」这件事就落在这里。
