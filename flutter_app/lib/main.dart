@@ -54,6 +54,7 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/heartbeat.dart';
 import 'core/member_levels.dart';
 import 'core/module_registry.dart';
 import 'core/changelog.dart';
@@ -281,6 +282,8 @@ Future<void> main() async {
   IntentRouter.init();
   runApp(SplashApp(anim: AppSettings.splashAnim));
   await Cloud.init();
+  // ★2026-10-13：用户在线心跳（每 60s；未登录自动跳过）
+  Heartbeat.start();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
   // ★M1：下载队列 —— 注入执行器 + 持久化 + 恢复上次未完成任务。
