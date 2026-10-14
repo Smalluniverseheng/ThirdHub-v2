@@ -9689,7 +9689,7 @@ class _RootNavState extends State<RootNav> {
             total++;
             out.writeln('- ${b.name}'
                 '${b.author.isNotEmpty ? ' / ${b.author}' : ''}'
-                '${b.durChapterTitle.isNotEmpty ? ' | 上次停在: ${b.durChapterTitle}' : ''}');
+                '${b.bookUrl.isNotEmpty ? ' | url: ${b.bookUrl}' : ''}');
           }
           if (total >= limit) break;
         }
