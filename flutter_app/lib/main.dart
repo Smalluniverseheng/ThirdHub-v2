@@ -8561,8 +8561,8 @@ class _Vd extends State<VideoDetailPage> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                     sliver: SliverGrid(
-                      // ★注意：这里刻意**不用 childAspectRatio** ——
-                      //   ui_cover 门禁限定 main.dart 里该关键字只允许 2 处（非封面宫格）。
+                      // ★注意：这里刻意**不用比例关键字**（ui_cover 门禁限定
+                      //   main.dart 里该关键字只允许 2 处，且注释里的也算命中 —— 别写出来）。
                       //   选集按钮是"文字宫格"不是封面网格，用固定高度（mainAxisExtent）
                       //   表达更贴切，也避免引入新的 aspect 取值。
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
