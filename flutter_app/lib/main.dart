@@ -108,6 +108,7 @@ import 'core/offline_ui.dart';
 import 'core/download_queue.dart';
 import 'core/dialog_kit.dart';
 import 'core/playback_settings_page.dart';
+import 'core/advanced_playback_page.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -10153,6 +10154,10 @@ class _RootNavState extends State<RootNav> {
                 // ★播放设置（2026-10-12）：续播/连播/长按 2x/步长/倍速收拢一处。
                 proEntry(c2, Icons.tune_outlined, '播放设置',
                     '续播 · 自动连播 · 长按 2x · 步长 · 倍速', const PlaybackSettingsPage()),
+                // ★高级播放设置（2026-10-14）：手势 / 字幕 / 弹幕 / 画面比例 / 跳过片头片尾 /
+                //   硬件解码 / 后台播放 / 缓存策略等，分五组共 29 项 —— 对齐主流播放器的功能矩阵。
+                proEntry(c2, Icons.high_quality_outlined, '高级播放设置',
+                    '手势 · 字幕 · 弹幕 · 画面 · 解码 · 缓存', const AdvancedPlaybackPage()),
                 proEntry(c2, Icons.cast_outlined, tr('影音进阶'),
                     tr('投屏 DLNA · 下载归一 · 画中画'), const MediaProPage()),
                 proEntry(c2, Icons.play_circle_outline, '最近播放', '',
