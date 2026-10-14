@@ -5512,7 +5512,9 @@ class NovelSection extends StatefulWidget {
 }
 
 class _Nv extends State<NovelSection> {
-  int sub = 0;
+  // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
+  //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
+  int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => Column(children: [
         Row(children: [
@@ -6557,7 +6559,9 @@ class ComicSection extends StatefulWidget {
 }
 
 class _Cs extends State<ComicSection> {
-  int sub = 0;
+  // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
+  //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
+  int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => Column(children: [
         Row(children: [
@@ -6987,7 +6991,9 @@ class MusicSection extends StatefulWidget {
 }
 
 class _Ms extends State<MusicSection> {
-  int sub = 0;
+  // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
+  //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
+  int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => Column(children: [
         Row(children: [
@@ -8070,7 +8076,9 @@ class VideoSection extends StatefulWidget {
 }
 
 class _Vs extends State<VideoSection> {
-  int sub = 0;
+  // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
+  //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
+  int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) {
     // ★ 5.2.3 / §5.3（iOS）：第三方影视聚合的「发现/搜索」入口关闭，
