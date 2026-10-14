@@ -396,157 +396,573 @@ class _Edv extends State<EngineDiscoverView> {
     if (mounted) setState(() => loading = false);
   }
 
-  @override Widget build(BuildContext c) {
-    if (!EngineDirect.connected) {
-      final devs = EngineDirect.available();
-      final st = EngineDirect.state.value;
-      return Center(child: Padding(padding: const EdgeInsets.all(28),
-        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.extension_off, size: 44,
-            color: st.status == EngineStatus.failed ? Colors.redAccent : Colors.grey),
-          const SizedBox(height: 12),
-          Text(switch (st.status) {
+  // ═══════════════════════════════════════════════════════════════════════
+  // UI（2026-10-15 重做：目标是"看起来像内容应用，而不是调试工具"）
+  //
+  // 旧版的问题：整页是「搜索框 + 一排 chip + 裸网格」，所有元素一个视觉重量，
+  // 用户进来不知道该看哪。重做分四层，每层有自己的视觉角色：
+  //   ① 头部   —— 品牌感（渐变 + 大标题 + 引擎在线徽章）
+  //   ② 源条   —— 横向卡片（图标 + 名字，选中态用主色描边）
+  //   ③ 标签   —— 胶囊按钮（选中填充/未选描边）
+  //   ④ 内容   —— 卡片网格 + 骨架屏 + 空态引导
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// 模块名（给头部标题用）。
+  String get _typeLabel => const {
+        'novel': '小说', 'comic': '漫画', 'video': '影视', 'music': '音乐',
+      }[widget.type] ?? widget.type;
+
+  @override
+  Widget build(BuildContext c) {
+    if (!EngineDirect.connected) return _offlineView(c);
+    final cs = Theme.of(c).colorScheme;
+    final curTags = sources.isEmpty
+        ? const <Map<String, dynamic>>[]
+        : EngineDirect.validTags(sources.firstWhere(
+            (s) => '${s['source']}' == selSource,
+            orElse: () => sources.first));
+
+    return Column(children: [
+      _header(c, cs),
+      if (sources.isNotEmpty) _sourceStrip(c, cs),
+      if (curTags.isNotEmpty) _tagWrap(c, cs, curTags),
+      if (notice.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+          child: Row(children: [
+            const Icon(Icons.info_outline, size: 12, color: Colors.orangeAccent),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(notice,
+                  style: const TextStyle(fontSize: 10.5, color: Colors.orangeAccent)),
+            ),
+          ]),
+        ),
+      if (loading) const LinearProgressIndicator(minHeight: 2),
+      Expanded(child: _content(c, cs)),
+    ]);
+  }
+
+  // ── ① 头部：渐变 + 大标题 + 引擎徽章 + 搜索 ──
+  Widget _header(BuildContext c, ColorScheme cs) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            cs.primaryContainer.withValues(alpha: 0.55),
+            cs.primaryContainer.withValues(alpha: 0.18),
+          ],
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.explore_outlined, size: 20, color: cs.primary),
+          const SizedBox(width: 6),
+          Text('发现$_typeLabel',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          const Spacer(),
+          // 引擎在线徽章
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: cs.surface.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 6, height: 6,
+                decoration: const BoxDecoration(
+                    color: Colors.green, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                EngineDirect.name.isEmpty ? '资料库' : EngineDirect.name,
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+            ]),
+          ),
+        ]),
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text('内容来自资料库各源的推荐与分类，不用搜也能逛',
+              style: TextStyle(
+                  fontSize: 11, color: cs.onSurface.withValues(alpha: 0.55))),
+        ),
+        const SizedBox(height: 10),
+        // 搜索框（填充式，圆角 22）
+        TextField(
+          controller: q,
+          style: const TextStyle(fontSize: 13.5),
+          decoration: InputDecoration(
+            hintText: '搜索$_typeLabel…',
+            hintStyle: TextStyle(
+                fontSize: 13, color: cs.onSurface.withValues(alpha: 0.38)),
+            prefixIcon: const Icon(Icons.search, size: 18),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              onPressed: () => _search(q.text),
+              tooltip: '搜索',
+            ),
+            isDense: true,
+            filled: true,
+            fillColor: cs.surface.withValues(alpha: 0.75),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 11),
+          ),
+          onSubmitted: _search,
+        ),
+      ]),
+    );
+  }
+
+  // ── ② 源条：横向卡片 ──
+  Widget _sourceStrip(BuildContext c, ColorScheme cs) {
+    return SizedBox(
+      height: 62,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        itemCount: sources.length,
+        itemBuilder: (_, i) {
+          final s = sources[i];
+          final key = '${s['source'] ?? ''}';
+          final on = key == selSource;
+          final name = '${s['sourceName'] ?? key}';
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(13),
+              onTap: () {
+                final tags = EngineDirect.validTags(s);
+                setState(() {
+                  selSource = key;
+                  selTag = tags.isNotEmpty ? '${tags.first['url'] ?? ''}' : '';
+                });
+                if (selTag.isNotEmpty) _explore(reset: true);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: on
+                      ? cs.primary.withValues(alpha: 0.12)
+                      : cs.surfaceContainerHighest.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    width: on ? 1.6 : 1,
+                    color: on
+                        ? cs.primary
+                        : cs.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 30, height: 30,
+                    decoration: BoxDecoration(
+                      color: on
+                          ? cs.primary.withValues(alpha: 0.18)
+                          : cs.surface.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      name.isEmpty ? '?' : String.fromCharCodes(name.runes.take(1)),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: on ? cs.primary : cs.onSurface.withValues(alpha: 0.6)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 92),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
+                        Text('${(s['tags'] as List?)?.length ?? 0} 个分类',
+                            style: TextStyle(
+                                fontSize: 9.5,
+                                color: cs.onSurface.withValues(alpha: 0.45))),
+                      ],
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── ③ 标签：胶囊 ──
+  Widget _tagWrap(BuildContext c, ColorScheme cs, List<Map<String, dynamic>> tags) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 6,
+        children: [
+          for (final t in tags)
+            GestureDetector(
+              onTap: () {
+                setState(() => selTag = '${t['url'] ?? ''}');
+                _explore(reset: true);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: selTag == '${t['url']}'
+                      ? cs.primary
+                      : cs.surfaceContainerHighest.withValues(alpha: 0.42),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    width: 1,
+                    color: selTag == '${t['url']}'
+                        ? cs.primary
+                        : cs.outlineVariant.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text('${t['name'] ?? ''}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: selTag == '${t['url']}' ? FontWeight.w700 : FontWeight.w500,
+                        color: selTag == '${t['url']}'
+                            ? cs.onPrimary
+                            : cs.onSurface.withValues(alpha: 0.78))),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── ④ 内容区：骨架屏 / 空态 / 网格 ──
+  Widget _content(BuildContext c, ColorScheme cs) {
+    if (err.isNotEmpty) {
+      return Center(
+          child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cloud_off_outlined, size: 38,
+              color: cs.onSurface.withValues(alpha: 0.28)),
+          const SizedBox(height: 10),
+          Text(err, textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12, height: 1.5)),
+          const SizedBox(height: 10),
+          FilledButton.tonal(
+              onPressed: _load, child: const Text('重试', style: TextStyle(fontSize: 13))),
+        ]),
+      ));
+    }
+    if (loading && items.isEmpty) return const _SkeletonGrid();
+    if (items.isEmpty) {
+      return Center(
+          child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.explore_off_outlined, size: 40,
+              color: cs.onSurface.withValues(alpha: 0.25)),
+          const SizedBox(height: 10),
+          const Text('这个分类暂时没有内容',
+              style: TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(height: 4),
+          const Text('换个分类或源试试；内容来自各站点，偶尔会空',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ]),
+      ));
+    }
+
+    final more = !searching && hasMore;
+    return GridView.builder(
+      padding: coverPad,
+      gridDelegate: coverDelegate(CoverKind.coverGrid),
+      itemCount: items.length + (more ? 1 : 0),
+      itemBuilder: (_, i) {
+        if (i >= items.length) {
+          return InkWell(
+            borderRadius: BorderRadius.circular(CoverSpec.radius),
+            onTap: loading ? null : () => _explore(),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(CoverSpec.radius),
+                border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              child: Center(
+                child: loading
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_circle_outline,
+                              size: 22,
+                              color: cs.primary.withValues(alpha: 0.7)),
+                          const SizedBox(height: 3),
+                          Text('加载更多',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: cs.onSurface.withValues(alpha: 0.55))),
+                        ],
+                      ),
+              ),
+            ),
+          );
+        }
+        final it = items[i];
+        return _Card(it: it, onTap: () => widget.onOpen(it));
+      },
+    );
+  }
+
+  // ── 未连接态（美化）──
+  Widget _offlineView(BuildContext c) {
+    final devs = EngineDirect.available();
+    final st = EngineDirect.state.value;
+    final cs = Theme.of(c).colorScheme;
+    return Center(
+        child: SingleChildScrollView(
+      padding: const EdgeInsets.all(28),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 76, height: 76,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                cs.primaryContainer.withValues(alpha: 0.8),
+                cs.primaryContainer.withValues(alpha: 0.25),
+              ],
+            ),
+          ),
+          child: Icon(
+            st.status == EngineStatus.failed
+                ? Icons.cloud_off_rounded
+                : Icons.extension_rounded,
+            size: 34,
+            color: st.status == EngineStatus.failed
+                ? Colors.redAccent
+                : cs.primary,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          switch (st.status) {
             EngineStatus.connecting => '正在连接资料库…',
             EngineStatus.failed => '资料库不可达',
             _ => '发现页需要先连接资料库',
-          }, style: const TextStyle(color: Colors.grey)),
-          if (st.message.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(8)),
-              child: Text(st.message, textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: Colors.redAccent, height: 1.5))),
-          ],
-          if (st.working || loading) const Padding(padding: EdgeInsets.only(top: 12),
-            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-          // 已发现但未连上的引擎: 直接一键连接
-          if (!loading && devs.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Text('局域网发现的资料库', style: TextStyle(fontSize: 11, color: Colors.grey)),
-            const SizedBox(height: 6),
-            for (final d in devs)
-              Card(child: ListTile(dense: true,
-                leading: const Icon(Icons.extension, size: 20, color: Colors.blueAccent),
-                title: Text(d.name.isNotEmpty ? d.name : '${d.host}:${d.port}',
-                  style: const TextStyle(fontSize: 13)),
-                subtitle: Text(d.caps.join(' / '), style: const TextStyle(fontSize: 10)),
-                trailing: FilledButton.tonal(onPressed: () => _connect(d),
-                  child: const Text('连接', style: TextStyle(fontSize: 12))))),
-          ],
-          if (!loading && devs.isEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('未发现资料库: 请确认资料库已启动并与本机在同一局域网\n(资料库启动后会自动广播 THP UDP 19527)',
-              textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.grey)),
-          ],
+          },
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 5),
+        Text('连上后这里会自动展示各源的推荐内容',
+            style: TextStyle(
+                fontSize: 12, color: cs.onSurface.withValues(alpha: 0.5))),
+        if (st.message.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(st.message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 11, color: Colors.redAccent, height: 1.5)),
+          ),
+        ],
+        if (st.working || loading)
+          const Padding(
+            padding: EdgeInsets.only(top: 14),
+            child: SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        if (!loading && devs.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('局域网发现的资料库',
+              style: TextStyle(
+                  fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5))),
+          const SizedBox(height: 8),
+          for (final d in devs)
+            Card(
+              elevation: 0,
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13)),
+              child: ListTile(
+                dense: true,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13)),
+                leading: Icon(Icons.extension_rounded,
+                    size: 20, color: cs.primary),
+                title: Text(
+                    d.name.isNotEmpty ? d.name : '${d.host}:${d.port}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                subtitle: Text(d.caps.join(' / '),
+                    style: const TextStyle(fontSize: 10)),
+                trailing: FilledButton.tonal(
+                    onPressed: () => _connect(d),
+                    child: const Text('连接', style: TextStyle(fontSize: 12))),
+              ),
+            ),
+        ],
+        if (!loading && devs.isEmpty) ...[
           const SizedBox(height: 12),
-          FilledButton.tonal(onPressed: () => EngineDirect.retry(),
-            child: const Text('重试连接')),
-          const SizedBox(height: 6),
-          TextButton(onPressed: () => Navigator.push(c,
-            MaterialPageRoute(builder: (_) => const EngineDirectPage())),
-            child: const Text('资料库直连管理', style: TextStyle(fontSize: 12))),
-        ]))));
-    }
-    final curTags = sources.isEmpty
-      ? const <Map<String, dynamic>>[]
-      : EngineDirect.validTags(sources.firstWhere(
-          (s) => '${s['source']}' == selSource, orElse: () => sources.first));
-    return Column(children: [
-      Padding(padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-        child: Row(children: [
-          Expanded(child: TextField(controller: q,
-            decoration: const InputDecoration(hintText: '在资料库搜索…', isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
-              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
-            onSubmitted: _search)),
-          IconButton(icon: const Icon(Icons.search), onPressed: () => _search(q.text)),
-        ])),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(children: [
-          const Icon(Icons.circle, size: 8, color: Colors.green),
-          const SizedBox(width: 4),
-          Text(EngineDirect.name, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          const SizedBox(width: 10),
-          if (searching || sources.isEmpty)
-            for (final w in (hotwords[widget.type] ?? []))
-              Padding(padding: const EdgeInsets.only(right: 6),
-                child: ActionChip(label: Text(w, style: const TextStyle(fontSize: 11)),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () { q.text = w; _search(w); })),
-          if (searching && sources.isNotEmpty)
-            ActionChip(label: const Text('返回发现', style: TextStyle(fontSize: 11)),
-              visualDensity: VisualDensity.compact,
-              onPressed: () { _explore(reset: true); }),
-        ])),
-      if (notice.isNotEmpty)
-        Padding(padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
-          child: Align(alignment: Alignment.centerLeft,
-            child: Text(notice, style: const TextStyle(fontSize: 10, color: Colors.orangeAccent)))),
-      // 书源分组(横滑) + 分类标签(换行)
-      if (sources.isNotEmpty) ...[
-        SizedBox(height: 38, child: ListView(scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          children: [ for (final s in sources)
-            Padding(padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                label: Text('${s['sourceName'] ?? ''}', style: const TextStyle(fontSize: 11)),
-                selected: selSource == '${s['source']}',
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) {
-                  final tags = EngineDirect.validTags(s);
-                  setState(() {
-                    selSource = '${s['source'] ?? ''}';
-                    selTag = tags.isNotEmpty ? '${tags.first['url'] ?? ''}' : '';
-                  });
-                  if (selTag.isNotEmpty) _explore(reset: true);
-                })) ])),
-        Padding(padding: const EdgeInsets.fromLTRB(10, 4, 10, 2),
-          child: Align(alignment: Alignment.centerLeft,
-            child: Wrap(spacing: 6, runSpacing: 4, children: [ for (final t in curTags)
-              ChoiceChip(label: Text('${t['name'] ?? ''}', style: const TextStyle(fontSize: 11)),
-                selected: selTag == '${t['url']}',
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) {
-                  setState(() => selTag = '${t['url'] ?? ''}');
-                  _explore(reset: true);
-                }) ]))),
-      ],
-      if (loading) const LinearProgressIndicator(minHeight: 2),
-      Expanded(child: err.isNotEmpty
-        ? Center(child: Padding(padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('出错: $err', textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-              const SizedBox(height: 10),
-              TextButton(onPressed: _load, child: const Text('重试', style: TextStyle(fontSize: 12))),
-            ])))
-        : items.isEmpty
-          ? Center(child: Text(loading ? '加载中…' : '暂无内容',
-              style: const TextStyle(color: Colors.grey)))
-          : GridView.builder(padding: coverPad,
-              gridDelegate: coverDelegate(CoverKind.coverGrid),
-              // 发现模式: 末尾多一格"加载更多"
-              itemCount: items.length + (!searching && hasMore ? 1 : 0),
-              itemBuilder: (_, i) {
-                if (i >= items.length) {
-                  return GestureDetector(onTap: loading ? null : () => _explore(),
-                    child: const Center(child: Column(mainAxisSize: MainAxisSize.min,
-                      children: [ Icon(Icons.expand_more, color: Colors.grey),
-                        Text('加载更多', style: TextStyle(fontSize: 11, color: Colors.grey)) ])));
-                }
-                final it = items[i];
-                return GestureDetector(onTap: () => widget.onOpen(it),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Expanded(child: CoverImage(it['coverUrl'],
-                        width: double.infinity,
-                        fallbackText: '${it['name'] ?? ''}',
-                        fallbackIcon: Icons.book_outlined)),
-                    Padding(padding: const EdgeInsets.only(top: 4),
-                      child: Text('${it['name'] ?? ''}', maxLines: 2,
-                        overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
-                  ]));
-              })),
-    ]);
+          const Text(
+            '未发现资料库\n请确认资料库已启动，并与本机在同一局域网',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.6),
+          ),
+        ],
+        const SizedBox(height: 16),
+        FilledButton.tonal(
+          onPressed: () => EngineDirect.retry(),
+          child: const Text('重试连接'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.push(c,
+              MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+          child: const Text('资料库直连管理', style: TextStyle(fontSize: 12)),
+        ),
+      ]),
+    ));
+  }
+}
+
+/// 发现页内容卡（封面 + 名条 + 悬浮反馈）。
+class _Card extends StatelessWidget {
+  const _Card({required this.it, required this.onTap});
+  final Map<String, dynamic> it;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(CoverSpec.radius),
+      onTap: onTap,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(CoverSpec.radius),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: CoverImage(
+              it['coverUrl'],
+              width: double.infinity,
+              fallbackText: '${it['name'] ?? ''}',
+              fallbackIcon: Icons.auto_stories_outlined,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 5, 2, 0),
+          child: Text(
+            '${it['name'] ?? ''}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11.5, height: 1.25),
+          ),
+        ),
+        if ('${it['sourceName'] ?? ''}'.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 1, 2, 0),
+            child: Text(
+              '${it['sourceName']}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 9.5,
+                  color: cs.onSurface.withValues(alpha: 0.42)),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// 骨架屏：加载时给"内容将至"的形状感，而不是一句干巴巴的"加载中"。
+class _SkeletonGrid extends StatefulWidget {
+  const _SkeletonGrid();
+  @override
+  State<_SkeletonGrid> createState() => _SkeletonGridState();
+}
+
+class _SkeletonGridState extends State<_SkeletonGrid>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ac = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ac.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _ac,
+      builder: (_, __) {
+        final a = 0.35 + _ac.value * 0.25;
+        return GridView.builder(
+          padding: coverPad,
+          gridDelegate: coverDelegate(CoverKind.coverGrid),
+          itemCount: 9,
+          itemBuilder: (_, i) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: a * 0.14),
+                      borderRadius: BorderRadius.circular(CoverSpec.radius),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 9,
+                  width: 60,
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: a * 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ]),
+        );
+      },
+    );
   }
 }
