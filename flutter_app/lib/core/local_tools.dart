@@ -35,6 +35,28 @@ class LocalHooks {
 
   /// 列出所有可用模块名
   static Future<List<String>> Function()? listModules;
+
+  // ══════════════════════════════════════════════════════════════════
+  // ★2026-10-14 业务钩子 —— 让 AI 能操作「内容」而不只是「设备」
+  //   上面那组钩子是设备/设置层面的；下面这组才让 AI 碰得到本软件的核心：
+  //   资料库连接状态、跨库搜索、发现页、打开条目、最近记录。
+  //   同样是「App 启动时注入」，底层不反向依赖 main.dart。
+  // ══════════════════════════════════════════════════════════════════
+
+  /// 资料库（引擎）状态：哪些在线、各有多少源。
+  static Future<String> Function()? engineStatus;
+
+  /// 跨资料库搜索。type: novel/comic/music/video/all；返回可读列表。
+  static Future<String> Function(String type, String query, int limit)? engineSearch;
+
+  /// 发现页：列出各源的分类标签（AI 据此知道「有什么可看」）。
+  static Future<String> Function(String type)? engineDiscover;
+
+  /// 打开某个内容（跳到详情页/开始阅读/播放）。id 来自 engineSearch。
+  static Future<String> Function(String type, String id, String title)? openItem;
+
+  /// 最近的阅读/观看/收听记录。
+  static Future<String> Function(int limit)? recentHistory;
 }
 
 class LocalTool {
@@ -54,6 +76,56 @@ class LocalTools {
   static Future<Directory> _dir() async => await getApplicationDocumentsDirectory();
 
   static List<LocalTool> all = [
+    // ══ 业务工具（★2026-10-14：AI 直接操作本软件）══════════════════════
+    LocalTool('engine_status', '查看四个资料库（小说/漫画/音乐/视频）的连接状态、各有多少源、是否开机自启',
+        _obj({}), (_) async {
+      final f = LocalHooks.engineStatus;
+      if (f == null) return '业务钩子未注入（App 未就绪）';
+      return f();
+    }),
+    LocalTool('engine_search', '跨资料库搜索内容（书 / 漫画 / 歌 / 影视）。这是“找内容”的首选工具。',
+        _obj({
+          'type': '类型：novel 小说 / comic 漫画 / music 音乐 / video 影视 / all 全部（默认 all）',
+          'query': '关键词',
+          'limit': '返回条数，默认 10，最大 30',
+        }, ['query']), (a) async {
+      final f = LocalHooks.engineSearch;
+      if (f == null) return '业务钩子未注入（App 未就绪）';
+      final type0 = (a['type'] ?? 'all').toString().trim();
+      final type = type0.isEmpty ? 'all' : type0;
+      final q = (a['query'] ?? '').toString().trim();
+      if (q.isEmpty) return '缺少 query（要搜什么？）';
+      final limit = int.tryParse((a['limit'] ?? '10').toString()) ?? 10;
+      return f(type, q, limit.clamp(1, 30));
+    }),
+    LocalTool('engine_discover', '浏览资料库的发现页 —— 看看各源有哪些分类（如热歌榜、华语榜、最新上架）',
+        _obj({'type': '类型：novel / comic / music / video（默认 music）'}), (a) async {
+      final f = LocalHooks.engineDiscover;
+      if (f == null) return '业务钩子未注入（App 未就绪）';
+      final t0 = (a['type'] ?? 'music').toString().trim();
+      return f(t0.isEmpty ? 'music' : t0);
+    }),
+    LocalTool('open_item', '在 App 里打开某个内容（跳到详情页 / 开始阅读 / 播放）。id 必须来自 engine_search 的结果。',
+        _obj({
+          'type': '类型：novel / comic / music / video',
+          'id': '条目标识（engine_search 返回的 id）',
+          'title': '标题（可选，用于界面提示）',
+        }, ['type', 'id']), (a) async {
+      final f = LocalHooks.openItem;
+      if (f == null) return '业务钩子未注入（App 未就绪）';
+      final type = (a['type'] ?? '').toString().trim();
+      final id = (a['id'] ?? '').toString().trim();
+      if (type.isEmpty || id.isEmpty) return '缺少 type 或 id';
+      return f(type, id, (a['title'] ?? '').toString());
+    }),
+    LocalTool('recent_history', '查看最近的阅读 / 观看 / 收听记录（接着上次继续）',
+        _obj({'limit': '条数，默认 10'}), (a) async {
+      final f = LocalHooks.recentHistory;
+      if (f == null) return '业务钩子未注入（App 未就绪）';
+      final n = int.tryParse((a['limit'] ?? '10').toString()) ?? 10;
+      return f(n.clamp(1, 50));
+    }),
+
     LocalTool('get_device_info', '获取手机设备信息(品牌/型号/系统版本)', _obj({}), (_) async {
       final d = DeviceInfoPlugin();
       if (Platform.isAndroid) { final a = await d.androidInfo;
