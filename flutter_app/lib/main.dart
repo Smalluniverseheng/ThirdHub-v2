@@ -8236,6 +8236,8 @@ class _Live extends State<LivePage> {
                                           epUrl: ch['id'] ?? '',
                                           flag: '',
                                           title: ch['name'] ?? '频道',
+                                          // ★引擎条目 id → 走直连（不依赖后端）
+                                          engineId: '${ch['id'] ?? ''}',
                                           episodes: [
                                             {
                                               'name': ch['name'],
@@ -8418,6 +8420,10 @@ class VideoDetailPage extends StatefulWidget {
 }
 
 class _Vd extends State<VideoDetailPage> {
+  /// ★2026-10-14：引擎条目 id（THP 的「源key|vodId」形式）。
+  ///   传给 VideoPlayPage 后即可走引擎直连取播放地址，不再依赖后端在线。
+  String get engineId => '${widget.sourceId}|${widget.vodId}';
+
   Map<String, dynamic>? info;
   List episodes = [];
   bool loading = true;
@@ -8482,6 +8488,7 @@ class _Vd extends State<VideoDetailPage> {
                                             epUrl: episodes[i]['url'] ?? '',
                                             flag: episodes[i]['flag'] ?? '',
                                             title: episodes[i]['name'] ?? '',
+                                            engineId: '${episodes[i]['engineId'] ?? engineId}',
                                             episodes: episodes,
                                             index: i))),
                               )))
@@ -8490,6 +8497,10 @@ class _Vd extends State<VideoDetailPage> {
 
 class VideoPlayPage extends StatefulWidget {
   final String sourceId, epUrl, flag, title;
+
+  /// ★2026-10-14：引擎条目 id（THP 的 `<源key>|<vodId>`）。
+  ///   非空时优先走引擎直连取播放地址（不依赖后端在线）；为空则回落后端。
+  final String engineId;
   final List episodes;
   final int index;
   const VideoPlayPage(
@@ -8498,6 +8509,7 @@ class VideoPlayPage extends StatefulWidget {
       required this.epUrl,
       required this.flag,
       required this.title,
+      this.engineId = '',
       this.episodes = const [],
       this.index = 0});
   @override
@@ -8591,22 +8603,54 @@ class _Vp extends State<VideoPlayPage> {
     }));
   }
 
+  /// ★2026-10-14：取播放地址 —— **本地缓存 → 引擎直连 → 后端**。
+  ///
+  /// 为什么加引擎直连：此前只走后端 `/v1/video/play`，于是「引擎连上了但视频
+  /// 用不了」—— 后端不在线或没配到那个源时完全没法看。而资料库的影视端点
+  /// （/thp/content）本来就能给播放地址，走它可以彻底不依赖后端。
+  Future<String?> _resolveViaEngine(String epUrl, String flag) async {
+    final id = widget.engineId.trim();
+    if (id.isEmpty) return null;
+    try {
+      // chapter 用 '0'：影视 THP 的单集播放地址就是第 0 章（与漫画/音乐同约定）
+      final d = await EngineDirect.content('video', id, '0');
+      final url = '${d['url'] ?? d['playUrl'] ?? d['content'] ?? ''}'.toString().trim();
+      if (url.isEmpty) return null;
+      return url;
+    } catch (_) {
+      // 引擎没连上 / 不支持 / 源失败 → 静默回落后端（不打断用户）
+      return null;
+    }
+  }
+
   Future<void> initPlayer() async {
     try {
-      final r = await Api.get(
+      // ★先试引擎直连（引擎在线时它才是主路径；后端是回落）
+      var url = await _resolveViaEngine(widget.epUrl, widget.flag);
+      Map<String, dynamic> r = const {};
+      if (url == null) {
+        r = await Api.get(
           '/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
-      if (r['object'] == 'error') {
-        setState(() {
-          loading = false;
-          err = r['data']?['message'] ?? '解析失败';
-        });
-        return;
+        if (r['object'] == 'error') {
+          setState(() {
+            loading = false;
+            err = r['data']?['message'] ?? '解析失败';
+          });
+          return;
+        }
+        url = r['data']?['url'] as String? ?? '';
+        if (url.isEmpty) {
+          setState(() {
+            loading = false;
+            err = '播放地址为空（引擎直连与后端都没取到）';
+          });
+          return;
+        }
       }
-      final url = r['data']?['url'] as String? ?? '';
       if (url.isEmpty) {
         setState(() {
           loading = false;
-          err = '播放地址为空';
+          err = '播放地址为空（引擎直连与后端都没取到）';
         });
         return;
       }
