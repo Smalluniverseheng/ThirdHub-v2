@@ -13,6 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../main.dart' show LocalNovelReader;
 import 'pro_browser.dart';
+import 'fingerprint.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // 与 RootNav(main.dart) 的桥: 打开模块宫格
 class BrowserHooks {
@@ -192,6 +194,23 @@ class _Bp extends State<BrowserPage> {
         if (mounted) setState(() { tab.url = u; });
         // B-7 UA 记忆: 按域名取用户记住的标识(影响本标签页后续所有请求)
         BrowserPro.uaFor(u).then((ua) async { if (ua.isNotEmpty) { try { await c.setUserAgent(ua); } catch (_) {} } });
+
+        // ★2026-10-14 指纹保护：**页面刚开始加载时**注入 —— 此时 DOM 还没建，
+        //   脚本先于页面自身脚本生效，页面早期的指纹采集读到的就是伪装值。
+        //   用全局标记幂等，避免重复注入。
+        unawaited(() async {
+          try {
+            final p = await SharedPreferences.getInstance();
+            final pid = p.getString('browser_fp_preset') ?? 'off';
+            final preset = Fingerprint.byId(pid);
+            final js = Fingerprint.jsFor(preset);
+            if (js.isEmpty) return;
+            if (preset.ua.isNotEmpty) {
+              try { await c.setUserAgent(preset.ua); } catch (_) {}
+            }
+            await c.runJavaScript(js);
+          } catch (_) {}
+        }());
       },
       onPageFinished: (u) async {
         final title = await c.getTitle() ?? '';
@@ -276,6 +295,15 @@ class _Bp extends State<BrowserPage> {
             const PopupMenuItem(value: 'longshot', child: ListTile(dense: true, leading: Icon(Icons.photo_size_select_large, size: 18), title: Text('整页长截图存相册', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'night', child: ListTile(dense: true, leading: Icon(Icons.dark_mode_outlined, size: 18), title: Text('夜间模式 开/关', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'pro', child: ListTile(dense: true, leading: Icon(Icons.tune, size: 18), title: Text('浏览器增强(UA/手势/书签同步)', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            // ★2026-10-14 指纹保护：档位切换（关闭/大众化/遮蔽/严格）
+            PopupMenuItem(value: 'fingerprint', child: ListTile(dense: true, leading: const Icon(Icons.fingerprint, size: 18), title: const Text('指纹保护', style: TextStyle(fontSize: 13)), subtitle: FutureBuilder<SharedPreferences>(
+              future: SharedPreferences.getInstance(),
+              builder: (c2, s2) {
+                final id = s2.data?.getString('browser_fp_preset') ?? 'off';
+                final p = Fingerprint.byId(id);
+                return Text(Fingerprint.summaryOf(p), style: const TextStyle(fontSize: 10.5, color: Colors.grey));
+              },
+            ), contentPadding: EdgeInsets.zero)),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'modules', child: ListTile(dense: true, leading: Icon(Icons.apps, size: 18), title: Text('切换模块', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
           ]),
@@ -322,10 +350,60 @@ class _Bp extends State<BrowserPage> {
       case 'longshot': await runLongShotFlow(context, _proHost()); break;
       case 'night': await _toggleNight(); break;
       case 'pro': await showBrowserPro(context, _proHost()); break;
+      case 'fingerprint': await _fingerprintSheet(); break;
     }
   }
 
   // B-9 夜间模式的快捷开关(菜单里一点即用)
+  /// 指纹保护档位选择。
+  ///
+  /// ★为什么默认是「关闭」：加噪会轻微影响实测渲染（如网页截图存图会带噪点），
+  ///   应该是**用户主动开启**的能力，不能悄悄改掉所有人的浏览体验。
+  Future<void> _fingerprintSheet() async {
+    final p = await SharedPreferences.getInstance();
+    final cur = p.getString('browser_fp_preset') ?? 'off';
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(children: [
+              Icon(Icons.fingerprint, size: 20),
+              SizedBox(width: 8),
+              Text('指纹保护', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text('让网站在「同一台设备」上认不出你。改动即时生效，换页后按新档位执行。',
+                style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.5)),
+          ),
+          for (final preset in Fingerprint.presets)
+            RadioListTile<String>(
+              value: preset.id,
+              groupValue: cur,
+              onChanged: (v) async {
+                await p.setString('browser_fp_preset', v ?? 'off');
+                if (mounted) Navigator.pop(c);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('指纹档位: ${Fingerprint.byId(v ?? 'off').name}（换页生效）')));
+                  setState(() {});
+                }
+              },
+              title: Text(preset.name, style: const TextStyle(fontSize: 14)),
+              subtitle: Text(preset.desc, style: const TextStyle(fontSize: 11.5, color: Colors.grey, height: 1.4)),
+              dense: true,
+            ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+  }
+
   Future<void> _toggleNight() async {
     final v = !nightMode;
     setState(() => nightMode = v);
