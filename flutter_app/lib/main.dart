@@ -8766,7 +8766,7 @@ class _Vp extends State<VideoPlayPage> {
         if (url.isEmpty) {
           setState(() {
             loading = false;
-            err = '播放地址为空（引擎直连与后端都没取到）';
+            err = '播放地址为空（资料库直连与后端都没取到）';
           });
           return;
         }
@@ -8774,7 +8774,7 @@ class _Vp extends State<VideoPlayPage> {
       if (url.isEmpty) {
         setState(() {
           loading = false;
-          err = '播放地址为空（引擎直连与后端都没取到）';
+          err = '播放地址为空（资料库直连与后端都没取到）';
         });
         return;
       }
