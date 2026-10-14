@@ -9573,6 +9573,133 @@ class _RootNavState extends State<RootNav> {
 
   void _wireLocalHooks() {
     LocalHooks.listModules = () async => List<String>.from(enabled);
+    // ══════════════════════════════════════════════════════════════════
+    // ★2026-10-14 业务钩子注入 —— 让 AI 直接操作本软件（内容层）
+    //   与上面的设备层钩子同一套机制；实现放这里是因为要碰引擎层与导航层。
+    // ══════════════════════════════════════════════════════════════════
+    LocalHooks.engineStatus = () async {
+      final buf = StringBuffer();
+      final devs = ThpDiscovery.list();
+      buf.writeln('发现的资料库: ${devs.length} 个');
+      for (final d in devs) {
+        final mods = d.caps
+            .where((c) => c.startsWith('m:'))
+            .map((c) => c.substring(2))
+            .join('/');
+        buf.writeln('  · ${d.label} @ ${d.host}:${d.port}'
+            '${mods.isNotEmpty ? ' [$mods]' : ''}'
+            '${d.isLibrary ? '（资源库）' : ''}');
+      }
+      buf.writeln(EngineDirect.connected
+          ? '当前连接: ${EngineDirect.name} (${EngineDirect.url}) v${EngineDirect.version}'
+          : '当前连接: 未连接');
+      if (EngineDirect.connected) {
+        buf.writeln('能力: ${EngineDirect.caps.join(', ')}');
+      }
+      return buf.toString();
+    };
+
+    LocalHooks.engineSearch = (type, q, limit) async {
+      if (!EngineDirect.connected) {
+        return '资料库未连接 —— 请确认手机上的资料库应用已启动（打开一次即可）。';
+      }
+      try {
+        final items = await EngineDirect.search(type, q);
+        if (items.isEmpty) return '没搜到「$q」。换个关键词，或在资料库里多加几个源。';
+        final buf = StringBuffer('搜到 ${items.length} 条（关键词: $q）:\n');
+        var n = 0;
+        for (final it in items) {
+          if (n++ >= limit) break;
+          buf.writeln('- ${it['name'] ?? '?'}'
+              '${(it['author'] ?? '').toString().isNotEmpty ? ' / ${it['author']}' : ''}'
+              ' | id=${it['id'] ?? ''}'
+              '${(it['sourceName'] ?? '').toString().isNotEmpty ? ' | 来源: ${it['sourceName']}' : ''}');
+        }
+        buf.writeln('\n要打开某条，用 open_item 工具，把该条的 id 填进去。');
+        return buf.toString();
+      } catch (e) {
+        return '搜索失败: $e';
+      }
+    };
+
+    LocalHooks.engineDiscover = (type) async {
+      if (!EngineDirect.connected) {
+        return '资料库未连接 —— 请确认资料库应用已启动。';
+      }
+      try {
+        final sources = await EngineDirect.discover(type);
+        if (sources.isEmpty) {
+          return '「$type」的发现页没有可用分类（可能资料库版本旧，或已加载的源都只有搜索、没有分类）。';
+        }
+        final buf = StringBuffer('「$type」发现页 —— ${sources.length} 个源:\n');
+        for (final s in sources) {
+          final tags = (s['tags'] as List?)
+                  ?.map((t) => t is Map ? '${t['name']}' : '$t')
+                  .take(12)
+                  .join('、') ??
+              '';
+          buf.writeln('- ${s['sourceName'] ?? s['source']}: $tags');
+        }
+        return buf.toString();
+      } catch (e) {
+        return '获取发现页失败: $e';
+      }
+    };
+
+    LocalHooks.openItem = (type, id, title) async {
+      try {
+        if (type == 'video') {
+          final parts = id.split('|');
+          if (parts.length < 2) return '影视 id 格式不对（应为 源key|vodId）';
+          final sid = parts[0];
+          final vid = parts.sublist(1).join('|');
+          if (!mounted) return '页面已销毁';
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => VideoDetailPage(
+                      sourceId: sid,
+                      vodId: vid,
+                      title: title.isEmpty ? vid : title)));
+          return '已打开影视详情: ${title.isEmpty ? id : title}';
+        }
+        if (!mounted) return '页面已销毁';
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => EngineItemPage(
+                    type: type,
+                    item: {'id': id, 'name': title.isEmpty ? id : title})));
+        return '已打开: ${title.isEmpty ? id : title}（$type）';
+      } catch (e) {
+        return '打开失败: $e';
+      }
+    };
+
+    LocalHooks.recentHistory = (limit) async {
+      try {
+        final out = StringBuffer();
+        var total = 0;
+        for (final kind in ['novel', 'comic', 'video', 'music']) {
+          final list = await Book.history(kind);
+          if (list.isEmpty) continue;
+          out.writeln('【$kind】');
+          for (final b in list) {
+            if (total >= limit) break;
+            total++;
+            out.writeln('- ${b.name}'
+                '${b.author.isNotEmpty ? ' / ${b.author}' : ''}'
+                '${b.durChapterTitle.isNotEmpty ? ' | 上次停在: ${b.durChapterTitle}' : ''}');
+          }
+          if (total >= limit) break;
+        }
+        return out.isEmpty ? '还没有任何阅读/观看记录。' : out.toString();
+      } catch (e) {
+        return '读取历史失败: $e';
+      }
+    };
+
+
     LocalHooks.gotoModule = (m) async {
       final name = m.trim();
       var i = enabled.indexOf(name);
