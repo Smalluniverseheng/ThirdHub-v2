@@ -8438,6 +8438,27 @@ class _Vd extends State<VideoDetailPage> {
   }
 
   Future<void> load() async {
+    // ★2026-10-14：先走**引擎直连**（不依赖后端在线），失败再回落后端。
+    //   此前只打 /v1/video/detail —— 引擎连上了、后端没起，详情页依然打不开。
+    final eid = engineId;
+    try {
+      final chs = await EngineDirect.chapters('video', eid);
+      if (chs.isNotEmpty) {
+        episodes = chs;
+        // 简介尽力而为：引擎的 detail 藏在 content 里，取不到就算了（不阻塞）
+        try {
+          final d = await EngineDirect.content('video', eid, '0');
+          final intro = '${d['intro'] ?? d['desc'] ?? ''}';
+          if (intro.trim().isNotEmpty) {
+            info = {'intro': intro};
+          }
+        } catch (_) {}
+        if (mounted) setState(() => loading = false);
+        return;
+      }
+    } catch (_) {
+      // 引擎没连 / 不支持 → 静默回落后端
+    }
     try {
       final r = await Api.get(
           '/v1/video/detail?sourceId=${Uri.encodeComponent(widget.sourceId)}&id=${Uri.encodeComponent(widget.vodId)}');
@@ -8453,6 +8474,8 @@ class _Vd extends State<VideoDetailPage> {
     setState(() => loading = false);
   }
 
+  bool _introExpanded = false;
+
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(title: Text(widget.title)),
@@ -8460,42 +8483,130 @@ class _Vd extends State<VideoDetailPage> {
           ? const Center(child: CircularProgressIndicator())
           : err != null
               ? Center(
-                  child: Text(err!, style: const TextStyle(color: Colors.red)))
-              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  if ((info?['intro'] ?? '') != '')
-                    Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(info!['intro'],
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 12))),
-                  Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                      child: Text('选集 (${episodes.length})',
-                          style: const TextStyle(color: Colors.blueAccent))),
-                  Expanded(
-                      child: ListView.builder(
-                          itemCount: episodes.length,
-                          itemBuilder: (_, i) => ListTile(
-                                dense: true,
-                                title: Text(episodes[i]['name'] ?? '第${i + 1}集',
-                                    style: const TextStyle(fontSize: 13)),
-                                onTap: () => Navigator.push(
-                                    c,
-                                    MaterialPageRoute(
-                                        builder: (_) => VideoPlayPage(
-                                            sourceId: widget.sourceId,
-                                            epUrl: episodes[i]['url'] ?? '',
-                                            flag: episodes[i]['flag'] ?? '',
-                                            title: episodes[i]['name'] ?? '',
-                                            engineId: '${episodes[i]['engineId'] ?? engineId}',
-                                            episodes: episodes,
-                                            index: i))),
-                              )))
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 36, color: Colors.grey),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(err!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(
+                          onPressed: () {
+                            setState(() {
+                              loading = true;
+                              err = null;
+                            });
+                            load();
+                          },
+                          child: const Text('重试')),
+                    ],
+                  ),
+                )
+              : CustomScrollView(slivers: [
+                  // ── 头部：简介（可展开）──
+                  if (('${info?['intro'] ?? ''}').trim().isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _introExpanded = !_introExpanded),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${info!['intro']}',
+                                  maxLines: _introExpanded ? 30 : 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 12.5, height: 1.6)),
+                              const SizedBox(height: 4),
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                                Text(_introExpanded ? '收起' : '展开全部',
+                                    style: const TextStyle(
+                                        color: Colors.blueAccent, fontSize: 11.5)),
+                                Icon(_introExpanded
+                                        ? Icons.keyboard_arrow_up
+                                        : Icons.keyboard_arrow_down,
+                                    size: 14, color: Colors.blueAccent),
+                              ]),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // ── 选集标题 + 集数统计 ──
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                      child: Row(children: [
+                        const Icon(Icons.video_library_outlined, size: 16),
+                        const SizedBox(width: 6),
+                        Text('选集',
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 6),
+                        Text('共 ${episodes.length} 集',
+                            style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+                      ]),
+                    ),
+                  ),
+
+                  // ── 选集：网格（原来是一行行 ListTile，信息密度低、翻长剧很累）──
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 96,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 1.7,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) {
+                          final name = '${episodes[i]['name'] ?? '第${i + 1}集'}';
+                          return Material(
+                            color: Theme.of(c).colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(9),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(9),
+                              onTap: () => Navigator.push(
+                                  c,
+                                  MaterialPageRoute(
+                                      builder: (_) => VideoPlayPage(
+                                          sourceId: widget.sourceId,
+                                          epUrl: episodes[i]['url'] ?? '',
+                                          flag: episodes[i]['flag'] ?? '',
+                                          title: name,
+                                          engineId:
+                                              '${episodes[i]['engineId'] ?? engineId}',
+                                          episodes: episodes,
+                                          index: i))),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                child: Center(
+                                  child: Text(name,
+                                      maxLines: 2,
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12)),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        childCount: episodes.length,
+                      ),
+                    ),
+                  ),
                 ]));
 }
-
 class VideoPlayPage extends StatefulWidget {
   final String sourceId, epUrl, flag, title;
 
