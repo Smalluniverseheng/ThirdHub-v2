@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../main.dart' show LocalNovelReader;
 import 'pro_browser.dart';
+import 'dart:async';
 import 'fingerprint.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
