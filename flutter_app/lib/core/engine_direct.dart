@@ -582,7 +582,8 @@ class EngineDirect {
     }
     final cli = _client();
     try {
-      final req = http.Request('GET', Uri.parse('$url$path'));
+      // ★按 path 里的模块选资料库（多资料库路由；单资料库时等价于 url）
+      final req = http.Request('GET', Uri.parse('${urlForPath(path)}$path'));
       final res = await cli.send(req).timeout(Duration(seconds: timeoutSec));
       // ① 有 Content-Length 时先拒（连下载都不下载）
       final cl = res.contentLength;
@@ -987,6 +988,108 @@ class EngineDirect {
         return 'novel';
     }
   }
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★2026-10-15 多资料库路由：**每个模块各用各的资料库**
+  //
+  // 用户报「漫画页搜出来的全是音乐」——根因就是这里：
+  //   本 App 可以同时装四个资料库（小说:1234 / 漫画:1235 / 音乐:1236 / 影视:9978），
+  //   而 EngineDirect 此前是**单连接**（一个 url 全局共用）→ 在漫画页搜索时
+  //   如果当前连的是音乐资料库，请求就打到音乐上去，返回的自然全是歌；
+  //   同理漫画的「发现」页也会因为打到别的资料库而空白。
+  //
+  // 修法：加一张「模块 → 资料库地址」路由表；**请求发出前按 path 里的 type/module
+  //   选地址**。对外 API 一律不变（调用点零改动），单资料库场景行为也不变。
+  //   这也是「以后接几百上千个资料库」要的通用形态 —— 前端只认 THP 协议与
+  //   模块名，谁提供这个模块就用谁。
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// 模块键（novel/comic/music/video）→ 该模块的资料库地址。
+  static final Map<String, String> _moduleUrls = {};
+
+  /// 路由表快照（诊断页/测试用）。
+  static Map<String, String> get moduleRoutes => Map.unmodifiable(_moduleUrls);
+
+  /// 从请求路径里解析模块键；解析不出返回空串（表示「用默认地址」）。
+  ///
+  /// 认两种形态（与 THP 一致）：
+  ///   · 规范端点 `/thp/m/<mod>/<op>`
+  ///   · 兼容端点 `/thp/<op>?type=<mod>`（`type=all` 走默认地址）
+  static String moduleOfPath(String path) {
+    final m1 = RegExp(r'^/thp/m/([a-z]+)/').firstMatch(path);
+    if (m1 != null) {
+      final raw = m1.group(1)!;
+      return (raw == 'novel' || raw == 'comic' || raw == 'music' || raw == 'video')
+          ? raw
+          : '';
+    }
+    final m2 = RegExp(r'[?&]type=([a-z]+)').firstMatch(path);
+    if (m2 != null) {
+      final t = m2.group(1)!;
+      if (t == 'all') return '';
+      return moduleOf(t);
+    }
+    return '';
+  }
+
+  /// 这个请求该发去哪个资料库地址。
+  ///
+  /// 路由表里有该模块 → 用它的地址；否则回落默认连接（既有行为）。
+  static DateTime _routesAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static String urlForPath(String path) {
+    // 懒刷新：发现列表变化后 5 秒内自动生效，不必依赖某个启动点先跑过。
+    if (DateTime.now().difference(_routesAt) > const Duration(seconds: 5)) {
+      refreshModuleRoutes();
+      _routesAt = DateTime.now();
+    }
+    final mod = moduleOfPath(path);
+    if (mod.isNotEmpty) {
+      final u = _moduleUrls[mod];
+      if (u != null && u.isNotEmpty) return u;
+    }
+    return url;
+  }
+
+  /// 按「局域网发现的资料库」重填路由表。
+  ///
+  /// 认领规则（两条都跑，先到先得，`putIfAbsent` 不覆盖）：
+  ///   ① 能力标签 —— caps 里的 `m:<mod>`（资料库自报家门，最权威）；
+  ///   ② 端口兜底 —— 1234/1235/1236/9978（老资料库不带 m: 标签时仍能对上号）。
+  /// 资源库（caps 含 library，:9527 那一类）**不参与** —— 它管源清单，不是内容提供方。
+  static void refreshModuleRoutes([List<ThpDevice>? devices]) {
+    final list = devices ?? ThpDiscovery.list();
+    final map = <String, String>{};
+    for (final d in list) {
+      if (d.isLibrary) continue;
+      for (final c in d.caps) {
+        if (!c.startsWith('m:')) continue;
+        final mod = c.substring(2);
+        if (mod == 'novel' || mod == 'comic' || mod == 'music' || mod == 'video') {
+          map.putIfAbsent(mod, () => d.url);
+        }
+      }
+    }
+    const byPort = {1234: 'novel', 1235: 'comic', 1236: 'music', 9978: 'video'};
+    for (final d in list) {
+      if (d.isLibrary) continue;
+      final mod = byPort[d.port];
+      if (mod != null) map.putIfAbsent(mod, () => d.url);
+    }
+    _moduleUrls
+      ..clear()
+      ..addAll(map);
+  }
+
+  /// 手填某模块的资料库地址（用户在「连接资料库」里指定时用）。
+  static void setModuleUrl(String mod, String u) {
+    if (u.trim().isEmpty) {
+      _moduleUrls.remove(mod);
+    } else {
+      _moduleUrls[mod] = u.trim();
+    }
+  }
+
+
 
   /// 发现页结构: 各书源的分类标签 [{source, sourceName, tags:[{name,url}]}]
   /// 空 url 的标签会被引擎过滤；这里再兜一层，避免 UI 渲染出点了必 400 的标签。
