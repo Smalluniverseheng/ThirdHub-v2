@@ -876,7 +876,8 @@ class EngineDirect {
             '&limit=$limit&budget=$budgetSec'
             '&mode=${Uri.encodeComponent(mode)}$deepQ'
             '${restart ? '&restart=1' : ''}&stream=1';
-        final req = http.Request('GET', Uri.parse('$url$path'));
+        // ★按 path 里的模块选资料库（与 _get 同一路由）
+        final req = http.Request('GET', Uri.parse('${urlForPath(path)}$path'));
         final res = await cli!.send(req).timeout(const Duration(seconds: 20));
         if (res.statusCode != 200) {
           final body = await res.stream.bytesToString();
