@@ -13,6 +13,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'peer_hub.dart';
 
 import 'agent_models.dart';
 import 'agent_policy.dart';
@@ -25,6 +27,79 @@ class AgentDshClient {
   static String token = '';
 
   static bool get configured => base.trim().isNotEmpty;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ★2026-10-17 账号自动配对：从「端间互通」（PH/1）的端列表里自动找到电脑端的 DSH
+  //
+  // 用户诉求原话：「只要两边都登录相同的账号就会自动连接」——
+  //   好消息是这套机制**项目里已经有了**：PeerHubClient.join() 支持 account/password，
+  //   同一账号下所有端会汇进同一张端列表（PeerRegistry），每端自带 url/caps/online。
+  //   本方法只做最后一步：**在列表里认出那台跑着 DSH 的电脑，把地址填进来**。
+  //
+  // 认领口径（按优先级）：
+  //   ① caps 里含 `dsh`（电脑端插件的显式声明 —— 最权威）
+  //   ② kind == dsa（新的「DSH Agent」端类型）
+  //   ③ kind == back（老后端，它本机通常就挂着 DSH）—— 仅当没有 ① ② 时兜底
+  // 只挑 **online** 的；地址取 url → ipv6 → tunnel 第一个非空的。
+  // ═══════════════════════════════════════════════════════════════════════
+  static Future<({bool ok, String detail, String url})> autoConfigureFromPeers(
+      {List<PeerInfo>? peers}) async {
+    try {
+      final list = peers ?? (await PeerHubClient.list()).peers;
+      PeerInfo? best;
+      var bestRank = 99;
+      for (final p in list) {
+        if (!p.online) continue;
+        final capsL = p.caps.map((c) => c.toLowerCase()).toList();
+        var rank = 99;
+        if (capsL.any((c) => c == 'dsh' || c.startsWith('dsh:'))) {
+          rank = 0;
+        } else if (p.kind == PeerKind.dsa) {
+          rank = 1;
+        } else if (p.kind == PeerKind.back) {
+          rank = 2;
+        }
+        if (rank < bestRank) {
+          bestRank = rank;
+          best = p;
+        }
+      }
+      if (best == null) {
+        return (
+          ok: false,
+          detail: '还没发现电脑端 —— 在电脑上打开并登录同一账号后会自动出现',
+          url: '',
+        );
+      }
+      final u = best.url.isNotEmpty
+          ? best.url
+          : (best.ipv6.isNotEmpty ? best.ipv6 : best.tunnel);
+      if (u.trim().isEmpty) {
+        return (ok: false, detail: '发现了「${best.name}」但它还没上报可用地址', url: '');
+      }
+      base = u.trim();
+      try {
+        final p = await SharedPreferences.getInstance();
+        await p.setString('agent_dsh_base', base);
+        await p.setString('agent_dsh_from_peer', best.iid);
+        await p.setString('agent_dsh_from_name', best.name);
+      } catch (_) {}
+      return (ok: true, detail: '已连上「${best.name}」', url: base);
+    } catch (e) {
+      return (ok: false, detail: '$e', url: '');
+    }
+  }
+
+  /// 已配对的电脑名（来自 peer 自动配对；手动配置时为空）。
+  static Future<String> pairedFromName() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getString('agent_dsh_from_name') ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
 
   static const _short = Duration(seconds: 8);
   static const _long = Duration(seconds: 30);
