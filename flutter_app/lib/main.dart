@@ -14668,6 +14668,54 @@ class _Ei extends State<EngineItemPage> {
   bool introOpen = false; // 简介是否展开
   bool chapOpen = false; // 目录是否全展开（默认只列前 _chapPreview 条）
   static const _chapPreview = 30;
+  // ── ★2026-10-16 详情页字段增强：**引擎给多少就显示多少** ──
+  //
+  // 用户诉求：「获取的信息要详细一点，比如作者封面简介这些，能获取多少获取多少」。
+  // 协议口径（THP.md §7.3 增补）：除 id/name 外的字段**全部可选**，
+  //   引擎有多少给多少；前端**有就显示、没有就不显示**，不预设、不占位、不显示 "null"。
+  //   这样以后新引擎（乃至新模块）接入时，前端**一行都不用改**就能显示它给的更多信息。
+
+  /// 评分（引擎可能给字符串 "8.5" 或数字 8.5；原样展示）。
+  String get scoreS =>
+      '${widget.item['score'] ?? widget.item['rating'] ?? ''}'.trim();
+
+  /// 状态（连载中 / 已完结 / 更新至第 N 话…引擎自己的词，前端不翻译不预设）。
+  String get statusS => '${widget.item['status'] ?? ''}'.trim();
+
+  /// 地区 / 年份 —— 影视向的常见字段，小说漫画也可能给。
+  String get regionS =>
+      '${widget.item['region'] ?? widget.item['area'] ?? ''}'.trim();
+  String get yearS => '${widget.item['year'] ?? ''}'.trim();
+
+  /// 更新时间（可读串，引擎自己格式化）。
+  String get updateS =>
+      '${widget.item['updateTime'] ?? widget.item['lastUpdate'] ?? ''}'.trim();
+
+  /// 一行元信息：[地区 · 年份 · 更新于 xxx]，哪项有就拼哪项。
+  String get metaLine => [
+        if (regionS.isNotEmpty) regionS,
+        if (yearS.isNotEmpty) yearS,
+        if (updateS.isNotEmpty) '更新 $updateS',
+      ].join(' · ');
+
+  /// 引擎给的自由字段：`extra`（新） 或 `attrs`（别名）里没被上面用掉的键值对。
+  /// 用途：不同模块有不同信息（书的字数/漫画的话数/影片的片长…），
+  ///   引擎往 extra 里塞，前端原样列出 —— 不需要为每种新字段改前端。
+  List<MapEntry<String, String>> get extraPairs {
+    final src = widget.item['extra'] ?? widget.item['attrs'];
+    if (src is! Map) return const [];
+    final out = <MapEntry<String, String>>[];
+    for (final e in src.entries) {
+      final v = '${e.value ?? ''}'.trim();
+      if (v.isEmpty || v == 'null') continue;
+      out.add(MapEntry('${e.key}', v));
+      if (out.length >= 12) break; // 再多就成报表了，列表里只展示前 12 条
+    }
+    return out;
+  }
+
+  bool extraOpen = false; // 自由字段是否展开
+
 
   /// 标签原文（引擎扩展字段；`tags` 是部分引擎的别名）。
   String get kindS =>
@@ -15072,6 +15120,94 @@ class _Ei extends State<EngineItemPage> {
                                                               .symmetric(
                                                               horizontal: 3)),
                                               ])),
+                                    // ★2026-10-16 评分 / 状态（引擎给哪个显示哪个）
+                                    if (scoreS.isNotEmpty || statusS.isNotEmpty)
+                                      Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Row(children: [
+                                            if (scoreS.isNotEmpty)
+                                              Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                      horizontal: 6, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                      color: Colors.amber
+                                                          .withValues(alpha: 0.15),
+                                                      borderRadius:
+                                                          BorderRadius.circular(4)),
+                                                  child: Row(mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                    const Icon(Icons.star_rounded,
+                                                        size: 11,
+                                                        color: Colors.amber),
+                                                    const SizedBox(width: 2),
+                                                    Text(scoreS,
+                                                        style: const TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w700,
+                                                            color: Colors.amber)),
+                                                  ])),
+                                            if (scoreS.isNotEmpty && statusS.isNotEmpty)
+                                              const SizedBox(width: 8),
+                                            if (statusS.isNotEmpty)
+                                              Text(statusS,
+                                                  style: const TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.blueAccent)),
+                                          ])),
+                                    // ★2026-10-16 地区 · 年份 · 更新时间（有哪项拼哪项）
+                                    if (metaLine.isNotEmpty)
+                                      Padding(
+                                          padding: const EdgeInsets.only(top: 3),
+                                          child: Text(metaLine,
+                                              style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  color: Colors.grey))),
+                                    // ★2026-10-16 引擎自由字段（extra）—— 不同模块有不同信息，
+                                    //   前端原样列出：以后新引擎塞什么新字段都不必改前端。
+                                    if (extraPairs.isNotEmpty) ...[
+                                      GestureDetector(
+                                          onTap: () => setState(
+                                              () => extraOpen = !extraOpen),
+                                          child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                  top: 4),
+                                              child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                        extraOpen
+                                                            ? '收起详情'
+                                                            : '更多详情 (${extraPairs.length})',
+                                                        style: const TextStyle(
+                                                            fontSize: 10.5,
+                                                            color:
+                                                                Colors.blueAccent)),
+                                                    Icon(
+                                                        extraOpen
+                                                            ? Icons.keyboard_arrow_up
+                                                            : Icons.keyboard_arrow_down,
+                                                        size: 13,
+                                                        color:
+                                                            Colors.blueAccent),
+                                                  ]))),
+                                      if (extraOpen)
+                                        Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 3),
+                                            child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  for (final e in extraPairs)
+                                                    Text(
+                                                        '${e.key}：${e.value}',
+                                                        style: const TextStyle(
+                                                            fontSize: 10.5,
+                                                            color: Colors.grey,
+                                                            height: 1.5)),
+                                                ])),
+                                    ],
                                     // ★4.51.0 来源行：此前只写"来自 <资料库名>"，把**源名**丢了；换源入口挂在同一行
                                     Padding(
                                         padding: const EdgeInsets.only(top: 6),
