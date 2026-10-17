@@ -149,6 +149,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
   @override void initState() { super.initState(); _boot();
+    // ★2026-10-17 对话头像开关（默认**关** —— 对齐 Kimi 的纯文字对话；设置里可打开）
+    SharedPreferences.getInstance().then((p) {
+      final v = p.getBool('ai_show_avatar') ?? false;
+      if (mounted && v != _showAvatar) setState(() => _showAvatar = v);
+    });
     _loadTtsLabel(); // 语音：把当前引擎名读出来显示，别让设置项写着"当前：…"
     TtsManager.autoRead().then((v) { if (mounted) setState(() => _autoRead = v); });
     _regSub = AiRegistry.onChange.listen((_) { if (mounted) setState(() {}); });
