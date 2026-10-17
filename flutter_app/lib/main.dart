@@ -29,6 +29,7 @@ import 'package:path_provider/path_provider.dart';
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
+import 'core/haptic.dart';
 import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
 import 'core/local_tools.dart';
@@ -270,6 +271,8 @@ Future<void> main() async {
   // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
   installAiStorePrefs();
   await AppSettings.init();
+  // ★2026-10-17：读触觉反馈开关（用户可关；所有震动走 Haptic 层）
+  unawaited(Haptic.init());
   // 报错中心: 全局捕获 Flutter 框架异常 → 日志中心（release 下灰屏类崩溃也能回看）
   FlutterError.onError = (d) {
     AppLog.error('Flutter 框架异常', err: d.exception, st: d.stack);
