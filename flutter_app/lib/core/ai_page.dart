@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'haptic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
@@ -165,7 +166,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     final (p, m) = await AiRegistry.lastModel(); // 与启动逻辑一致: 沿用上次用的模型
     setState(() { session = AiStore.create(p, m); _closeDrawerSilent(); });
     _refreshCapsule();
-    HapticFeedback.lightImpact();
+    Haptic.light();
   }
   Future<void> _boot() async {
     await AiStore.load();
@@ -202,8 +203,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     _animateDrawerTo(open);
   }
   void _animateDrawerTo(bool open) {
-    if (open && !_drawerOpen) HapticFeedback.mediumImpact(); // 滑出抽屉震动
-    if (!open && _drawerOpen) HapticFeedback.lightImpact(); // 收起轻震
+    if (open && !_drawerOpen) Haptic.medium(); // 滑出抽屉震动
+    if (!open && _drawerOpen) Haptic.light(); // 收起轻震
     _drawerOpen = open;
     final from = _drawerP;
     _drawerAnim.stop();
@@ -240,7 +241,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     return p.getString('ai_think_${session?.model}') ?? '标准';
   }
   void _quickSheet() {
-    HapticFeedback.selectionClick();
+    Haptic.tap();
     showModalBottomSheet(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) {
       return FutureBuilder<List<String>>(future: _quickModels(), builder: (_, snap) {
         final list = snap.data ?? (session == null ? <String>[] : ['${session!.providerId}|${session!.model}']);
