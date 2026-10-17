@@ -5581,7 +5581,7 @@ class _Nv extends State<NovelSection> {
                           EngineItemPage(type: 'novel', item: it)))),
           const ModuleSearchTab(tab: 1)
         ][sub]),
-      ]);
+      ]));
 }
 
 // 阅读历史(番茄式"历史"标签)
