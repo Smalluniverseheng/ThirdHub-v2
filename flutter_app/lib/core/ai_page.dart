@@ -747,7 +747,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 if (steps.isNotEmpty) _stepsCard(c, steps, !live || streaming.isNotEmpty || !sending),
                 if (live && streaming.isEmpty) const Padding(padding: EdgeInsets.all(8),
                   child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))
-                else row.children[2], // 气泡(不带重复头像)
+                // ★2026-10-18 修灰屏：原来写 row.children[2]，但无头像时 row 只有 1 个 child
+                //   → 取第 3 个越界 → 整个消息区渲染失败（灰屏）。直接引用 bubble 即可。
+                else bubble,
               ])) ]));
           }
           return Padding(
