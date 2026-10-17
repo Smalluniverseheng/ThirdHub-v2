@@ -6596,13 +6596,42 @@ class ComicSection extends StatefulWidget {
 }
 
 class _Cs extends State<ComicSection> {
+  /// 模块抽屉（左上角按钮 / 边缘右滑拉出）
+  final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
   int sub = EngineDirect.connected ? 2 : 0;
   @override
-  Widget build(BuildContext c) => Column(children: [
+  Widget build(BuildContext c) => ModuleDrawerHost(
+        key: _dk,
+        moduleTitle: '漫画',
+        moduleIcon: Icons.auto_stories_outlined,
+        currentTab: sub,
+        actions: [
+          ModuleAction(Icons.library_books_outlined, '书架', sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
+          ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
+          ModuleAction(Icons.explore_outlined, '发现', sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
+          ModuleAction(Icons.search, '搜索', sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+        ],
+        settings: [
+          ModuleDrawerSwitch(
+            title: '震动反馈',
+            sub: '关掉后所有震动静音',
+            value: Haptic.enabled,
+            onChanged: (v) async {
+              await Haptic.setEnabled(v);
+              setState(() {});
+            },
+          ),
+        ],
+        child: Column(children: [
         Row(children: [
-          const SizedBox(width: 40),
+          SizedBox(
+              width: 40,
+              child: IconButton(
+                  icon: const Icon(Icons.menu, size: 20),
+                  tooltip: '快捷面板',
+                  onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
                   child: SegmentedButton<int>(segments: [
@@ -6644,7 +6673,7 @@ class _Cs extends State<ComicSection> {
                           EngineItemPage(type: 'comic', item: it)))),
           const ModuleSearchTab(tab: 2)
         ][sub]),
-      ]);
+      ]));
 }
 
 class ComicSearchResults extends StatefulWidget {
@@ -7028,13 +7057,42 @@ class MusicSection extends StatefulWidget {
 }
 
 class _Ms extends State<MusicSection> {
+  /// 模块抽屉（左上角按钮 / 边缘右滑拉出）
+  final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
   int sub = EngineDirect.connected ? 2 : 0;
   @override
-  Widget build(BuildContext c) => Column(children: [
+  Widget build(BuildContext c) => ModuleDrawerHost(
+        key: _dk,
+        moduleTitle: '音乐',
+        moduleIcon: Icons.music_note_outlined,
+        currentTab: sub,
+        actions: [
+          ModuleAction(Icons.queue_music, '歌单', sub: '我的收藏', onTap: () => setState(() => sub = 0)),
+          ModuleAction(Icons.history, '历史', sub: '最近听过', onTap: () => setState(() => sub = 1)),
+          ModuleAction(Icons.explore_outlined, '发现', sub: '榜单与推荐', onTap: () => setState(() => sub = 2)),
+          ModuleAction(Icons.search, '搜索', sub: '跨平台检索', onTap: () => setState(() => sub = 3)),
+        ],
+        settings: [
+          ModuleDrawerSwitch(
+            title: '震动反馈',
+            sub: '关掉后所有震动静音',
+            value: Haptic.enabled,
+            onChanged: (v) async {
+              await Haptic.setEnabled(v);
+              setState(() {});
+            },
+          ),
+        ],
+        child: Column(children: [
         Row(children: [
-          const SizedBox(width: 40),
+          SizedBox(
+              width: 40,
+              child: IconButton(
+                  icon: const Icon(Icons.menu, size: 20),
+                  tooltip: '快捷面板',
+                  onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
                   child: SegmentedButton<int>(segments: [
@@ -7070,7 +7128,7 @@ class _Ms extends State<MusicSection> {
                           EngineItemPage(type: 'music', item: it)))),
           const ModuleSearchTab(tab: 4)
         ][sub]),
-      ]);
+      ]));
 }
 
 class _MusicPlaylist extends StatefulWidget {
