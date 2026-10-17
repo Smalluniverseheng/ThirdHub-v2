@@ -748,8 +748,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 if (live && streaming.isEmpty) const Padding(padding: EdgeInsets.all(8),
                   child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))
                 // ★2026-10-18 修灰屏：原来写 row.children[2]，但无头像时 row 只有 1 个 child
-                //   → 取第 3 个越界 → 整个消息区渲染失败（灰屏）。直接引用 bubble 即可。
-                else bubble,
+                //   → 取第 3 个越界 → 整块消息区渲染失败（release 下就是一片灰）。
+                else bubble, // 气泡（直接引用，不再从 row.children 取）
               ])) ]));
           }
           return Padding(
