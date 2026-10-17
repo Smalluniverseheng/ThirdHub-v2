@@ -129,6 +129,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   final input = TextEditingController(); final scroll = ScrollController();
   bool pinned = false; // 上拉钉住(回到底部按钮)
   // 抽屉状态
+  /// 头像开关（默认关 —— Kimi 的对话里不显示头像，纯文字更省空间）
+  /// 「我的 → 高级播放设置 → 通用 → 显示对话头像」可打开。
+  bool _showAvatar = false;
+
   double _drawerP = 0; bool _drawerOpen = false; String _drawerTab = 'history'; String _drawerFilter = 'all'; String _historyQuery = '';
   String _rankCat = 'overall'; bool _webSearchOn = false; bool _mcpOn = true;
   // 语音输入(Kimi 同款: 点麦克风切语音条, 长按说话转文字, 点键盘切回)
@@ -698,19 +702,30 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           final me = m['role'] == 'user';
           final accent = Theme.of(c).colorScheme.primary;
           final dark = Theme.of(c).brightness == Brightness.dark;
+          // ★2026-10-17 对齐 Kimi：用户是**小圆角浅灰气泡**（无头像），
+          //   助手是**无气泡的正文文字**（左右只留页面 padding）——
+          //   这正是"人家的空间利用那么好"的来源：头像和卡片边距全都不占地方了。
           final bubble = GestureDetector(onLongPress: () => _msgActions(c, m['content'] ?? ''),
-            child: Container(margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(c).size.width * 0.76),
-              decoration: BoxDecoration(
-                gradient: me ? LinearGradient(colors: [accent, accent.withValues(alpha: 0.78)]) : null,
-                color: me ? null : (dark ? const Color(0xFF1E2230) : Colors.white),
-                border: me ? null : Border.all(color: dark ? Colors.white10 : const Color(0xFFE8E6F0)),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
-                borderRadius: BorderRadius.only(topLeft: const Radius.circular(16), topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(me ? 16 : 4), bottomRight: Radius.circular(me ? 4 : 16))),
+            child: Container(
+              margin: EdgeInsets.only(
+                  left: me ? 56 : 0, right: me ? 0 : 0, top: 3, bottom: 3),
+              padding: me
+                  ? const EdgeInsets.symmetric(horizontal: 14, vertical: 9)
+                  : EdgeInsets.zero,
+              constraints: me
+                  ? BoxConstraints(maxWidth: MediaQuery.of(c).size.width * 0.76)
+                  : const BoxConstraints(),
+              decoration: me
+                  ? BoxDecoration(
+                      color: dark ? const Color(0xFF2A2D38) : const Color(0xFFF2F2F5),
+                      borderRadius: BorderRadius.circular(18))
+                  : null,
               child: me
-                ? Text(m['content'] ?? '', style: const TextStyle(fontSize: 14, height: 1.6, color: Colors.white))
+                ? Text(m['content'] ?? '',
+                    style: TextStyle(
+                        fontSize: 15,
+                        height: 1.5,
+                        color: dark ? const Color(0xFFE6E6EE) : const Color(0xE6000000)))
                 // 助手消息走真 Markdown 渲染(表格/代码块/标题/列表全量), 长按仍可复制原文
                 : MarkdownBody(data: m['content'] ?? '', selectable: true, styleSheet: _mdStyle(c),
                     // ★2026-10-17 对齐 Kimi：代码块带语言/复制/折叠/横滚，表格宽表横滚
@@ -737,16 +752,20 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
             child: Icon(me ? Icons.person_outline : Icons.smart_toy_outlined, size: 15,
               color: me ? accent : const Color(0xFF7C6CFF)));
+          // 有头像时才排头像；默认（Kimi 风格）单列、左右顶满
           final row = Row(
             mainAxisAlignment: me ? MainAxisAlignment.end : MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start, children: me
-              ? [Flexible(child: bubble), const SizedBox(width: 8), avatar]
-              : [avatar, const SizedBox(width: 8), Flexible(child: bubble)]);
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: !_showAvatar
+                ? [Expanded(child: bubble)]
+                : (me
+                    ? [Flexible(child: bubble), const SizedBox(width: 8), avatar]
+                    : [avatar, const SizedBox(width: 8), Flexible(child: bubble)]));
           // 助手消息: 思考链 + 工具步骤卡片在气泡上方(Kimi 同款)
           if (!me && (reasoning.isNotEmpty || steps.isNotEmpty)) {
             return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(
               crossAxisAlignment: CrossAxisAlignment.start, children: [
-              avatar, const SizedBox(width: 8),
+              if (_showAvatar) ...[avatar, const SizedBox(width: 8)],
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 if (reasoning.isNotEmpty) _thinkingCard(c, reasoning, !live || streaming.isNotEmpty || !sending),
                 if (steps.isNotEmpty) _stepsCard(c, steps, !live || streaming.isNotEmpty || !sending),
@@ -755,7 +774,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 else row.children[2], // 气泡(不带重复头像)
               ])) ]));
           }
-          return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: row);
+          return Padding(
+              padding: EdgeInsets.symmetric(
+                  vertical: 2, horizontal: _showAvatar ? 8 : 0),
+              child: row);
         }),
       if (pinned) Positioned(right: 16, bottom: 12, child: FloatingActionButton.small(
         onPressed: () { setState(() => pinned = false); _jumpBottom(); },
