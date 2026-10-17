@@ -121,15 +121,19 @@ class ModuleDrawerHostState extends State<ModuleDrawerHost>
         left: 0, top: 0, bottom: 0, width: 36,
         child: _p > 0
             ? const SizedBox.shrink()
-            : GestureDetector(
+            // ★统一口径：与 AI 抽屉同一个识别器（12px + 垂直 1.5 倍判定）
+            : RawGestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onHorizontalDragStart: (_) { _cum = 0; },
-                onHorizontalDragUpdate: (d) {
-                  _cum += d.delta.dx;
-                  if (_cum > 0) _applyDrag(_cum);
+                gestures: {
+                  EdgeSwipeRecognizer:
+                      GestureRecognizerFactoryWithHandlers<EdgeSwipeRecognizer>(
+                    () => EdgeSwipeRecognizer(),
+                    (r) {
+                      r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
+                      r.onEnd = (dx, vx) { if (dx > 0) _settle(dx, vx); };
+                    },
+                  ),
                 },
-                onHorizontalDragEnd: (d) =>
-                    _settle(0, d.velocity.pixelsPerSecond.dx),
                 child: const SizedBox.expand(),
               ),
       ),
@@ -323,4 +327,85 @@ class ModuleDrawerSwitch extends StatelessWidget {
       },
     );
   }
+}
+
+/// 横向滑动识别器（全 App 统一口径，2026-10-17）。
+///
+/// 判定：水平位移 > 12px 且 > 垂直位移的 1.5 倍才认领手势。
+/// 竖向滚动、左滑、轻微斜划都会主动放弃 —— 这是「既不迟钝也不误触」的那条线。
+///
+/// 为什么不用标准 GestureDetector.onHorizontalDrag：它只要水平位移超过
+/// 系统 touch slop 就认，不看垂直分量 —— 用户手指斜着划列表就会被误判成
+/// 「要开抽屉」。这是「有的太灵敏」的来源（AI 页用严格判定、模块页用宽松判定，
+/// 两处不一致，用户手感自然时好时坏）。
+class EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
+  double sx = 0;
+  double sy = 0;
+  bool active = false;
+  bool claimed = false;
+  final List<(int, double)> trail = []; // (毫秒, 累计 dx) 速度估计
+
+  void Function(double dx)? onUpdate;
+  void Function(double dx, double vx)? onEnd;
+
+  @override
+  String get debugDescription => 'horizontalSwipe';
+
+  @override
+  void addAllowedPointer(PointerDownEvent e) {
+    sx = e.position.dx;
+    sy = e.position.dy;
+    active = true;
+    claimed = false;
+    trail.clear();
+    startTrackingPointer(e.pointer);
+  }
+
+  @override
+  void handleEvent(PointerEvent e) {
+    if (!active) return;
+    if (e is PointerMoveEvent) {
+      final dx = e.position.dx - sx;
+      final dy = e.position.dy - sy;
+      if (!claimed) {
+        if (dx > 12 && dx > dy.abs() * 1.5) {
+          claimed = true;
+          resolve(GestureDisposition.accepted);
+        } else if (dy.abs() > 12 || dx < -8) {
+          // 竖向滚动 或 左滑 → 放弃（绝不抢列表）
+          active = false;
+          stopTrackingPointer(e.pointer);
+          return;
+        } else {
+          return;
+        }
+      }
+      trail.add((e.timeStamp.inMilliseconds, dx));
+      onUpdate?.call(dx); // ★传**总位移**（调用方按「起点 + 总位移」算进度）
+    } else if (e is PointerUpEvent || e is PointerCancelEvent) {
+      final vx = _velocity();
+      active = false;
+      stopTrackingPointer(e.pointer);
+      onEnd?.call(e.position.dx - sx, vx);
+    }
+  }
+
+  /// 用最近 120ms 的轨迹估速度（px/s）。
+  double _velocity() {
+    if (trail.length < 2) return 0;
+    final last = trail.last;
+    var first = trail.first;
+    for (final x in trail) {
+      if (last.$1 - x.$1 <= 120) {
+        first = x;
+        break;
+      }
+    }
+    final dt = (last.$1 - first.$1).toDouble();
+    if (dt <= 0) return 0;
+    return (last.$2 - first.$2) / dt * 1000;
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
 }
