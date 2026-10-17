@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.77.0+50655
+version: 4.74.0+50651
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -33,6 +33,8 @@ dependencies:
   just_audio_background: ^0.0.1-beta.13
   flutter_local_notifications: ^17.2.3
   flutter_markdown: ^0.7.4
+  # ★2026-10-17 LaTeX 公式渲染（Kimi 同款能力）：flutter_markdown 的官方扩展
+  flutter_markdown_latex: ^0.3.4
   speech_to_text: ^7.0.0
   qr_flutter: ^4.1.0
   record: ^6.0.0
