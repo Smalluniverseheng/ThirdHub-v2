@@ -79,6 +79,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
   int _cacheMinutes = 30;
 
   bool _haptic = true;
+  bool _aiAvatar = false;
   bool _ready = false;
 
   @override
@@ -126,6 +127,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
       _pauseOnCall = _p.getBool('play_pause_on_call') ?? true;
       _cacheMinutes = _p.getInt('play_cache_minutes') ?? 30;
       _haptic = _p.getBool('haptic_on') ?? true;
+      _aiAvatar = _p.getBool('ai_show_avatar') ?? false;
       _ready = true;
     });
   }
@@ -275,6 +277,19 @@ class _AdvState extends State<AdvancedPlaybackPage> {
             onChanged: (v) async {
               setState(() => _haptic = v);
               await Haptic.setEnabled(v);
+            },
+          ),
+          // ★2026-10-17 对话头像开关（默认关 —— 对齐 Kimi 的纯文字对话，省空间）
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('显示对话头像', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('默认不显示（纯文字更省空间）；想看到头像就打开',
+                style: TextStyle(fontSize: 11.5, color: Colors.grey)),
+            value: _aiAvatar,
+            onChanged: (v) async {
+              setState(() => _aiAvatar = v);
+              await _p.setBool('ai_show_avatar', v);
             },
           ),
           const SizedBox(height: 12),
