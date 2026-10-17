@@ -81,6 +81,7 @@ import 'core/browser_page.dart';
 import 'core/notify.dart';
 import 'core/engine_direct.dart';
 import 'core/engine_direct_page.dart';
+import 'core/module_drawer.dart';
 import 'core/gallery_page.dart';
 import 'core/files_page.dart';
 import 'core/feedback_page.dart';
@@ -5515,13 +5516,46 @@ class NovelSection extends StatefulWidget {
 }
 
 class _Nv extends State<NovelSection> {
+  /// 模块抽屉（左上角按钮 / 边缘右滑拉出）
+  final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
   int sub = EngineDirect.connected ? 2 : 0;
   @override
-  Widget build(BuildContext c) => Column(children: [
+  Widget build(BuildContext c) => ModuleDrawerHost(
+        key: _dk,
+        moduleTitle: '小说',
+        moduleIcon: Icons.menu_book_outlined,
+        currentTab: sub,
+        actions: [
+          ModuleAction(Icons.library_books_outlined, '书架',
+              sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
+          ModuleAction(Icons.history, '历史',
+              sub: '最近读过', onTap: () => setState(() => sub = 1)),
+          ModuleAction(Icons.explore_outlined, '发现',
+              sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
+          ModuleAction(Icons.search, '搜索',
+              sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+        ],
+        settings: [
+          ModuleDrawerSwitch(
+            title: '震动反馈',
+            sub: '关掉后所有震动静音',
+            value: Haptic.enabled,
+            onChanged: (v) async {
+              await Haptic.setEnabled(v);
+              setState(() {});
+            },
+          ),
+        ],
+        child: Column(children: [
         Row(children: [
-          const SizedBox(width: 40),
+          SizedBox(
+              width: 40,
+              child: IconButton(
+                  icon: const Icon(Icons.menu, size: 20),
+                  tooltip: '快捷面板',
+                  onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
                   child: SegmentedButton<int>(segments: [
