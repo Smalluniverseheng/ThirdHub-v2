@@ -27,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_widgets.dart';
 import 'pro_kit.dart';
+import 'haptic.dart';
 
 class AdvancedPlaybackPage extends StatefulWidget {
   const AdvancedPlaybackPage({super.key});
@@ -77,6 +78,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
   bool _pauseOnCall = true;
   int _cacheMinutes = 30;
 
+  bool _haptic = true;
   bool _ready = false;
 
   @override
@@ -123,6 +125,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
       _bgAudio = _p.getBool('play_background_audio') ?? false;
       _pauseOnCall = _p.getBool('play_pause_on_call') ?? true;
       _cacheMinutes = _p.getInt('play_cache_minutes') ?? 30;
+      _haptic = _p.getBool('haptic_on') ?? true;
       _ready = true;
     });
   }
@@ -259,6 +262,22 @@ class _AdvState extends State<AdvancedPlaybackPage> {
           _slider('弹幕不透明度', _danmakuOpacity, 0.1, 1, 0.1, (v) => _danmakuOpacity = v, 'play_danmaku_opacity'),
           const SizedBox(height: 12),
 
+          _group('通用'),
+          // ★2026-10-17 触觉反馈开关（用户要求「搞震动反馈但要有开关键」）——
+          //   所有震动统一走 core/haptic.dart，关掉即全静音（连 AI 抽屉的震动一起关）。
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('震动反馈', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('按钮点击 / 滑出面板时的轻震；关闭后完全静音',
+                style: TextStyle(fontSize: 11.5, color: Colors.grey)),
+            value: _haptic,
+            onChanged: (v) async {
+              setState(() => _haptic = v);
+              await Haptic.setEnabled(v);
+            },
+          ),
+          const SizedBox(height: 12),
           _group('高级'),
           _switch('硬件解码', _hwDecode, 'play_hardware_decode',
               hint: '关闭可排查画面异常；老机型建议关闭'),
