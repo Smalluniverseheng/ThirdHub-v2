@@ -14,6 +14,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'haptic.dart';
 
 import 'design_tokens.dart';
 
@@ -103,13 +104,13 @@ class _AppCardState extends State<AppCard> {
         onTap: widget.onTap == null
             ? null
             : () {
-                HapticFeedback.selectionClick();
+                Haptic.tap();
                 widget.onTap!();
               },
         onLongPress: widget.onLongPress == null
             ? null
             : () {
-                HapticFeedback.mediumImpact();
+                Haptic.medium();
                 widget.onLongPress!();
               },
         child: AnimatedScale(
@@ -290,7 +291,7 @@ class _PrimaryActionState extends State<PrimaryAction> {
       onTap: dis
           ? null
           : () {
-              HapticFeedback.mediumImpact();
+              Haptic.medium();
               widget.onPressed!();
             },
       child: AnimatedContainer(
@@ -333,7 +334,7 @@ class AppChip extends StatelessWidget {
       onTap: onTap == null
           ? null
           : () {
-              HapticFeedback.selectionClick();
+              Haptic.tap();
               onTap!();
             },
       child: AnimatedContainer(
@@ -450,7 +451,7 @@ class SpringSegments<T> extends StatelessWidget {
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        Haptic.tap();
                         onChanged(values[i]);
                       },
                       child: Center(
