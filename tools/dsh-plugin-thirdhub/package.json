@@ -1,0 +1,26 @@
+{
+  "name": "dsh-plugin-thirdhub",
+  "version": "0.1.0",
+  "description": "ThirdHub 桥接插件 —— 让手机上的 ThirdHub App 通过账号自动发现并连接本机 DSH",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "thirdhub"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
