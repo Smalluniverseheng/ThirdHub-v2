@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'haptic.dart';
+import 'markdown_extras.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
@@ -710,6 +711,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 ? Text(m['content'] ?? '', style: const TextStyle(fontSize: 14, height: 1.6, color: Colors.white))
                 // 助手消息走真 Markdown 渲染(表格/代码块/标题/列表全量), 长按仍可复制原文
                 : MarkdownBody(data: m['content'] ?? '', selectable: true, styleSheet: _mdStyle(c),
+                    // ★2026-10-17 对齐 Kimi：代码块带语言/复制/折叠/横滚，表格宽表横滚
+                    builders: {
+                      'pre': CodeBlockBuilder(accent: Theme.of(c).colorScheme.primary),
+                      'table': TableBuilder(accent: Theme.of(c).colorScheme.primary),
+                    },
                     onTapLink: (t, h, _) { if (h != null) launchUrl(Uri.parse(h), mode: LaunchMode.externalApplication); })));
           final avatar = CircleAvatar(radius: 14,
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
