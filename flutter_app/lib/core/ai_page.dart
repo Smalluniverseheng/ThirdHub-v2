@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'haptic.dart';
 import 'markdown_extras.dart';
+import 'module_drawer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
@@ -32,52 +33,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
-class _EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
-  double sx = 0; double sy = 0; bool active = false; bool claimed = false;
-  final List<(int, double)> _trail = []; // (毫秒, dx) 速度估计
-  void Function(double dx)? onUpdate; void Function(double dx, double vx)? onEnd;
-  @override String get debugDescription => 'edgeSwipe';
-  @override void addAllowedPointer(PointerDownEvent e) {
-    sx = e.position.dx; sy = e.position.dy; active = true; claimed = false;
-    startTrackingPointer(e.pointer);
-  }
-  @override void handleEvent(PointerEvent e) {
-    if (!active) return;
-    if (e is PointerMoveEvent) {
-      final dx = e.position.dx - sx, dy = e.position.dy - sy;
-      if (!claimed) {
-        // 明确的横向右滑意图才认领(阈值12px且水平位移大于垂直), 避免误触/列表滚动误开抽屉
-        if (dx > 12 && dx > dy.abs() * 1.5) { claimed = true; resolve(GestureDisposition.accepted); }
-        else if (dy.abs() > 12 || dx < -8) { // 垂直滚动或左滑 → 放弃
-          active = false; stopTrackingPointer(e.pointer); return;
-        } else { return; }
-      }
-      _trail.add((e.timeStamp.inMilliseconds, dx));
-      if (_trail.length > 8) _trail.removeAt(0);
-      onUpdate?.call(dx);
-    }
-    if (e is PointerUpEvent || e is PointerCancelEvent) {
-      final wasClaimed = claimed; final dx = e.position.dx - sx;
-      // 用最近 100ms 的位移估算甩动速度(px/s), 提供惯性判定
-      double vx = 0;
-      if (_trail.length >= 2) {
-        final now = e.timeStamp.inMilliseconds;
-        final old = _trail.firstWhere((t) => now - t.$1 <= 100, orElse: () => _trail.first);
-        final dt = now - old.$1;
-        if (dt > 0) vx = (dx - old.$2) / dt * 1000;
-      }
-      _trail.clear();
-      active = false; claimed = false; stopTrackingPointer(e.pointer);
-      if (wasClaimed) onEnd?.call(e is PointerUpEvent ? dx : 0, vx);
-    }
-  }
-  @override void didStopTrackingLastPointer(int pointer) {}
-}
-// 非对话模型过滤(与网站 NON_CHAT_RE 一致)
-final _nonChatRe = RegExp(r'embed|whisper|tts|transcri|speech|audio|dall-e|image|imagen|moderation|rerank|babbage|davinci|clip|sora|veo|wanx|cogview|cogvideo|kolors|stable-diffusion|seedream|seedance|hailuo|sensemirage', caseSensitive: false);
-// 音频模型(语音合成/音乐生成)与识别模型(语音识别/转写)分类
-final _audioRe = RegExp(r'tts|speech|audio|voice|sound|music|suno|udio|song|melo', caseSensitive: false);
-final _recogRe = RegExp(r'whisper|transcri|asr|sensevoice|recogn|paraformer|funasr', caseSensitive: false);
+// ★2026-10-17 识别器已提取到 module_drawer.dart（与模块抽屉共用同一口径）
 
 class AiSession {
   String id, title, providerId, model; String? agentId;
@@ -569,11 +525,11 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           child: _drawer(c, dark)))),
       // 边缘热区: 按下即抢占(网站30px), 关闭态右滑开抽屉
       // ★2026-10-17 用户要求「这个页面的任意位置都能左右滑」：从左侧 36px 热区
-      //   扩到**整页**。安全性由 _EdgeSwipeRecognizer 自己保证 —— 它只在
+      //   扩到**整页**。安全性由 EdgeSwipeRecognizer 自己保证 —— 它只在
       //   「水平位移 >12px 且 > 垂直位移×1.5」时才认领手势，竖向滚动/左滑会主动放弃。
       if (!_drawerOpen) Positioned.fill(
-        child: RawGestureDetector(gestures: { _EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<_EdgeSwipeRecognizer>(
-          () => _EdgeSwipeRecognizer(),
+        child: RawGestureDetector(gestures: { EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<EdgeSwipeRecognizer>(
+          () => EdgeSwipeRecognizer(),
           (r) { r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
                 r.onEnd = (dx, vx) { if (dx > 0) _settleDrag(dx, vx); }; }) },
           child: Container(color: Colors.transparent))),
