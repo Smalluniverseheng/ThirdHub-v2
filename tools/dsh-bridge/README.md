@@ -1,3 +1,10 @@
+# ⚠️ 已被插件版取代（2026-10-17）
+
+**请改用 [](../dsh-plugin-thirdhub/README.md)** —— 那是一个标准的 DSH 插件（cordis bundle），随 DSH 进程启停、卸载自动清理。
+本目录的独立脚本保留仅供参考，不建议再用（它需要在 DSH 之外单独跑一个进程）。
+
+---
+
 # DSH ⟷ ThirdHub 桥接
 
 把电脑上的 **DSH（DeepSeek Harness）** 接进 ThirdHub 的「端间互通」——
