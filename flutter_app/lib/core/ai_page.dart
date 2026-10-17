@@ -35,6 +35,12 @@ import 'package:url_launcher/url_launcher.dart';
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
 // ★2026-10-17 识别器已提取到 module_drawer.dart（与模块抽屉共用同一口径）
 
+// 非对话模型过滤(与网站 NON_CHAT_RE 一致)
+final _nonChatRe = RegExp(r'embed|whisper|tts|transcri|speech|audio|dall-e|image|imagen|moderation|rerank|babbage|davinci|clip|sora|veo|wanx|cogview|cogvideo|kolors|stable-diffusion|seedream|seedance|hailuo|sensemirage', caseSensitive: false);
+// 音频模型(语音合成/音乐生成)与识别模型(语音识别/转写)分类
+final _audioRe = RegExp(r'tts|speech|audio|voice|sound|music|suno|udio|song|melo', caseSensitive: false);
+final _recogRe = RegExp(r'whisper|transcri|asr|sensevoice|recogn|paraformer|funasr', caseSensitive: false);
+
 class AiSession {
   String id, title, providerId, model; String? agentId;
   List<Map<String, String>> messages;
