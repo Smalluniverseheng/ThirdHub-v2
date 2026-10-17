@@ -5536,6 +5536,10 @@ class _Nv extends State<NovelSection> {
               sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
           ModuleAction(Icons.search, '搜索',
               sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+          ModuleAction(Icons.folder_special_outlined, '本地库',
+              sub: '离线内容 · 存储占用',
+              onTap: () => Navigator.push(c,
+                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
         ],
         settings: [
           ModuleDrawerSwitch(
@@ -6612,6 +6616,10 @@ class _Cs extends State<ComicSection> {
           ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
           ModuleAction(Icons.explore_outlined, '发现', sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
           ModuleAction(Icons.search, '搜索', sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+          ModuleAction(Icons.folder_special_outlined, '本地库',
+              sub: '离线内容 · 存储占用',
+              onTap: () => Navigator.push(c,
+                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
         ],
         settings: [
           ModuleDrawerSwitch(
@@ -7073,6 +7081,10 @@ class _Ms extends State<MusicSection> {
           ModuleAction(Icons.history, '历史', sub: '最近听过', onTap: () => setState(() => sub = 1)),
           ModuleAction(Icons.explore_outlined, '发现', sub: '榜单与推荐', onTap: () => setState(() => sub = 2)),
           ModuleAction(Icons.search, '搜索', sub: '跨平台检索', onTap: () => setState(() => sub = 3)),
+          ModuleAction(Icons.folder_special_outlined, '本地库',
+              sub: '离线内容 · 存储占用',
+              onTap: () => Navigator.push(c,
+                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
         ],
         settings: [
           ModuleDrawerSwitch(
@@ -8212,6 +8224,10 @@ class _Vs extends State<VideoSection> {
           ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
           if (thirdParty) ModuleAction(Icons.explore_outlined, '发现', sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
           if (thirdParty) ModuleAction(Icons.search, '搜索', sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
+          ModuleAction(Icons.folder_special_outlined, '本地库',
+              sub: '离线内容 · 存储占用',
+              onTap: () => Navigator.push(c,
+                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
         ],
         settings: [
           ModuleDrawerSwitch(
