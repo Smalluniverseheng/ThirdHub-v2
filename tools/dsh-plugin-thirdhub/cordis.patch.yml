@@ -1,0 +1,27 @@
+# dsh-plugin-thirdhub —— bundle patch
+#
+# 这一层由 DSH 在加载本包时应用（package.json 的 dsh.bundle.patch 指向本文件）。
+# 作用：把 thirdhub-bridge 插进 composition。
+#
+# ★配置改哪里：
+#   本文件是**包的默认层**（随升级被覆盖）。你的账号密码请写进
+#   profile 级的 patch（`~/.dsh/profiles/<profile>/cordis.patch.yml`），
+#   按 id 覆盖 —— 这样升级插件不会弄丢配置：
+#
+#     - id: thirdhub-bridge
+#       config:
+#         account: 你的账号
+#         password: 你的密码
+#
+#   可覆盖项：hubUrl / account / password / name / lanUrl / dshPort / intervalMs
+- insert:
+    - id: thirdhub-bridge
+      name: dsh-plugin-thirdhub
+      config:
+        hubUrl: http://127.0.0.1:9527
+        account: ''
+        password: ''
+        # name: 我的电脑        # 不填则取主机名
+        # lanUrl: http://192.168.1.5:3080   # 不填则自动探测本机 IPv4
+        # dshPort: 3080
+        # intervalMs: 30000
