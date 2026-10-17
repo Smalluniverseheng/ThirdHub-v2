@@ -563,7 +563,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           onHorizontalDragEnd: _drawerOpen ? (d) { _settleDrag(_cum, d.velocity.pixelsPerSecond.dx); } : null,
           child: _drawer(c, dark)))),
       // 边缘热区: 按下即抢占(网站30px), 关闭态右滑开抽屉
-      if (!_drawerOpen) Positioned(left: 0, top: 0, bottom: 0, width: 36,
+      // ★2026-10-17 用户要求「这个页面的任意位置都能左右滑」：从左侧 36px 热区
+      //   扩到**整页**。安全性由 _EdgeSwipeRecognizer 自己保证 —— 它只在
+      //   「水平位移 >12px 且 > 垂直位移×1.5」时才认领手势，竖向滚动/左滑会主动放弃。
+      if (!_drawerOpen) Positioned.fill(
         child: RawGestureDetector(gestures: { _EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<_EdgeSwipeRecognizer>(
           () => _EdgeSwipeRecognizer(),
           (r) { r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
