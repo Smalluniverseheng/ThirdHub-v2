@@ -8171,6 +8171,8 @@ class VideoSection extends StatefulWidget {
 }
 
 class _Vs extends State<VideoSection> {
+  /// 模块抽屉（左上角按钮 / 边缘右滑拉出）
+  final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
   int sub = EngineDirect.connected ? 2 : 0;
@@ -8200,9 +8202,36 @@ class _Vs extends State<VideoSection> {
       if (thirdParty) ButtonSegment(value: 3, label: segLabel('搜索')),
     ];
     final cur = sub.clamp(0, pages.length - 1);
-    return Column(children: [
+    return ModuleDrawerHost(
+        key: _dk,
+        moduleTitle: '影视',
+        moduleIcon: Icons.movie_outlined,
+        currentTab: cur,
+        actions: [
+          ModuleAction(Icons.video_library_outlined, '片库', sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
+          ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
+          if (thirdParty) ModuleAction(Icons.explore_outlined, '发现', sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
+          if (thirdParty) ModuleAction(Icons.search, '搜索', sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
+        ],
+        settings: [
+          ModuleDrawerSwitch(
+            title: '震动反馈',
+            sub: '关掉后所有震动静音',
+            value: Haptic.enabled,
+            onChanged: (v) async {
+              await Haptic.setEnabled(v);
+              setState(() {});
+            },
+          ),
+        ],
+        child: Column(children: [
       Row(children: [
-        const SizedBox(width: 40),
+        SizedBox(
+            width: 40,
+            child: IconButton(
+                icon: const Icon(Icons.menu, size: 20),
+                tooltip: '快捷面板',
+                onPressed: () => _dk.currentState?.animateTo(true))),
         Expanded(
             child: Center(
                 child: SegmentedButton<int>(
@@ -8215,7 +8244,7 @@ class _Vs extends State<VideoSection> {
         SizedBox(width: 40, child: modMenuBtn(c))
       ]),
       Expanded(child: pages[cur]),
-    ]);
+    ]));
   }
 }
 
