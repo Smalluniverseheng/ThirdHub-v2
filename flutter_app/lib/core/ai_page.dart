@@ -26,6 +26,8 @@ import 'tts.dart';
 import 'tts_settings_page.dart';
 import 'ui_icons.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -715,7 +717,21 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                     builders: {
                       'pre': CodeBlockBuilder(accent: Theme.of(c).colorScheme.primary),
                       'table': TableBuilder(accent: Theme.of(c).colorScheme.primary),
+                      // ★2026-10-17 LaTeX 公式（Kimi 同款）：$…$ 行内 / $…$ 块级
+                      'latex': LatexElementBuilder(
+                        textStyle: TextStyle(
+                            fontSize: 15.5,
+                            color: Theme.of(c).brightness == Brightness.dark
+                                ? const Color(0xFFE6E6EE)
+                                : const Color(0xE6000000)),
+                      ),
                     },
+                    // ★必须**追加**到 gitHubWeb 之后：ExtensionSet 是整体替换，
+                    //   直接 new 一个空的会丢掉 GFM（表格/删除线/任务列表全废）。
+                    extensionSet: md.ExtensionSet(
+                      [...md.ExtensionSet.gitHubWeb.blockSyntaxes, LatexBlockSyntax()],
+                      [...md.ExtensionSet.gitHubWeb.inlineSyntaxes, LatexInlineSyntax()],
+                    ),
                     onTapLink: (t, h, _) { if (h != null) launchUrl(Uri.parse(h), mode: LaunchMode.externalApplication); })));
           final avatar = CircleAvatar(radius: 14,
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
