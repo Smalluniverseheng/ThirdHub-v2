@@ -742,25 +742,75 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   }
 
   // Markdown 样式表(助手消息): 表格边框/代码块/引用条/标题层级, 深浅色自适应
+  /// Markdown 样式（★2026-10-17 按 Kimi 官网的设计 token 对齐）
+  ///
+  /// 数据来源：kimi.com 的 CSS 变量（设计层逆向，非代码复制）——
+  ///   H1 22 / H2 20 / H3 18 / 正文 16 / 代码块 14 / 行内代码 16（px）。
+  /// 手机屏等比收一档（正文 15.5、标题 21/19/17），保证一行字数不挤。
+  /// 代码块圆角 12（Kimi 的输入框 24、按钮 8，这里取中间偏大的 12 更贴观感）。
+  Color _mdFg(BuildContext c) => Theme.of(c).brightness == Brightness.dark
+      ? const Color(0xFFE6E6EE)
+      : const Color(0xE6000000); // 0.9 黑，同 Kimi
+
   MarkdownStyleSheet _mdStyle(BuildContext c) {
     final dark = Theme.of(c).brightness == Brightness.dark;
-    final base = Theme.of(c).textTheme.bodyMedium ?? const TextStyle();
+    final base = (Theme.of(c).textTheme.bodyMedium ?? const TextStyle())
+        .copyWith(letterSpacing: 0.1);
+    final accent = Theme.of(c).colorScheme.primary;
     return MarkdownStyleSheet(
-      p: base.copyWith(fontSize: 14, height: 1.6, color: dark ? const Color(0xFFE6E6EE) : null),
-      h1: base.copyWith(fontSize: 19, fontWeight: FontWeight.w700),
-      h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
-      h3: base.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
-      code: base.copyWith(fontFamily: 'monospace', fontSize: 12.5,
-        backgroundColor: dark ? Colors.white10 : const Color(0xFFF1F0F7)),
-      codeblockDecoration: BoxDecoration(color: dark ? const Color(0xFF12141C) : const Color(0xFFF6F5FA),
-        borderRadius: BorderRadius.circular(8)),
-      tableHead: base.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
-      tableBody: base.copyWith(fontSize: 13),
-      tableBorder: TableBorder.all(color: dark ? Colors.white24 : const Color(0xFFD8D4E8), width: 0.5),
-      tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      blockquoteDecoration: BoxDecoration(color: dark ? Colors.white10 : const Color(0xFFF1F0F7),
-        borderRadius: BorderRadius.circular(4)),
-      listBullet: base.copyWith(fontSize: 14, color: dark ? const Color(0xFFE6E6EE) : null),
+      // 正文：Kimi 16px / lh 1.5；手机取 15.5 / 1.7（中文行距松一点更耐读）
+      p: base.copyWith(fontSize: 15.5, height: 1.7, color: _mdFg(c)),
+      // 标题：Kimi 22/20/18 → 手机 21/19/17，字重 700（Kimi 的标题很实）
+      h1: base.copyWith(
+          fontSize: 21, height: 1.35, fontWeight: FontWeight.w700, color: _mdFg(c)),
+      h2: base.copyWith(
+          fontSize: 19, height: 1.4, fontWeight: FontWeight.w700, color: _mdFg(c)),
+      h3: base.copyWith(
+          fontSize: 17, height: 1.45, fontWeight: FontWeight.w600, color: _mdFg(c)),
+      // 行内代码：Kimi 16px；这里 14（在 15.5 正文里略小更协调）
+      code: base.copyWith(
+          fontFamily: 'monospace',
+          fontSize: 14,
+          height: 1.45,
+          backgroundColor:
+              dark ? const Color(0xFF23262F) : const Color(0xFFF4F3F8),
+          color: dark ? const Color(0xFFFFC9A3) : const Color(0xFFB4341C)),
+      // 代码块：Kimi 14px / 圆角 12
+      codeblockPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      codeblockDecoration: BoxDecoration(
+          color: dark ? const Color(0xFF12141C) : const Color(0xFFF7F6FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: dark ? Colors.white10 : const Color(0xFFEBE8F2),
+              width: 0.6)),
+      // 表格：轻边框 + 足内边距（不画满格线，观感更干净）
+      tableHead: base.copyWith(
+          fontSize: 13.5, fontWeight: FontWeight.w700, color: _mdFg(c)),
+      tableBody: base.copyWith(fontSize: 13.5, height: 1.5, color: _mdFg(c)),
+      tableBorder: TableBorder.all(
+          color: dark ? Colors.white24 : const Color(0xFFE4E0EE), width: 0.6),
+      tableCellsPadding:
+          const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      tableColumnWidth: const IntrinsicColumnWidth(),
+      // 引用：用**左竖线**而不是整块底色（更克制）
+      blockquoteDecoration: BoxDecoration(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.04)
+              : const Color(0xFFF7F6FA),
+          borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(6), bottomRight: Radius.circular(6)),
+          border: Border(
+              left: BorderSide(
+                  color: accent.withValues(alpha: 0.55), width: 3))),
+      blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+      listBullet: base.copyWith(fontSize: 15, color: _mdFg(c)),
+      listIndent: 22,
+      horizontalRuleDecoration: BoxDecoration(
+          border: Border(
+              top: BorderSide(
+                  color: dark ? Colors.white12 : const Color(0xFFE8E5F0)))),
+      a: TextStyle(
+          color: accent, decoration: TextDecoration.none, fontSize: 15.5),
     );
   }
 
