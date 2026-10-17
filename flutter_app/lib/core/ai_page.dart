@@ -118,7 +118,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     });
     _loadTtsLabel(); // 语音：把当前引擎名读出来显示，别让设置项写着"当前：…"
     TtsManager.autoRead().then((v) { if (mounted) setState(() => _autoRead = v); });
-    _regSub = AiRegistry.onChange.listen((_) { if (mounted) setState(() {}); });
+    _regSub = AiRegistry.onChange.listen((_) {
+      if (!mounted) return;
+      setState(() {});
+      // ★2026-10-17 修「密钥配了还显示未配置」：配置页回来只 setState 是不够的 ——
+      //   顶部胶囊的状态是 _refreshCapsule() 单独算的，必须跟着重算。
+      _refreshCapsule();
+    });
     // 切模块时静默收起抽屉(修复: 切模块回来侧边栏莫名展开/遮罩残留)
     RootNav.moduleTick.addListener(_onModuleTick);
     // 右上角「新会话」按钮触发
