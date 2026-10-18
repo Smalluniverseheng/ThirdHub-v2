@@ -95,6 +95,19 @@ class _TtsSettingsPageState extends State<TtsSettingsPage> {
     }
   }
 
+  /// 第一家"已经配好能发请求"的在线厂商（用于那条"你配了 Key 但还在用系统朗读"的提示）。
+  ///
+  /// 只挑在线厂商：自托管的 `readyFor` 看的是服务地址，普通用户没有，
+  /// 拿它去提示等于催人去搭服务器。
+  TtsVendor? get _firstReady {
+    for (final v in _all) {
+      if (v.needHost) continue;
+      final cfg = _cfg[v.id];
+      if (cfg != null && cfg.readyFor(v)) return v;
+    }
+    return null;
+  }
+
   String get _curLabel {
     switch (_cur) {
       case 'system':
@@ -183,6 +196,38 @@ class _TtsSettingsPageState extends State<TtsSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
+          // ★「填了 Key 却还在用系统朗读」—— 这是用户觉得"TTS 没做好"的最常见原因：
+          //   他明明配了厂商，声音还是手机那个机械音，于是以为功能坏了。
+          //   与其让他自己去一堆芯片里找，不如在这里直接提示一句。
+          if (_cur == 'system' && _firstReady != null)
+            Card(
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('已配置「${_firstReady!.name}」的 Key',
+                          style: const TextStyle(
+                              fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '现在用的还是手机自带的离线朗读（音色机械，各家手机差别很大）。'
+                        '切到你自己配的厂商，音质会好很多。',
+                        style: TextStyle(fontSize: 12, height: 1.55, color: Colors.black54),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => _pick(_firstReady!.id),
+                          child: Text('切到 ${_firstReady!.name}'),
+                        ),
+                      ),
+                    ]),
+              ),
+            ),
           Card(
             margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             shape:
