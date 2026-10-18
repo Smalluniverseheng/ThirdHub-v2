@@ -8,6 +8,7 @@ import 'ai_snapshot.dart';
 import 'ai_agent.dart';
 import 'api_keys_store.dart';
 import 'app_version.dart';
+import 'key_detect.dart' as kd;
 
 class AiProvider {
   final String id, name, base, type;
@@ -332,6 +333,34 @@ class AiKeyDetect {
       final ok = p.type == 'anthropic' ? j['content'] != null : j['choices'] != null;
       return ok ? p : null;
     } catch (_) { return null; }
+  }
+
+  // ★并行全量识别（2026-10-18 新增）：23 个端点同时打，6 秒出结论。
+  //
+  // 与下面那个老 `identify` 的区别（这是用户明确要求的"并行全量测试"）：
+  //   · 老版：8 家一批串行 + 每批发真实 chat 请求（要花钱，最坏 45 秒）；
+  //   · 新版：全量并行 + 只读 /models（零成本，6 秒封顶），
+  //           失败才用"错模型名"做第二阶段鉴权探测（仍然不消耗 token）。
+  //
+  // 返回 null = 一家都没认出来。返回 provider 为 null 但 hit 有值 =
+  // 认得是哪家，但本地厂商清单里没有它（交给 UI 提示，别假装没识别）。
+  static Future<({kd.KeyHit hit, AiProvider? provider})?> identifyParallel(
+    String key, {
+    void Function(int done, int total, String stage)? onProgress,
+  }) async {
+    final k = key.trim();
+    if (k.isEmpty) return null;
+    final hits = await kd.KeyDetect.identify(k, onProgress: onProgress);
+    if (hits.isEmpty) return null;
+    final idToBase = {for (final p in AiRegistry.all) p.id: p.base};
+    for (final h in hits) {
+      final id = kd.KeyDetect.resolveProviderId(h, idToBase);
+      if (id == null) continue;
+      for (final p in AiRegistry.all) {
+        if (p.id == id) return (hit: h, provider: p);
+      }
+    }
+    return (hit: hits.first, provider: null);
   }
 
   // 自动识别 Key 属于哪家厂商: 前缀命中优先, 其余每批8家并行, 任一成功即返回
