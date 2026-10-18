@@ -11191,10 +11191,10 @@ class _At extends State<AccountTile> {
                                         setSt(() => obscure = !obscure)))),
                         const SizedBox(height: 8),
                         // 说明 / 错误（就地显示，不关窗）
-                        if (tip != null && tip.isNotEmpty)
+                        if (tip != null && tip!.isNotEmpty)
                           Padding(
                               padding: const EdgeInsets.only(bottom: 6),
-                              child: Text(tip,
+                              child: Text(tip!,
                                   style: const TextStyle(
                                       fontSize: 11.5, color: Colors.redAccent))),
                         const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
