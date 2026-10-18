@@ -30,6 +30,7 @@ import 'package:path_provider/path_provider.dart';
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
 import 'core/haptic.dart';
+import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
 import 'core/local_tools.dart';
@@ -285,7 +286,14 @@ Future<void> main() async {
   };
   // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
   IntentRouter.init();
-  runApp(SplashApp(anim: AppSettings.splashAnim));
+  // ★2026-10-18 开屏重做：广告位 + 右下角「转圈 → 5 秒倒计时跳过」
+  //   bootDone 通知开屏「初始化完了」；splashDone 等开屏「倒计时完 / 被点跳过」。
+  final bootDone = ValueNotifier<bool>(false);
+  final splashDone = Completer<void>();
+  runApp(SplashApp(
+      anim: AppSettings.splashAnim,
+      bootDone: bootDone,
+      onFinish: () { if (!splashDone.isCompleted) splashDone.complete(); }));
   await Cloud.init();
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
@@ -305,6 +313,10 @@ Future<void> main() async {
   final onboarded = prefs.getBool('first_run') ?? false;
   // v4.40.0: 注册进阶功能桥(系统页要动导航/主题/字体; 浏览器译文要交给阅读器)
   registerProBridges();
+  // ★告诉开屏「加载完成」→ 它开始 5 秒倒计时；等它结束（或用户点跳过）再进主界面。
+  bootDone.value = true;
+  await splashDone.future;
+
   runApp(ThApp(
       ready: (prefs.getString('base') ?? '').isNotEmpty,
       base: prefs.getString('base') ?? '',
@@ -1215,153 +1227,6 @@ Future<String?> chooseDownloadTarget(BuildContext c) => showDialog<String>(
         ]));
 
 // ── 开屏: 加载用(初始化完成即消失); 动画可在 我的→外观 关闭, 关闭后白屏加载(属正常) ──
-class SplashApp extends StatelessWidget {
-  final bool anim;
-  const SplashApp({super.key, required this.anim});
-  @override
-  Widget build(BuildContext c) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: anim
-          ? const SplashPage()
-          : const Scaffold(
-              backgroundColor: Colors.white, body: SizedBox.expand()));
-}
-
-class SplashPage extends StatefulWidget {
-  const SplashPage({super.key});
-  @override
-  State<SplashPage> createState() => _Sp();
-}
-
-// ★ 与网页端 #boot-splash 同一套视觉：自家商标 + 双向模糊光晕 + 呼吸律动
-//   + 品牌名 + 副标题「一个入口 · One Hub」+ 环形加载。
-//
-//   此前这里的问题（用户报的「开屏图标不是自家商标、加载页没用网页端那一套」）：
-//   ① 图标用的是 Material 内置 Icons.hub_outlined —— 系统通用图标，与网页端开屏、
-//      桌面快捷方式、安装包图标都不是同一个东西；
-//   ② 副标题写成「资源 · 引擎 · 互联」，与网页端的「一个入口 · One Hub」不是一套；
-//   ③ 底部版本号写死 'v4.24.0' —— 装了 4.44.0 开屏仍显示旧版本（与旁支
-//      「关于页写死 0.4.0」是同一类病：常量会忘记同步，读 kAppVersion 不会）。
-class _Sp extends State<SplashPage> with TickerProviderStateMixin {
-  // 入场：淡入 + 轻微放大，一次性
-  late final AnimationController ac = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 900))
-    ..forward();
-  // 呼吸律动：与网页端 .bs-logo 的 bs-breathe 2.8s 同期，循环往复
-  late final AnimationController br = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 2800))
-    ..repeat(reverse: true);
-  @override
-  void dispose() {
-    ac.dispose();
-    br.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext c) {
-    // 与网页端 #boot-splash 逐项对齐：网页端用 @media (prefers-color-scheme: light)
-    // 切明暗，这里用 platformBrightness，语义相同。上一版把浅色配色写死，
-    // 深色系统上会亮成一片白 —— 「对齐样式」必须连明暗一起对齐。
-    //   dark  : bg #0F1115 / 标题 #EEF0F6 / 副标题 #9AA3B2 / 光晕 rgba(99,102,241,.20)
-    //   light : bg #F4F5F9 / 标题 #1C1F2A / 副标题 #5A6072 / 光晕 rgba(99,102,241,.12)
-    final bool dark = MediaQuery.platformBrightnessOf(c) == Brightness.dark;
-    const accent = Color(0xFF3B5BFD);
-    final Color bg = dark ? const Color(0xFF0F1115) : const Color(0xFFF4F5F9);
-    final Color titleC =
-        dark ? const Color(0xFFEEF0F6) : const Color(0xFF1C1F2A);
-    final Color subC = dark ? const Color(0xFF9AA3B2) : const Color(0xFF5A6072);
-    // rgba(255,255,255,.14) / rgba(15,20,30,.14)
-    final Color track =
-        dark ? const Color(0x24FFFFFF) : const Color(0x241F141E);
-    final Color glow =
-        const Color(0xFF6366F1).withValues(alpha: dark ? 0.20 : 0.12);
-    final List<BoxShadow> logoShadow = dark
-        ? const [
-            BoxShadow(
-                color: Color(0x6B000000), blurRadius: 44, offset: Offset(0, 18))
-          ]
-        : const [
-            BoxShadow(
-                color: Color(0x29141A28), blurRadius: 36, offset: Offset(0, 14))
-          ];
-    return Scaffold(
-        backgroundColor: bg,
-        body: Stack(children: [
-          // 网页端 #boot-splash::before / ::after 的两团模糊光晕（左上大、右下略小且更淡）
-          Positioned(top: -140, left: -120, child: _Glow(420, color: glow)),
-          Positioned(
-              bottom: -130,
-              right: -110,
-              child: _Glow(380, color: glow, opacity: 0.8)),
-          SafeArea(
-              child: Column(children: [
-            const Spacer(),
-            FadeTransition(
-                opacity: CurvedAnimation(parent: ac, curve: Curves.easeOut),
-                child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.82, end: 1).animate(
-                        CurvedAnimation(parent: ac, curve: Curves.easeOutBack)),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      ScaleTransition(
-                          scale: Tween<double>(begin: 1, end: 1.045).animate(
-                              CurvedAnimation(
-                                  parent: br, curve: Curves.easeInOut)),
-                          child: Container(
-                              width: 96,
-                              height: 96,
-                              decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(22),
-                                  boxShadow: logoShadow),
-                              child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(22),
-                                  // 自家商标：assets/branding/logo-96.png 与网页端 icons/launcher-96.png 逐字节同源
-                                  child: Image.asset(
-                                      'assets/branding/logo-96.png',
-                                      width: 96,
-                                      height: 96,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          const ColoredBox(
-                                              color: accent,
-                                              child: Icon(Icons.hub_outlined,
-                                                  color: Colors.white,
-                                                  size: 46)))))),
-                      const SizedBox(height: 14),
-                      Text('第三方聚合站',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: titleC,
-                              letterSpacing: 0.5)),
-                      const SizedBox(height: 14),
-                      Text('一个入口 · One Hub',
-                          style: TextStyle(
-                              fontSize: 12, color: subC, letterSpacing: 0.5)),
-                    ]))),
-            const SizedBox(height: 14),
-            // 网页端 .bs-spin：26px 环、3px 描边、顶段 #3b5bfd
-            SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(
-                    strokeWidth: 3, color: accent, backgroundColor: track)),
-            const Spacer(),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.lan_outlined, size: 13, color: subC),
-              const SizedBox(width: 4),
-              Text('支持 IPv6 网络', style: TextStyle(fontSize: 11, color: subC)),
-              const SizedBox(width: 10),
-              // 版本号读唯一来源，不再写死
-              Text('v$kAppVersion',
-                  style: TextStyle(fontSize: 11, color: subC)),
-            ]),
-            const SizedBox(height: 18),
-          ])),
-        ]));
-  }
-}
-
 /// 开屏的模糊光晕。网页端用 `filter: blur(110px)` 把纯色圆晕开；
 /// CSS 的 blur(radius) 与 Flutter 的 sigma 约为 2:1，取 sigma 55 还原同一观感。
 class _Glow extends StatelessWidget {
