@@ -1,6 +1,9 @@
 // AI 厂商与 Key 统一管理页: 密钥管理 + 自动识别 + 中转站 + 自定义厂商
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'ai.dart';
+import 'key_detect.dart';
 import 'vendor_icons.dart';
 
 class AiProvidersPage extends StatefulWidget { const AiProvidersPage({super.key}); @override State<AiProvidersPage> createState() => _AiProv(); }
@@ -106,31 +109,206 @@ class _AiProv extends State<AiProvidersPage> {
     if (ok == true) { await AiRegistry.setKey(p.id, ctrl.text.trim()); await _load(); }
   }
 
-  // 自动识别 Key: 前缀优先 + 并行批量验证(与网站一致)
+  // 自动识别 Key：粘贴即开始（并行全量探测）
+  //
+  // ★用户原话：「用户只要输入这个 API，它就自动配对是哪一个厂商」。
+  //   所以这里没有"开始识别"按钮 —— 粘贴/输入满 12 个字符后自动触发，
+  //   输入变化会取消上一次（有人一边打字一边触发，那是浪费）。
   Future<void> _identifyDialog() async {
     final ctrl = TextEditingController();
-    String status = ''; AiProvider? hit; bool busy = false;
-    await showDialog(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
-      title: const Text('自动识别 Key', style: TextStyle(fontSize: 16)),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('粘贴任一厂商的 API Key, 自动识别它属于哪家厂商并保存', style: TextStyle(fontSize: 11, color: Colors.grey)),
-        const SizedBox(height: 8),
-        TextField(controller: ctrl, obscureText: true, decoration: const InputDecoration(hintText: 'sk-...', isDense: true)),
-        if (status.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8),
-          child: Text(status, style: TextStyle(fontSize: 11, color: hit != null ? Colors.green : Colors.grey))),
-        if (busy) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
+    String status = '';
+    int done = 0, total = 0;
+    ({KeyHit hit, AiProvider? provider})? r;
+    bool busy = false;
+    Timer? debounce;
+    var seq = 0;
+    BuildContext? ctxRef;
+
+    Future<void> run(StateSetter setD) async {
+      final key = ctrl.text.trim();
+      if (key.length < 12) return;
+      final mySeq = ++seq;
+      setD(() {
+        busy = true;
+        status = '正在并行探测各厂商…';
+        done = 0;
+        total = 0;
+        r = null;
+      });
+      final res = await AiKeyDetect.identifyParallel(key,
+          onProgress: (d, t, stage) {
+        if (!(ctxRef?.mounted ?? false) || mySeq != seq) return;
+        setD(() {
+          done = d;
+          total = t;
+          status = stage == 'models'
+              ? '第一轮：并行查模型清单'
+              : '第二轮：鉴权兜底探测';
+        });
+      });
+      if (!(ctxRef?.mounted ?? false) || mySeq != seq) return;
+      if (res != null && res.provider != null) {
+        await AiRegistry.setKey(res.provider!.id, key);
+        await _load();
+      }
+      setD(() {
+        busy = false;
+        r = res;
+        status = res == null
+            ? '没有认出这把 Key 属于哪家。'
+            : (res.provider == null
+                ? '识别为「${res.hit.providerName}」，但本地厂商清单里还没有它，可加到自定义厂商'
+                : '已识别并保存到「${res.provider!.name}」');
+      });
+    }
+
+    await showDialog(
+        context: context,
+        builder: (ctx0) => StatefulBuilder(builder: (ctx, setD) {
+              ctxRef = ctx;
+              return AlertDialog(
+                title: const Text('自动识别 Key', style: TextStyle(fontSize: 16)),
+                content: SizedBox(
+                  width: 380,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text(
+                      '把任意厂商的 API Key 粘进来，自动判断它属于哪家并保存。\n'
+                      '全部厂商同时探测，通常 1~3 秒出结果。',
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey, height: 1.5),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: ctrl,
+                      obscureText: true,
+                      autofocus: true,
+                      onChanged: (v) {
+                        debounce?.cancel();
+                        if (r != null || busy) {
+                          setD(() {
+                            r = null;
+                            status = '';
+                            busy = false;
+                          });
+                        }
+                        debounce = Timer(const Duration(milliseconds: 700), () {
+                          if (ctx.mounted) run(setD);
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        hintText: '粘贴 API Key（自动识别）',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (busy)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              LinearProgressIndicator(
+                                  minHeight: 2,
+                                  value: total == 0 ? null : done / total),
+                              const SizedBox(height: 4),
+                              Text('$status' + (total == 0 ? '' : '  $done / $total'),
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                            ]),
+                      ),
+                    if (!busy && status.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(status,
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                color: r?.provider != null
+                                    ? Colors.green
+                                    : Colors.orange)),
+                      ),
+                    if (r != null) _hitDetail(r!),
+                  ]),
+                ),
+                actions: [
+                  if (r != null)
+                    TextButton(
+                        onPressed: () {
+                          debounce?.cancel();
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('完成')),
+                  if (r == null)
+                    TextButton(
+                        onPressed: () {
+                          debounce?.cancel();
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('关闭')),
+                  if (!busy && r == null)
+                    FilledButton(
+                        onPressed: () => run(setD),
+                        child: const Text('立即识别')),
+                ],
+              );
+            }))
+        .whenComplete(() => debounce?.cancel());
+  }
+
+  /// 命中后的详情：厂家名 + 模型数 + 能不能用于联网搜索。
+  Widget _hitDetail(({KeyHit hit, AiProvider? provider}) r) {
+    final h = r.hit;
+    final models = h.models.isNotEmpty
+        ? h.models
+        : (r.provider?.models ?? const <String>[]);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.check_circle, size: 16, color: Colors.green),
+          const SizedBox(width: 6),
+          Expanded(
+              child: Text(h.providerName,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+          Text('${h.ms}ms', style: const TextStyle(fontSize: 10.5, color: Colors.grey)),
+        ]),
+        if (models.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('可用模型 ${models.length} 个：${models.take(3).join(' / ')}'
+                '${models.length > 3 ? ' …' : ''}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.5)),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(children: [
+            Icon(h.search ? Icons.travel_explore : Icons.block,
+                size: 13, color: h.search ? Colors.teal : Colors.grey),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                h.search
+                    ? '这把 Key 也能用于联网搜索（AI 页的「联网」开关可直接用）'
+                    : '这家不提供联网搜索，AI 页的联网开关需要另配搜索 API',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: h.search ? Colors.teal : Colors.grey,
+                    height: 1.5),
+              ),
+            ),
+          ]),
+        ),
+        if (h.note.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(h.note,
+                style: const TextStyle(fontSize: 10.5, color: Colors.grey, height: 1.4)),
+          ),
       ]),
-      actions: [
-        if (hit != null) TextButton(onPressed: () => Navigator.pop(c2), child: const Text('完成')),
-        if (hit == null) TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
-        if (hit == null) FilledButton(onPressed: busy ? null : () async {
-          final key = ctrl.text.trim(); if (key.isEmpty) return;
-          setD(() { busy = true; status = ''; hit = null; });
-          final r = await AiKeyDetect.identify(key, onProgress: (s) => setD(() => status = s));
-          if (r != null) { await AiRegistry.setKey(r.id, key); await _load(); }
-          setD(() { busy = false; hit = r; status = r != null ? '识别成功: 该 Key 属于「${r.name}」, 已保存' : '未识别到匹配厂商'; });
-        }, child: const Text('开始识别')),
-      ])));
+    );
   }
 
   // 中转站 Key: 探测≥2品牌判定为通用 Key, 一键填到所有未配置的厂商
