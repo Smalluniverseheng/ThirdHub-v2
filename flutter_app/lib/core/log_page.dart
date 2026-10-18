@@ -158,7 +158,7 @@ class _Lc extends State<LogCenterPage> {
         detail: conn ? 'v${EngineDirect.version}' : null,
       ));
       if (!conn) {
-        issues.add('资料库（引擎应用）没连上 —— 搜索和发现页会没有内容。确认手机上资料库应用已打开。');
+        issues.add('资料库没连上 —— 搜索和发现页会没有内容。确认手机上资料库应用已打开。');
       }
     } catch (_) {
       items.add(const HealthItem(Icons.dns_outlined, '资料库', '状态未知', HealthState.unknown));
