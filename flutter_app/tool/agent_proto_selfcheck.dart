@@ -266,22 +266,22 @@ void main() {
   _eq(vis.length, 2, '普通用户只看到 2 档');
   _ok(!vis.any((p) => p['id'] == AgentProfileId.fullAccess), 'full-access 不出现在可见列表');
   final s = AgentPolicy.summary(AgentProfileId.normal);
-  _eq(s['allow'], 7, 'default 放行 7 项（只读 7）');
+  _eq(s['allow'], 10, 'default 放行 10 项（只读 10）');
   _eq(s['confirm'], 4, 'default 需确认 4 项（受控写里点名的 4 项）');
   _eq(s['deny'], 10, 'default 拒绝 10 项（未点名的写 4 + 高危 6）');
   _eq(AgentPolicy.summary(AgentProfileId.normal).length, 3, 'summary 三个键');
   final cat = AgentPolicy.catalog(AgentProfileId.normal);
-  _eq(cat.length, 21, '目录共 21 个工具');
+  _eq(cat.length, 24, '目录共 24 个工具');
   // 三种判定必须覆盖全部工具（防止 summary 少算/漏算）
   _eq(s['allow']! + s['confirm']! + s['deny']!, cat.length, '三种判定之和 = 工具总数');
   final sa = AgentPolicy.summary(AgentProfileId.acceptEdits);
-  _eq(sa['allow'], 15, 'acceptEdits 放行 15 项（只读 7 + 受控写 8）');
+  _eq(sa['allow'], 18, 'acceptEdits 放行 18 项（只读 10 + 受控写 8）');
   _eq(sa['confirm'], 1, 'acceptEdits 只需确认 1 项（只解锁 fs.write）');
   _eq(sa['deny'], 5, 'acceptEdits 拒 5 项（shell/装包/无障碍 + fs.delete/browser.open）');
   // 关键语义：acceptEdits 并**不**解锁全部高危 —— 只放行它在 allowTools 里点名的那一个
   _ok(AgentPolicy.decide(AgentProfileId.acceptEdits, 'fs.write').needsConfirm, 'acceptEdits 解锁 fs.write（需确认）');
   _ok(AgentPolicy.decide(AgentProfileId.acceptEdits, 'fs.delete').denied, 'acceptEdits 仍拒 fs.delete');
-  _eq(AgentPolicy.summary(AgentProfileId.fullAccess)['allow'], 21, 'full-access 全放行 21 项');
+  _eq(AgentPolicy.summary(AgentProfileId.fullAccess)['allow'], 24, 'full-access 全放行 24 项');
   // catalog 的 decision 必须与 decide() 一致（同一件事不能有两个答案）
   var mismatch = 0;
   for (final t in AgentPolicy.catalog(AgentProfileId.acceptEdits)) {
