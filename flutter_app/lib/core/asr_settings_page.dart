@@ -10,10 +10,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'asr_rec.dart';
 import 'asr_service.dart';
 import 'asr_vendors.dart';
-import 'voice_msg.dart';
 
 class AsrSettingsPage extends StatefulWidget {
   const AsrSettingsPage({super.key});
@@ -29,7 +30,10 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
   String _engine = 'xiaomi';
 
   // 试录状态
-  final VoiceRec _rec = VoiceRec();
+  // ★必须用 AsrRec（wav 16k 单声道）—— VoiceRec 出的是 m4a，
+  //   小米之类只收 wav/mp3 的厂商会直接拒，而错误信息看起来像 Key 的问题。
+  final AsrRec _rec = AsrRec();
+  final TextEditingController _hostCtl = TextEditingController();
   bool _recording = false;
   bool _recognizing = false;
   String _result = '';
@@ -41,7 +45,25 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
     for (final v in AsrVendors.all) {
       _ctrls[v.id] = TextEditingController();
     }
+    _loadPrefs();
     _refreshAll();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    final engine = (p.getString('asr_engine') ?? '').trim();
+    final host = await AsrService.selfHost();
+    if (!mounted) return;
+    setState(() {
+      if (AsrVendors.byId(engine) != null) _engine = engine;
+      _hostCtl.text = host;
+    });
+  }
+
+  Future<void> _pickEngine(String id) async {
+    setState(() => _engine = id);
+    final p = await SharedPreferences.getInstance();
+    await p.setString('asr_engine', id);
   }
 
   @override
@@ -49,12 +71,13 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
     for (final c in _ctrls.values) {
       c.dispose();
     }
+    _hostCtl.dispose();
+    _rec.dispose();
     super.dispose();
   }
 
   Future<void> _refreshAll() async {
     for (final v in AsrVendors.all) {
-      final own = await AsrService.keyOf(v);
       final ready = await AsrService.readyFor(v);
       // 判断是否"来自统一密钥库"（自己没填但能读到）
       final self = _ctrls[v.id]?.text.trim() ?? '';
@@ -119,7 +142,14 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
 
     final t0 = DateTime.now();
     try {
-      final text = await AsrService.transcribe(v, AsrRequest(filePath: path, language: 'zh'));
+      final text = await AsrService.transcribe(
+        v,
+        AsrRequest(
+          filePath: path,
+          language: 'zh',
+          host: await AsrService.selfHost(),
+        ),
+      );
       final ms = DateTime.now().difference(t0).inMilliseconds;
       setState(() {
         _recognizing = false;
@@ -178,7 +208,7 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
                   RadioListTile<String>(
                     value: v.id,
                     groupValue: _engine,
-                    onChanged: (x) => setState(() => _engine = x ?? _engine),
+                    onChanged: (x) => _pickEngine(x ?? _engine),
                     title: Row(
                       children: [
                         Expanded(child: Text(v.name, style: const TextStyle(fontSize: 14))),
@@ -234,12 +264,34 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
                             : '粘贴厂商控制台里的 Key',
                       ),
                     ),
-                    if (cur.group == '自托管')
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text('服务地址：${cur.url}',
-                            style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+                    if (cur.group == '自托管') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _hostCtl,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          labelText: '服务地址',
+                          hintText: 'http://192.168.1.5:8000',
+                          helperText: 'faster-whisper / FunASR 等 OpenAI 兼容端点的根地址，不要带 /v1',
+                        ),
                       ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            await AsrService.setSelfHost(_hostCtl.text);
+                            await _refreshAll();
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已保存服务地址')),
+                            );
+                          },
+                          child: const Text('保存地址'),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Row(
                       children: [
