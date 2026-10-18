@@ -157,7 +157,16 @@ class Cloud {
     final r = await http.get(Uri.parse('$base/rest/v1/th_profiles?id=eq.$userId&select=*'), headers: _authHeaders);
     if (r.statusCode == 200) {
       final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
-      if (list.isNotEmpty) { profileData = Map<String, dynamic>.from(list.first); return profileData; }
+      if (list.isNotEmpty) {
+        profileData = Map<String, dynamic>.from(list.first);
+        // ★2026-10-18 开屏要用（那时 Cloud.init 还没跑完，读不到内存里的 profile）——
+        //   把会员等级落到本地，开屏据此决定「显示广告」还是「会员直通」。
+        try {
+          final p = await SharedPreferences.getInstance();
+          await p.setString('member_level_cached', '${profileData['level'] ?? 'guest'}');
+        } catch (_) {}
+        return profileData;
+      }
     }
     return {};
   }
