@@ -20,6 +20,10 @@ import 'ai_intros.dart';
 import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
 import 'ai_skills.dart';
+import 'asr_rec.dart';
+import 'asr_service.dart';
+import 'asr_settings_page.dart';
+import 'asr_vendors.dart';
 import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
@@ -82,6 +86,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   AiSession? session; bool sending = false; String streaming = '';
   bool _autoRead = false; // 语音：自动朗读回复
   String _ttsLabel = '…'; // 语音：当前引擎显示名
+  String _asrLabel = '…'; // 语音输入：当前识别厂商显示名
   // 思考链 + 工具步骤(当前正在生成的消息)
   String _reasoning = ''; final List<Map<String, String>> _steps = [];
   // 消息排队(Kimi 同款): 生成中继续发消息进入队列
@@ -100,6 +105,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   // 语音输入(Kimi 同款: 点麦克风切语音条, 长按说话转文字, 点键盘切回)
   final SpeechToText _stt = SpeechToText();
   bool _sttReady = false; bool _sttTried = false; bool _listening = false; bool _voiceMode = false;
+  // 语音输入：厂商 ASR 优先（系统识别只兜底）。录音器必须 wav 16k 单声道 ——
+  // 见 asr_rec.dart 顶部注释：m4a 会被小米这类厂商直接拒。
+  final AsrRec _arec = AsrRec();
+  AsrVendor? _asrV;
+  bool _asrBusy = false;
+  bool _stopRequested = false; // 长按在录音器启动完成前就结束了
+  Timer? _asrTimer;
   // 流式合帧: 逐 token setState 会让界面"一颤一颤", 攒 66ms 一帧(约 15fps)
   String _pendingDelta = ''; Timer? _flushT;
   // 顶栏模型胶囊三态: loading|noModel|noKey|ok
@@ -117,6 +129,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       if (mounted && v != _showAvatar) setState(() => _showAvatar = v);
     });
     _loadTtsLabel(); // 语音：把当前引擎名读出来显示，别让设置项写着"当前：…"
+    _loadAsrLabel(); // 语音输入：同上
     TtsManager.autoRead().then((v) { if (mounted) setState(() => _autoRead = v); });
     _regSub = AiRegistry.onChange.listen((_) {
       if (!mounted) return;
@@ -140,6 +153,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     RootNav.moduleTick.removeListener(_onModuleTick);
     AiSection.newSessionTick.removeListener(_onNewSessionTick);
     _flushT?.cancel(); _stt.cancel();
+    _asrTimer?.cancel(); _arec.dispose();
     input.dispose(); scroll.dispose(); super.dispose(); }
   void _onModuleTick() { if (RootNav.currentModuleKey != 'AI') _closeDrawerSilent(); }
   Future<void> _onNewSessionTick() async {
@@ -847,20 +861,74 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   }
 
   // ── 语音输入(Kimi 同款) ──
+  //
+  // ★ 2026-10-18 改：原来只走系统 `speech_to_text`。那不是"我们做的语音"，
+  //   是借手机自带的识别 —— 没装语音包、或系统不开放时直接不可用，
+  //   用户填的厂商 Key 一个都用不上（这才是"语音根本没做好"的真根因）。
+  //   现在顺序是：**用户配好的厂商 ASR 优先**，系统识别只当兜底。
   Future<void> _enterVoice() async {
+    final v = await AsrService.defaultVendor();
+    if (v != null) {
+      _asrV = v;
+      if (mounted) setState(() => _voiceMode = true);
+      return;
+    }
+    // 没有配任何厂商 → 退回系统识别
     if (!_sttTried) {
       _sttTried = true;
       try { _sttReady = await _stt.initialize(); } catch (_) { _sttReady = false; }
     }
     if (!_sttReady) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机没有可用的语音识别服务（需系统自带语音资料库）')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('还没有可用的语音识别。\n'
+              '去「我的 → 语音识别」选一家填上 Key，就能用厂商的识别；'
+              '本机也没有系统语音资料库。'),
+          action: SnackBarAction(label: '去设置', onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const AsrSettingsPage()));
+          }),
+        ));
+      }
       return;
     }
     setState(() => _voiceMode = true);
   }
+
   Future<void> _startListen() async {
-    if (!_sttReady || _listening) return;
+    if (_listening) return;
+
+    // ① 厂商 ASR：录 wav 16k 单声道（m4a 会被小米这类厂商直接拒）
+    final v = _asrV;
+    if (v != null) {
+      // ★先把 _listening 同步置位：`_arec.start()` 要 await 权限检查，
+      //   而长按可能在这之前就结束了 —— 若等 await 完再置位，onLongPressEnd
+      //   会看到 `_listening == false` 直接返回，录音就会一直跑到 120 秒上限。
+      _stopRequested = false;
+      if (mounted) setState(() => _listening = true);
+      final ok = await _arec.start();
+      if (!mounted) return;
+      if (!ok) {
+        setState(() { _listening = false; _voiceMode = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没有麦克风权限，或录音器被占用。到系统设置里允许后再试。')));
+        return;
+      }
+      // 启动期间用户已经松手 → 立刻收尾，别继续录
+      if (_stopRequested) {
+        _stopRequested = false;
+        await _stopListen();
+        return;
+      }
+      Haptic.light();
+      _asrTimer?.cancel();
+      _asrTimer = Timer(const Duration(seconds: AsrRec.maxSeconds), () {
+        if (_listening) _stopListen();
+      });
+      return;
+    }
+
+    // ② 系统识别兜底
+    if (!_sttReady) return;
     setState(() => _listening = true);
     try {
       await _stt.listen(
@@ -869,26 +937,118 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true));
     } catch (_) {}
   }
+
   Future<void> _stopListen() async {
     if (!_listening) return;
+    _asrTimer?.cancel();
+
+    // ① 厂商 ASR：停录 → 上传 → 文字落进输入框
+    final v = _asrV;
+    if (v != null) {
+      // 录音器还没真正开始（start 仍在 await 权限）→ 打个标记让它自己收尾
+      if (!_arec.on) {
+        _stopRequested = true;
+        return;
+      }
+      final (path, secs) = await _arec.stop();
+      if (!mounted) return;
+      setState(() => _listening = false);
+      if (path == null) {
+        setState(() => _voiceMode = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没录到声音。靠近麦克风按住再说一次。')));
+        return;
+      }
+      if (secs < 1) {
+        setState(() => _voiceMode = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('太短了，按住说完整一句话再松手。')));
+        return;
+      }
+      setState(() => _asrBusy = true);
+      final t0 = DateTime.now();
+      try {
+        final text = await AsrService.transcribe(
+          v,
+          AsrRequest(
+            filePath: path,
+            language: 'zh',
+            host: await AsrService.selfHost(),
+          ),
+        );
+        if (!mounted) return;
+        // 已有文字就接在后面，别把用户打了一半的字冲掉
+        final cur = input.text.trim();
+        input.text = cur.isEmpty ? text : '$cur $text';
+        input.selection = TextSelection.fromPosition(TextPosition(offset: input.text.length));
+        final ms = DateTime.now().difference(t0).inMilliseconds;
+        setState(() { _asrBusy = false; _voiceMode = false; });
+        Haptic.success();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('已识别（${v.name} · ${(ms / 1000).toStringAsFixed(1)}s）'),
+          duration: const Duration(seconds: 2)));
+      } catch (e) {
+        if (!mounted) return;
+        setState(() { _asrBusy = false; _voiceMode = false; });
+        _showAsrError(v, '$e');
+      }
+      return;
+    }
+
+    // ② 系统识别兜底
     try { await _stt.stop(); } catch (_) {}
-    // 识别文字落进输入框并切回键盘模式(可改可发)
     if (mounted) setState(() { _listening = false; _voiceMode = false; });
   }
-  Widget _voiceBar(BuildContext c) => GestureDetector(
-    onLongPressStart: (_) => _startListen(),
-    onLongPressEnd: (_) => _stopListen(),
-    child: Container(height: 46, alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _listening ? Theme.of(c).colorScheme.primary : Theme.of(c).cardTheme.color,
-        borderRadius: BorderRadius.circular(22)),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(_listening ? Icons.mic : Icons.mic_none, size: 18,
-          color: _listening ? Colors.white : Colors.grey),
-        const SizedBox(width: 6),
-        Text(_listening ? '正在聆听… 松手结束' : '按住 说话',
-          style: TextStyle(fontSize: 14, color: _listening ? Colors.white : Colors.grey)),
-      ])));
+
+  /// 识别失败要说清"是谁的问题、去哪改"，而不是甩一串 HTTP 码。
+  void _showAsrError(AsrVendor v, String msg) {
+    showDialog<void>(context: context, builder: (c) => AlertDialog(
+      title: Text('「${v.name}」没能识别'),
+      content: SingleChildScrollView(child: Text(msg, style: const TextStyle(fontSize: 13, height: 1.6))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: const Text('知道了')),
+        FilledButton(onPressed: () async {
+          Navigator.pop(c);
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const AsrSettingsPage()));
+          if (!mounted) return;
+          _asrV = await AsrService.defaultVendor();
+        }, child: const Text('去语音设置')),
+      ]));
+  }
+
+  Widget _voiceBar(BuildContext c) {
+    final primary = Theme.of(c).colorScheme.primary;
+    final v = _asrV;
+    final String hint;
+    if (_asrBusy) {
+      hint = '正在识别…';
+    } else if (_listening) {
+      hint = '正在录音… 松手结束';
+    } else if (v != null) {
+      hint = '按住 说话（${v.name}）';
+    } else {
+      hint = '按住 说话（系统识别）';
+    }
+    final active = _listening || _asrBusy;
+    return GestureDetector(
+      onLongPressStart: _asrBusy ? null : (_) => _startListen(),
+      onLongPressEnd: _asrBusy ? null : (_) => _stopListen(),
+      child: Container(height: 46, alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? primary : Theme.of(c).cardTheme.color,
+          borderRadius: BorderRadius.circular(22)),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (_asrBusy)
+            const SizedBox(width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+          else
+            Icon(_listening ? Icons.mic : Icons.mic_none, size: 18,
+              color: active ? Colors.white : Colors.grey),
+          const SizedBox(width: 6),
+          Flexible(child: Text(hint, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 14, color: active ? Colors.white : Colors.grey))),
+        ])));
+  }
 
   // 长按消息: 复制 / 朗读 / 停止 / 语音设置
   //
@@ -934,6 +1094,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   Future<void> _loadTtsLabel() async {
     final s = await TtsManager.engineLabel();
     if (mounted) setState(() => _ttsLabel = s);
+  }
+
+  /// 读当前语音输入厂商名（没配过就写明"未配置"，别显示成"可用"）。
+  Future<void> _loadAsrLabel() async {
+    final v = await AsrService.defaultVendor();
+    if (!mounted) return;
+    setState(() => _asrLabel = v?.name ?? '未配置（点此选一家）');
   }
 
   Widget _inputBar(BuildContext c, bool dark) => SafeArea(child: Padding(
@@ -986,6 +1153,16 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           onTap: () async { Navigator.pop(c2);
             await Navigator.push(c, MaterialPageRoute(builder: (_) => const TtsSettingsPage()));
             if (mounted) _loadTtsLabel(); }),
+        // ★语音输入（识别）的入口。以前这一项在「我的」里，对话页拿不到 ——
+        //   于是麦克风点了没反应时，用户根本不知道去哪儿配。
+        ListTile(dense: true, leading: const Icon(Icons.mic_none), title: const Text('语音输入设置', style: TextStyle(fontSize: 14)),
+          subtitle: Text('当前：$_asrLabel', style: const TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async { Navigator.pop(c2);
+            await Navigator.push(c, MaterialPageRoute(builder: (_) => const AsrSettingsPage()));
+            if (!mounted) return;
+            _loadAsrLabel();
+            _asrV = await AsrService.defaultVendor(); }),
         StatefulBuilder(builder: (c3, setS) => SwitchListTile(dense: true,
           secondary: Icon(Icons.travel_explore, color: _webSearchOn ? Colors.blueAccent : null),
           title: const Text('联网搜索', style: TextStyle(fontSize: 14)),
