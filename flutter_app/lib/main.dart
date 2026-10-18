@@ -11130,56 +11130,125 @@ class _At extends State<AccountTile> {
   //   将来接入任何社交登录时：把 core/apple_gate.dart 的 kHasThirdPartyLogin
   //   置 true（needsSignInWithApple 随之变 true），**同一次提交里**在此对话框
   //   补「Sign in with Apple」按钮 + 真实的 Apple 登录实现，缺一不可。
+  /// 登录 / 注册。
+  ///
+  /// ★2026-10-18 修四处问题（用户报「登录界面明显有问题」）：
+  ///   ① 控制器 finally 释放（原来每次点都漏两个）；
+  ///   ② 弹窗内先校验（邮箱格式 / 密码长度），不合法就地提示、不关窗；
+  ///   ③ 密码可见切换；
+  ///   ④ 错误就地显示，而不是关窗后弹一条 SnackBar。
   Future<void> _auth(bool isLogin) async {
     final mailC = TextEditingController();
     final passC = TextEditingController();
-    final ok = await showDialog<bool>(
-        context: context,
-        builder: (c2) => AlertDialog(
-                title: Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  TextField(
-                      controller: mailC,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                          labelText: '邮箱', isDense: true)),
-                  TextField(
-                      controller: passC,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                          labelText: '密码(至少6位)', isDense: true)),
-                  const SizedBox(height: 8),
-                  const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
-                      style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(c2, false),
-                      child: const Text('取消')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(c2, true),
-                      child: Text(isLogin ? '登录' : '注册'))
-                ]));
-    if (ok != true) return;
-    setState(() => busy = true);
+    bool obscure = true;
+    String? tip; // 弹窗内的提示（错误或说明），showPasswordTip 用作函数签名标记
     try {
-      if (isLogin) {
-        await Cloud.signIn(mailC.text.trim(), passC.text);
-      } else {
-        await Cloud.signUp(mailC.text.trim(), passC.text);
+      final ok = await showDialog<bool>(
+          context: context,
+          builder: (c2) => StatefulBuilder(
+                builder: (c2, setSt) {
+                  void fail(String m) => setSt(() => tip = m);
+                  return AlertDialog(
+                      title: Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
+                      content: Column(mainAxisSize: MainAxisSize.min, children: [
+                        TextField(
+                            controller: mailC,
+                            autofocus: true,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            onChanged: (_) { if (tip != null) fail(''); },
+                            decoration: const InputDecoration(
+                                labelText: '邮箱', isDense: true)),
+                        TextField(
+                            controller: passC,
+                            obscureText: obscure,
+                            textInputAction: TextInputAction.done,
+                            onChanged: (_) { if (tip != null) fail(''); },
+                            onSubmitted: (_) {
+                              final m = mailC.text.trim();
+                              final p = passC.text;
+                              if (!m.contains('@') || m.length < 5) {
+                                fail('邮箱格式看起来不对');
+                                return;
+                              }
+                              if (p.length < 6) {
+                                fail('密码至少 6 位');
+                                return;
+                              }
+                              Navigator.pop(c2, true);
+                            },
+                            decoration: InputDecoration(
+                                labelText: '密码(至少6位)',
+                                isDense: true,
+                                suffixIcon: IconButton(
+                                    tooltip: obscure ? '显示密码' : '隐藏密码',
+                                    icon: Icon(
+                                        obscure
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
+                                        size: 18),
+                                    onPressed: () =>
+                                        setSt(() => obscure = !obscure)))),
+                        const SizedBox(height: 8),
+                        // 说明 / 错误（就地显示，不关窗）
+                        if (tip != null && tip.isNotEmpty)
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Text(tip,
+                                  style: const TextStyle(
+                                      fontSize: 11.5, color: Colors.redAccent))),
+                        const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
+                            style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ]),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(c2, false),
+                            child: const Text('取消')),
+                        FilledButton(
+                            onPressed: () {
+                              final m = mailC.text.trim();
+                              final p = passC.text;
+                              if (!m.contains('@') || m.length < 5) {
+                                fail('邮箱格式看起来不对');
+                                return;
+                              }
+                              if (p.length < 6) {
+                                fail('密码至少 6 位');
+                                return;
+                              }
+                              Navigator.pop(c2, true);
+                            },
+                            child: Text(isLogin ? '登录' : '注册'))
+                      ]);
+                },
+              ));
+      if (ok != true) return;
+      setState(() => busy = true);
+      try {
+        if (isLogin) {
+          await Cloud.signIn(mailC.text.trim(), passC.text);
+        } else {
+          await Cloud.signUp(mailC.text.trim(), passC.text);
+        }
+        await _syncProfile();
+        await AppSettings.ensureIdentity();
+        await _autoConnect();
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('已登录')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('$e')));
+        }
       }
-      await _syncProfile();
-      await AppSettings.ensureIdentity();
-      await _autoConnect();
-      if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已登录')));
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) setState(() => busy = false);
+    } finally {
+      // ★控制器必须释放：原来每次点登录都漏两个（TextEditingController 持有焦点/监听）
+      mailC.dispose();
+      passC.dispose();
     }
-    if (mounted) setState(() => busy = false);
   }
 
   // 云端资料 → 本地(头像/昵称/简介)
