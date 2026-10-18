@@ -90,20 +90,47 @@ class _AiProv extends State<AiProvidersPage> {
   // 配置/验证 Key(保存前真实对话验证, 失败时提示自动识别)
   Future<void> _keyDialog(AiProvider p) async {
     final ctrl = TextEditingController(text: await AiRegistry.keyOf(p.id));
-    String? msg; bool testing = false;
+    String? msg;
+    bool testing = false;
+    // ★验证失败时顺手并行识别一次：用户很可能把「别家」的 Key 贴到了这一家。
+    //   只说"验证失败"等于让他自己猜，这里直接把"它其实是谁的"指出来。
+    AiProvider? suggest;
     final ok = await showDialog<bool>(context: context, builder: (c2) => StatefulBuilder(builder: (c2, setD) => AlertDialog(
       title: Text('${p.name} API Key', style: const TextStyle(fontSize: 16)),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: ctrl, obscureText: true, decoration: const InputDecoration(hintText: 'sk-...', isDense: true)),
         if (msg != null) Padding(padding: const EdgeInsets.only(top: 8),
           child: Text(msg!, style: TextStyle(fontSize: 11, color: msg!.startsWith('验证通过') || msg!.startsWith('识别成功') || msg!.startsWith('已确认') ? Colors.green : Colors.redAccent))),
+        if (suggest != null) Padding(padding: const EdgeInsets.only(top: 6),
+          child: Align(alignment: Alignment.centerLeft, child: TextButton(
+            onPressed: () async {
+              await AiRegistry.setKey(suggest!.id, ctrl.text.trim());
+              await _load();
+              if (c2.mounted) Navigator.pop(c2, false);
+            },
+            child: Text('改存到「${suggest!.name}」')))),
         if (testing) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
         TextButton(onPressed: testing ? null : () async {
-          setD(() { testing = true; msg = null; });
-          final hit = await AiKeyDetect.testKey(p, ctrl.text.trim());
-          setD(() { testing = false; msg = hit != null ? '验证通过' : '验证失败 · Key 可能不属于该厂商(可保存后用自动识别)'; });
+          setD(() { testing = true; msg = null; suggest = null; });
+          final key = ctrl.text.trim();
+          final hit = await AiKeyDetect.testKey(p, key);
+          if (hit != null) {
+            setD(() { testing = false; msg = '验证通过'; });
+            return;
+          }
+          // 不是这家的 → 并行认一遍（零成本，6 秒封顶）
+          final r = await AiKeyDetect.identifyParallel(key);
+          setD(() {
+            testing = false;
+            if (r?.provider != null && r!.provider!.id != p.id) {
+              suggest = r.provider;
+              msg = '这把 Key 不属于「${p.name}」，看起来是「${r.hit.providerName}」的';
+            } else {
+              msg = '验证失败 · Key 可能填错、没开通该模型，或该家不支持这条验证通道';
+            }
+          });
         }, child: const Text('验证')),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
     if (ok == true) { await AiRegistry.setKey(p.id, ctrl.text.trim()); await _load(); }
