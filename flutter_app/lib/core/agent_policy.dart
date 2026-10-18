@@ -73,7 +73,12 @@ class AgentPolicy {
       'clipboard.read',
       'text.diff',
       'device.info',
-      'fs.list'
+      'fs.list',
+      // ★2026-10-18：引擎业务工具（服务端 2026-10-17 已登记，本地镜像漏了 →
+      //   agent_proto 自检红了 6 个版本没人发现。别只改 server 侧。）
+      'engine.status',
+      'engine.discover',
+      'book.recent'
     ],
     AgentRisk.write: [
       'note.save',
@@ -114,6 +119,12 @@ class AgentPolicy {
     'file_share': 'fs.share',
     'run_python': 'shell.run',
     'web_search': 'kb.search',
+    // ★2026-10-18：引擎业务工具（与服务端 bridge.map 逐项一致）
+    'engine_status': 'engine.status',
+    'engine_search': 'kb.search',
+    'engine_discover': 'engine.discover',
+    'open_item': 'browser.open',
+    'recent_history': 'book.recent',
   };
 
   /// 把 Flutter 本机工具名（可带 `local_` 前缀）翻成策略工具名。
