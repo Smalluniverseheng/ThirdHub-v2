@@ -16,28 +16,21 @@ import 'dart:convert';
 import 'agent_dsh_client.dart';
 import 'agent_models.dart';
 import 'agent_policy.dart';
+import 'kv.dart';
 import 'local_tools_logic.dart';
 
 // ── 存储抽象 ───────────────────────────────────────────────────────────────
-// TH-Agent 核心刻意**不依赖 Flutter**: 键值读写只走 [AiStore]。
+// TH-Agent 核心刻意**不依赖 Flutter**: 键值读写只走 [AiStore]（定义已抽到
+// `kv.dart`，与 PeerHub 共用同一份抽象 —— 两者都必须能在纯 Dart VM 里跑）。
 //   · App 运行时由 `ai_store_prefs.dart` 注入 SharedPreferences 实现;
 //   · 单元测试 / CLI 自检用默认内存实现 → 纯 Dart VM 就能验证核心逻辑。
-abstract class AiStore {
-  Future<String?> getString(String key);
-  Future<void> setString(String key, String value);
-}
-
-class _MemAiStore implements AiStore {
-  final Map<String, String> _m = {};
-  @override Future<String?> getString(String key) async => _m[key];
-  @override Future<void> setString(String key, String value) async { _m[key] = value; }
-}
-
-/// 全局存储实例(默认内存实现; App 启动时由 [installAiStorePrefs] 替换)
-AiStore aiStore = _MemAiStore();
-
-/// 测试用: 换一个干净的内存存储并允许重新装载
-void resetAiStoreForTest() { aiStore = _MemAiStore(); }
+//
+// ★2026-10-21：这里原本自带一份 `AiStore` / `aiStore` / `resetAiStoreForTest`，
+//   但 `peer_hub.dart` 又各自 import 了 shared_preferences，导致
+//   `agent_selfcheck.dart`（经 ai_agent → agent_dsh_client → peer_hub）
+//   在 `dart run` 下编译不过，那把尺子红了 6 个版本、连带 15 道门禁被跳过。
+//   现在存储抽象只有 `kv.dart` 一处定义，两个模块共用。
+export 'kv.dart' show AiStore, MemAiStore, aiStore, setAiStore, resetAiStoreForTest;
 
 /// 进程内单调计数器 —— 给 id 用。
 ///
