@@ -17,8 +17,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:shared_preferences/shared_preferences.dart';
-
+// ★2026-10-21：不再直接 import shared_preferences。
+//   那一处直连会把 `package:flutter` 拖进编译链，导致任何**间接**引用到
+//   peer_hub 的纯 Dart 自检（agent_selfcheck → ai_agent → agent_dsh_client
+//   → peer_hub）在 `dart run` 下编译失败，连带 15 道门禁被跳过。
+//   现在统一走 `kv.dart` 的 AiStore 抽象（App 启动时注入 prefs 实现）。
+import 'kv.dart';
 import 'peer_hub_logic.dart';
 
 export 'peer_hub_logic.dart';
@@ -147,16 +151,16 @@ class PeerHubClient {
   static String _ep(String path) => PeerUrl.join(base, path);
 
   // ── 持久化 ──
-  static SharedPreferences? _sp;
-
-  static Future<SharedPreferences> _prefs() async =>
-      _sp ??= await SharedPreferences.getInstance();
+  //
+  // 只暴露一个 `AiStore` 形状的入口：下面是 getString/setString/remove/setInt，
+  // 与 shared_preferences 用法一致，所以原有调用点一个字都不用改。
+  static Future<AiStore> _prefs() async => aiStore;
 
   static Future<void> loadIdentity() async {
     try {
       final p = await _prefs();
-      myIid = p.getString(_kIid) ?? '';
-      myToken = p.getString(_kToken) ?? '';
+      myIid = await p.getString(_kIid) ?? '';
+      myToken = await p.getString(_kToken) ?? '';
     } catch (_) {}
   }
 
@@ -189,7 +193,7 @@ class PeerHubClient {
   static Future<PeerRegistry> loadCache() async {
     try {
       final p = await _prefs();
-      final s = p.getString(_kCache) ?? '';
+      final s = await p.getString(_kCache) ?? '';
       if (s.isEmpty) return PeerRegistry.empty;
       return PeerRegistry.fromJson(PeerJson.obj(s));
     } catch (_) {
@@ -400,7 +404,7 @@ class PeerHubClient {
   static Future<Map<String, dynamic>> localSecrets() async {
     try {
       final p = await _prefs();
-      final s = p.getString(_kSecrets) ?? '';
+      final s = await p.getString(_kSecrets) ?? '';
       return s.isEmpty ? <String, dynamic>{} : PeerJson.obj(s);
     } catch (_) {
       return <String, dynamic>{};
