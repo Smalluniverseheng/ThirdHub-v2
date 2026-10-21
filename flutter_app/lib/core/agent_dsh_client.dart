@@ -13,7 +13,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:shared_preferences/shared_preferences.dart';
+
+// ★2026-10-21：不再直连 shared_preferences —— 那会把 flutter 拖进纯 Dart 自检的
+//   编译链（agent_selfcheck → ai_agent → 本文件）。统一走 kv.dart 的 AiStore。
+import 'kv.dart';
 import 'peer_hub.dart';
 
 import 'agent_models.dart';
@@ -79,7 +82,7 @@ class AgentDshClient {
       }
       base = u.trim();
       try {
-        final p = await SharedPreferences.getInstance();
+        final p = aiStore;
         await p.setString('agent_dsh_base', base);
         await p.setString('agent_dsh_from_peer', best.iid);
         await p.setString('agent_dsh_from_name', best.name);
@@ -93,8 +96,8 @@ class AgentDshClient {
   /// 已配对的电脑名（来自 peer 自动配对；手动配置时为空）。
   static Future<String> pairedFromName() async {
     try {
-      final p = await SharedPreferences.getInstance();
-      return p.getString('agent_dsh_from_name') ?? '';
+      final p = aiStore;
+      return await p.getString('agent_dsh_from_name') ?? '';
     } catch (_) {
       return '';
     }
