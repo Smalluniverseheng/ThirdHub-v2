@@ -33,6 +33,12 @@ process.on('uncaughtException', (e) => {
 // 只会觉得「后端根本跑不起来 / 一点就闪退」。
 // 这里把失败翻译成人话，并直接把修复命令印出来。
 (function preflightDeps() {
+  // ★2026-10-22：单文件版（Node SEA，`ThirdHubBackend.exe`）里依赖已被内联进可执行文件，
+  //   磁盘上没有 node_modules → `require.resolve` 必然报"缺少依赖"，把好好的包判成坏的。
+  //   SEA 里判断真实可用性没有意义，直接跳过。node:sea 自 Node 22 起提供。
+  try {
+    if (require('node:sea').isSea()) return;
+  } catch (_) { /* 老版本 Node 没有 node:sea，按普通部署继续检查 */ }
   const REQUIRED = [
     ['cheerio', '解析书源返回的 HTML'],
     ['bonjour-service', 'mDNS 局域网发现'],
@@ -103,7 +109,28 @@ else { SECRET = 'thsec_' + crypto.randomBytes(24).toString('hex'); fs.writeFileS
 // ─── 证书(无则生成) ───
 const KEY = path.join(DATA, 'key.pem'), CERT = path.join(DATA, 'cert.pem');
 if (!fs.existsSync(KEY) || !fs.existsSync(CERT)) {
-  require('child_process').execSync('node ' + path.join(__dirname, 'scripts', 'gencert.js'), { stdio: 'inherit' });
+  // ★2026-10-22：**先在进程内生成**，不再无脑 `execSync('node scripts/gencert.js')`。
+  //   原因：单文件版（ThirdHubBackend.exe）运行在**没装 Node 的机器**上，
+  //   PATH 里没有 `node` → 首次启动必然失败，而用户看到的只是"一闪而过"。
+  //   进程内生成用同一份 selfsigned（已内联），任何部署方式都成立。
+  let certDone = false;
+  try {
+    fs.mkdirSync(DATA, { recursive: true });
+    const selfsigned = require('selfsigned');
+    const pems = selfsigned.generate([{ name: 'commonName', value: 'ThirdHub' }], {
+      algorithm: 'sha256', days: 3650, keySize: 2048,
+      extensions: [{ name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] }],
+    });
+    fs.writeFileSync(KEY, pems.private);
+    fs.writeFileSync(CERT, pems.cert);
+    certDone = true;
+    console.log('[cert] 已生成自签证书 data/cert.pem');
+  } catch (e) {
+    console.error('[cert] 进程内生成失败，回退到脚本方式：', e && e.message);
+  }
+  if (!certDone) {
+    require('child_process').execSync('node ' + path.join(__dirname, 'scripts', 'gencert.js'), { stdio: 'inherit' });
+  }
 }
 const fingerprint = crypto.createHash('sha256')
   .update(fs.readFileSync(CERT)).digest('hex').match(/.{4}/g).join(':');
@@ -470,6 +497,10 @@ async function handle(req, res, body) {
     try {
       const h = new URL(origin).hostname;
       if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.localhost')) return origin;
+      /* ★2026-10-13：自家网页端（*.pages.dev 部署）也放行 ——
+         网页端「连接本机后端」是既定功能（自签证书都放行了），
+         此前 CORS 白名单没含它，被当"陌生来源"回 null 拦掉。 */
+      if (h === 'thirdhub.pages.dev' || h.endsWith('.pages.dev')) return origin;
       // 局域网私有网段的网页端（192.168 / 10. / 172.16-31）也是自家设备
       if (/^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return origin;
     } catch (e) { /* 非法 Origin → 不放行 */ }
