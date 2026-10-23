@@ -9,8 +9,8 @@ import 'module_registry.dart';
 import 'app_log.dart';
 
 class Cloud {
-  static const String base = 'https://mxvxlgjzeboktufumxbp.supabase.co';
-  static const String anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14dnhsZ2p6ZWJva3R1ZnVteGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzODM5OTcsImV4cCI6MjA5OTk1OTk5N30.QjSLfYAFhwX72YSeAcbTN5O2_PDLaNcv76HhdGJsqpo';
+  static const String base = 'https://onhmosehcwyrqgxadjvb.supabase.co';
+  static const String anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9uaG1vc2VoY3d5cnFneGFkanZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MTg0MTQsImV4cCI6MjEwNjA5NDQxNH0.vQbrE0qkGWWPQv4H2VOKJXwwh1XgBnZXwoFHFd9Zo1Y';
 
   static String accessToken = '';
   static String refreshToken = '';
