@@ -56,7 +56,7 @@ class Notify {
       final p = await SharedPreferences.getInstance();
       // 1) 管理后台公告(th_configs.key=announcement)
       const anon = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14dnhsZ2p6ZWJva3R1ZnVteGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzODM5OTcsImV4cCI6MjA5OTk1OTk5N30.QjSLfYAFhwX72YSeAcbTN5O2_PDLaNcv76HhdGJsqpo';
-      final r = await http.get(Uri.parse('https://mxvxlgjzeboktufumxbp.supabase.co/rest/v1/th_configs?key=eq.announcement&select=*'),
+      final r = await http.get(Uri.parse('https://onhmosehcwyrqgxadjvb.supabase.co/rest/v1/th_configs?key=eq.announcement&select=*'),
         headers: {'apikey': anon, 'Authorization': 'Bearer $anon'}).timeout(const Duration(seconds: 8));
       if (r.statusCode == 200) {
         final l = jsonDecode(utf8.decode(r.bodyBytes)) as List;
@@ -72,7 +72,7 @@ class Notify {
         }
       }
       // 2) 兼容: 存储桶 announce.json {id,title,body}
-      final r2 = await http.get(Uri.parse('https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub/announce.json?ts=${DateTime.now().millisecondsSinceEpoch}'))
+      final r2 = await http.get(Uri.parse('https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub/announce.json?ts=${DateTime.now().millisecondsSinceEpoch}'))
           .timeout(const Duration(seconds: 8));
       if (r2.statusCode != 200) return;
       final j = jsonDecode(utf8.decode(r2.bodyBytes));
