@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_snapshot.dart';
 import 'ai_agent.dart';
+import 'agent_policy.dart';
 import 'api_keys_store.dart';
 import 'app_version.dart';
 import 'key_detect.dart' as kd;
@@ -205,24 +206,36 @@ class AiChat {
           final tc = AiTools.parseTextCalls(txt);
           if (tc.isEmpty) break;
           msgs.add({'role': 'assistant', 'content': AiTools.stripTextCalls(txt)});
+          final batch = <({String name, Map<String, dynamic> args})>[];
           for (final c in tc) {
             final name = '${c['name']}';
             final args = Map<String, dynamic>.from(c['arguments'] as Map? ?? {});
             onToolCall?.call(name);
-            final out = await _exec(toolExecutor, mcpTools, name, args);
-            msgs.add({'role': 'user', 'content': AiTools.toolResult(name, out)});
+            batch.add((name: name, args: args));
+          }
+          // ★只读并行、写类串行（见 _execMany 注释）
+          final outs = await _execMany(toolExecutor, mcpTools, batch);
+          for (var i = 0; i < batch.length; i++) {
+            msgs.add({'role': 'user', 'content': AiTools.toolResult(batch[i].name, outs[i])});
           }
           continue;
         }
         msgs.add({'role': 'assistant', 'content': msg['content'] ?? '', 'tool_calls': calls});
+        final batch = <({String name, Map<String, dynamic> args})>[];
+        final ids = <String>[];
         for (final call in calls) {
           final fn = call['function'] ?? {};
           final name = '${fn['name'] ?? ''}';
           onToolCall?.call(name);
           Map<String, dynamic> args = {};
           try { args = Map<String, dynamic>.from(jsonDecode('${fn['arguments'] ?? '{}'}')); } catch (_) {}
-          final out = await _exec(toolExecutor, mcpTools, name, args);
-          msgs.add({'role': 'tool', 'tool_call_id': '${call['id'] ?? ''}', 'content': out});
+          batch.add((name: name, args: args));
+          ids.add('${call['id'] ?? ''}');
+        }
+        // ★只读并行、写类串行（见 _execMany 注释）；返回顺序与 calls 一一对应
+        final outs = await _execMany(toolExecutor, mcpTools, batch);
+        for (var i = 0; i < batch.length; i++) {
+          msgs.add({'role': 'tool', 'tool_call_id': ids[i], 'content': outs[i]});
         }
       }
     }
@@ -273,6 +286,42 @@ class AiChat {
   }
 
   // 统一执行一次工具调用(原生 function-calling 与 <tool_call> 文本协议共用一条路径)
+  /// 一次执行多个工具调用：**只读的并行，写/高危的按原顺序串行**。
+  ///
+  /// 为什么这么分（2026-10-23）：
+  ///   · 模型经常一口气给 3~5 个调用（比如同时查小说/漫画/影视三个库），
+  ///     全串行时每一步都要等上一跳网络，5 个 2 秒的工具就是 10 秒；
+  ///   · 但**写类工具不能并发** —— 两个 `file_write` 同时跑会互相覆盖，
+  ///     `shell.run` 并发可能把状态搞乱。所以按风险分级：
+  ///     `read` 并行，`write`/`danger`/未登记（unknown，按最严）一律串行。
+  ///   · 返回值顺序**必须与入参一致** —— 下游要用 tool_call_id 对应回填。
+  static Future<List<String>> _execMany(
+    AiToolExecutor? toolExecutor,
+    List<Map<String, dynamic>> tools,
+    List<({String name, Map<String, dynamic> args})> calls,
+  ) async {
+    final out = List<String>.filled(calls.length, '');
+    final readIdx = <int>[];
+    for (var i = 0; i < calls.length; i++) {
+      final risk = AgentPolicy.riskOf(AgentPolicy.policyName(calls[i].name));
+      if (risk == AgentRisk.read) readIdx.add(i);
+    }
+    if (readIdx.length > 1) {
+      await Future.wait(readIdx.map((i) async {
+        out[i] = await _exec(toolExecutor, tools, calls[i].name, calls[i].args);
+      }));
+    } else if (readIdx.length == 1) {
+      final i = readIdx.first;
+      out[i] = await _exec(toolExecutor, tools, calls[i].name, calls[i].args);
+    }
+    final parallel = readIdx.toSet();
+    for (var i = 0; i < calls.length; i++) {
+      if (parallel.contains(i)) continue;
+      out[i] = await _exec(toolExecutor, tools, calls[i].name, calls[i].args);
+    }
+    return out;
+  }
+
   static Future<String> _exec(AiToolExecutor? toolExecutor, List<Map<String, dynamic>> tools,
       String name, Map<String, dynamic> args) async {
     String out;
