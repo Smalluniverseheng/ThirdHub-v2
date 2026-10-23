@@ -541,6 +541,89 @@ async function handle(req, res, body) {
     encrypted: true, time: Date.now()
   }});
 
+  // ── 资料库在线清单（免鉴权；只回地址与能力，不含任何源/密钥）──
+  //
+  // ★2026-10-23：给**网页端/PWA** 用的。手机浏览器不能像 App 那样扫 UDP 广播，
+  //   只能靠后端把"我在局域网里看到哪些资料库"告诉它。没有这个端点，
+  //   网页端在 iPhone 上只能靠用户手填 IP，等于不可用。
+  if (p === '/v1/engines' && req.method === 'GET') {
+    const list = thpOnline().map((d) => {
+      const caps = d.caps || [];
+      return {
+        url: d.device_url,
+        instanceId: d.instanceId || '',
+        role: d.role || '',
+        caps,
+        modules: caps.filter((c) => String(c).startsWith('m:')).map((c) => String(c).slice(2)),
+        name: d.name || '',
+        lastSeen: d.last_seen || 0,
+      };
+    }).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    return send(200, { v: 1, object: 'engines', data: { count: list.length, engines: list } });
+  }
+
+  // ── 资料库同源转发（★ iOS/Safari 的关键一环）──
+  //
+  // 用户场景原话：「我可以用一个安卓手机连在局域网上跑引擎，然后苹果手机连在
+  //   局域网上用网页端也能够连接引擎并使用」。
+  //
+  // 为什么必须由后端转发：网页端如果是 https 部署（pages.dev / 自签后端），
+  //   浏览器会拦掉页面去 fetch `http://192.168.x.x:1234` —— 这是**混合内容**，
+  //   Chrome 还能靠 local-network-access 授权放行，**iOS Safari 完全没有这个机制**，
+  //   在 iPhone 上就是彻底连不上。唯一稳的办法是让页面只跟"一个源"说话，
+  //   由后端在服务端去取局域网 HTTP。
+  //
+  // 安全边界（缺一条就会变成公网开放代理）：
+  //   ① 只允许 http/https；② 目标必须是**私网或回环**地址；
+  //   ③ 路径必须以 `/thp/` 开头（只转发 THP 协议，不转发任意 URL）；
+  //   ④ 15 秒超时；⑤ 不转发任何请求头（尤其不带 token/凭据）。
+  if (p === '/thp-relay' && req.method === 'GET') {
+    const to = u.searchParams.get('to') || '';
+    let t = null;
+    try { t = new URL(to); } catch (e) { t = null; }
+    if (!t) return send(400, { ok: false, error: { code: 'bad_target', message: '缺 to 参数或不是合法 URL' } });
+    if (t.protocol !== 'http:' && t.protocol !== 'https:') {
+      return send(400, { ok: false, error: { code: 'bad_scheme', message: '只支持 http/https' } });
+    }
+    const host = t.hostname;
+    const isPrivate = host === 'localhost' || host === '::1' ||
+        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host) ||
+        host.endsWith('.local') || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd');
+    if (!isPrivate) {
+      return send(403, { ok: false, error: { code: 'not_private', message: '只允许转发到局域网/回环地址' } });
+    }
+    if (!t.pathname.startsWith('/thp/')) {
+      return send(403, { ok: false, error: { code: 'bad_path', message: '只允许转发 /thp/ 协议路径' } });
+    }
+    // 除 to 之外的查询参数原样带给资料库
+    const qs = new URLSearchParams(u.searchParams);
+    qs.delete('to');
+    t.search = qs.toString();
+
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(t.toString(), {
+        signal: ctl.signal,
+        headers: { Accept: 'application/json', 'User-Agent': 'ThirdHub-Relay/1' },
+      });
+      clearTimeout(timer);
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.writeHead(r.status, {
+        'Content-Type': r.headers.get('content-type') || 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-TH-Relay-Ms': String(Date.now() - t0),
+      });
+      return res.end(buf);
+    } catch (e) {
+      clearTimeout(timer);
+      const msg = ctl.signal.aborted ? '资料库超时（15 秒）' : String(e && e.message || e);
+      return send(502, { ok: false, error: { code: 'relay_failed', message: msg, target: t.toString() } });
+    }
+  }
+
   // ── 多通道清单（★ 免鉴权，但**只回地址与可用性，不回任何密钥/内容列表**）──
   // 用户第 7 条需求：「主网要支持多种形式的，不是只做一种，让用户有超级多的选择」。
   // 这里把"这个后端现在能用哪几种方式连进来"一次性告诉前端，由**用户**选，
