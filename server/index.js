@@ -541,6 +541,77 @@ async function handle(req, res, body) {
     encrypted: true, time: Date.now()
   }});
 
+  // ── 账号级数据同步（App 与网页端共用的唯一数据源）──
+  //
+  // 目标（2026-10-23）：用户「软件端和网页端没对接好」。
+  //   已核实：两端用的是**同一个 Supabase 项目**（账号身份本来就是统一的），
+  //   真正没对齐的是**数据** —— App 存 SharedPreferences、网页存 localStorage，
+  //   同一账号在两处看到的东西不一样。
+  //
+  // 这里给出一份「按账号 + 命名空间」的同步存储：
+  //   GET  /v1/account/state?ns=bookshelf        → { data, updatedAt, device }
+  //   PUT  /v1/account/state?ns=bookshelf  body {data} → 写入并返回服务端版本
+  //   GET  /v1/account/state                     → 该账号全部命名空间的快照
+  //
+  // 规则（刻意选简单、可预测的）：
+  //   · **最后写入者获胜**（按服务端收到的时间），不做 CRDT —— 先能用再谈合并；
+  //   · 每次写入带 `rev` 递增，客户端可据此判断"是不是别人的更新"；
+  //   · 账号取自 `X-TH-Account`（Supabase user id）；缺省为 `local`；
+  //   · **必须带配对 token**（`X-TH-Token`）—— 这里是用户数据，不是公开信息。
+  if (p === '/v1/account/state') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { ok: false, error: { code: 'unauthorized', message: '需要配对 token' } });
+    }
+    const acc = String(req.headers['x-th-account'] || 'local').slice(0, 64) || 'local';
+    if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(acc)) {
+      return send(400, { ok: false, error: { code: 'bad_account', message: '账号标识含非法字符' } });
+    }
+    const STATE_FILE = path.join(DATA, 'account-state.json');
+    const loadState = () => {
+      try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch (e) { return {}; }
+    };
+    const saveState = (o) => {
+      try { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(o)); } catch (e) {}
+    };
+
+    if (req.method === 'GET') {
+      const all = loadState();
+      const mine = all[acc] || {};
+      const ns = u.searchParams.get('ns') || '';
+      if (ns) {
+        const rec = mine[ns] || null;
+        return send(200, { ok: true, data: rec, account: acc, ns });
+      }
+      return send(200, { ok: true, data: mine, account: acc, count: Object.keys(mine).length });
+    }
+
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const ns = (u.searchParams.get('ns') || '').trim();
+      if (!ns || !/^[A-Za-z0-9_.:-]{1,48}$/.test(ns)) {
+        return send(400, { ok: false, error: { code: 'bad_ns', message: '缺 ns 或命名空间非法' } });
+      }
+      let body2 = null;
+      try { body2 = JSON.parse(body || '{}'); } catch (e) { body2 = null; }
+      if (!body2 || typeof body2 !== 'object' || !('data' in body2)) {
+        return send(400, { ok: false, error: { code: 'bad_body', message: 'body 需要 { data: ... }' } });
+      }
+      const all = loadState();
+      all[acc] = all[acc] || {};
+      const prev = all[acc][ns] || { rev: 0 };
+      const rec = {
+        data: body2.data,
+        rev: (Number(prev.rev) || 0) + 1,
+        updatedAt: Date.now(),
+        device: String(body2.device || req.headers['x-th-device'] || '').slice(0, 48),
+      };
+      all[acc][ns] = rec;
+      saveState(all);
+      return send(200, { ok: true, data: rec, account: acc, ns });
+    }
+
+    return send(405, { ok: false, error: { code: 'method_not_allowed', message: '仅 GET/PUT/POST' } });
+  }
+
   // ── 资料库在线清单（免鉴权；只回地址与能力，不含任何源/密钥）──
   //
   // ★2026-10-23：给**网页端/PWA** 用的。手机浏览器不能像 App 那样扫 UDP 广播，
