@@ -11449,7 +11449,7 @@ class _At extends State<AccountTile> {
 class DownloadCenterTile extends StatefulWidget {
   const DownloadCenterTile({super.key});
   static const _base =
-      'https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub';
+      'https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub';
   static const products = [
     (
       '第三方聚合',
@@ -11814,7 +11814,7 @@ class Updater {
     final list = <String>[url];
     if (ver.isNotEmpty) {
       list.add(
-          'https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
+          'https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
       const gh =
           'https://github.com/Smalluniverseheng/ThirdHub-v2/releases/download';
       list.add('https://ghfast.top/$gh/v$ver/ThirdHub-$ver.apk');
