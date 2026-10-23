@@ -55,7 +55,7 @@ class Notify {
       await init();
       final p = await SharedPreferences.getInstance();
       // 1) 管理后台公告(th_configs.key=announcement)
-      const anon = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14dnhsZ2p6ZWJva3R1ZnVteGJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzODM5OTcsImV4cCI6MjA5OTk1OTk5N30.QjSLfYAFhwX72YSeAcbTN5O2_PDLaNcv76HhdGJsqpo';
+      const anon = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9uaG1vc2VoY3d5cnFneGFkanZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MTg0MTQsImV4cCI6MjEwNjA5NDQxNH0.vQbrE0qkGWWPQv4H2VOKJXwwh1XgBnZXwoFHFd9Zo1Y';
       final r = await http.get(Uri.parse('https://onhmosehcwyrqgxadjvb.supabase.co/rest/v1/th_configs?key=eq.announcement&select=*'),
         headers: {'apikey': anon, 'Authorization': 'Bearer $anon'}).timeout(const Duration(seconds: 8));
       if (r.statusCode == 200) {
