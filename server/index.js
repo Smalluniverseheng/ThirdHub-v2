@@ -141,6 +141,9 @@ const dgram = require('dgram');
 const os = require('os');
 const THP_PORT = 19527;
 const thp1 = require('./thp1');
+// ★2026-10-23：数据层搬到 Neon（文件存储仍在 Supabase，两类东西分开）。
+//   没配 NEON_DATABASE_URL 时 neon.enabled() 为 false，自动回退到本地 JSON。
+const neon = require('./neon');
 const THP_CAPS_CSV = thp1.CAPS.join(','); // 与 thp1 声明的能力集保持唯一事实来源
 let thpBcSock = null; // 广播 socket, 关停时发 BYE
 
@@ -575,9 +578,18 @@ async function handle(req, res, body) {
     };
 
     if (req.method === 'GET') {
+      const ns = u.searchParams.get('ns') || '';
+      // 优先 Neon（多设备安全、可查询）；没配库则回落到本地 JSON
+      if (neon.enabled()) {
+        if (ns) {
+          const rec = await neon.syncGet(acc, ns);
+          return send(200, { ok: true, data: rec, account: acc, ns, backend: 'neon' });
+        }
+        const all = (await neon.syncGetAll(acc)) || {};
+        return send(200, { ok: true, data: all, account: acc, count: Object.keys(all).length, backend: 'neon' });
+      }
       const all = loadState();
       const mine = all[acc] || {};
-      const ns = u.searchParams.get('ns') || '';
       if (ns) {
         const rec = mine[ns] || null;
         return send(200, { ok: true, data: rec, account: acc, ns });
@@ -604,12 +616,127 @@ async function handle(req, res, body) {
         updatedAt: Date.now(),
         device: String(body2.device || req.headers['x-th-device'] || '').slice(0, 48),
       };
+      if (neon.enabled()) {
+        const nrec = await neon.syncPut(acc, ns, body2.data, rec.device);
+        if (!nrec) {
+          return send(502, { ok: false, error: { code: 'db_unavailable', message: '数据层写入失败（Neon）' } });
+        }
+        return send(200, { ok: true, data: nrec, account: acc, ns, backend: 'neon' });
+      }
       all[acc][ns] = rec;
       saveState(all);
       return send(200, { ok: true, data: rec, account: acc, ns });
     }
 
     return send(405, { ok: false, error: { code: 'method_not_allowed', message: '仅 GET/PUT/POST' } });
+  }
+
+  // ── 业务数据统一入口（Neon）──
+  //
+  // 分工（2026-10-24 定死）：
+  //   · Supabase = **服务器类**：auth.users + th_profiles（RLS 依赖 auth.uid），仅此而已；
+  //   · Neon     = **数据类**：书架/历史/收藏/进度/设置/设备/共享 —— 全部落 th_data。
+  //
+  // 客户端契约（与网页端 settings-sync / App cloud.dart 对齐）：
+  //   GET    /v1/data/:tbl            → { ok, rows:[{id,data,updatedAt}] }
+  //   GET    /v1/data/:tbl?id=xxx     → { ok, row }
+  //   PUT    /v1/data/:tbl/:id        body {data}  → 覆盖写（last-write-wins）
+  //   DELETE /v1/data/:tbl/:id        → 删一行
+  // 鉴权：X-TH-Token（配对密钥）+ X-TH-Account（Supabase user id）。
+  if (p.startsWith('/v1/data/')) {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { ok: false, error: { code: 'unauthorized', message: '需要配对 token' } });
+    }
+    if (!neon.enabled()) {
+      return send(503, { ok: false, error: { code: 'db_off', message: '数据层未配置（Neon）' } });
+    }
+    const acc = String(req.headers['x-th-account'] || '').slice(0, 64);
+    if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(acc)) {
+      return send(400, { ok: false, error: { code: 'bad_account', message: '缺 X-TH-Account 或非法' } });
+    }
+    const rest = p.slice('/v1/data/'.length).split('/').filter(Boolean);
+    const tbl = rest[0] || '';
+    const rowId = rest.slice(1).join('/');
+    if (!neon.tableOk(tbl)) {
+      return send(400, { ok: false, error: { code: 'bad_table', message: '不支持的表：' + tbl, allowed: [...neon.DATA_TABLES] } });
+    }
+
+    if (req.method === 'GET') {
+      if (rowId || u.searchParams.get('id')) {
+        const id = rowId || u.searchParams.get('id');
+        const rows = await neon.dataList(acc, tbl);
+        const hit = (rows || []).find((r) => r.row_id === id);
+        return send(200, { ok: true, row: hit ? { id: hit.row_id, data: hit.data, updatedAt: hit.updated_at } : null });
+      }
+      const rows = await neon.dataList(acc, tbl, u.searchParams.get('since'));
+      if (rows === null) return send(502, { ok: false, error: { code: 'db_unavailable', message: '读取失败' } });
+      return send(200, {
+        ok: true, table: tbl, count: rows.length, backend: 'neon',
+        rows: rows.map((r) => ({ id: r.row_id, data: r.data, updatedAt: r.updated_at })),
+      });
+    }
+
+    if (req.method === 'PUT' || req.method === 'POST') {
+      if (!rowId) return send(400, { ok: false, error: { code: 'bad_id', message: '缺行 id' } });
+      let d = null;
+      try { d = JSON.parse(body || 'null'); } catch (_) { d = null; }
+      if (d === null || typeof d !== 'object') {
+        return send(400, { ok: false, error: { code: 'bad_body', message: 'body 需要一个对象（或 {data:...}）' } });
+      }
+      const payload = ('data' in d && Object.keys(d).length === 1) ? d.data : d;
+      const rec = await neon.dataPut(acc, tbl, rowId, payload);
+      if (!rec) return send(502, { ok: false, error: { code: 'db_write_failed', message: '写入失败' } });
+      return send(200, { ok: true, id: rec.row_id, updatedAt: rec.updated_at, backend: 'neon' });
+    }
+
+    if (req.method === 'DELETE') {
+      if (!rowId) return send(400, { ok: false, error: { code: 'bad_id', message: '缺行 id' } });
+      const okd = await neon.dataDelete(acc, tbl, rowId);
+      return okd ? send(200, { ok: true, deleted: rowId }) : send(502, { ok: false, error: { code: 'db_write_failed', message: '删除失败' } });
+    }
+    return send(405, { ok: false, error: { code: 'method_not_allowed', message: '仅 GET/PUT/POST/DELETE' } });
+  }
+
+  // ── 更新日志 / 公告（数据在 Neon；读免鉴权、写要 token）──
+  //
+  // 这两块原来放在 Supabase 的表/桶里，项目被删后全没了。
+  // 现在归到 Neon（数据层），与文件存储分开。
+  if (p === '/v1/changelog' && req.method === 'GET') {
+    if (!neon.enabled()) return send(503, { ok: false, error: { code: 'db_off', message: '数据层未配置' } });
+    const j = await neon.changelogGet('changelog-public');
+    if (!j) return send(404, { ok: false, error: { code: 'not_found', message: '暂无更新日志' } });
+    return send(200, j);
+  }
+  if (p === '/v1/changelog' && (req.method === 'PUT' || req.method === 'POST')) {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { ok: false, error: { code: 'unauthorized', message: '需要配对 token' } });
+    }
+    if (!neon.enabled()) return send(503, { ok: false, error: { code: 'db_off', message: '数据层未配置' } });
+    let payload = null;
+    try { payload = JSON.parse(body || 'null'); } catch (e) { payload = null; }
+    if (!payload || !payload.entries) {
+      return send(400, { ok: false, error: { code: 'bad_body', message: '需要一个含 entries 的对象' } });
+    }
+    const ok = await neon.changelogPut('changelog-public', payload);
+    return ok
+        ? send(200, { ok: true, data: { saved: true, latest: payload.latest || '' } })
+        : send(502, { ok: false, error: { code: 'db_write_failed', message: '写入失败' } });
+  }
+  if (p === '/v1/announce' && req.method === 'GET') {
+    if (!neon.enabled()) return send(200, { ok: true, data: { count: 0, items: [] } });
+    const items = await neon.announceList(Number(u.searchParams.get('limit') || 20));
+    return send(200, { ok: true, data: { count: items.length, items } });
+  }
+  if (p === '/v1/announce' && req.method === 'POST') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+      return send(401, { ok: false, error: { code: 'unauthorized', message: '需要配对 token' } });
+    }
+    if (!neon.enabled()) return send(503, { ok: false, error: { code: 'db_off', message: '数据层未配置' } });
+    let d = null;
+    try { d = JSON.parse(body || '{}'); } catch (e) { d = null; }
+    if (!d || !d.title) return send(400, { ok: false, error: { code: 'bad_body', message: '缺 title' } });
+    const rec = await neon.announceCreate(d.title, d.body, d.kind);
+    return rec ? send(200, { ok: true, data: rec }) : send(502, { ok: false, error: { code: 'db_write_failed', message: '写入失败' } });
   }
 
   // ── 资料库在线清单（免鉴权；只回地址与能力，不含任何源/密钥）──
@@ -631,6 +758,85 @@ async function handle(req, res, body) {
       };
     }).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
     return send(200, { v: 1, object: 'engines', data: { count: list.length, engines: list } });
+  }
+
+  // ── 错误/运行日志上报（2026-10-24）──
+  //
+  // 目的：用户报「日志经常报错」但看不到 —— 以前只写在各自设备本地，
+  //   用户不会为了一次报错去翻本地文件。现在**自动批量上传**，后台能集中看。
+  //
+  // 契约：
+  //   POST /v1/log/batch  body {logs:[{cat, level, msg, detail?, at?, app?, ver?, uid?}]}
+  //   GET  /v1/log?level=error&cat=&q=&limit=200   → 最近的条目
+  //
+  // 落盘：`data/logs/YYYY-MM-DD.jsonl`（每行一条），保留 14 天。
+  // 安全：不鉴权（客户端未必已配对），但**只收元信息**（cat/level/msg/detail），
+  //   不收音频/图片/密钥；单批 ≤ 200 条、单条 ≤ 2KB，防刷。
+  if (p === '/v1/log/batch' && (req.method === 'POST' || req.method === 'PUT')) {
+    let d = null;
+    try { d = JSON.parse(body || '{}'); } catch (_) { d = null; }
+    const logs = d && Array.isArray(d.logs) ? d.logs.slice(0, 200) : null;
+    if (!logs || !logs.length) {
+      return send(400, { ok: false, error: { code: 'bad_body', message: '需要 {logs:[…]}' } });
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const dir = path.join(DATA, 'logs');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const lines = [];
+      for (const x of logs) {
+        const rec = {
+          at: x.at || Date.now(),
+          cat: String(x.cat || 'app').slice(0, 24),
+          level: String(x.level || 'info').slice(0, 12),
+          msg: String(x.msg || '').slice(0, 2000),
+          detail: x.detail || null,
+          app: String(x.app || '').slice(0, 24),
+          ver: String(x.ver || '').slice(0, 16),
+          uid: String(x.uid || '').slice(0, 64),
+        };
+        lines.push(JSON.stringify(rec));
+      }
+      fs.appendFileSync(path.join(dir, day + '.jsonl'), lines.join('\n') + '\n');
+    } catch (e) {
+      return send(500, { ok: false, error: { code: 'write_failed', message: String(e.message) } });
+    }
+    // 顺手清理 14 天前的
+    try {
+      const cut = Date.now() - 14 * 864e5;
+      for (const f of fs.readdirSync(dir)) {
+        const m = f.match(/(\d{4}-\d{2}-\d{2})\.jsonl$/);
+        if (!m) continue;
+        if (new Date(m[1] + 'T00:00:00Z').getTime() < cut) fs.unlinkSync(path.join(dir, f));
+      }
+    } catch (_) {}
+    return send(200, { ok: true, stored: logs.length });
+  }
+
+  if (p === '/v1/log' && req.method === 'GET') {
+    const level = (u.searchParams.get('level') || '').toLowerCase();
+    const cat = (u.searchParams.get('cat') || '').toLowerCase();
+    const q = (u.searchParams.get('q') || '').toLowerCase();
+    const limit = Math.min(500, Number(u.searchParams.get('limit') || 200));
+    const dir = path.join(DATA, 'logs');
+    const out = [];
+    try {
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort().reverse();
+      outer:
+      for (const f of files) {
+        const lines = fs.readFileSync(path.join(dir, f), 'utf8').split(/\n/).filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          let r = null;
+          try { r = JSON.parse(lines[i]); } catch (_) { continue; }
+          if (level && String(r.level).toLowerCase() !== level) continue;
+          if (cat && String(r.cat).toLowerCase() !== cat) continue;
+          if (q && !String(r.msg).toLowerCase().includes(q)) continue;
+          out.push(r);
+          if (out.length >= limit) break outer;
+        }
+      }
+    } catch (_) {}
+    return send(200, { ok: true, count: out.length, logs: out });
   }
 
   // ── 资料库同源转发（★ iOS/Safari 的关键一环）──
