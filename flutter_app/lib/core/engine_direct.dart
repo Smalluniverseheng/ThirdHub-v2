@@ -546,16 +546,31 @@ class EngineDirect {
   ///   导致引擎返回未截断的全量 JSON，bodyBytes 可达数 MB —— 在低端机上直接 OOM，
   ///   而 Dart 网络层崩掉时抛的正是 "Connection closed before full header"，
   ///   被误读成"资料库连不上"。这里改成**流式读 + 超限即断**，把 OOM 变成一句可读提示。
-  static const _maxRespBytes = 4 * 1024 * 1024;
+  /// 2026-10-24：4MB → 24MB。
+  /// 为什么抬：用户实测「发现小说」直接抛「资料库响应超过 4MB 上限，已中止」——
+  /// 4MB 对「单字符关键词命中上千书源」根本不够，而这个上限原本只是防 OOM 的兜底。
+  /// 24MB 在现代手机上仍安全（Dart 侧是流式读，不会额外翻倍）。
+  static const _maxRespBytes = 24 * 1024 * 1024;
+
+  /// 下载进度回调（已收字节 / 上限）。UI 用它显示「正在读取资料库响应… X MB」，
+  /// 免得大响应时屏幕像卡死。传 null 即关闭。
+  static void Function(int received, int cap)? onDownloadProgress;
 
   /// 带上限地读流：完整读完返回字节，超过 [cap] 返回 null（并立即取消订阅停止下载）。
   static Future<List<int>?> _readCapped(Stream<List<int>> s, int cap) async {
     final b = BytesBuilder(copy: false);
     final done = Completer<bool>();
+    int lastTick = 0;
     late StreamSubscription sub;
     sub = s.listen((c) {
       if (done.isCompleted) return;
       b.add(c);
+      // 每 200ms 或每到量级边界回调一次，别把 UI 刷爆
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastTick > 200) {
+        lastTick = now;
+        try { onDownloadProgress?.call(b.length, cap); } catch (_) {}
+      }
       if (b.length > cap) done.complete(false);
     }, onDone: () {
       if (!done.isCompleted) done.complete(true);
@@ -591,8 +606,9 @@ class EngineDirect {
         try {
           await res.stream.drain<void>();
         } catch (_) {}
-        throw Exception('资料库响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > 4MB），'
-            '已中止以免内存溢出。请缩小关键词或加类型过滤');
+        throw Exception('资料库响应过大（${(cl / 1048576).toStringAsFixed(1)}MB > '
+            '${(_maxRespBytes / 1048576).toStringAsFixed(0)}MB），已中止。'
+            '请把关键词写长一点，或用类型过滤缩小范围');
       }
       // ② 流式读 + 上限
       final bytes = await _readCapped(res.stream, _maxRespBytes)
