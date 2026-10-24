@@ -8,8 +8,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_version.dart';
+import 'agent_dsh_client.dart';
 
 class AppLog {
   AppLog._();
@@ -99,12 +102,86 @@ class AppLog {
     final lim = await limit();
     if (_mem.length > lim) _mem = _mem.sublist(_mem.length - lim);
     _c.add(null);
+    _queueForUpload(_mem.last);
     // 写盘节流：攒 500ms 内的多条一起写
     _wTimer?.cancel();
     _wTimer = Timer(const Duration(milliseconds: 500), _persist);
   }
 
   static Timer? _wTimer;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ★2026-10-24：自动上报到家庭后端（用户原话：「最好能自动上传错误日志，
+  //   让你能够看到，然后你可以调用管理那些错误的日志」）
+  //
+  // 以前日志只写本地文件 —— 用户不会为一次报错去翻本地文件，我也看不到。
+  // 现在：每次 add 都进上传队列；攒够 20 条或有 error/warn 就批量 POST 到
+  //   后端 `/v1/log/batch`（后端落 `data/logs/YYYY-MM-DD.jsonl`，保留 14 天）。
+  // 后端没配 / 网络不通 → **静默跳过**，绝不影响正常使用。
+  static final List<Map<String, dynamic>> _uploadQ = [];
+  static Timer? _upTimer;
+  static bool _upBusy = false;
+
+  /// 后端地址解析：优先家庭后端（AgentDshClient.base），没有就返回 null。
+  /// 刻意不直接 import Cloud/Supabase —— 日志是**局域网后端**的事。
+  static String? _backendBase() {
+    try {
+      final b = AgentDshClient.base.trim();
+      return b.isEmpty ? null : b;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void _queueForUpload(Map<String, dynamic> e) {
+    _uploadQ.add({
+      'at': e['at'],
+      'cat': e['cat'],
+      'level': e['lv'],
+      'msg': e['msg'],
+      if (e['d'] != null) 'detail': e['d'],
+      'app': 'android',
+      'ver': kAppVersion,
+    });
+    if (_uploadQ.length > 500) {
+      _uploadQ.removeRange(0, _uploadQ.length - 500); // 防止无限增长
+    }
+    final urgent = e['lv'] == 'error' || e['lv'] == 'warn';
+    if (_uploadQ.length >= 20 || urgent) {
+      _upTimer?.cancel();
+      _upTimer = Timer(const Duration(seconds: 2), _flushUploads);
+    }
+  }
+
+  static Future<void> _flushUploads() async {
+    if (_upBusy || _uploadQ.isEmpty) return;
+    _upBusy = true;
+    try {
+      final base = _backendBase();
+      if (base == null) {
+        _upBusy = false;
+        return;
+      }
+      final batch = List<Map<String, dynamic>>.from(_uploadQ);
+      _uploadQ.clear();
+      final r = await http.post(
+        Uri.parse('$base/v1/log/batch'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'logs': batch}),
+      ).timeout(const Duration(seconds: 8));
+      if (r.statusCode >= 400) {
+        // 失败就塞回队列尾部，下次再试（不丢日志）
+        _uploadQ.addAll(batch);
+      }
+    } catch (_) {
+      // 离线/后端没开：保留队列，下次 flush 再试
+    } finally {
+      _upBusy = false;
+    }
+  }
+
+  /// 手动立即上报（设置页「立即同步日志」用）。
+  static Future<void> flushUploads() => _flushUploads();
 
   static Future<List<Map<String, dynamic>>> all() async {
     await _ensure();
