@@ -374,8 +374,11 @@ class EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
           resolve(GestureDisposition.accepted);
         } else if (dy.abs() > 12 || dx < -8) {
           // 竖向滚动 或 左滑 → 放弃（绝不抢列表）
+          // ★同时必须 resolve(rejected)：只 active=false 不表态的话，竞技场扫尾时
+          //   本识别器仍会赢走手势 → 列表滚不动。与上面抬手那处同一类坑。
           active = false;
           stopTrackingPointer(e.pointer);
+          resolve(GestureDisposition.rejected);
           return;
         } else {
           return;
@@ -385,9 +388,16 @@ class EdgeSwipeRecognizer extends OneSequenceGestureRecognizer {
       onUpdate?.call(dx); // ★传**总位移**（调用方按「起点 + 总位移」算进度）
     } else if (e is PointerUpEvent || e is PointerCancelEvent) {
       final vx = _velocity();
+      final total = e.position.dx - sx;
       active = false;
       stopTrackingPointer(e.pointer);
-      onEnd?.call(e.position.dx - sx, vx);
+      /* ★★2026-10-30 关键修复：一直没认领（用户只是"点一下"/"竖滑"）时必须显式
+         resolve(rejected)。原来这里什么都不 resolve —— 手势竞技场在抬手时按
+         "先加入者优先"扫尾，而本识别器因为热区在最上层总是排第一，
+         于是它把**每一次点按**都赢走了：按钮点不动、输入框点不进焦点，
+         却一个异常都不报。这正是「AI 页各种点击都没反应」的第二半真因。 */
+      if (!claimed) { resolve(GestureDisposition.rejected); return; }
+      onEnd?.call(total, vx);
     }
   }
 
