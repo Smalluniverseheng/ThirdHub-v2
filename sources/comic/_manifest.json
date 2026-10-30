@@ -1,0 +1,207 @@
+{
+ "generatedAt": "2026-10-30T18:22:48.390Z",
+ "upstream": "https://github.com/venera-app/venera-configs",
+ "note": "从 jsdelivr 重新拉回的图源本体；仓库里 assets/builtin-sources/comic-src 曾被清成 0 字节",
+ "count": 33,
+ "files": [
+  {
+   "name": "拷贝漫画",
+   "fileName": "copy_manga.js",
+   "version": "1.4.3",
+   "bytes": 38675
+  },
+  {
+   "name": "拷贝漫画(多账号)",
+   "fileName": "copy_manga_multi_accounts.js",
+   "version": "1.4.1",
+   "bytes": 50011
+  },
+  {
+   "name": "Komiic",
+   "fileName": "komiic.js",
+   "version": "1.0.3",
+   "bytes": 22447
+  },
+  {
+   "name": "包子漫画",
+   "fileName": "baozi.js",
+   "version": "1.1.6",
+   "bytes": 14021
+  },
+  {
+   "name": "Picacg",
+   "fileName": "picacg.js",
+   "version": "1.0.6",
+   "bytes": 30088
+  },
+  {
+   "name": "nhentai",
+   "fileName": "nhentai.js",
+   "version": "1.1.0",
+   "bytes": 58668
+  },
+  {
+   "name": "紳士漫畫",
+   "fileName": "wnacg.js",
+   "version": "1.0.6",
+   "bytes": 32222
+  },
+  {
+   "name": "ehentai",
+   "fileName": "ehentai.js",
+   "version": "1.1.8",
+   "bytes": 61417
+  },
+  {
+   "name": "禁漫天堂",
+   "fileName": "jm.js",
+   "version": "1.4.0",
+   "bytes": 37520
+  },
+  {
+   "name": "MangaDex",
+   "fileName": "manga_dex.js",
+   "version": "1.2.0",
+   "bytes": 41798
+  },
+  {
+   "name": "爱看漫",
+   "fileName": "ikmmh.js",
+   "version": "1.0.6",
+   "bytes": 42688
+  },
+  {
+   "name": "少年ジャンプ＋",
+   "fileName": "shonen_jump_plus.js",
+   "version": "1.1.1",
+   "bytes": 14842
+  },
+  {
+   "name": "hitomi.la",
+   "fileName": "hitomi.js",
+   "version": "1.1.2",
+   "bytes": 42909
+  },
+  {
+   "name": "comick",
+   "fileName": "comick.js",
+   "version": "1.2.0",
+   "bytes": 25180
+  },
+  {
+   "name": "优酷漫画",
+   "fileName": "ykmh.js",
+   "version": "1.0.0",
+   "bytes": 35701
+  },
+  {
+   "name": "再漫画",
+   "fileName": "zaimanhua.js",
+   "version": "1.0.2",
+   "bytes": 14047
+  },
+  {
+   "name": "漫画柜",
+   "fileName": "manhuagui.js",
+   "version": "1.2.1",
+   "bytes": 45783
+  },
+  {
+   "name": "漫蛙吧",
+   "fileName": "manwaba.js",
+   "version": "1.0.2",
+   "bytes": 10878
+  },
+  {
+   "name": "Lanraragi",
+   "fileName": "lanraragi.js",
+   "version": "1.1.0",
+   "bytes": 30540
+  },
+  {
+   "name": "Komga",
+   "fileName": "komga.js",
+   "version": "1.0.0",
+   "bytes": 21693
+  },
+  {
+   "name": "カドコミ",
+   "fileName": "comic_walker.js",
+   "version": "1.0.1",
+   "bytes": 10511
+  },
+  {
+   "name": "漫画1234",
+   "fileName": "mh1234.js",
+   "version": "1.0.0",
+   "bytes": 17059
+  },
+  {
+   "name": "CCC追漫台",
+   "fileName": "ccc.js",
+   "version": "1.0.1",
+   "bytes": 30703
+  },
+  {
+   "name": "GoDa漫画",
+   "fileName": "goda.js",
+   "version": "1.2.1",
+   "bytes": 15204
+  },
+  {
+   "name": "18漫画",
+   "fileName": "mh18.js",
+   "version": "1.0.0",
+   "bytes": 9652
+  },
+  {
+   "name": "漫小肆",
+   "fileName": "mxs.js",
+   "version": "1.0.0",
+   "bytes": 17797
+  },
+  {
+   "name": "漫画人",
+   "fileName": "manhuaren.js",
+   "version": "1.0.0",
+   "bytes": 38730
+  },
+  {
+   "name": "H-Comic",
+   "fileName": "hcomic.js",
+   "version": "1.0.0",
+   "bytes": 12862
+  },
+  {
+   "name": "jcomic.net",
+   "fileName": "jcomic.js",
+   "version": "1.0.0",
+   "bytes": 12074
+  },
+  {
+   "name": "热辣漫画",
+   "fileName": "hot_manga.js",
+   "version": "1.0.0",
+   "bytes": 27379
+  },
+  {
+   "name": "Kavita",
+   "fileName": "kavita.js",
+   "version": "1.0.0",
+   "bytes": 22726
+  },
+  {
+   "name": "嗨皮漫画",
+   "fileName": "happy.js",
+   "version": "1.0.0",
+   "bytes": 21813
+  },
+  {
+   "name": "MYCOMIC",
+   "fileName": "mycomic.js",
+   "version": "1.1.0",
+   "bytes": 24640
+  }
+ ],
+ "failed": []
+}
