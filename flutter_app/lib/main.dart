@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:ui' show PlatformDispatcher, ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -56,6 +57,7 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/remote_config.dart';
 import 'core/member_levels.dart';
 import 'core/module_registry.dart';
 import 'core/changelog.dart';
@@ -295,6 +297,9 @@ Future<void> main() async {
       bootDone: bootDone,
       onFinish: () { if (!splashDone.isCompleted) splashDone.complete(); }));
   await Cloud.init();
+  // ★2026-10-30 远端配置中心：先用本地缓存（同步就绪、不阻塞），云端返回后覆盖。
+  //   目的：第三方 API / 地图 / 语音 / 源模板 / 资源库后端地址都在后台一键替换，不写死在包里。
+  unawaited(RemoteConfig.init());
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
   // ★M1：下载队列 —— 注入执行器 + 持久化 + 恢复上次未完成任务。
@@ -1427,22 +1432,80 @@ class ConsentPage extends StatelessWidget {
 }
 
 // 内置法律文档阅读页(打包进 assets, 离线可读, 无需联网)
+/// 全局「收键盘」观察者 —— 见 MaterialApp.navigatorObservers 的注释。
+class _DismissKeyboardObserver extends NavigatorObserver {
+  void _blur() {
+    final f = FocusManager.instance.primaryFocus;
+    if (f != null && f.hasFocus) f.unfocus();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _blur();
+    super.didPop(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _blur();
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _blur();
+    super.didRemove(route, previousRoute);
+  }
+}
+
 class LegalDocPage extends StatelessWidget {
   final String title, asset;
   const LegalDocPage({super.key, required this.title, required this.asset});
+
+  /// 把 md 里那些「纯装饰、不渲染就变成乱码」的写法收敛掉。
+  /// 说明：现在用 Markdown 渲染，`**粗体**` 会被正确排版；但历史文档里还有
+  /// 连续分隔线（---）和行内多余反斜杠，渲染后会出现一条秃线/反斜杠，
+  /// 读者看到的就是"一堆乱七八糟的符号"。这里做保守清理，不动正文语义。
+  String _clean(String md) {
+    return md
+        .replaceAll(RegExp(r'^\s*---+\s*$', multiLine: true), '')   // 分隔线：改成空行
+        .replaceAll(RegExp(r'\\+(?=[*_`#>|-])'), '')                 // 转义反斜杠
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');                      // 压掉连续空行
+  }
+
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(title: Text(title)),
       body: FutureBuilder<String>(
           future: rootBundle.loadString(asset),
-          builder: (c2, s) => s.hasData
-              ? Scrollbar(
-                  child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
-                      child: SelectableText(s.data!,
-                          style:
-                              const TextStyle(fontSize: 13.5, height: 1.75))))
-              : const Center(child: CircularProgressIndicator())));
+          builder: (c2, s) {
+            if (!s.hasData) return const Center(child: CircularProgressIndicator());
+            final dark = Theme.of(c2).brightness == Brightness.dark;
+            final base = Theme.of(c2).textTheme.bodyMedium ?? const TextStyle();
+            return Markdown(
+              data: _clean(s.data!),
+              selectable: true,
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 40),
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(c2)).copyWith(
+                p: base.copyWith(fontSize: 14, height: 1.8),
+                h1: base.copyWith(fontSize: 20, fontWeight: FontWeight.w700, height: 1.5),
+                h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w700, height: 1.6),
+                h3: base.copyWith(fontSize: 15, fontWeight: FontWeight.w600, height: 1.6),
+                listBullet: base.copyWith(fontSize: 14, height: 1.8),
+                blockquoteDecoration: BoxDecoration(
+                  color: Theme.of(c2).cardTheme.color,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border(
+                      left: BorderSide(
+                          color: Theme.of(c2).colorScheme.primary.withValues(alpha: dark ? 0.7 : 0.5),
+                          width: 3)),
+                ),
+                blockquotePadding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                horizontalRuleDecoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: Theme.of(c2).dividerColor, width: 1))),
+              ),
+            );
+          }));
 }
 
 class ThApp extends StatefulWidget {
@@ -1532,6 +1595,10 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(
         title: 'ThirdHub',
         navigatorKey: IntentRouter.navKey,
+        // ★2026-10-31 修「返回时莫名弹键盘」：任何页面 pop/替换时强制收掉焦点。
+        //   成因：上一个页面的 TextField 在路由动画结束后重新拿到焦点，输入法被拉起。
+        //   在导航层统一收口，比在每个页面写 willPopScope 可靠（不会漏页）。
+        navigatorObservers: [_DismissKeyboardObserver()],
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
         themeMode: mode == 'system'
@@ -2675,13 +2742,19 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             // ★2026-10-12：云端「管理后台」（站长管理：用户 / 订单 / 定价；
             //   admin.html 自带登录，App 内浏览器页打开，不跳出应用）。
-            entry(Icons.admin_panel_settings_outlined, '管理后台',
-                value: '云端管理 · 用户 / 订单 / 定价',
-                onTap: () => Navigator.push(
-                    context,
-                    smoothRoute(const BrowserPage(
-                        initialUrl: 'https://thirdhub.pages.dev/admin.html')))),
-            _sep(),
+            // ★2026-10-31 用户要求：只有管理员账号才显示这个入口 ——
+            //   普通人登录后「我的」里不该出现「管理后台」，否则等于把后台地址发给所有人。
+            //   角色来自 th_profiles.role（profile() 里 select=* 已带回）。
+            if (Cloud.profileData['role'] == 'admin' ||
+                Cloud.profileData['level'] == 'admin') ...[
+              entry(Icons.admin_panel_settings_outlined, '管理后台',
+                  value: '云端管理 · 用户 / 订单 / 定价',
+                  onTap: () => Navigator.push(
+                      context,
+                      smoothRoute(const BrowserPage(
+                          initialUrl: 'https://thirdhub.pages.dev/admin.html')))),
+              _sep(),
+            ],
             entry(Icons.extension_outlined, '资料库直连',
                 value: EngineDirect.connected ? '已连接' : '',
                 page: const EngineDirectPage()),
