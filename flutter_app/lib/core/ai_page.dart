@@ -549,16 +549,21 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           onHorizontalDragUpdate: _drawerOpen ? (d) { _cum += d.delta.dx; _applyDrag(_cum); } : null,
           onHorizontalDragEnd: _drawerOpen ? (d) { _settleDrag(_cum, d.velocity.pixelsPerSecond.dx); } : null,
           child: _drawer(c, dark)))),
-      // 边缘热区: 按下即抢占(网站30px), 关闭态右滑开抽屉
-      // ★2026-10-17 用户要求「这个页面的任意位置都能左右滑」：从左侧 36px 热区
-      //   扩到**整页**。安全性由 EdgeSwipeRecognizer 自己保证 —— 它只在
-      //   「水平位移 >12px 且 > 垂直位移×1.5」时才认领手势，竖向滚动/左滑会主动放弃。
+      // 边缘热区: 整页可右滑开抽屉（2026-10-17 用户要求）
+      // ★★2026-10-30 真 bug 修复（用户反馈「AI 页各种点击输入都没反应」）：
+      //   原来这里是 `Positioned.fill(child: RawGestureDetector(child: Container(color: Colors.transparent)))`，
+      //   RawGestureDetector 默认 deferToChild + 不透明 Container ⇒ 这层**把底下整页的点击/滚动全吞了**：
+      //   ☰（左上角）、输入框、消息列表全都点不动。视觉上"什么都没有反应"，但日志里一个异常都没有。
+      //   对齐 module_drawer.dart 的正确写法：HitTestBehavior.translucent（事件往下传，自己只认横向滑动）
+      //   + SizedBox.expand（不画不透明色块）。点按归按钮、竖滑归列表、横滑才归它。
       if (!_drawerOpen) Positioned.fill(
-        child: RawGestureDetector(gestures: { EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<EdgeSwipeRecognizer>(
+        child: RawGestureDetector(
+          behavior: HitTestBehavior.translucent,
+          gestures: { EdgeSwipeRecognizer: GestureRecognizerFactoryWithHandlers<EdgeSwipeRecognizer>(
           () => EdgeSwipeRecognizer(),
           (r) { r.onUpdate = (dx) { if (dx > 0) _applyDrag(dx); };
                 r.onEnd = (dx, vx) { if (dx > 0) _settleDrag(dx, vx); }; }) },
-          child: Container(color: Colors.transparent))),
+          child: const SizedBox.expand())),
     ]));
   }
 
