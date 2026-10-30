@@ -75,24 +75,24 @@ jobs:
       # 停在 4.2.0 的）。这里把四条通道一次刷齐。
       - name: 上传 Supabase 下载桶（三通道：版本化 / 别名 / 清单）
         env:
-          SR: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SR: ${{ vars.SUPABASE2_SERVICE_KEY }}
         run: |
           set -e
           APK=android/app/build/outputs/apk/release/thirdhub-backend.apk
           VER="${{ steps.ver.outputs.name }}"; CODE="${{ steps.ver.outputs.code }}"
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          BASE="https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object"
+          BASE="https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object"
           CT="Content-Type: application/vnd.android.package-archive"
           # ① 版本化对象
           curl -sf -X POST "$BASE/downloads/thirdhub-backend-$VER.apk" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "$CT" --data-binary @"$APK"
           # ② 别名对象（网站/客户端的静态直链）
           curl -sf -X POST "$BASE/downloads/thirdhub/thirdhub-backend.apk" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "$CT" --data-binary @"$APK"
           # ③ 清单 latest-backend.json（客户端「下载中心」实时读它显示版本号）
-          printf '{"version":"%s","versionCode":%s,"code":%s,"packageId":"com.thirdhub.backend","url":"https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub/thirdhub-backend.apk","notes":"内嵌 Node 家庭后端 v%s（与 server/package.json 同号）","sha256":"%s"}' \
+          printf '{"version":"%s","versionCode":%s,"code":%s,"packageId":"com.thirdhub.backend","url":"https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub/thirdhub-backend.apk","notes":"内嵌 Node 家庭后端 v%s（与 server/package.json 同号）","sha256":"%s"}' \
             "$VER" "$CODE" "$CODE" "$VER" "$SHA" > /tmp/latest-backend.json
           curl -sf -X POST "$BASE/downloads/thirdhub/latest-backend.json" -H "Authorization: Bearer $SR" -H "x-upsert: true" -H "Content-Type: application/json" --data-binary @/tmp/latest-backend.json
           # 回读校验：清单必须真的变成这个版本
-          GOT=$(curl -sf "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/public/downloads/thirdhub/latest-backend.json?t=$(date +%s)")
+          GOT=$(curl -sf "https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub/latest-backend.json?t=$(date +%s)")
           echo "$GOT"
           echo "$GOT" | grep -q "\"version\":\"$VER\"" || { echo "::error::latest-backend.json 回读版本不一致"; exit 1; }
           echo "$GOT" | grep -q "\"sha256\":\"$SHA\"" || { echo "::error::latest-backend.json 回读 sha256 不一致"; exit 1; }
@@ -145,8 +145,8 @@ jobs:
         with: { files: android/app/build/outputs/apk/release/thirdhub-venera.apk, body: "ThirdHub venera 漫画引擎 APK(THP 直连)" }
       - name: 上传 Supabase 下载桶
         run: |
-          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-venera.apk" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
+          curl -s -X POST "https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-venera.apk" \
+            -H "Authorization: Bearer ${{ vars.SUPABASE2_SERVICE_KEY }}" -H "x-upsert: true" \
             -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary @android/app/build/outputs/apk/release/thirdhub-venera.apk
       - uses: actions/upload-artifact@v4
@@ -186,8 +186,8 @@ jobs:
         with: { files: flutter_app/build/app/outputs/flutter-apk/thirdhub-app.apk, body: "ThirdHub Flutter 前端 APK" }
       - name: 上传 Supabase 下载桶（网站直链）
         run: |
-          curl -s -X POST "https://mxvxlgjzeboktufumxbp.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-app.apk" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" -H "x-upsert: true" \
+          curl -s -X POST "https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/downloads/thirdhub/thirdhub-app.apk" \
+            -H "Authorization: Bearer ${{ vars.SUPABASE2_SERVICE_KEY }}" -H "x-upsert: true" \
             -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary @flutter_app/build/app/outputs/flutter-apk/thirdhub-app.apk
       - uses: actions/upload-artifact@v4
