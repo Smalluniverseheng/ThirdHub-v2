@@ -418,11 +418,24 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
   // 表面色带一点底色倾向：纯粹的统一底色才"高级"，
   // 页面里出现两种不同的灰是最显廉价的错误。
   final Color surface = bg;
-  Color surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.045), bg)
-                           : Color.alphaBlend(Colors.black.withValues(alpha: 0.018), bg);
+  // ── 反差阶梯（2026-10-30：用户反馈「夜间模式一片黑，反差色没做」）────────
+  //   病根：深色下卡片只叠 4.5% 白、输入框同色、边框 6%、分隔线 7% ——
+  //   在手机屏上全部糊成一整块黑，"卡片/输入框/悬浮层"分不出层次。
+  //   修法：四层逐级提亮（页面 < 卡片 < 输入 < 悬浮），边框与分隔线加到能看见，
+  //   并把 M3 的 surfaceContainer* 全部显式赋值 —— 没走自定义色的 Material
+  //   组件（Chip / Menu / 弹层 / SnackBar）也就跟着有层次了。
+  Color lift(double a) =>
+      dark ? Color.alphaBlend(Colors.white.withValues(alpha: a), bg) : Colors.white;
+  final Color surfaceLow = lift(0.055);   // 低层：整块列表底
+  final Color surfaceMid = lift(0.085);   // 中层：卡片
+  final Color surfaceHigh = lift(0.125);  // 高层：输入框 / 选中项
+  final Color surfaceTop = lift(0.175);   // 顶层：悬浮面板 / 对话框
+  final double lineA = dark ? 0.14 : 0.09;   // 分隔线
+  final double edgeA = dark ? 0.20 : 0.10;   // 卡片描边
+  Color surfaceCard = surfaceMid;
   if (fx == SkinFx.glass) {
     // 玻璃：卡片更"浮"一点，靠模糊与描边拉开层次
-    surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.075), bg)
+    surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.11), bg)
                        : Color.alphaBlend(Colors.white.withValues(alpha: 0.55), bg);
   }
   // 机甲：卡片带一层极淡的强调色，配合霓虹描边
@@ -431,7 +444,7 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
   }
   final BorderSide cardSide = switch (fx) {
     SkinFx.neon => BorderSide(color: skin.seed.withValues(alpha: dark ? 0.45 : 0.30), width: 1),
-    SkinFx.ink => BorderSide(color: scheme.onSurface.withValues(alpha: 0.16), width: 1),
+    SkinFx.ink => BorderSide(color: scheme.onSurface.withValues(alpha: dark ? 0.26 : 0.16), width: 1),
     SkinFx.glass => BorderSide(color: Colors.white.withValues(alpha: dark ? 0.10 : 0.65), width: 1),
     // 漫画：2px 粗描边（分镜框）——亮色用墨黑、暗色用纸白，黑白对比是漫画印刷的灵魂
     SkinFx.comic => BorderSide(
@@ -439,7 +452,8 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
             ? Colors.white.withValues(alpha: 0.85)
             : scheme.onSurface.withValues(alpha: 0.88),
         width: 2),
-    SkinFx.none => BorderSide.none,
+    // 默认档原来是无描边 —— 深色下卡片和页底同色，等于没有卡片。给一圈极淡描边。
+    SkinFx.none => BorderSide(color: scheme.onSurface.withValues(alpha: edgeA), width: 1),
   };
   // 标题字形：水墨走衬线（有"书卷气"），其余沿用默认无衬线
   final TextStyle h1 = fx == SkinFx.ink
@@ -463,7 +477,18 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     useMaterial3: true,
     brightness: b,
     scaffoldBackgroundColor: surface,
-    colorScheme: scheme.copyWith(primary: skin.seed, surface: surface),
+    colorScheme: scheme.copyWith(
+      primary: skin.seed,
+      surface: surface,
+      // 反差阶梯落到 M3 语义色上：任何走 surfaceContainer* 的内置组件都有层次
+      surfaceContainerLowest: dark ? bg : Colors.white,
+      surfaceContainerLow: surfaceLow,
+      surfaceContainer: surfaceCard,
+      surfaceContainerHigh: surfaceHigh,
+      surfaceContainerHighest: surfaceTop,
+      outline: scheme.onSurface.withValues(alpha: dark ? 0.42 : 0.30),
+      outlineVariant: scheme.onSurface.withValues(alpha: dark ? 0.20 : 0.12),
+    ),
     textTheme: text,
     // 大字阶：M3 Expressive 会把强调标题再加重一档
     typography: Typography.material2021(platform: TargetPlatform.android),
@@ -496,22 +521,22 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     ),
     listTileTheme: const ListTileThemeData(minVerticalPadding: 4),
     dividerTheme: DividerThemeData(
-      color: scheme.onSurface.withValues(alpha: 0.07),
+      color: scheme.onSurface.withValues(alpha: lineA),
       thickness: 1,
       space: 1,
     ),
-    // 表单：统一圆角
+    // 表单：统一圆角 + 输入框底色比卡片再亮一档（否则深色下"输入框看不见"）
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: surfaceCard,
+      fillColor: surfaceHigh,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: btnRadius,
-        borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
+        borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: edgeA)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: btnRadius,
-        borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
+        borderSide: BorderSide(color: scheme.onSurface.withValues(alpha: edgeA)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: btnRadius,
@@ -548,7 +573,7 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       elevation: 0,
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: surfaceCard,
+      backgroundColor: surfaceTop,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: Radii.lgAll),
     ),
