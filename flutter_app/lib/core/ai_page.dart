@@ -19,6 +19,7 @@ import 'ai_agents_snapshot.dart';
 import 'ai_intros.dart';
 import 'ai_rankings_snapshot.dart';
 import 'ai_providers_page.dart';
+import 'ai_settings_page.dart';
 import 'ai_skills.dart';
 import 'asr_rec.dart';
 import 'asr_service.dart';
@@ -1266,13 +1267,18 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     // 历史页签的搜索/新建固定在抽屉底部, 不再跟着列表一起滚走
     return Material(color: bg, elevation: 8, child: SafeArea(child: Column(children: [
       // 头部: 头像+名称+设置
+      // ★2026-10-31：设置齿轮原来是「厂商与密钥」，用户要求这里进**AI 功能设置**
+      //   （对话风格/上下文/工具/语音/记忆），厂商与密钥降为本页的「高级」组。
       ListTile(dense: true, leading: const CircleAvatar(radius: 16, child: Icon(Icons.smart_toy, size: 16)),
         title: const Text('ThirdHub AI', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         trailing: const Icon(Icons.settings_outlined, size: 18),
-        onTap: () { _closeDrawer(); Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage())); }),
-      ListTile(dense: true, leading: const Icon(Icons.memory, size: 20), title: const Text('AI模型', style: TextStyle(fontSize: 14)),
+        onTap: () { _closeDrawer(); Navigator.push(c, MaterialPageRoute(builder: (_) => const AiSettingsPage())); }),
+      // ★2026-10-31 去重：这行原来也叫「AI模型」、点了只是切到下面的「AI模型」页签（纯重复）。
+      //   现在改成「AI 设置」，页签里的「AI模型」保留 —— 那才是模型列表。
+      ListTile(dense: true, leading: const Icon(Icons.tune, size: 20), title: const Text('AI 设置', style: TextStyle(fontSize: 14)),
+        subtitle: const Text('对话风格 · 上下文 · 工具 · 语音 · 记忆', style: TextStyle(fontSize: 11)),
         trailing: const Icon(Icons.chevron_right, size: 18),
-        onTap: () => setState(() => _drawerTab = 'models')),
+        onTap: () { _closeDrawer(); Navigator.push(c, MaterialPageRoute(builder: (_) => const AiSettingsPage())); }),
       const SizedBox(height: 4),
       // 四页签(顶部, 固定不滚)
       Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
