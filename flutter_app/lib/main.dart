@@ -11489,9 +11489,9 @@ class DownloadCenterTile extends StatefulWidget {
     (
       '网页版 1.0(经典旧版)',
       '最初网页版存档 · 怀旧/老设备',
-      'https://0d57a5ba.thirdhub.pages.dev',
+      'https://thirdhub.pages.dev',
       Icons.history,
-      'ThirdHub 最初的网页版 1.0 存档(2026-08-06 首次部署)。功能与界面以新版网页版为准, 此版本仅供老设备兼容与怀旧使用。'
+      '最初的网页版 1.0 存档子域(0d57a5ba)已停止服务(500), 此处改为跳主站; 老设备请直接用当前版, 界面与功能均已并入。'
     ),
   ];
   @override
