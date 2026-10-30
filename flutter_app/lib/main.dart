@@ -5364,13 +5364,26 @@ Widget _singleTile(int type, String sourceId, Map it, BuildContext context) {
 }
 
 // 模块菜单入口: 底栏已取消 ⋯, 改放各模块页分段按钮行右侧(需要菜单的模块才有)
+//
+// ★2026-10-30 修复「⋯ 点了没反应」：
+//   原来只靠 `findAncestorStateOfType<_RootNavState>()` 找根导航。一旦模块页是被
+//   Navigator.push 打开的独立路由（影音/工具/设置类页面都这么进），祖先链里根本没有
+//   _RootNavState → 返回 null → `?.` 静默什么都不做 —— 用户看到的就是"按钮点了没反应"。
+//   现在：祖先找不到时回落到 RootNav.inst（_RootNavState 在 initState 里登记、dispose 清空）。
 Widget modMenuBtn(BuildContext c) => IconButton(
     icon: const Icon(Icons.more_vert, size: 20),
     tooltip: tr('模块菜单'),
     visualDensity: VisualDensity.compact,
     onPressed: () {
       HapticFeedback.selectionClick();
-      c.findAncestorStateOfType<_RootNavState>()?.openModuleMenu();
+      final st = c.findAncestorStateOfType<_RootNavState>() ?? RootNav.inst;
+      if (st == null || !st.mounted) {
+        // 连根导航都拿不到（极端情况）：给个明确反馈，别装作"点了"
+        ScaffoldMessenger.maybeOf(c)?.showSnackBar(
+            const SnackBar(content: Text('模块菜单暂不可用，请返回首页后重试'), duration: Duration(seconds: 2)));
+        return;
+      }
+      st.openModuleMenu();
     });
 
 // ═══ 板块一: 小说阅读器(功能完整) ═══
@@ -9605,6 +9618,9 @@ class RootNav extends StatefulWidget {
   // 当前模块广播(模块切换时 +1): AI 抽屉等用它静默收起, 避免切模块误触发侧边栏
   static final ValueNotifier<int> moduleTick = ValueNotifier(0);
   static String currentModuleKey = '';
+  /// 根导航 State 的全局登记：给「被 Navigator.push 打开的独立路由里的 ⋯ 按钮」兜底
+  /// （那些页面祖先链里没有 _RootNavState，原来会静默失效 → 表现为"点了没反应"）。见 modMenuBtn。
+  static _RootNavState? inst;
   @override
   State<RootNav> createState() => _RootNavState();
 }
@@ -9634,6 +9650,7 @@ class _RootNavState extends State<RootNav> {
   @override
   void initState() {
     super.initState();
+    RootNav.inst = this; // 供独立路由里的 modMenuBtn 兜底找到根导航
     _load();
     RootNav.navTick.addListener(_onNavChanged);
     RootNav.fullscreen.addListener(_onFs);
@@ -9970,6 +9987,7 @@ class _RootNavState extends State<RootNav> {
     RootNav.fullscreen.removeListener(_onFs);
     proOpenModule.removeListener(_onProOpen);
     BrowserHooks.openModules = null;
+    if (identical(RootNav.inst, this)) RootNav.inst = null;
     _fsTimer?.cancel();
     _page.dispose();
     _navScroll.dispose();
@@ -10313,7 +10331,14 @@ class _RootNavState extends State<RootNav> {
   static const _settingsModules = {'小说', '漫画', '视频', '音乐', '直播'};
   void openModuleMenu() {
     final key = enabled[idx];
-    final mod = kModules[key]!;
+    final mod = kModules[key];
+    // ★2026-10-30：原来是 `kModules[key]!` —— 模块被下线/键漂移时这里直接抛
+    // null check 异常，整个菜单等于"点了没反应"（异常被 Flutter 吞掉，用户只看到没反应）。
+    if (mod == null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text('模块「$key」未注册，菜单不可用'), duration: const Duration(seconds: 2)));
+      return;
+    }
     final fsNow = RootNav.fullscreen.value;
 
     /// 生成"本模块的进阶入口"这一行（点它先收起菜单、再跳过去）。
