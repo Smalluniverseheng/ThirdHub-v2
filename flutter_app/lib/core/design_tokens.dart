@@ -567,10 +567,21 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
       insetPadding: const EdgeInsets.all(16),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
-      backgroundColor: Colors.transparent,
+    // ★2026-10-31 修「浮窗半透明、和背后文字重叠」：
+    //   原来这里是 backgroundColor: Colors.transparent —— 于是所有 showModalBottomSheet
+    //   出来的面板（更多功能 / 模型选择 / 语音设置…）都不画底，直接把内容浮在正文上。
+    //   截图里那种"拍照/相册/文件 叠在 AI 回复文字上"就是它。
+    //   现在给实底（surfaceTop：比卡片再亮一档，视觉上"浮起来"）+ 顶部圆角 + 上缘描边。
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: surfaceTop,
       surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: surfaceTop,
+      modalBarrierColor: Colors.black.withValues(alpha: 0.55),
       elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        side: BorderSide(color: scheme.onSurface.withValues(alpha: dark ? 0.14 : 0.06), width: 1),
+      ),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: surfaceTop,
