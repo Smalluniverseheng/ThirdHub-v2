@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'i18n.dart';
 
 class FilesPage extends StatefulWidget { const FilesPage({super.key}); @override State<FilesPage> createState() => _Fp(); }
 class _Fp extends State<FilesPage> {
@@ -122,12 +123,12 @@ class _Fp extends State<FilesPage> {
       ListTile(dense: true, leading: const Icon(Icons.drive_file_rename_outline), title: const Text('重命名'),
         onTap: () { Navigator.pop(c2); _rename(e); }),
       ListTile(dense: true, leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-        title: const Text('删除', style: TextStyle(color: Colors.redAccent)),
+        title: Text(tr('删除'), style: TextStyle(color: Colors.redAccent)),
         onTap: () async { Navigator.pop(c2);
           final ok = await showDialog<bool>(context: context, builder: (c3) => AlertDialog(
             title: Text('删除「${_name(e)}」?'),
-            actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: const Text('取消')),
-              FilledButton(onPressed: () => Navigator.pop(c3, true), child: const Text('删除'))]));
+            actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: Text(tr('取消'))),
+              FilledButton(onPressed: () => Navigator.pop(c3, true), child: Text(tr('删除')))]));
           if (ok == true) { try { await e.delete(recursive: true); } catch (_) {} _go(path); } }),
     ])));
   }
@@ -136,8 +137,8 @@ class _Fp extends State<FilesPage> {
     final ctrl = TextEditingController(text: _name(e));
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(title: const Text('重命名'),
       content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(isDense: true)),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('确定'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('确定')))]));
     if (ok == true && ctrl.text.trim().isNotEmpty) {
       try { await e.rename('${e.parent.path}/${ctrl.text.trim()}'); } catch (_) {}
       _go(path);
@@ -148,7 +149,7 @@ class _Fp extends State<FilesPage> {
     final ctrl = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(title: const Text('新建文件夹'),
       content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: '文件夹名', isDense: true)),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('创建'))]));
     if (ok == true && ctrl.text.trim().isNotEmpty) {
       try { await Directory('$path/${ctrl.text.trim()}').create(); } catch (_) {}
