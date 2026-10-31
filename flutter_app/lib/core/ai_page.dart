@@ -36,6 +36,7 @@ import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'i18n.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
 // ★2026-10-17 识别器已提取到 module_drawer.dart（与模块抽屉共用同一口径）
@@ -523,9 +524,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
               TextButton.icon(onPressed: () { final t = _queue.removeAt(i); input.text = t; Navigator.pop(c2); _send(); },
                 icon: const Icon(Icons.send, size: 14), label: const Text('立即发送', style: TextStyle(fontSize: 12))),
               TextButton.icon(onPressed: () { input.text = _queue.removeAt(i); setState(() {}); Navigator.pop(c2); },
-                icon: const Icon(Icons.edit_outlined, size: 14), label: const Text('编辑', style: TextStyle(fontSize: 12))),
+                icon: Icon(Icons.edit_outlined, size: 14), label: const Text(tr('编辑'), style: TextStyle(fontSize: 12))),
               TextButton.icon(onPressed: () { setState(() => _queue.removeAt(i)); setD(() {}); if (_queue.isEmpty) Navigator.pop(c2); },
-                icon: const Icon(Icons.delete_outline, size: 14, color: Colors.redAccent), label: const Text('删除', style: TextStyle(fontSize: 12, color: Colors.redAccent))),
+                icon: Icon(Icons.delete_outline, size: 14, color: Colors.redAccent), label: const Text(tr('删除'), style: TextStyle(fontSize: 12, color: Colors.redAccent))),
             ]),
           ]))),
       ])),
@@ -1012,7 +1013,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       title: Text('「${v.name}」没能识别'),
       content: SingleChildScrollView(child: Text(msg, style: const TextStyle(fontSize: 13, height: 1.6))),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c), child: const Text('知道了')),
+        TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('知道了'))),
         FilledButton(onPressed: () async {
           Navigator.pop(c);
           await Navigator.push(context, MaterialPageRoute(builder: (_) => const AsrSettingsPage()));
@@ -1066,7 +1067,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     showModalBottomSheet(context: c, builder: (c2) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('复制'),
         onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(c2);
-          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); }),
+          ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(tr('已复制')))); }),
       FutureBuilder<String>(future: TtsManager.engineLabel(), builder: (_, snap) => ListTile(
         leading: const Icon(Icons.record_voice_over_outlined), title: const Text('朗读这条'),
         subtitle: Text('当前资料库：${snap.data ?? '…'}', style: const TextStyle(fontSize: 11)),
@@ -1253,7 +1254,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         FilledButton(onPressed: () async { await WebSearch.setConfig(svc, keyC.text, urlC.text);
           if (c2.mounted) Navigator.pop(c2);
           if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已保存联网搜索配置'))); },
-          child: const Text('保存')),
+          child: Text(tr('保存'))),
       ])));
     }));
   }
