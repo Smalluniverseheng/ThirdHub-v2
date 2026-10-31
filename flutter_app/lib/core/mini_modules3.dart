@@ -8,6 +8,7 @@ import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 import 'notify.dart';
+import 'i18n.dart';
 
 class _Store3 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -61,8 +62,8 @@ class _Rm extends State<RemindersPage> {
           onTap: () async { final t = await showTimePicker(context: c2, initialTime: time);
             if (t != null) setD(() => time = t); }),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok != true || titleC.text.trim().isEmpty) return;
     final at = DateTime(day.year, day.month, day.day, time.hour, time.minute);
     if (at.isBefore(DateTime.now())) {
@@ -151,9 +152,9 @@ class _Ttb extends State<TimetablePage> {
       actions: [
         if (exist != null) TextButton(onPressed: () async {
           courses.remove(exist); await _Store3.save('timetable', courses);
-          if (c2.mounted) Navigator.pop(c2, false); _load(); }, child: const Text('删除', style: TextStyle(color: Colors.redAccent))),
-        TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+          if (c2.mounted) Navigator.pop(c2, false); _load(); }, child: Text(tr('删除'), style: TextStyle(color: Colors.redAccent))),
+        TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok != true || nameC.text.trim().isEmpty) return;
     if (exist != null) courses.remove(exist);
     courses.add({'name': nameC.text.trim(), 'place': placeC.text.trim(), 'day': day, 'start': sec, 'len': len});
