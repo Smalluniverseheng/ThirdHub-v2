@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_widgets.dart';
+import 'i18n.dart';
 
 class PlaybackSettingsPage extends StatefulWidget {
   const PlaybackSettingsPage({super.key});
