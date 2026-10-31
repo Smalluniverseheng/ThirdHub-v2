@@ -33,6 +33,7 @@ import 'lab_logic.dart' show kLanPort;
 import 'lan_chat.dart';
 import 'motion.dart';
 import 'pro_kit.dart';
+import 'i18n.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 引擎初始化（幂等）
@@ -557,7 +558,7 @@ class _SessionsTabState extends State<_SessionsTab> with _LanTickMixin {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+              onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
           FilledButton(
               onPressed: fp.isEmpty ? null : () => Navigator.pop(d, true),
               child: const Text('指纹一致，保存')),
@@ -1405,7 +1406,7 @@ class _DeviceSheetState extends State<_DeviceSheet> with _LanTickMixin {
                 Expanded(
                   child: OutlinedButton(
                       onPressed: () => Navigator.pop(c),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1414,7 +1415,7 @@ class _DeviceSheetState extends State<_DeviceSheet> with _LanTickMixin {
                         await h.setName(_name.text);
                         if (c.mounted) Navigator.pop(c);
                       },
-                      child: const Text('保存')),
+                      child: Text(tr('保存'))),
                 ),
               ]),
             ]),
