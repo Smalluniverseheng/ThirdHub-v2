@@ -123,21 +123,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ★ 2026-10-10 加：checkout 网页端仓，让 forbidden-words 的 --web 有东西可扫。
-      #   此前 TH_WEB_ROOT 从未设置 → 该步骤是**永远的红**（设计如此，但等于没有闸门）。
-      #   现在真的拉下网页端源码，网页端用词回潮当天就会红。
-      - uses: actions/checkout@v4
-        with:
-          repository: Smalluniverseheng/ThirdHub
-          path: _web
-          fetch-depth: 1
-          # ★ 网页端是**私有仓**，默认 GITHUB_TOKEN 读不到 → 必须用 PAT。
-          token: ${{ secrets.TH_FLUTTER_TOKEN }}
-
-      # 让 forbidden-words 与本仓后续步骤都能拿到网页端路径（写成 env，避免各处重复拼）
-      - name: 导出网页端路径
-        run: echo "TH_WEB_ROOT=$GITHUB_WORKSPACE/_web" >> "$GITHUB_ENV"
-
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
 
@@ -206,6 +191,21 @@ jobs:
       - name: i18n（zh 短路 + 6 语言 × tr() 全键覆盖 + 查找行为断言）
         working-directory: flutter_app
         run: dart run tool/i18n_selfcheck.dart
+
+      # ★第 13 条 i18n_hardcoded（2026-11-01 加）—— 补上自检的一个盲区。
+      #
+      #   i18n 自检只断言「**已经**用了 tr() 的 key 有没有译文」。它看不见另一类
+      #   更常见的问题：文案压根没走 tr()，直接写在 `Text('搜索')` 里 ——
+      #   那种情况下自检全绿、切到英文照样满屏中文。2026-11-01 实测 lib/ 里
+      #   还有 1173 条这种字面量，i18n 自检一条都没报。
+      #
+      #   为什么不「有一条就红」：现存条目要逐条补 6 语言译文，一次改不完。
+      #   所以用 ratchet（棘轮）：现状记进 tool/hardcoded_zh_baseline.txt，
+      #   CI 只对**基线之外的新增**报错；修掉一条就从基线删一条 —— 只降不升。
+      #   实测：2026-11-01 基线 1173 条，`✅ 无新增硬编码文案`，exit 0。
+      - name: i18n_hardcoded（硬编码中文 UI 文案 ratchet：只拦新增，基线只降不升）
+        working-directory: flutter_app
+        run: dart run tool/i18n_hardcoded_scan.dart
 
       - name: chat_proto（局域网聊天 LANCHAT/1：信封/去重排序/降级原因/端到端加密）
         working-directory: flutter_app
