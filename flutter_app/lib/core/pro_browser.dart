@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 
 import 'pro_kit.dart';
+import 'i18n.dart';
 
 class BrowserPro {
   // ═══ B-2 网页翻译 ═══
@@ -416,7 +417,7 @@ class TranslatedPage extends StatelessWidget {
                             style: const TextStyle(fontSize: 12, height: 1.5)))),
                 actions: [
                   TextButton(
-                      onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+                      onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
                 ],
               ),
             ),
