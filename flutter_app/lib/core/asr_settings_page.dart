@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'asr_rec.dart';
 import 'asr_service.dart';
 import 'asr_vendors.dart';
+import 'i18n.dart';
 
 class AsrSettingsPage extends StatefulWidget {
   const AsrSettingsPage({super.key});
@@ -297,7 +298,7 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
                       children: [
                         FilledButton(
                           onPressed: () => _saveKey(cur),
-                          child: const Text('保存'),
+                          child: Text(tr('保存')),
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton(
