@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 
 import 'agent_dsh_client.dart';
 import 'ai.dart';
+import 'i18n.dart';
 
 class McpPage extends StatefulWidget { const McpPage({super.key}); @override State<McpPage> createState() => _McpPageState(); }
 class _McpPageState extends State<McpPage> {
@@ -84,7 +85,7 @@ class _McpPageState extends State<McpPage> {
         TextField(controller: nameC, decoration: const InputDecoration(labelText: '名称', hintText: '我的 MCP 服务', isDense: true)),
         TextField(controller: urlC, decoration: InputDecoration(labelText: '服务地址', hintText: hint, isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('添加并连接'))]));
     final n = nameC.text.trim(); final u = urlC.text.trim();
     nameC.dispose(); urlC.dispose();
@@ -229,10 +230,10 @@ class _McpPageState extends State<McpPage> {
             TextButton(onPressed: () async {
               final ok = await showDialog<bool>(context: context, builder: (c3) => AlertDialog(
                 title: const Text('从后端注册表删除该服务?'),
-                actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: const Text('取消')),
-                  FilledButton(onPressed: () => Navigator.pop(c3, true), child: const Text('删除'))]));
+                actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: Text(tr('取消'))),
+                  FilledButton(onPressed: () => Navigator.pop(c3, true), child: Text(tr('删除')))]));
               if (ok == true) { await AgentDshClient.mcpRemove(id); await _refreshRemote(); }
-            }, child: const Text('删除', style: TextStyle(fontSize: 12, color: Colors.redAccent))),
+            }, child: Text(tr('删除'), style: TextStyle(fontSize: 12, color: Colors.redAccent))),
           ]),
         ])));
   }
@@ -272,10 +273,10 @@ class _McpPageState extends State<McpPage> {
           TextButton(onPressed: () async {
             final ok = await showDialog<bool>(context: c, builder: (c3) => AlertDialog(
               title: const Text('删除该 MCP 服务?'),
-              actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: const Text('取消')),
-                FilledButton(onPressed: () => Navigator.pop(c3, true), child: const Text('删除'))]));
+              actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: Text(tr('取消'))),
+                FilledButton(onPressed: () => Navigator.pop(c3, true), child: Text(tr('删除')))]));
             if (ok == true) Mcp.remove(s.id);
-          }, child: const Text('删除', style: TextStyle(fontSize: 12, color: Colors.redAccent))),
+          }, child: Text(tr('删除'), style: TextStyle(fontSize: 12, color: Colors.redAccent))),
         ]),
       ])));
 }
