@@ -1148,7 +1148,7 @@ class _Rb extends State<RecycleBinPage> {
         if (items.isNotEmpty)
           IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: '清空',
+              tooltip: tr('清空'),
               onPressed: () async {
                 for (final it in items) {
                   if (it['kind'] == 'apk') {
@@ -1189,7 +1189,7 @@ class _Rb extends State<RecycleBinPage> {
                               Row(mainAxisSize: MainAxisSize.min, children: [
                             IconButton(
                                 icon: const Icon(Icons.restore, size: 18),
-                                tooltip: '恢复',
+                                tooltip: tr('恢复'),
                                 onPressed: () => _restore(it)),
                             IconButton(
                                 icon: const Icon(Icons.delete_forever_outlined,
@@ -2364,7 +2364,7 @@ Future<void> confirmDeleteAccount(BuildContext context,
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(c2),
-                    child: const Text('取消')),
+                    child: Text(tr('取消'))),
                 FilledButton(
                     style: FilledButton.styleFrom(
                         backgroundColor: Colors.redAccent),
@@ -2425,7 +2425,7 @@ Future<void> confirmDeleteAccount(BuildContext context,
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(c2),
-                        child: const Text('知道了')),
+                        child: Text(tr('知道了'))),
                   ]));
     }
   }
@@ -2794,7 +2794,7 @@ class _Pf extends State<ProfilePage> {
                   await Cloud.signOut();
                   if (mounted) setState(() {});
                 },
-                child: const Text('退出登录')),
+                child: Text(tr('退出登录'))),
             // ★ 5.1.1（Apple）：账号体系必须 App 内可删号。
             //   与「退出登录」并列放在登录后区域；确认强度见 confirmDeleteAccount。
             const SizedBox(height: 10),
@@ -3064,7 +3064,7 @@ class _Psub extends State<ProfileSubPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(d),
-                      child: const Text('知道了')),
+                      child: Text(tr('知道了'))),
                   if (logged)
                     FilledButton(
                         onPressed: () async {
@@ -3097,10 +3097,10 @@ class _Psub extends State<ProfileSubPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                   FilledButton(
                       onPressed: () => Navigator.pop(c2, ctrl.text.trim()),
-                      child: const Text('保存'))
+                      child: Text(tr('保存')))
                 ]));
     ctrl.dispose(); // 不 dispose 会随每次编辑泄漏一个 controller
     if (v == null) return;
@@ -3328,7 +3328,7 @@ class _Psub extends State<ProfileSubPage> {
                       child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 14),
                           child: Center(
-                              child: Text('退出登录',
+                              child: Text(tr('退出登录'),
                                   style: TextStyle(
                                       color: Colors.redAccent, fontSize: 15)))),
                     ))),
@@ -5927,11 +5927,11 @@ class _Sh extends State<ShelfPage> {
                                         TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, false),
-                                            child: const Text('取消')),
+                                            child: Text(tr('取消'))),
                                         FilledButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, true),
-                                            child: const Text('删除'))
+                                            child: Text(tr('删除')))
                                       ]));
                           if (del == true) {
                             await LocalLib.remove('novel', '${lb['path']}');
@@ -6036,7 +6036,7 @@ class _Sh extends State<ShelfPage> {
                                         TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, false),
-                                            child: const Text('取消')),
+                                            child: Text(tr('取消'))),
                                         FilledButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, true),
@@ -6185,7 +6185,7 @@ class _Sh extends State<ShelfPage> {
                       actions: [
                         TextButton(
                             onPressed: () => Navigator.pop(c2, false),
-                            child: const Text('取消')),
+                            child: Text(tr('取消'))),
                         FilledButton(
                             onPressed: () => Navigator.pop(c2, true),
                             child: const Text('移出书架'))
@@ -6452,7 +6452,7 @@ class _T extends State<TocPage> {
                                 child: Text(tr('继续阅读'))),
                             TextButton(
                                 onPressed: () => setState(() => lastRead = -1),
-                                child: const Text('关闭'))
+                                child: Text(tr('关闭')))
                           ]),
                     Expanded(
                         child: ListView.builder(
@@ -6839,7 +6839,7 @@ class _Cd extends State<ComicDetailPage> {
                               child: Text(tr('继续阅读'))),
                           TextButton(
                               onPressed: () => setState(() => lastRead = -1),
-                              child: const Text('关闭'))
+                              child: Text(tr('关闭')))
                         ]),
                   Expanded(
                       child: ListView.builder(
@@ -7777,7 +7777,7 @@ class _MPlay extends State<MusicPlayPage> {
                               setState(() => _sleepEnd = null);
                               Navigator.pop(c2);
                             },
-                            child: const Text('取消'))),
+                            child: Text(tr('取消')))),
                   for (final m in [10, 20, 30, 45, 60, 90])
                     ListTile(
                         dense: true,
@@ -8602,7 +8602,7 @@ class _Vd extends State<VideoDetailPage> {
                             });
                             load();
                           },
-                          child: const Text('重试')),
+                          child: Text(tr('重试'))),
                     ],
                   ),
                 )
@@ -9083,7 +9083,7 @@ class _Vp extends State<VideoPlayPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2, false),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                   FilledButton(
                       onPressed: () => Navigator.pop(c2, true),
                       child: const Text('开始下载')),
@@ -10155,7 +10155,7 @@ class _RootNavState extends State<RootNav> {
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(c2, false),
-                        child: const Text('取消')),
+                        child: Text(tr('取消'))),
                     FilledButton(
                         onPressed: () => Navigator.pop(c2, true),
                         child: const Text('解锁')),
@@ -11208,7 +11208,7 @@ Future<void> showNavSettings(BuildContext c) async {
                           ScaffoldMessenger.of(c).showSnackBar(
                               const SnackBar(content: Text('已保存 · 已即时生效')));
                       },
-                      child: const Text('保存'))
+                      child: Text(tr('保存')))
                 ],
               )));
 }
@@ -11301,7 +11301,7 @@ class _At extends State<AccountTile> {
                       actions: [
                         TextButton(
                             onPressed: () => Navigator.pop(c2, false),
-                            child: const Text('取消')),
+                            child: Text(tr('取消'))),
                         FilledButton(
                             onPressed: () {
                               final m = mailC.text.trim();
@@ -11514,11 +11514,11 @@ class _At extends State<AccountTile> {
                               actions: [
                                 TextButton(
                                     onPressed: () => Navigator.pop(c2),
-                                    child: const Text('取消')),
+                                    child: Text(tr('取消'))),
                                 FilledButton(
                                     onPressed: () =>
                                         Navigator.pop(c2, nickC.text.trim()),
-                                    child: const Text('保存'))
+                                    child: Text(tr('保存')))
                               ]));
                   if (r != null && r.isNotEmpty) {
                     await Cloud.updateProfile(
@@ -11536,7 +11536,7 @@ class _At extends State<AccountTile> {
                   await Cloud.signOut();
                   setState(() {});
                 },
-                child: const Text('退出登录',
+                child: Text(tr('退出登录'),
                     style: TextStyle(fontSize: 11, color: Colors.redAccent))),
           ])),
     ]);
@@ -12257,10 +12257,10 @@ class _Ln extends State<LocalNovelsPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2, false),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                   FilledButton(
                       onPressed: () => Navigator.pop(c2, true),
-                      child: const Text('删除'))
+                      child: Text(tr('删除')))
                 ]));
     if (ok != true) return;
     for (final path in sel) {
@@ -12353,10 +12353,10 @@ class _Ln extends State<LocalNovelsPage> {
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(c3, false),
-                          child: const Text('取消')),
+                          child: Text(tr('取消'))),
                       FilledButton(
                           onPressed: () => Navigator.pop(c3, true),
-                          child: const Text('保存'))
+                          child: Text(tr('保存')))
                     ])));
     if (ok == true) {
       final name = nameC.text.trim();
@@ -12386,14 +12386,14 @@ class _Ln extends State<LocalNovelsPage> {
                       child: const Text('全选')),
                   TextButton(
                       onPressed: _batchDelete,
-                      child: const Text('删除',
+                      child: Text(tr('删除'),
                           style: TextStyle(color: Colors.redAccent))),
                   TextButton(
                       onPressed: () => setState(() {
                             selecting = false;
                             sel.clear();
                           }),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                 ]
               : [
                   IconButton(
@@ -12657,7 +12657,7 @@ Future<int?> showVideoSleepSheet(BuildContext c, DateTime? end) {
                       style: const TextStyle(fontSize: 13)),
                   trailing: TextButton(
                       onPressed: () => Navigator.pop(c2, -1),
-                      child: const Text('取消'))),
+                      child: Text(tr('取消')))),
             for (final m in [10, 20, 30, 45, 60, 90])
               ListTile(
                   dense: true,
@@ -13129,7 +13129,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
                     setState(() => err = null);
                     _init();
                   },
-                  child: const Text('重试')),
+                  child: Text(tr('重试'))),
             ]),
           ]))
       : chewie != null
@@ -13564,10 +13564,10 @@ class _Ap extends State<AccountPage> {
                               actions: [
                                 TextButton(
                                     onPressed: () => Navigator.pop(c2),
-                                    child: const Text('取消')),
+                                    child: Text(tr('取消'))),
                                 FilledButton(
                                     onPressed: () => Navigator.pop(c2, cc.text),
-                                    child: const Text('保存'))
+                                    child: Text(tr('保存')))
                               ]));
                   if (r != null) {
                     await AppSettings.setBio(r);
@@ -13691,11 +13691,11 @@ class _Da extends State<DownloadAppsPage> {
                                           TextButton(
                                               onPressed: () =>
                                                   Navigator.pop(c2, false),
-                                              child: const Text('取消')),
+                                              child: Text(tr('取消'))),
                                           FilledButton(
                                               onPressed: () =>
                                                   Navigator.pop(c2, true),
-                                              child: const Text('删除'))
+                                              child: Text(tr('删除')))
                                         ]));
                             if (ok == true) {
                               try {
@@ -13916,7 +13916,7 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
               const Spacer(),
             IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: '刷新',
+                tooltip: tr('刷新'),
                 icon: _refreshing
                     ? const SizedBox(
                         width: 16,
@@ -14209,7 +14209,7 @@ class _Ape extends State<AppearancePage> {
                               actions: [
                                 TextButton(
                                     onPressed: () => Navigator.pop(d, false),
-                                    child: const Text('取消')),
+                                    child: Text(tr('取消'))),
                                 FilledButton(
                                     onPressed: () => Navigator.pop(d, true),
                                     child: const Text('仍然关闭'))
@@ -14616,7 +14616,7 @@ class _CloudPageState extends State<CloudPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(d),
-                      child: const Text('知道了')),
+                      child: Text(tr('知道了'))),
                   if (Cloud.loggedIn)
                     FilledButton(
                         onPressed: () async {
@@ -14709,7 +14709,7 @@ class AboutPage extends StatelessWidget {
             child: Column(children: [
           ListTile(
               leading: const Icon(Icons.privacy_tip_outlined, size: 20),
-              title: const Text('隐私政策', style: TextStyle(fontSize: 14)),
+              title: Text(tr('隐私政策'), style: TextStyle(fontSize: 14)),
               onTap: () => Navigator.push(
                   c,
                   MaterialPageRoute(
@@ -15091,7 +15091,7 @@ class _Ei extends State<EngineItemPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c2, false),
-                      child: const Text('取消')),
+                      child: Text(tr('取消'))),
                   FilledButton(
                       onPressed: () => Navigator.pop(c2, true),
                       child: const Text('开始下载')),
