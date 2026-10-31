@@ -1118,7 +1118,7 @@ class _NoteEdit extends State<NoteEditPage> {
             padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: TextField(
                 controller: title,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                     hintText: tr('标题'), isDense: true, border: InputBorder.none),
                 style: const TextStyle(
                     fontSize: 17, fontWeight: FontWeight.w700))),
