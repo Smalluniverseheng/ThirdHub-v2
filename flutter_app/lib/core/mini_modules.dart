@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'calc_engine.dart';
+import 'i18n.dart';
 
 // ── 通用本地存储 ──
 class _Store {
@@ -537,7 +538,7 @@ class _Calc extends State<CalcPage> with SingleTickerProviderStateMixin {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: amtOut));
                 ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('已复制')));
+                    .showSnackBar(SnackBar(content: Text(tr('已复制'))));
               }),
         ],
         const SizedBox(height: 24),
@@ -691,7 +692,7 @@ class _Tt extends State<TextToolsPage> {
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: output));
                   ScaffoldMessenger.of(c)
-                      .showSnackBar(const SnackBar(content: Text('已复制')));
+                      .showSnackBar(SnackBar(content: Text(tr('已复制'))));
                 }),
         ]),
         if (output.isNotEmpty)
@@ -1041,11 +1042,11 @@ class _Notes extends State<NotesPage> {
                                         TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, false),
-                                            child: const Text('取消')),
+                                            child: Text(tr('取消'))),
                                         FilledButton(
                                             onPressed: () =>
                                                 Navigator.pop(c2, true),
-                                            child: const Text('删除'))
+                                            child: Text(tr('删除')))
                                       ]));
                           if (ok == true) {
                             notes.remove(n);
@@ -1109,7 +1110,7 @@ class _NoteEdit extends State<NoteEditPage> {
             onPressed: () => setState(() => preview = !preview)),
         IconButton(
             icon: const Icon(Icons.check, size: 20),
-            tooltip: '保存',
+            tooltip: tr('保存'),
             onPressed: _save),
       ]),
       body: Column(children: [
@@ -1118,7 +1119,7 @@ class _NoteEdit extends State<NoteEditPage> {
             child: TextField(
                 controller: title,
                 decoration: const InputDecoration(
-                    hintText: '标题', isDense: true, border: InputBorder.none),
+                    hintText: tr('标题'), isDense: true, border: InputBorder.none),
                 style: const TextStyle(
                     fontSize: 17, fontWeight: FontWeight.w700))),
         const Divider(height: 1),
@@ -1278,10 +1279,10 @@ class _Ledger extends State<LedgerPage> {
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(c2, false),
-                          child: const Text('取消')),
+                          child: Text(tr('取消'))),
                       FilledButton(
                           onPressed: () => Navigator.pop(c2, true),
-                          child: const Text('保存'))
+                          child: Text(tr('保存')))
                     ])));
     if (ok != true) return;
     final amt = double.tryParse(amtC.text.trim());
