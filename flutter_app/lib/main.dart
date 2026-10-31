@@ -1359,7 +1359,7 @@ class ConsentPage extends StatelessWidget {
                                             link(
                                                 '《用户服务协议》',
                                                 'assets/legal/terms.md',
-                                                '用户服务协议'),
+                                                tr('用户服务协议')),
                                             const Text(' 与 ',
                                                 style: TextStyle(
                                                     fontSize: 13.5,
@@ -1367,7 +1367,7 @@ class ConsentPage extends StatelessWidget {
                                             link(
                                                 '《隐私政策》',
                                                 'assets/legal/privacy.md',
-                                                '隐私政策'),
+                                                tr('隐私政策')),
                                             const Text('。',
                                                 style: TextStyle(
                                                     fontSize: 13.5,
@@ -2091,8 +2091,8 @@ class _Conn extends State<ConnectLibraryPage> {
                     const SizedBox(height: 12),
                     TextField(
                         controller: tokenC,
-                        decoration: const InputDecoration(
-                            labelText: '密钥',
+                        decoration: InputDecoration(
+                            labelText: tr('密钥'),
                             hintText: 'thsec_...',
                             border: OutlineInputBorder())),
                     if (err != null)
@@ -2104,7 +2104,7 @@ class _Conn extends State<ConnectLibraryPage> {
                     FilledButton.icon(
                         onPressed: busy ? null : connect,
                         icon: const Icon(Icons.link),
-                        label: Text(busy ? '连接中…' : tr('连接资源库'))),
+                        label: Text(busy ? tr('连接中…') : tr('连接资源库'))),
                     const SizedBox(height: 20),
                     // 局域网自动发现(THP): 资源库一键连接, 引擎仅展示(前端也可直接当资源用)
                     Align(
@@ -2261,7 +2261,7 @@ class ModuleSearchTab extends StatelessWidget {
                     const Icon(Icons.search, size: 19, color: Colors.grey),
                     const SizedBox(width: 8),
                     Expanded(
-                        child: Text(hints[tab] ?? '搜索',
+                        child: Text(hints[tab] ?? tr('搜索'),
                             style: const TextStyle(
                                 fontSize: 13, color: Colors.grey))),
                     const Icon(Icons.north_west, size: 13, color: Colors.grey)
@@ -2367,8 +2367,8 @@ Future<void> confirmDeleteAccount(BuildContext context,
                     TextField(
                       controller: ctrl,
                       autofocus: true,
-                      decoration: const InputDecoration(
-                          labelText: '输入「删除」以确认', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                          labelText: tr('输入「删除」以确认'), border: OutlineInputBorder()),
                       onChanged: (v) => setD(() => phrase = v.trim()),
                     ),
                   ]),
@@ -2559,7 +2559,7 @@ class _Pf extends State<ProfilePage> {
                             fontWeight: FontWeight.w800,
                             color: Colors.white)),
                     const SizedBox(height: 4),
-                    Text(logged ? Cloud.email : '本地播放 + 局域网资源库可用, 登录解锁云同步',
+                    Text(logged ? Cloud.email : tr('本地播放 + 局域网资源库可用, 登录解锁云同步'),
                         style: TextStyle(
                             fontSize: 11,
                             color: Colors.white.withValues(alpha: 0.85))),
@@ -2938,20 +2938,20 @@ class HelpPage extends StatelessWidget {
               _row(
                   c,
                   Icons.privacy_tip_outlined,
-                  '隐私政策',
+                  tr('隐私政策'),
                   () => Navigator.push(
                       c,
-                      smoothRoute(const LegalDocPage(
-                          title: '隐私政策', asset: 'assets/legal/privacy.md')))),
+                      smoothRoute(LegalDocPage(
+                          title: tr('隐私政策'), asset: 'assets/legal/privacy.md')))),
               const Divider(height: 1, indent: 52),
               _row(
                   c,
                   Icons.description_outlined,
-                  '用户服务协议',
+                  tr('用户服务协议'),
                   () => Navigator.push(
                       c,
-                      smoothRoute(const LegalDocPage(
-                          title: '用户服务协议', asset: 'assets/legal/terms.md')))),
+                      smoothRoute(LegalDocPage(
+                          title: tr('用户服务协议'), asset: 'assets/legal/terms.md')))),
             ])),
         const Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 14, 6),
@@ -3045,7 +3045,7 @@ class _Psub extends State<ProfileSubPage> {
     final bool logged = Cloud.loggedIn;
     final StringBuffer sb = StringBuffer();
     sb.writeln(logged ? '当前等级：${cur.name}（${cur.nameEn}）' : '当前等级：游客（未登录）');
-    sb.writeln('云存储额度：${memberStorageText(cur)}');
+    sb.writeln(trf('云存储额度：{v}', {'v': memberStorageText(cur)}));
     final String exp = _expireAt ?? '';
     if (exp.isNotEmpty) sb.writeln('到期：$exp');
     sb.writeln('');
@@ -3253,11 +3253,11 @@ class _Psub extends State<ProfileSubPage> {
                               size: 13, color: Colors.white))),
                 ])),
             const SizedBox(height: 10),
-            Text(nick.isEmpty ? '未设置昵称' : nick,
+            Text(nick.isEmpty ? tr('未设置昵称') : nick,
                 style:
                     const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
             const SizedBox(height: 2),
-            Text(logged ? Cloud.email : '游客模式',
+            Text(logged ? Cloud.email : tr('游客模式'),
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 6),
             // ★2026-10-11：徽章从写死的 '会员' 改为**真实等级名 + 对应配色**。
@@ -3279,7 +3279,7 @@ class _Psub extends State<ProfileSubPage> {
                     Icon(Icons.workspace_premium_outlined,
                         size: 12, color: lvColor),
                     const SizedBox(width: 4),
-                    Text(logged ? lv.name : (lv.name.isEmpty ? '游客' : lv.name),
+                    Text(logged ? lv.name : (lv.name.isEmpty ? tr('游客') : lv.name),
                         style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w700,
@@ -3295,7 +3295,7 @@ class _Psub extends State<ProfileSubPage> {
                     () => _editField('nickname', '昵称', nick)),
                 const Divider(height: 1, indent: 16),
                 if (logged) ...[
-                  row('邮箱', Cloud.email, () => _copy('邮箱', Cloud.email)),
+                  row(tr('邮箱'), Cloud.email, () => _copy(tr('邮箱'), Cloud.email)),
                   const Divider(height: 1, indent: 16)
                 ],
                 row(
@@ -3893,8 +3893,8 @@ class _Tools extends State<ToolsSection> {
                         Expanded(
                             child: TextField(
                                 controller: urlC,
-                                decoration: const InputDecoration(
-                                    hintText: '粘贴下载链接(HTTP/磁力/种子URL)',
+                                decoration: InputDecoration(
+                                    hintText: tr('粘贴下载链接(HTTP/磁力/种子URL)'),
                                     isDense: true,
                                     border: OutlineInputBorder()),
                                 style: const TextStyle(fontSize: 12))),
@@ -4010,8 +4010,8 @@ class _Kvc extends State<KeyVaultCard> {
                   flex: 2,
                   child: TextField(
                       controller: nameC,
-                      decoration: const InputDecoration(
-                          hintText: '名称(如 deepseek-key)',
+                      decoration: InputDecoration(
+                          hintText: tr('名称(如 deepseek-key)'),
                           isDense: true,
                           border: OutlineInputBorder()),
                       style: const TextStyle(fontSize: 12))),
@@ -4021,8 +4021,8 @@ class _Kvc extends State<KeyVaultCard> {
                   child: TextField(
                       controller: valC,
                       obscureText: true,
-                      decoration: const InputDecoration(
-                          hintText: '密钥值',
+                      decoration: InputDecoration(
+                          hintText: tr('密钥值'),
                           isDense: true,
                           border: OutlineInputBorder()),
                       style: const TextStyle(fontSize: 12))),
@@ -4179,7 +4179,9 @@ class _Asc extends State<AlbumSyncCard> {
               TextButton.icon(
                   onPressed: loading ? null : pickAndUpload,
                   icon: const Icon(Icons.cloud_upload, size: 18),
-                  label: Text(uploading > 0 ? '上传中$uploading…' : tr('选照片同步')))
+                  label: Text(uploading > 0
+                      ? trf('上传中{d}…', {'d': uploading})
+                      : tr('选照片同步')))
             ]),
             if (msg != null)
               Text(msg!,
@@ -4859,7 +4861,7 @@ class _Home extends State<SearchSection> {
             content: Text('$e'),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-                label: '去连接',
+                label: tr('去连接'),
                 onPressed: () => Navigator.push(
                     context, smoothRoute(const ConnectLibraryPage())))));
       }
@@ -5494,7 +5496,7 @@ class _Nv extends State<NovelSection> {
             sub: '最近读过', onTap: () => setState(() => sub = 1)),
         ModuleAction(Icons.explore_outlined, '发现',
             sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
-        ModuleAction(Icons.search, '搜索',
+        ModuleAction(Icons.search, tr('搜索'),
             sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
         ModuleAction(Icons.folder_special_outlined, '本地库',
             sub: '离线内容 · 存储占用',
@@ -5503,7 +5505,7 @@ class _Nv extends State<NovelSection> {
       ],
       settings: [
         ModuleDrawerSwitch(
-          title: '震动反馈',
+          title: tr('震动反馈'),
           sub: '关掉后所有震动静音',
           value: Haptic.enabled,
           onChanged: (v) async {
@@ -5518,7 +5520,7 @@ class _Nv extends State<NovelSection> {
               width: 40,
               child: IconButton(
                   icon: const Icon(Icons.menu, size: 20),
-                  tooltip: '快捷面板',
+                  tooltip: tr('快捷面板'),
                   onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
@@ -5931,7 +5933,8 @@ class _Sh extends State<ShelfPage> {
                               builder: (c2) => AlertDialog(
                                       title: const Text('删除本地书'),
                                       content:
-                                          Text('《${lb['name']}》\n将同时删除本地文件'),
+                                          Text(trf('《{name}》\n将同时删除本地文件',
+                                              {'name': lb['name'] ?? ''})),
                                       actions: [
                                         TextButton(
                                             onPressed: () =>
@@ -6579,7 +6582,7 @@ class _Cs extends State<ComicSection> {
             sub: '最近看过', onTap: () => setState(() => sub = 1)),
         ModuleAction(Icons.explore_outlined, '发现',
             sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
-        ModuleAction(Icons.search, '搜索',
+        ModuleAction(Icons.search, tr('搜索'),
             sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
         ModuleAction(Icons.folder_special_outlined, '本地库',
             sub: '离线内容 · 存储占用',
@@ -6588,7 +6591,7 @@ class _Cs extends State<ComicSection> {
       ],
       settings: [
         ModuleDrawerSwitch(
-          title: '震动反馈',
+          title: tr('震动反馈'),
           sub: '关掉后所有震动静音',
           value: Haptic.enabled,
           onChanged: (v) async {
@@ -6603,7 +6606,7 @@ class _Cs extends State<ComicSection> {
               width: 40,
               child: IconButton(
                   icon: const Icon(Icons.menu, size: 20),
-                  tooltip: '快捷面板',
+                  tooltip: tr('快捷面板'),
                   onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
@@ -7048,7 +7051,7 @@ class _Ms extends State<MusicSection> {
             sub: '最近听过', onTap: () => setState(() => sub = 1)),
         ModuleAction(Icons.explore_outlined, '发现',
             sub: '榜单与推荐', onTap: () => setState(() => sub = 2)),
-        ModuleAction(Icons.search, '搜索',
+        ModuleAction(Icons.search, tr('搜索'),
             sub: '跨平台检索', onTap: () => setState(() => sub = 3)),
         ModuleAction(Icons.folder_special_outlined, '本地库',
             sub: '离线内容 · 存储占用',
@@ -7057,7 +7060,7 @@ class _Ms extends State<MusicSection> {
       ],
       settings: [
         ModuleDrawerSwitch(
-          title: '震动反馈',
+          title: tr('震动反馈'),
           sub: '关掉后所有震动静音',
           value: Haptic.enabled,
           onChanged: (v) async {
@@ -7072,7 +7075,7 @@ class _Ms extends State<MusicSection> {
               width: 40,
               child: IconButton(
                   icon: const Icon(Icons.menu, size: 20),
-                  tooltip: '快捷面板',
+                  tooltip: tr('快捷面板'),
                   onPressed: () => _dk.currentState?.animateTo(true))),
           Expanded(
               child: Center(
@@ -7182,9 +7185,9 @@ class _MpList extends State<_MusicPlaylist> {
                           load();
                         })),
               if (items.isNotEmpty)
-                const Padding(
+                Padding(
                     padding: EdgeInsets.fromLTRB(12, 10, 12, 2),
-                    child: Text('歌单',
+                    child: Text(tr('歌单'),
                         style: TextStyle(fontSize: 12, color: Colors.grey))),
               for (final m in items)
                 ListTile(
@@ -7632,9 +7635,9 @@ class _MPlay extends State<MusicPlayPage> {
             initialChildSize: 0.55,
             expand: false,
             builder: (_, sc) => Column(children: [
-                  const Padding(
+                  Padding(
                       padding: EdgeInsets.all(12),
-                      child: Text('播放队列',
+                      child: Text(tr('播放队列'),
                           style: TextStyle(fontWeight: FontWeight.bold))),
                   Expanded(
                       child: queue.isEmpty
@@ -7703,7 +7706,7 @@ class _MPlay extends State<MusicPlayPage> {
                 child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      const Text('均衡器',
+                      Text(tr('均衡器'),
                           style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -7777,9 +7780,9 @@ class _MPlay extends State<MusicPlayPage> {
         builder: (c2) => StatefulBuilder(
             builder: (c2, setD) => SafeArea(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Padding(
+                  Padding(
                       padding: EdgeInsets.all(12),
-                      child: Text('睡眠定时',
+                      child: Text(tr('睡眠定时'),
                           style: TextStyle(fontWeight: FontWeight.bold))),
                   if (_sleepEnd != null)
                     ListTile(
@@ -7859,7 +7862,9 @@ class _MPlay extends State<MusicPlayPage> {
     }
     if (mounted) setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(minutes < 0 ? '将在本曲播完后停止' : '$minutes 分钟后停止播放'),
+        content: Text(minutes < 0
+            ? tr('将在本曲播完后停止')
+            : trf('{n} 分钟后停止播放', {'n': minutes})),
         duration: const Duration(seconds: 1)));
   }
 
@@ -7904,7 +7909,7 @@ class _MPlay extends State<MusicPlayPage> {
                   onPressed: _saveOfflineM),
             IconButton(
                 icon: const Icon(Icons.favorite_border),
-                tooltip: '收藏到歌单架',
+                tooltip: tr('收藏到歌单架'),
                 onPressed: () async {
                   await Book.add(
                       Book(
@@ -7929,18 +7934,18 @@ class _MPlay extends State<MusicPlayPage> {
             IconButton(
                 icon: Icon(Icons.equalizer,
                     color: _eqInfo != null ? null : Colors.grey),
-                tooltip: '均衡器',
+                tooltip: tr('均衡器'),
                 onPressed: _eqSheet),
             IconButton(
                 icon: Icon(Icons.bedtime_outlined,
                     color: _sleepEnd != null
                         ? Theme.of(context).colorScheme.primary
                         : null),
-                tooltip: '睡眠定时',
+                tooltip: tr('睡眠定时'),
                 onPressed: _sleepSheet),
             IconButton(
                 icon: const Icon(Icons.queue_music),
-                tooltip: '播放队列',
+                tooltip: tr('播放队列'),
                 onPressed: _queueSheet)
           ]),
       body: SafeArea(
@@ -8196,7 +8201,7 @@ class _Vs extends State<VideoSection> {
             ModuleAction(Icons.explore_outlined, '发现',
                 sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
           if (thirdParty)
-            ModuleAction(Icons.search, '搜索',
+            ModuleAction(Icons.search, tr('搜索'),
                 sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
           ModuleAction(Icons.folder_special_outlined, '本地库',
               sub: '离线内容 · 存储占用',
@@ -8205,7 +8210,7 @@ class _Vs extends State<VideoSection> {
         ],
         settings: [
           ModuleDrawerSwitch(
-            title: '震动反馈',
+            title: tr('震动反馈'),
             sub: '关掉后所有震动静音',
             value: Haptic.enabled,
             onChanged: (v) async {
@@ -8220,7 +8225,7 @@ class _Vs extends State<VideoSection> {
                 width: 40,
                 child: IconButton(
                     icon: const Icon(Icons.menu, size: 20),
-                    tooltip: '快捷面板',
+                    tooltip: tr('快捷面板'),
                     onPressed: () => _dk.currentState?.animateTo(true))),
             Expanded(
                 child: Center(
@@ -8303,8 +8308,8 @@ class _Live extends State<LivePage> {
               Expanded(
                   child: TextField(
                       controller: ctrl,
-                      decoration: const InputDecoration(
-                          hintText: '搜频道(如:央视/卫视/电影)',
+                      decoration: InputDecoration(
+                          hintText: tr('搜频道(如:央视/卫视/电影)'),
                           border: OutlineInputBorder(),
                           isDense: true),
                       onSubmitted: (_) => go())),
@@ -8650,7 +8655,7 @@ class _Vd extends State<VideoDetailPage> {
                                       height: 1.6)),
                               const SizedBox(height: 4),
                               Row(mainAxisSize: MainAxisSize.min, children: [
-                                Text(_introExpanded ? '收起' : '展开全部',
+                                Text(_introExpanded ? tr('收起') : tr('展开全部'),
                                     style: const TextStyle(
                                         color: Colors.blueAccent,
                                         fontSize: 11.5)),
@@ -8674,7 +8679,7 @@ class _Vd extends State<VideoDetailPage> {
                       child: Row(children: [
                         const Icon(Icons.video_library_outlined, size: 16),
                         const SizedBox(width: 6),
-                        Text('选集',
+                        Text(tr('选集'),
                             style: TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w700)),
                         const SizedBox(width: 6),
@@ -9083,7 +9088,8 @@ class _Vp extends State<VideoPlayPage> {
                       Navigator.pop(c2);
                       goEpisode(i);
                     },
-                    child: Text(widget.episodes[i]['name'] ?? '第${i + 1}集',
+                    child: Text(
+                        widget.episodes[i]['name'] ?? trf('第{n}集', {'n': i + 1}),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 11))))));
@@ -9193,7 +9199,8 @@ class _Vp extends State<VideoPlayPage> {
             if (widget.episodes.length > 1 && OfflineUI.batchDownloadAllowed)
               IconButton(
                   icon: const Icon(Icons.playlist_add, size: 20),
-                  tooltip: '下载全部 ${widget.episodes.length} 集',
+                  tooltip: trf('下载全部 {n} 集',
+                      {'n': widget.episodes.length}),
                   onPressed: _downloadAllEpisodes),
             // ★视频定时关闭（2026-10-12）。
             IconButton(
@@ -9201,12 +9208,12 @@ class _Vp extends State<VideoPlayPage> {
                     _sleepEnd == null ? Icons.bedtime_outlined : Icons.bedtime,
                     size: 20,
                     color: _sleepEnd == null ? null : Colors.blueAccent),
-                tooltip: '定时关闭',
+                tooltip: tr('定时关闭'),
                 onPressed: _sleepSheetV),
             if (_pipOk)
               IconButton(
                   icon: const Icon(Icons.picture_in_picture_alt, size: 20),
-                  tooltip: '画中画',
+                  tooltip: tr('画中画'),
                   onPressed: () async {
                     final ok = await Pip.enter(
                         aspect: _aspect,
@@ -9218,7 +9225,7 @@ class _Vp extends State<VideoPlayPage> {
             if (widget.episodes.isNotEmpty)
               IconButton(
                   icon: const Icon(Icons.grid_view),
-                  tooltip: '选集',
+                  tooltip: tr('选集'),
                   onPressed: _epSheet)
           ]),
       body: err != null
@@ -9361,7 +9368,7 @@ class ModuleDef {
 
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
-  '搜索': ModuleDef('搜索', Icons.search, () => (const SearchSection())),
+  '搜索': ModuleDef(tr('搜索'), Icons.search, () => (const SearchSection())),
   '小说': ModuleDef('小说', Icons.menu_book, () => (const NovelSection()),
       localKind: 'novel'),
   '漫画': ModuleDef('漫画', Icons.photo_library, () => (const ComicSection()),
@@ -10210,7 +10217,7 @@ class _RootNavState extends State<RootNav> {
                       controller: cc,
                       keyboardType: TextInputType.number,
                       obscureText: true,
-                      decoration: const InputDecoration(hintText: '输入 PIN')),
+                      decoration: InputDecoration(hintText: tr('输入 PIN'))),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(c2, false),
@@ -10886,7 +10893,7 @@ void showModuleSettings(BuildContext c, String modKey) {
                           style: const ButtonStyle(
                               visualDensity: VisualDensity.compact,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                          segments: const [
+                          segments: [
                             ButtonSegment(
                                 value: 0,
                                 label:
@@ -10913,11 +10920,11 @@ void showModuleSettings(BuildContext c, String modKey) {
                           style: const ButtonStyle(
                               visualDensity: VisualDensity.compact,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                          segments: const [
+                          segments: [
                             ButtonSegment(
                                 value: 'scroll',
                                 label:
-                                    Text('滚动', style: TextStyle(fontSize: 10))),
+                                    Text(tr('滚动'), style: TextStyle(fontSize: 10))),
                             ButtonSegment(
                                 value: 'paged',
                                 label:
@@ -11080,7 +11087,9 @@ void showModuleSettings(BuildContext c, String modKey) {
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Padding(
                           padding: const EdgeInsets.all(12),
-                          child: Text('${kModules[modKey]?.name ?? ''} · 播放器设置',
+                          child: Text(
+                              trf('{name} · 播放器设置',
+                                  {'name': kModules[modKey]?.name ?? ''}),
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold))),
                       ...children,
@@ -11124,13 +11133,19 @@ Future<int> importLocal(String kind) {
 /// 还是压缩包解不开。把原因摆出来，才知道下一步该做什么。
 SnackBar importSnack(int n, String unit) {
   final errs = LocalLib.lastErrors;
-  final String head = n > 0 ? '已导入 $n $unit' : '没有导入成功';
+  final String head = n > 0
+      ? trf('已导入 {n} {unit}', {'n': n, 'unit': tr(unit)})
+      : tr('没有导入成功');
   if (errs.isEmpty) return SnackBar(content: Text(head));
   final int extra = errs.length - 3;
+  // ★2026-11-01：这三句以前是直接拼中文的（`'失败 $n 项：'`），切语言后仍是中文。
+  //   拆成 trf 模板后，语序交给译文决定，不再靠中文语序拼串。
+  final String failHead = trf('{n} 项导入失败：', {'n': errs.length});
+  final String more =
+      extra > 0 ? '\n${trf('…还有 {n} 项', {'n': extra})}' : '';
   return SnackBar(
     duration: const Duration(seconds: 6),
-    content: Text(
-        '$head\n失败 ${errs.length} 项：\n${errs.take(3).join('\n')}${extra > 0 ? '\n…还有 $extra 项' : ''}'),
+    content: Text('$head\n$failHead\n${errs.take(3).join('\n')}$more'),
   );
 }
 
@@ -11317,7 +11332,7 @@ class _At extends State<AccountTile> {
                   void fail(String m) => setSt(() => tip = m);
                   return AlertDialog(
                       title:
-                          Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
+                          Text(isLogin ? tr('登录 ThirdHub 账号') : tr('注册 ThirdHub 账号')),
                       content:
                           Column(mainAxisSize: MainAxisSize.min, children: [
                         TextField(
@@ -11328,8 +11343,8 @@ class _At extends State<AccountTile> {
                             onChanged: (_) {
                               if (tip != null) fail('');
                             },
-                            decoration: const InputDecoration(
-                                labelText: '邮箱', isDense: true)),
+                            decoration: InputDecoration(
+                                labelText: tr('邮箱'), isDense: true)),
                         TextField(
                             controller: passC,
                             obscureText: obscure,
@@ -11351,7 +11366,7 @@ class _At extends State<AccountTile> {
                               Navigator.pop(c2, true);
                             },
                             decoration: InputDecoration(
-                                labelText: '密码(至少6位)',
+                                labelText: tr('密码(至少6位)'),
                                 isDense: true,
                                 suffixIcon: IconButton(
                                     tooltip: obscure ? '显示密码' : '隐藏密码',
@@ -11392,7 +11407,7 @@ class _At extends State<AccountTile> {
                               }
                               Navigator.pop(c2, true);
                             },
-                            child: Text(isLogin ? '登录' : '注册'))
+                            child: Text(isLogin ? tr('登录') : tr('注册')))
                       ]);
                 },
               ));
@@ -11566,7 +11581,7 @@ class _At extends State<AccountTile> {
           subtitle: Text(Cloud.email, style: const TextStyle(fontSize: 10)),
           trailing: IconButton(
               icon: const Icon(Icons.refresh, size: 18),
-              tooltip: '同步资料并重连后端',
+              tooltip: tr('同步资料并重连后端'),
               onPressed: () async {
                 await Cloud.profile();
                 await _syncProfile();
@@ -12038,7 +12053,7 @@ class Updater {
                       launchUrl(Uri.parse(url),
                           mode: LaunchMode.externalApplication);
                     },
-                    child: const Text('浏览器下载')),
+                    child: Text(tr('浏览器下载'))),
                 FilledButton(
                     onPressed: () => Navigator.pop(c2, true),
                     child: Text(localApk != null ? '立即安装' : '立即更新'))
@@ -12203,7 +12218,7 @@ class Updater {
       lastPush = now;
       final v = progress.value;
       unawaited(Notify.progress(
-          notifId, title, v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : '连接中…',
+          notifId, title, v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : tr('连接中…'),
           value: (v * 100).round(), indeterminate: v <= 0));
     }
 
@@ -12242,7 +12257,7 @@ class Updater {
       if (r0 == null) return;
     }
     final progress = ValueNotifier<double>(0);
-    final detail = ValueNotifier<String>('连接中…');
+    final detail = ValueNotifier<String>(tr('连接中…'));
     var background = false;
     showDialog(
         context: c,
@@ -12259,7 +12274,7 @@ class Updater {
                             Text(
                                 v > 0
                                     ? '${(v * 100).toStringAsFixed(0)}%'
-                                    : '连接中…',
+                                    : tr('连接中…'),
                                 style: const TextStyle(fontSize: 12)),
                           ])),
                   const SizedBox(height: 6),
@@ -12339,7 +12354,7 @@ class Updater {
             duration: const Duration(seconds: 6),
             content: Text('已保存: ${f.path}'),
             action: SnackBarAction(
-                label: '安装', onPressed: () => OpenFilex.open(f.path))));
+                label: tr('安装'), onPressed: () => OpenFilex.open(f.path))));
     } catch (e) {
       if (!background && c.mounted) Navigator.pop(c);
       if (c.mounted)
@@ -12364,7 +12379,7 @@ class Updater {
   static Future<void> _downloadAndInstall(BuildContext c, String url,
       {String? sha}) async {
     final progress = ValueNotifier<double>(0);
-    final detail = ValueNotifier<String>('连接中…');
+    final detail = ValueNotifier<String>(tr('连接中…'));
     var background = false;
     showDialog(
         context: c,
@@ -12381,7 +12396,7 @@ class Updater {
                             Text(
                                 v > 0
                                     ? '${(v * 100).toStringAsFixed(0)}%'
-                                    : '连接中…',
+                                    : tr('连接中…'),
                                 style: const TextStyle(fontSize: 12)),
                           ])),
                   const SizedBox(height: 6),
@@ -12461,7 +12476,7 @@ class Updater {
             duration: const Duration(seconds: 10),
             content: Text('无法自动调起安装(${r.message})\n请到 下载App 页找到安装包手动安装'),
             action: SnackBarAction(
-                label: '浏览器下载',
+                label: tr('浏览器下载'),
                 onPressed: () => launchUrl(Uri.parse(mirrors.first),
                     mode: LaunchMode.externalApplication))));
       }
@@ -12582,13 +12597,13 @@ class _Ln extends State<LocalNovelsPage> {
                                 child: Column(children: [
                               TextField(
                                   controller: nameC,
-                                  decoration: const InputDecoration(
-                                      labelText: '书名', isDense: true)),
+                                  decoration: InputDecoration(
+                                      labelText: tr('书名'), isDense: true)),
                               const SizedBox(height: 8),
                               TextField(
                                   controller: authorC,
-                                  decoration: const InputDecoration(
-                                      labelText: '作者(可空)', isDense: true)),
+                                  decoration: InputDecoration(
+                                      labelText: tr('作者(可空)'), isDense: true)),
                             ])),
                           ]),
                       if (cover != null)
@@ -12625,7 +12640,9 @@ class _Ln extends State<LocalNovelsPage> {
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(
-          title: Text(selecting ? '已选 ${sel.length} 本' : '本地小说'),
+          title: Text(selecting
+              ? trf('已选 {n} 本', {'n': sel.length})
+              : tr('本地小说')),
           actions: selecting
               ? [
                   TextButton(
@@ -12649,7 +12666,7 @@ class _Ln extends State<LocalNovelsPage> {
               : [
                   IconButton(
                       icon: const Icon(Icons.library_add_check_outlined),
-                      tooltip: '批量管理',
+                      tooltip: tr('批量管理'),
                       onPressed: () => setState(() => selecting = true)),
                   IconButton(
                       icon: const Icon(Icons.add),
@@ -12895,9 +12912,9 @@ Future<int?> showVideoSleepSheet(BuildContext c, DateTime? end) {
       showDragHandle: true,
       builder: (c2) => SafeArea(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Padding(
+            Padding(
                 padding: EdgeInsets.only(bottom: 6),
-                child: Text('定时关闭',
+                child: Text(tr('定时关闭'),
                     style: TextStyle(fontWeight: FontWeight.bold))),
             if (end != null)
               ListTile(
@@ -13331,12 +13348,12 @@ class _Lvp extends State<LocalVideoPlayerPage> {
                           : Icons.bedtime,
                       size: 20,
                       color: _sleepEnd == null ? null : Colors.blueAccent),
-                  tooltip: '定时关闭',
+                  tooltip: tr('定时关闭'),
                   onPressed: _sleepSheetV),
               if (_pipOk)
                 IconButton(
                     icon: const Icon(Icons.picture_in_picture_alt, size: 20),
-                    tooltip: '画中画',
+                    tooltip: tr('画中画'),
                     onPressed: () async {
                       final ok = await Pip.enter(
                           aspect: _aspect,
@@ -13352,7 +13369,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
                   onPressed: _pickSubSheet),
               IconButton(
                   icon: const Icon(Icons.fullscreen),
-                  tooltip: '横屏全屏',
+                  tooltip: tr('横屏全屏'),
                   onPressed: _toggleFs),
             ]),
         body: Center(child: body));
@@ -14196,7 +14213,7 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
             padding: const EdgeInsets.fromLTRB(14, 6, 14, 18),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_err.isEmpty ? '暂时拿不到更新记录' : _err,
+              Text(_err.isEmpty ? tr('暂时拿不到更新记录') : _err,
                   style: const TextStyle(fontSize: 12, color: Colors.orange)),
               const SizedBox(height: 6),
               const Text('下拉此页即可重试；更新记录不随安装包下发，需要联网获取。',
@@ -14689,7 +14706,7 @@ class _Ns extends State<NavSettingsPage> {
                           min: 2,
                           max: 10,
                           divisions: 8,
-                          label: '${AppSettings.autoFsSec} 秒',
+                          label: trf('{n} 秒', {'n': AppSettings.autoFsSec}),
                           onChanged: (v) =>
                               AppSettings.setAutoFsSec(v.round()).then((_) {
                                 RootNav.navTick.value++;
@@ -14911,7 +14928,11 @@ class _CloudPageState extends State<CloudPage> {
                 leading: const Icon(Icons.cloud_outlined, size: 20),
                 title: Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                    '用量 ${AppSettings.localUsageKB.toStringAsFixed(1)}KB / ${memberStorageText(lv)} · 进度存自己后端不占配额',
+                    trf('用量 {used} / {total} · 进度存自己后端不占配额', {
+                      'used':
+                          '${AppSettings.localUsageKB.toStringAsFixed(1)}KB',
+                      'total': memberStorageText(lv)
+                    }),
                     style: const TextStyle(fontSize: 11))),
             const Divider(height: 1, indent: 56),
             ListTile(
@@ -14974,17 +14995,17 @@ class AboutPage extends StatelessWidget {
               onTap: () => Navigator.push(
                   c,
                   MaterialPageRoute(
-                      builder: (_) => const LegalDocPage(
-                          title: '隐私政策', asset: 'assets/legal/privacy.md')))),
+                      builder: (_) => LegalDocPage(
+                          title: tr('隐私政策'), asset: 'assets/legal/privacy.md')))),
           const Divider(height: 1, indent: 56),
           ListTile(
               leading: const Icon(Icons.description_outlined, size: 20),
-              title: const Text('用户服务协议', style: TextStyle(fontSize: 14)),
+              title: Text(tr('用户服务协议'), style: TextStyle(fontSize: 14)),
               onTap: () => Navigator.push(
                   c,
                   MaterialPageRoute(
-                      builder: (_) => const LegalDocPage(
-                          title: '用户服务协议', asset: 'assets/legal/terms.md')))),
+                      builder: (_) => LegalDocPage(
+                          title: tr('用户服务协议'), asset: 'assets/legal/terms.md')))),
           const Divider(height: 1, indent: 56),
           ListTile(
               leading: const Icon(Icons.favorite_border, size: 20),
@@ -15467,7 +15488,7 @@ class _Ei extends State<EngineItemPage> {
             if (_canSwitch)
               IconButton(
                   icon: const Icon(Icons.swap_horiz, size: 21),
-                  tooltip: '换一来源',
+                  tooltip: tr('换一来源'),
                   onPressed: _switchSource),
             // 引擎条目此前没有任何收藏入口 —— 而「片库 / 历史」的空态正是叫用户
             // 来这里点书签。补上它，那句引导才成立。
@@ -15486,7 +15507,8 @@ class _Ei extends State<EngineItemPage> {
                 OfflineUI.batchDownloadAllowed)
               IconButton(
                   icon: const Icon(Icons.playlist_add, size: 21),
-                  tooltip: '下载整部 ${chapters.length} 话',
+                  tooltip:
+                      trf('下载整部 {n} 话', {'n': chapters.length}),
                   onPressed: _downloadAllChapters),
           ]),
       body: loading
@@ -15675,11 +15697,11 @@ class _Ei extends State<EngineItemPage> {
                                           if (_canSwitch)
                                             GestureDetector(
                                                 onTap: _switchSource,
-                                                child: const Padding(
+                                                child: Padding(
                                                     padding:
                                                         EdgeInsets.symmetric(
                                                             horizontal: 4),
-                                                    child: Text('换一来源',
+                                                    child: Text(tr('换一来源'),
                                                         style: TextStyle(
                                                             fontSize: 10,
                                                             color: Colors
@@ -15712,7 +15734,7 @@ class _Ei extends State<EngineItemPage> {
                                             fontSize: 11,
                                             color: Colors.grey,
                                             height: 1.35)),
-                                    Text(introOpen ? '收起' : '展开简介',
+                                    Text(introOpen ? tr('收起') : tr('展开简介'),
                                         style: const TextStyle(
                                             fontSize: 10,
                                             color: Colors.blueAccent)),
@@ -16753,7 +16775,7 @@ class _ModulePanelState extends State<_ModulePanel> {
                         overflow: TextOverflow.ellipsis)),
                 IconButton(
                     icon: const Icon(Icons.tune, size: 18),
-                    tooltip: '启用/停用模块',
+                    tooltip: tr('启用/停用模块'),
                     // 先取 Navigator 再 pop：pop 会把本 sheet 的 context 销毁，
                     // 在销毁后的 context 上开对话框会抛 "Looking up a deactivated widget's ancestor"
                     onPressed: () {
