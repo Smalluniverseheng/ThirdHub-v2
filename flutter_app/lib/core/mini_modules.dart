@@ -1115,7 +1115,7 @@ class _NoteEdit extends State<NoteEditPage> {
       ]),
       body: Column(children: [
         Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: TextField(
                 controller: title,
                 decoration: const InputDecoration(
