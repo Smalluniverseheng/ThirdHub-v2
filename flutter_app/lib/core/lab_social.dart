@@ -18,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lab_logic.dart';
+import 'i18n.dart';
 
 /// 论坛里给人看的时间。
 ///
@@ -237,7 +238,7 @@ class _ChatState extends State<ChatPage> {
                 avatar: const Icon(Icons.play_arrow, size: 16), label: const Text('开启', style: TextStyle(fontSize: 12)),
                 onPressed: () async { await L.start(); })
               else ActionChip(
-                avatar: const Icon(Icons.stop, size: 16), label: const Text('关闭', style: TextStyle(fontSize: 12)),
+                avatar: Icon(Icons.stop, size: 16), label: const Text(tr('关闭'), style: TextStyle(fontSize: 12)),
                 onPressed: () => L.stop()),
               ActionChip(
                 avatar: const Icon(Icons.cleaning_services_outlined, size: 16),
@@ -315,8 +316,8 @@ class _ChatState extends State<ChatPage> {
       title: const Text('设备昵称'),
       content: TextField(controller: ctl, autofocus: true, decoration: const InputDecoration(hintText: '例如: 客厅平板')),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
-        TextButton(onPressed: () => Navigator.pop(d, ctl.text), child: const Text('保存')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('取消'))),
+        TextButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('保存'))),
       ]));
     final v = r;
     ctl.dispose();
@@ -421,8 +422,8 @@ class _CommunityState extends State<CommunityPage> {
           Row(children: [
             FilledButton.icon(onPressed: () => _edit(c, null), icon: const Icon(Icons.add, size: 18), label: const Text('发帖')),
             const SizedBox(width: 8),
-            TextButton.icon(onPressed: () => _export(c), icon: const Icon(Icons.ios_share, size: 16), label: const Text('导出')),
-            TextButton.icon(onPressed: () => _import(c), icon: const Icon(Icons.download, size: 16), label: const Text('导入')),
+            TextButton.icon(onPressed: () => _export(c), icon: Icon(Icons.ios_share, size: 16), label: const Text(tr('导出'))),
+            TextButton.icon(onPressed: () => _import(c), icon: Icon(Icons.download, size: 16), label: const Text(tr('导入'))),
           ]),
         ]))),
         const SizedBox(height: 8),
@@ -477,7 +478,7 @@ class _CommunityState extends State<CommunityPage> {
                 onSelected: (_) => set(() => kind = k)),
           ]),
           const SizedBox(height: 8),
-          TextField(controller: t, decoration: const InputDecoration(labelText: '标题', isDense: true)),
+          TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
           const SizedBox(height: 8),
           TextField(controller: b, minLines: 4, maxLines: 10,
             decoration: const InputDecoration(labelText: '正文 / 规则内容 / 链接', isDense: true, border: OutlineInputBorder())),
@@ -485,8 +486,8 @@ class _CommunityState extends State<CommunityPage> {
           TextField(controller: g, decoration: const InputDecoration(labelText: '标签(空格分隔)', isDense: true)),
         ])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('保存')),
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('保存'))),
         ])));
     final title = t.text.trim(), body = b.text, tags = [for (final s in g.text.split(RegExp(r'\s+'))) if (s.isNotEmpty) s];
     t.dispose(); b.dispose(); g.dispose();
@@ -520,8 +521,8 @@ class _CommunityState extends State<CommunityPage> {
       content: TextField(controller: ctl, minLines: 5, maxLines: 12,
         decoration: const InputDecoration(hintText: '把导出的 JSON 粘在这里', isDense: true, border: OutlineInputBorder())),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
-        TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('导入')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
+        TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('导入'))),
       ]));
     final text = ctl.text;
     ctl.dispose();
@@ -649,13 +650,13 @@ class _ForumState extends State<ForumPage> {
     final ok = await showDialog<bool>(context: c, builder: (d) => AlertDialog(
       title: Text('在「$_board」发主题'),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: t, decoration: const InputDecoration(labelText: '标题', isDense: true)),
+        TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
         const SizedBox(height: 8),
         TextField(controller: b, minLines: 4, maxLines: 10,
           decoration: const InputDecoration(labelText: '正文', isDense: true, border: OutlineInputBorder())),
       ])),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('发布')),
       ]));
     final title = t.text.trim(), body = b.text;
@@ -689,8 +690,8 @@ class _ForumState extends State<ForumPage> {
           } catch (e) {
             if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('解析失败: $e')));
           }
-        }, child: const Text('导入')),
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('关闭')),
+        }, child: Text(tr('导入'))),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('关闭'))),
       ]));
     ctl.dispose();
   }
