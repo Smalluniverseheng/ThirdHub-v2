@@ -15615,13 +15615,17 @@ class _EiC extends State<_EiComments> {
   bool loadingMore = false;
   bool hasMore = true;
   String unsupported = '';
-  late bool liked = widget.initialLiked;
-  int? likes = widget.initialLikes;
+  // 字段初始化器里不能用 `widget`（那一层还没有 State 绑定），
+  // 初值必须在 initState 里取，否则编译期报 Undefined name 'widget'。
+  late bool liked;
+  int? likes;
   bool liking = false;
 
   @override
   void initState() {
     super.initState();
+    liked = widget.initialLiked;
+    likes = widget.initialLikes;
     _loadMore();
   }
 
