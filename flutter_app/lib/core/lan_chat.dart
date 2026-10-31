@@ -21,6 +21,7 @@ import 'dart:math' as math;
 import 'chat_crypto.dart';
 import 'chat_logic.dart';
 import 'lab_logic.dart' show kLanPort, LanPeer, prunePeers;
+import 'i18n.dart';
 
 /// 文件传输服务的空闲自动关闭时间（协议 §5.2）。
 const Duration kFileServerIdle = Duration(seconds: 90);
