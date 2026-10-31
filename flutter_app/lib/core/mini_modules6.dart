@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'i18n.dart';
 
 class _Store6 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -43,8 +44,8 @@ class _He extends State<HealthPage> {
         if (type == '血压') TextField(controller: v2, keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: '舒张压(低压)', isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))]));
     if (ok != true) return;
     final a = double.tryParse(v1.text.trim());
     if (a == null || a <= 0) return;
@@ -190,8 +191,8 @@ class _News extends State<NewsPage> {
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
       title: const Text('添加资讯 RSS 源'),
       content: TextField(controller: urlC, decoration: const InputDecoration(hintText: 'https://…/feed', isDense: true)),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('添加'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('添加')))]));
     if (ok != true || urlC.text.trim().isEmpty) return;
     feeds.add({'title': urlC.text.trim(), 'url': urlC.text.trim()});
     await _Store6.save('news_feeds', feeds);
@@ -218,7 +219,7 @@ class _News extends State<NewsPage> {
       Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
         if (failed) FilledButton.tonalIcon(
           onPressed: () { final f = feeds.firstWhere((x) => x['title'] == curFeed, orElse: () => const {}); if (f.isNotEmpty) _openFeed(f); },
-          icon: const Icon(Icons.refresh, size: 16), label: const Text('重试')),
+          icon: Icon(Icons.refresh, size: 16), label: const Text(tr('重试'))),
         if (failed && feeds.length > 1) FilledButton.tonalIcon(
           onPressed: () {
             final i = feeds.indexWhere((x) => x['title'] == curFeed);
