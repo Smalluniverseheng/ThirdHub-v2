@@ -11,6 +11,7 @@ import 'ai.dart';
 import 'pro_kit.dart';
 import 'pro_media.dart';
 import 'pro_system.dart';
+import 'i18n.dart';
 
 // ══════════════════════════════════════════════════════════════
 // AI-8 审计日志: 每一次模型调用与工具执行都留痕(本地 + 可选上报后端)
@@ -380,7 +381,7 @@ class UiCommand {
                 style: const TextStyle(fontSize: 13, height: 1.5)),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(c2), child: const Text('知道了')),
+                  onPressed: () => Navigator.pop(c2), child: Text(tr('知道了'))),
             ],
           ),
         );
@@ -867,7 +868,7 @@ class _AiW extends ProPageState<AiWorkbenchPage> {
                 child: SelectableText(out,
                     style: const TextStyle(fontSize: 12, height: 1.5)))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
@@ -897,7 +898,7 @@ class _AiW extends ProPageState<AiWorkbenchPage> {
                 child: SelectableText(txt,
                     style: const TextStyle(fontSize: 11.5, height: 1.5)))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
@@ -919,7 +920,7 @@ class _AiW extends ProPageState<AiWorkbenchPage> {
                     style: const TextStyle(
                         fontSize: 11, fontFamily: 'monospace', height: 1.4)))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
