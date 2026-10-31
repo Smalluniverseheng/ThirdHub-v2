@@ -501,7 +501,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
         child: SingleChildScrollView(child: Text(para.trim(), style: const TextStyle(fontSize: 12, color: Colors.grey)))),
       ListTile(dense: true, leading: const Icon(Icons.copy, size: 20), title: const Text('复制本段'),
         onTap: () { Clipboard.setData(ClipboardData(text: para.trim())); Navigator.pop(c2);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制'), duration: Duration(seconds: 1))); }),
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('已复制')), duration: Duration(seconds: 1))); }),
       ListTile(dense: true, leading: const Icon(Icons.headphones, size: 20), title: const Text('朗读本段'),
         onTap: () { Navigator.pop(c2); TtsManager.speak(para.trim()); }),
       ListTile(dense: true, leading: const Icon(Icons.play_circle_outline, size: 20), title: const Text('从此段开始听书'),
@@ -604,7 +604,7 @@ class _NovelReaderState extends State<NovelReaderPage> {
   void _bookmarkSheet() {
     final list = ReaderCfg.bookmarks(widget.bookUrl);
     showModalBottomSheet(context: context, builder: (c2) => SafeArea(child: SizedBox(height: 380, child: Column(children: [
-      const Padding(padding: EdgeInsets.all(12), child: Text('书签', style: TextStyle(fontWeight: FontWeight.bold))),
+      Padding(padding: EdgeInsets.all(12), child: Text(tr('书签'), style: TextStyle(fontWeight: FontWeight.bold))),
       Expanded(child: list.isEmpty ? const Center(child: Text('暂无书签\n下拉页面顶部或长按段落可添加', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))
         : ListView(children: [ for (final b in list) ListTile(dense: true,
             leading: const Icon(Icons.bookmark, size: 18, color: Colors.amber),
