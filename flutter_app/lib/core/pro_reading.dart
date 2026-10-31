@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pro_kit.dart';
+import 'i18n.dart';
 
 // ══════════════════════════════════════════════════════════════
 // R-2 换源: 每次章节抓取的成败/耗时都记一笔 → 算出健康度 → 自动换源
@@ -542,7 +543,7 @@ class _Ann extends ProPageState<AnnotationPage> {
                   await Annotations.remove(e['id'] ?? '');
                   await refresh();
                 },
-                child: const Text('删除', style: TextStyle(fontSize: 12))),
+                child: Text(tr('删除'), style: TextStyle(fontSize: 12))),
           ]),
         ]),
     ];
@@ -561,7 +562,7 @@ class _Ann extends ProPageState<AnnotationPage> {
                 child: SelectableText(md,
                     style: const TextStyle(fontSize: 12, height: 1.5)))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
