@@ -18,6 +18,7 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
 import 'pro_kit.dart';
 import 'photo_map.dart';
+import 'i18n.dart';
 
 // ══════════════════════════════════════════════════════════════
 // F-2 哈希(SHA-256) 工具
@@ -596,7 +597,7 @@ class _GP extends ProPageState<GalleryProPage> {
                   child: Text(st.errors.join('\n\n'),
                       style: const TextStyle(fontSize: 12, height: 1.5)))),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+            TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
           ],
         ),
       );
@@ -797,7 +798,7 @@ class _Fp extends ProPageState<FacePage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
         ],
       ),
     );
@@ -897,7 +898,7 @@ class _Vp extends ProPageState<VaultPage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
         ],
       ),
     );
