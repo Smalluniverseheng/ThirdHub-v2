@@ -15,6 +15,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'pro_kit.dart';
+import 'i18n.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 // 协议层
@@ -645,7 +646,7 @@ class _RoomState extends State<ChatRoomPage> {
                   style: const TextStyle(fontSize: 13, height: 1.55))),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(c2), child: const Text('知道了'))
+                onPressed: () => Navigator.pop(c2), child: Text(tr('知道了')))
           ],
         ),
       );
