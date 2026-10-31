@@ -7,6 +7,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'i18n.dart';
 
 // ═══ 通讯录备份: 读取联系人 → 本地加密级存储(文件) + 恢复 ═══
 class ContactsBackupPage extends StatefulWidget { const ContactsBackupPage({super.key}); @override State<ContactsBackupPage> createState() => _Cb(); }
@@ -58,8 +59,8 @@ class _Cb extends State<ContactsBackupPage> {
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
       title: const Text('恢复通讯录'),
       content: const Text('将备份中的联系人写回手机通讯录(不会删除现有联系人)。继续?'),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('恢复'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('恢复')))]));
     if (ok != true) return;
     setState(() { busy = true; msg = ''; });
     try {
