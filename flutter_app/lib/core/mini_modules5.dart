@@ -102,7 +102,7 @@ class _MdEdit extends State<MdEditPage> {
     ]),
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: TextField(controller: title, decoration: const InputDecoration(hintText: tr('标题'), isDense: true, border: InputBorder.none),
+        child: TextField(controller: title, decoration: InputDecoration(hintText: tr('标题'), isDense: true, border: InputBorder.none),
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
       if (!preview) SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8), children: [
