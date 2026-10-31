@@ -16,6 +16,7 @@ import 'pro_browser.dart';
 import 'dart:async';
 import 'fingerprint.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'i18n.dart';
 
 // 与 RootNav(main.dart) 的桥: 打开模块宫格
 class BrowserHooks {
@@ -274,19 +275,19 @@ class _Bp extends State<BrowserPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
             onTap: () { addr.text = t.url; addr.selection = TextSelection(baseOffset: 0, extentOffset: addr.text.length); setState(() => editing = true); },
             onSubmitted: (v) => _open(v))),
-          IconButton(icon: Icon(_isBookmarked(t.url) ? Icons.bookmark : Icons.bookmark_border, size: 20), tooltip: '书签',
+          IconButton(icon: Icon(_isBookmarked(t.url) ? Icons.bookmark : Icons.bookmark_border, size: 20), tooltip: tr('书签'),
             onPressed: _toggleBookmark),
           // 导航控制收进菜单(不再单独占一行)
           PopupMenuButton<String>(icon: const Icon(Icons.more_vert, size: 20), onSelected: _onMenu, itemBuilder: (_) => [
             const PopupMenuItem(value: 'back', child: ListTile(dense: true, leading: Icon(Icons.arrow_back, size: 18), title: Text('后退', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'forward', child: ListTile(dense: true, leading: Icon(Icons.arrow_forward, size: 18), title: Text('前进', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
-            const PopupMenuItem(value: 'refresh', child: ListTile(dense: true, leading: Icon(Icons.refresh, size: 18), title: Text('刷新', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            PopupMenuItem(value: 'refresh', child: ListTile(dense: true, leading: Icon(Icons.refresh, size: 18), title: Text(tr('刷新'), style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'fullscreen', child: ListTile(dense: true, leading: Icon(Icons.fullscreen, size: 18), title: Text('全屏浏览', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'readmode', child: ListTile(dense: true, leading: Icon(Icons.menu_book_outlined, size: 18), title: Text('阅读模式(交给小说阅读器)', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'incognito', child: ListTile(dense: true, leading: Icon(Icons.visibility_off_outlined, size: 18), title: Text('新建无痕标签页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'newtab', child: ListTile(dense: true, leading: Icon(Icons.add, size: 18), title: Text('新建标签页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
-            const PopupMenuItem(value: 'bookmarks', child: ListTile(dense: true, leading: Icon(Icons.bookmark_border, size: 18), title: Text('书签', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
+            PopupMenuItem(value: 'bookmarks', child: ListTile(dense: true, leading: Icon(Icons.bookmark_border, size: 18), title: Text(tr('书签'), style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'history', child: ListTile(dense: true, leading: Icon(Icons.history, size: 18), title: Text('历史记录', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'home', child: ListTile(dense: true, leading: Icon(Icons.home_outlined, size: 18), title: Text('回到主页', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
             const PopupMenuItem(value: 'engine', child: ListTile(dense: true, leading: Icon(Icons.travel_explore, size: 18), title: Text('切换搜索引擎', style: TextStyle(fontSize: 13)), contentPadding: EdgeInsets.zero)),
@@ -478,7 +479,7 @@ class _Bp extends State<BrowserPage> {
   // 主页: 书签 + 历史
   Widget _homeView(BuildContext c) => ListView(padding: const EdgeInsets.all(12), children: [
     if (bookmarks.isNotEmpty) ...[
-      const Text('书签', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey)),
+      Text(tr('书签'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey)),
       const SizedBox(height: 6),
       Wrap(spacing: 8, runSpacing: 8, children: [
         for (final b in bookmarks.take(20)) ActionChip(
@@ -492,7 +493,7 @@ class _Bp extends State<BrowserPage> {
       Row(children: [ const Text('最近访问', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey)),
         const Spacer(),
         TextButton(onPressed: () { setState(() => history = []); _save('browser_history', history); },
-          child: const Text('清空', style: TextStyle(fontSize: 11))) ]),
+          child: Text(tr('清空'), style: TextStyle(fontSize: 11))) ]),
       for (final h in history.take(30)) ListTile(dense: true,
         leading: const Icon(Icons.language, size: 18),
         title: Text(h['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
@@ -543,7 +544,7 @@ class _Bp extends State<BrowserPage> {
         const Spacer(),
         if (list.isNotEmpty) TextButton(onPressed: () { setState(() => list.clear());
           _save(title == '书签' ? 'browser_bookmarks' : 'browser_history', list); Navigator.pop(c2); },
-          child: const Text('清空', style: TextStyle(fontSize: 12))),
+          child: Text(tr('清空'), style: TextStyle(fontSize: 12))),
       ])),
       Expanded(child: list.isEmpty ? const Center(child: Text('暂无记录', style: TextStyle(color: Colors.grey)))
         : ListView(children: [ for (final e in list) ListTile(dense: true,
