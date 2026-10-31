@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'discover.dart';
 import 'engine_direct.dart';
 import 'ui_cover.dart';
+import 'i18n.dart';
 
 // ═══ 连接管理页(我的 → 引擎直连) ═══
 class EngineDirectPage extends StatefulWidget {
@@ -83,7 +84,7 @@ class _Ed extends State<EngineDirectPage> {
           style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.4)),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
         FilledButton(onPressed: () => Navigator.pop(c, ctl.text), child: const Text('连接')),
       ]));
     if (input == null || input.trim().isEmpty) return;
@@ -506,7 +507,7 @@ class _Edv extends State<EngineDiscoverView> {
             suffixIcon: IconButton(
               icon: const Icon(Icons.arrow_forward_rounded, size: 18),
               onPressed: () => _search(q.text),
-              tooltip: '搜索',
+              tooltip: tr('搜索'),
             ),
             isDense: true,
             filled: true,
@@ -667,7 +668,7 @@ class _Edv extends State<EngineDiscoverView> {
               style: const TextStyle(color: Colors.redAccent, fontSize: 12, height: 1.5)),
           const SizedBox(height: 10),
           FilledButton.tonal(
-              onPressed: _load, child: const Text('重试', style: TextStyle(fontSize: 13))),
+              onPressed: _load, child: Text(tr('重试'), style: TextStyle(fontSize: 13))),
         ]),
       ));
     }
