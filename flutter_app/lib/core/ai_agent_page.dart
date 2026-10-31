@@ -21,6 +21,7 @@ import 'ai_agent.dart';
 import 'ai_providers_page.dart';
 import 'local_tools.dart';
 import 'ui_icons.dart';
+import 'i18n.dart';
 
 class AiAgentPage extends StatefulWidget {
   /// 传入会话 id 时多出「钉注」一栏(钉注是会话级的)
@@ -109,9 +110,9 @@ class _InstructViewState extends State<_InstructView> {
             if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(
               content: Text(AiInstruct.custom.isEmpty ? '已清空全局指令' : '已保存，下一轮对话生效')));
           },
-          child: const Text('保存'))),
+          child: Text(tr('保存')))),
         const SizedBox(width: 10),
-        OutlinedButton(onPressed: () => setState(() => _ctl.clear()), child: const Text('清空')),
+        OutlinedButton(onPressed: () => setState(() => _ctl.clear()), child: Text(tr('清空'))),
       ]),
       const SizedBox(height: 12),
       Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(
@@ -274,7 +275,7 @@ class _AgentsTabState extends State<_AgentsTab> {
                       await AiAgents.removeCustom(baseId);
                       if (c2.mounted) Navigator.pop(c2, true);
                     },
-                    icon: const Icon(Icons.delete_outline, size: 18), label: const Text('删除')),
+                    icon: Icon(Icons.delete_outline, size: 18), label: const Text(tr('删除'))),
                   const SizedBox(width: 10),
                 ],
                 const Spacer(),
@@ -291,7 +292,7 @@ class _AgentsTabState extends State<_AgentsTab> {
                     allow: _split(allow.text), deny: _split(deny.text),
                     maxRounds: rounds, autoApprove: auto, builtin: false));
                   if (c2.mounted) Navigator.pop(c2, true);
-                }, child: const Text('保存')),
+                }, child: Text(tr('保存'))),
               ]),
             ]),
           )),
@@ -365,8 +366,8 @@ class _MemoryTabState extends State<_MemoryTab> {
       title: const Text('编辑记忆'),
       content: TextField(controller: t, maxLines: 4),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存')),
+        TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存'))),
       ]));
     // 先取值再 dispose(dispose 后不能读 controller.text)
     final txt = t.text;
@@ -1418,7 +1419,7 @@ class _TaskTabState extends State<_TaskTab> {
         Row(children: [
           const Text('最近审计', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const Spacer(),
-          TextButton(onPressed: _reloadAudit, child: const Text('刷新', style: TextStyle(fontSize: 12))),
+          TextButton(onPressed: _reloadAudit, child: Text(tr('刷新'), style: TextStyle(fontSize: 12))),
         ]),
         const SizedBox(height: 2),
         if (_audit.isEmpty)
