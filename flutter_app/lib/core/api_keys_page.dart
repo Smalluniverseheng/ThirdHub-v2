@@ -16,6 +16,7 @@ import 'ai.dart';
 import 'api_keys.dart';
 import 'api_keys_store.dart';
 import 'tts_vendors.dart';
+import 'i18n.dart';
 
 class ApiKeysPage extends StatefulWidget {
   const ApiKeysPage({super.key});
@@ -86,9 +87,9 @@ class _P extends State<ApiKeysPage> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: const Text('取消')),
+              child: Text(tr('取消'))),
           FilledButton(
-              onPressed: () => Navigator.pop(c, ctl.text), child: const Text('保存')),
+              onPressed: () => Navigator.pop(c, ctl.text), child: Text(tr('保存'))),
         ],
       ),
     );
