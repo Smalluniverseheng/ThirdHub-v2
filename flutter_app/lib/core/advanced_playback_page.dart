@@ -28,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_widgets.dart';
 import 'pro_kit.dart';
 import 'haptic.dart';
+import 'i18n.dart';
 
 class AdvancedPlaybackPage extends StatefulWidget {
   const AdvancedPlaybackPage({super.key});
@@ -159,7 +160,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
         title: const Text('恢复默认'),
         content: const Text('把本页所有项恢复为默认值？已保存的观影偏好会一起重置。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
           FilledButton(
             onPressed: () async {
               const keys = [
@@ -180,7 +181,7 @@ class _AdvState extends State<AdvancedPlaybackPage> {
               _load();
               if (mounted) ProUI.toast(context, '已恢复默认');
             },
-            child: const Text('恢复'),
+            child: Text(tr('恢复')),
           ),
         ],
       ),
