@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cloud.dart';
+import 'i18n.dart';
 
 class SharedListPage extends StatefulWidget { const SharedListPage({super.key}); @override State<SharedListPage> createState() => _Sl(); }
 class _Sl extends State<SharedListPage> {
@@ -100,14 +101,14 @@ class _Sl extends State<SharedListPage> {
         TextField(controller: wc, decoration: const InputDecoration(hintText: '谁添加的(可选)', isDense: true)),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('取消'))),
         FilledButton(onPressed: () {
           if (tc.text.trim().isNotEmpty) {
             setState(() => lists[current]!.add({'t': tc.text.trim(), 'done': false, 'who': wc.text.trim()}));
             _save();
           }
           Navigator.pop(d);
-        }, child: const Text('添加')),
+        }, child: Text(tr('添加'))),
       ])).then((_) { tc.dispose(); wc.dispose(); });
   }
 
@@ -117,7 +118,7 @@ class _Sl extends State<SharedListPage> {
       title: const Text('新建清单', style: TextStyle(fontSize: 15)),
       content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: '清单名, 如: 周末采购', isDense: true)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('取消'))),
         FilledButton(onPressed: () {
           if (c.text.trim().isNotEmpty && !lists.containsKey(c.text.trim())) {
             setState(() { lists[c.text.trim()] = []; current = c.text.trim(); });
