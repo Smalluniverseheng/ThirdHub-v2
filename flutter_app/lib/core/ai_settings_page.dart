@@ -17,6 +17,7 @@ import 'ai_providers_page.dart';
 import 'api_keys_page.dart';
 import 'asr_settings_page.dart';
 import 'tts_settings_page.dart';
+import 'i18n.dart';
 
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({super.key});
@@ -202,8 +203,8 @@ class _AiSettings extends State<AiSettingsPage> {
                 TextField(controller: ctl, minLines: 5, maxLines: 12, decoration: const InputDecoration(hintText: '例如：叫我英莉；回答先给结论；代码用 Dart。')),
               ]),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
-                FilledButton(onPressed: () => Navigator.pop(c2, ctl.text), child: const Text('保存')),
+                TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
+                FilledButton(onPressed: () => Navigator.pop(c2, ctl.text), child: Text(tr('保存'))),
               ],
             ));
     if (v == null) return;
