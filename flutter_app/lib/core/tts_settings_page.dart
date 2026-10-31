@@ -17,6 +17,7 @@ import 'tts_engines_page.dart';
 import 'tts_online.dart';
 import 'tts_presets.dart';
 import 'tts_vendors.dart';
+import 'i18n.dart';
 
 class TtsSettingsPage extends StatefulWidget {
   const TtsSettingsPage({super.key});
@@ -85,7 +86,7 @@ class _TtsSettingsPageState extends State<TtsSettingsPage> {
                 child: Text('$e', style: const TextStyle(fontSize: 13))),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(c), child: const Text('知道了')),
+                  onPressed: () => Navigator.pop(c), child: Text(tr('知道了'))),
             ],
           ),
         );
@@ -597,10 +598,10 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(c, false),
-                    child: const Text('取消')),
+                    child: Text(tr('取消'))),
                 TextButton(
                     onPressed: () => Navigator.pop(c, true),
-                    child: const Text('删除')),
+                    child: Text(tr('删除'))),
               ],
             ));
     if (ok != true) return;
@@ -698,7 +699,7 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
         actions: [
           if (_isCustom && v != null)
             IconButton(
-                tooltip: '删除',
+                tooltip: tr('删除'),
                 icon: const Icon(Icons.delete_outline),
                 onPressed: _delete),
         ],
@@ -829,7 +830,7 @@ class _TtsVendorPageState extends State<TtsVendorPage> {
             Expanded(
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('保存'),
+                label: Text(tr('保存')),
                 onPressed: _busy ? null : _save,
               ),
             ),
