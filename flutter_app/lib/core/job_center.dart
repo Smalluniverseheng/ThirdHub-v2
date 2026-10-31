@@ -25,6 +25,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ui_icons.dart';
+import 'i18n.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 数据模型
@@ -650,7 +651,7 @@ class _JobCenterPageState extends State<JobCenterPage> {
             child: const Text('批准继续', style: TextStyle(fontSize: 12))),
           if (!r.state.terminal) TextButton(
             onPressed: () async { await JobCenter.cancel(r.id); },
-            child: const Text('取消', style: TextStyle(fontSize: 12))),
+            child: Text(tr('取消'), style: TextStyle(fontSize: 12))),
           if (r.state.terminal) TextButton(
             onPressed: () async { await JobCenter.retry(r.id); },
             child: const Text('重跑', style: TextStyle(fontSize: 12))),
