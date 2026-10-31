@@ -204,7 +204,10 @@ void main() {
   // ── 2. 收集源码里真正用到的 key ──
   print('== 2. 源码 tr() 用法收集 ==');
   final used = <String>{};
-  final trRe = RegExp(r"""\b(?:tr|t)\(\s*'((?:[^'\\]|\\.)*)'""");
+  // ★2026-11-01：把 trf 也算进来。trf 的 key 是**带占位符的模板**（`第{n}集`），
+  //   它同样要进字典、同样要 6 语言齐全 —— 不纳入收集等于放它一条活路，
+  //   而它恰恰是"切了语言还是中文"最容易复发的一类（插值文案）。
+  final trRe = RegExp(r"""\b(?:trf|tr|t)\(\s*'((?:[^'\\]|\\.)*)'""");
   for (final e in Directory('lib').listSync(recursive: true)) {
     if (e is! File || !e.path.endsWith('.dart')) continue;
     for (final m in trRe.allMatches(e.readAsStringSync())) {
