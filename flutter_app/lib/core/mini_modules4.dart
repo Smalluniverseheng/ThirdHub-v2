@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'browser_page.dart';
 import 'recents.dart';
 import 'ui_cover.dart';
+import 'i18n.dart';
 
 class _Store4 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -91,7 +92,7 @@ class _Wp extends State<WallpaperPage> {
               style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)),
             if (!loading)
               TextButton(onPressed: () => _fetch(q: searchC.text.trim()),
-                child: const Text('重试', style: TextStyle(fontSize: 12))),
+                child: Text(tr('重试'), style: TextStyle(fontSize: 12))),
           ])))
       : GridView.builder(gridDelegate: coverDelegate(CoverKind.wallGrid),
         padding: coverPad,
@@ -220,7 +221,7 @@ class _Radio extends State<RadioPage> {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.6)),
             TextButton(onPressed: () => _search(searchC.text.trim()),
-              child: const Text('重试', style: TextStyle(fontSize: 12))),
+              child: Text(tr('重试'), style: TextStyle(fontSize: 12))),
           ])))
       : ListView.builder(itemCount: stations.length, itemBuilder: (_, i) {
           final s = stations[i];
@@ -298,8 +299,8 @@ class _Pod extends State<PodcastPage> {
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
       title: const Text('添加播客 RSS'),
       content: TextField(controller: urlC, decoration: const InputDecoration(hintText: 'https://…/feed.xml', isDense: true)),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('添加'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('添加')))]));
     if (ok != true || urlC.text.trim().isEmpty) return;
     feeds.add({'title': urlC.text.trim(), 'url': urlC.text.trim()});
     await _Store4.save('podcast_feeds', feeds);
@@ -323,8 +324,8 @@ class _Pod extends State<PodcastPage> {
         const SizedBox(height: 10),
         TextField(controller: qc, autofocus: true, decoration: const InputDecoration(hintText: '例如：故事FM / 忽左忽右', isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, qc.text.trim()), child: const Text('搜索'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, qc.text.trim()), child: Text(tr('搜索')))]));
     if (term == null || term.isEmpty) return;
     setState(() { loading = true; err = ''; });
     try {
@@ -430,7 +431,7 @@ class _Pod extends State<PodcastPage> {
       Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
         if (failed) FilledButton.tonalIcon(
           onPressed: () { final f = feeds.firstWhere((x) => x['title'] == curFeed, orElse: () => const {}); if (f.isNotEmpty) _openFeed(f); },
-          icon: const Icon(Icons.refresh, size: 16), label: const Text('重试')),
+          icon: Icon(Icons.refresh, size: 16), label: const Text(tr('重试'))),
         if (failed && feeds.length > 1) FilledButton.tonalIcon(
           onPressed: () {
             final i = feeds.indexWhere((x) => x['title'] == curFeed);
@@ -524,8 +525,8 @@ class _Bm extends State<BookmarksPage> {
         TextField(controller: titleC, decoration: const InputDecoration(labelText: '名称', isDense: true)),
         TextField(controller: urlC, decoration: const InputDecoration(labelText: '链接', isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))]));
     if (ok != true || urlC.text.trim().isEmpty) return;
     var url = urlC.text.trim();
     if (!url.startsWith('http')) url = 'https://$url';
@@ -588,8 +589,8 @@ class _Snip extends State<SnippetsPage> {
         TextField(controller: codeC, maxLines: 10, style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           decoration: const InputDecoration(hintText: '贴代码…', border: OutlineInputBorder(), isDense: true)),
       ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok != true || codeC.text.trim().isEmpty) return;
     if (exist != null) items.remove(exist);
     items.insert(0, {'title': titleC.text.trim().isEmpty ? '未命名片段' : titleC.text.trim(),
