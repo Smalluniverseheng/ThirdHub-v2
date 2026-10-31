@@ -275,7 +275,7 @@ class _AgentsTabState extends State<_AgentsTab> {
                       await AiAgents.removeCustom(baseId);
                       if (c2.mounted) Navigator.pop(c2, true);
                     },
-                    icon: Icon(Icons.delete_outline, size: 18), label: const Text(tr('删除'))),
+                    icon: Icon(Icons.delete_outline, size: 18), label: Text(tr('删除'))),
                   const SizedBox(width: 10),
                 ],
                 const Spacer(),
