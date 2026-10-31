@@ -22,6 +22,7 @@ import 'offline_media_plan.dart';
 import 'offline_media_store.dart';
 import 'offline_plan.dart';
 import 'offline_store.dart';
+import 'i18n.dart';
 
 class OfflineUI {
   /// 长按菜单返回的动作，调用方自己决定怎么落地。
@@ -121,7 +122,7 @@ class OfflineUI {
               const Divider(height: 1),
               ListTile(
                   leading: const Icon(Icons.close),
-                  title: const Text('取消'),
+                  title: Text(tr('取消')),
                   onTap: () => Navigator.pop(c2, actCancel)),
             ]),
           ),
@@ -245,7 +246,7 @@ class _DlState extends State<_DownloadDialog> {
                 sub?.cancel();
                 Navigator.of(c).pop('cancel');
               },
-              child: const Text('取消')),
+              child: Text(tr('取消'))),
         if (p.finished)
           TextButton(onPressed: () => Navigator.of(c).pop(result), child: const Text('好')),
       ],
@@ -407,7 +408,7 @@ class _MdState extends State<_MediaDownloadDialog> {
                 sub?.cancel();
                 Navigator.of(c).pop('cancel');
               },
-              child: const Text('取消')),
+              child: Text(tr('取消'))),
         if (p.finished)
           TextButton(
               onPressed: () => Navigator.of(c).pop(result), child: const Text('好')),
@@ -584,7 +585,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
               ]),
           trailing: IconButton(
               icon: const Icon(Icons.close, size: 18),
-              tooltip: '取消',
+              tooltip: tr('取消'),
               onPressed: () {
                 q.cancel(j.id);
                 setState(() {});
@@ -601,7 +602,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
               style: const TextStyle(fontSize: 11)),
           trailing: IconButton(
               icon: const Icon(Icons.refresh, size: 18),
-              tooltip: '重试',
+              tooltip: tr('重试'),
               onPressed: () {
                 q.retry(j.id);
                 setState(() {});
@@ -703,7 +704,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
         content: Text(text),
         duration: const Duration(seconds: 5),
         action: SnackBarAction(
-            label: '撤销',
+            label: tr('撤销'),
             onPressed: () async {
               final ok = await MediaOfflineStore.restore(key, title: title);
               if (!mounted) return;
@@ -719,7 +720,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
         content: Text(text),
         duration: const Duration(seconds: 5),
         action: SnackBarAction(
-            label: '撤销',
+            label: tr('撤销'),
             onPressed: () async {
               var ok = 0;
               for (final e in keys) {
@@ -843,7 +844,7 @@ class _MediaOfflinePageState extends State<MediaOfflinePage> {
             child: FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
                 icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('删除'),
+                label: Text(tr('删除')),
                 onPressed: _sel.isEmpty ? null : _deleteSelected)),
       ]);
 
