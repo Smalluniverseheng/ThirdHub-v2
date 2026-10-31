@@ -15,6 +15,7 @@ import 'app_version.dart';
 import 'cloud.dart';
 import 'pro_kit.dart';
 import 'settings_bridge.dart';
+import 'i18n.dart';
 
 /// main.dart 注册的桥: 系统页需要动"宿主"的东西(导航/主题/字体/打开模块)都走这里,
 /// 这样 core 层不用直接依赖 main.dart 的实现细节。
@@ -395,7 +396,7 @@ class PaymentGate {
                 : '服务方要求先完成付费。付款页面:\n\n$url',
             style: const TextStyle(fontSize: 13, height: 1.5)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('知道了')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('知道了'))),
         ],
       ),
     );
@@ -595,7 +596,7 @@ class _Sys extends ProPageState<SystemCenterPage> {
                   await Grants.revoke(e['id'] ?? '');
                   await refresh();
                 },
-                child: const Text('撤销', style: TextStyle(fontSize: 11))),
+                child: Text(tr('撤销'), style: TextStyle(fontSize: 11))),
           ),
         if (grants.isEmpty) ProUI.note('还没有授权记录。接入第三方资料库后其授权会登记在这里。'),
       ]),
@@ -693,7 +694,7 @@ class _Sys extends ProPageState<SystemCenterPage> {
                         Navigator.pop(c2);
                         ProBridge.setNavModules?.call(sel.toList());
                       },
-                      child: const Text('保存')),
+                      child: Text(tr('保存'))),
                 ]),
               ),
               Expanded(
@@ -808,7 +809,7 @@ class _Sys extends ProPageState<SystemCenterPage> {
                 : '服务端未响应或未连接。验签需要云端点 /v2/verify 在线。\n\n本机公钥:\n${dev['publicKey']}',
             style: const TextStyle(fontSize: 12, height: 1.5)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
@@ -859,7 +860,7 @@ class _Sys extends ProPageState<SystemCenterPage> {
           child: Text(body, style: const TextStyle(fontSize: 12.5, height: 1.7)),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('知道了')),
+          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('知道了'))),
         ],
       ),
     );
