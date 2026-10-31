@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ui_cover.dart';
+import 'i18n.dart';
 
 class _Store5 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -49,8 +50,8 @@ class _Md extends State<MarkdownPage> {
             onLongPress: () async {
               final ok = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(title: const Text('删除文档'),
                 content: Text('删除「${d['title'] ?? '无标题'}」?'),
-                actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-                  FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+                actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+                  FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('删除')))]));
               if (ok == true) { docs.remove(d); await _Store5.save('md_docs', docs); _load(); }
             }),
         ])),
@@ -97,11 +98,11 @@ class _MdEdit extends State<MdEditPage> {
       IconButton(icon: const Icon(Icons.copy, size: 20), tooltip: '复制全文',
         onPressed: () { Clipboard.setData(ClipboardData(text: body.text));
           ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制 Markdown 源码'))); }),
-      IconButton(icon: const Icon(Icons.check, size: 20), tooltip: '保存', onPressed: _save),
+      IconButton(icon: const Icon(Icons.check, size: 20), tooltip: tr('保存'), onPressed: _save),
     ]),
     body: Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: TextField(controller: title, decoration: const InputDecoration(hintText: '标题', isDense: true, border: InputBorder.none),
+        child: TextField(controller: title, decoration: const InputDecoration(hintText: tr('标题'), isDense: true, border: InputBorder.none),
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
       if (!preview) SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8), children: [
@@ -176,8 +177,8 @@ class _Study extends State<StudyPage> {
         TextField(controller: frontC, decoration: const InputDecoration(labelText: '正面(单词/问题)', isDense: true)),
         TextField(controller: backC, maxLines: 3, decoration: const InputDecoration(labelText: '背面(释义/答案)', isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))]));
     if (ok != true || frontC.text.trim().isEmpty) return;
     cards.add({'front': frontC.text.trim(), 'back': backC.text.trim(), 'known': false});
     await _Store5.save('study_cards', cards);
@@ -424,7 +425,7 @@ class _Tr extends State<TranslatePage> {
       title: SelectableText(result, style: const TextStyle(fontSize: 14, height: 1.6)),
       trailing: IconButton(icon: const Icon(Icons.copy, size: 18), onPressed: () {
         Clipboard.setData(ClipboardData(text: result));
-        ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); }))),
+        ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(tr('已复制')))); }))),
     if (history.isNotEmpty) ...[
       const Padding(padding: EdgeInsets.fromLTRB(4, 14, 4, 6),
         child: Text('历史记录', style: TextStyle(fontSize: 12, color: Colors.grey))),
