@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_version.dart';
 import 'ai.dart';
+import 'i18n.dart';
 
 /// 全批次共用的 AI 调用入口(网页翻译 / 摘要 / 语义提取 / 定时 Agent 都用它)。
 class ProAi {
@@ -171,7 +172,7 @@ class ProKit {
         title: Text(title),
         content: Text(msg, style: const TextStyle(fontSize: 13, height: 1.5)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(ok)),
         ],
       ),
@@ -192,8 +193,8 @@ class ProKit {
             maxLines: lines,
             decoration: InputDecoration(hintText: hint)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c2), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: const Text('保存')),
+          TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
+          FilledButton(onPressed: () => Navigator.pop(c2, cc.text), child: Text(tr('保存'))),
         ],
       ),
     );
