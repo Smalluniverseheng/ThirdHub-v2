@@ -12,6 +12,7 @@ import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cloud.dart';
 import 'ui_icons.dart';
+import 'i18n.dart';
 
 class _Store2 {
   static Future<List<Map<String, dynamic>>> list(String key) async {
@@ -174,8 +175,8 @@ class _Cal extends State<CalendarPage> {
           onTap: () async { final t = await showTimePicker(context: c2, initialTime: time);
             if (t != null) setD(() => time = t); }),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok != true || titleC.text.trim().isEmpty) return;
     events.add({'date': _d(day), 'time': '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
       'title': titleC.text.trim()});
@@ -284,8 +285,8 @@ class _Diary extends State<DiaryPage> {
         TextField(controller: contentC, maxLines: 6,
           decoration: const InputDecoration(hintText: '今天发生了什么…', border: OutlineInputBorder(), isDense: true)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok != true) return;
     if (contentC.text.trim().isEmpty) return;
     entries.removeWhere((x) => x['date'] == date);
@@ -319,8 +320,8 @@ class _Diary extends State<DiaryPage> {
               onLongPress: () async {
                 final ok = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(
                   title: const Text('删除日记'), content: Text('删除 ${e['date']} 的日记?'),
-                  actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-                    FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+                  actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+                    FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('删除')))]));
                 if (ok == true) { entries.remove(e); await _Store2.save('diary', entries); _load(); }
               })),
         ])),
@@ -364,9 +365,9 @@ class _Wb extends State<WhiteboardPage> {
             border: Border.all(color: color == cl ? Theme.of(c).colorScheme.primary : Colors.grey, width: color == cl ? 3 : 1)))),
       const Spacer(),
       SizedBox(width: 80, child: Slider(value: width, min: 1, max: 12, onChanged: (v) => setState(() => width = v))),
-      IconButton(icon: const Icon(Icons.undo, size: 20), tooltip: '撤销',
+      IconButton(icon: const Icon(Icons.undo, size: 20), tooltip: tr('撤销'),
         onPressed: strokes.isEmpty ? null : () => setState(() => strokes.removeLast())),
-      IconButton(icon: const Icon(Icons.delete_outline, size: 20), tooltip: '清空',
+      IconButton(icon: const Icon(Icons.delete_outline, size: 20), tooltip: tr('清空'),
         onPressed: () => setState(() => strokes.clear())),
       IconButton(icon: const Icon(Icons.save_alt, size: 20), tooltip: '保存 PNG', onPressed: _save),
     ])),
@@ -479,7 +480,7 @@ class _Qn extends State<QuickNotePage> {
                 style: const TextStyle(fontSize: 10, color: Colors.grey)),
               trailing: const Icon(Icons.copy, size: 16, color: Colors.grey),
               onTap: () { Clipboard.setData(ClipboardData(text: e['text'] ?? ''));
-                ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('已复制'))); })),
+                ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(tr('已复制')))); })),
         ])),
   ]);
 }
