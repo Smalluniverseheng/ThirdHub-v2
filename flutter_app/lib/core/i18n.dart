@@ -27,6 +27,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'i18n_extra.dart';
+import 'i18n_ui_words.dart';
 
 class I18n extends ChangeNotifier {
   static final I18n instance = I18n._();
@@ -383,6 +384,12 @@ class I18n extends ChangeNotifier {
       for (final e in base.entries) e.key: Map<String, String>.from(e.value),
     };
     i18nExtra.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
+    // ★2026-10-31：把「硬编码文案包上 tr() 后新出现的 key」并进来。
+    //   这一批原本连英文都没有 —— 只包 tr() 不补译文，英文用户照样看到中文。
+    //   单独放一个文件（i18n_ui_words.dart），不碰上面的大 literal。
+    i18nUiWords.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
     return out;
