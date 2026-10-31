@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 
 import 'changelog.dart';
+import 'i18n.dart';
 
 class ModuleClogPage extends StatefulWidget {
   const ModuleClogPage({super.key, required this.module, this.initialAdmin = false});
@@ -84,7 +85,7 @@ class _ModuleClogPageState extends State<ModuleClogPage> {
             )
           else
             IconButton(
-              tooltip: '刷新',
+              tooltip: tr('刷新'),
               icon: const Icon(Icons.refresh),
               onPressed: () => _load(force: true),
             ),
