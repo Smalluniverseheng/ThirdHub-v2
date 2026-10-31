@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
 import 'browser_page.dart';
+import 'i18n.dart';
 
 // ═══ 共享相册: 选照片文件夹 → 网格浏览 + 幻灯片 ═══
 //
@@ -143,14 +144,14 @@ class _Cam extends State<CameraPage> {
             style: TextStyle(fontSize: 10, color: Colors.grey))),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('取消'))),
         FilledButton(onPressed: () {
           if (nc.text.trim().isNotEmpty && uc.text.trim().isNotEmpty) {
             setState(() => cams.add({'name': nc.text.trim(), 'url': uc.text.trim()}));
             _save();
           }
           Navigator.pop(d);
-        }, child: const Text('添加')),
+        }, child: Text(tr('添加'))),
       ])).then((_) { nc.dispose(); uc.dispose(); });
   }
 
