@@ -21,6 +21,7 @@ import 'pro_kit.dart';
 import 'tts_direct.dart';
 import 'tts_engines_logic.dart';
 import 'ui_icons.dart';
+import 'i18n.dart';
 
 class TtsEnginesPage extends StatefulWidget {
   const TtsEnginesPage({super.key});
@@ -368,7 +369,7 @@ class _TtsEnginesPageState extends State<TtsEnginesPage> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+              onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         ],
       ),
     );
