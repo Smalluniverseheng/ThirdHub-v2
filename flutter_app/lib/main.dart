@@ -9786,6 +9786,13 @@ class _RootNavState extends State<RootNav> {
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) Updater.check(context);
     });
+    // ★2026-10-31：周期复查更新。只查一次的话，用户开着 App 挂一整天
+    //   也等不到新版本提示（发版当天就装上的人反而看不到公告）。
+    //   silent=true：失败不提示，别每 6 小时弹一次「暂无更新信息」。
+    _updateTimer?.cancel();
+    _updateTimer = Timer.periodic(const Duration(hours: 6), (_) {
+      if (mounted) Updater.check(context, silent: true);
+    });
   }
 
   /// ★4.44.0 把本端接入端网（PH/1）。
@@ -10110,6 +10117,7 @@ class _RootNavState extends State<RootNav> {
     BrowserHooks.openModules = null;
     if (identical(RootNav.inst, this)) RootNav.inst = null;
     _fsTimer?.cancel();
+    _updateTimer?.cancel();
     _page.dispose();
     _navScroll.dispose();
     super.dispose();
@@ -10149,6 +10157,8 @@ class _RootNavState extends State<RootNav> {
   bool _animating = false;
   // ── 自动全屏（D-11）：切换模块后计时，N 秒无切换操作则收起底部导航进入全屏 ──
   Timer? _fsTimer;
+  // ── 更新周期复查（2026-10-31）：每 6 小时查一次，避免「开着 App 等不到提示」──
+  Timer? _updateTimer;
   bool _fsSuppressed = false; // 用户手动退出全屏后，本次驻留该模块期间不再自动进入
   void _armAutoFs() {
     _fsTimer?.cancel();
@@ -11665,6 +11675,10 @@ class DownloadCenterTile extends StatefulWidget {
 class _Dct extends State<DownloadCenterTile> {
   // 引擎下载条目仅管理员可见(与更新历史同一套账号体系判定, 权限在服务端 RLS)
   Map<String, dynamic>? _engine, _venera;
+  // ★2026-10-31：四引擎清单（novel/comic/music/video）—— 来自 engines.json。
+  //   旧实现只有 _engine/_venera 两个单清单，发版后这里显示的版本号永远落后，
+  //   用户没法在 App 里看到「漫画引擎有新版」。
+  List<Map<String, dynamic>> _engines = [];
   // 前端/后端版本化清单(所有用户可见)
   Map<String, dynamic>? _app, _backend;
   @override
@@ -11688,8 +11702,45 @@ class _Dct extends State<DownloadCenterTile> {
       try {
         _venera = await Cloud.latestManifest('venera');
       } catch (_) {}
+      // 四引擎总清单（含版本/大小/更新说明/sha256）
+      try {
+        final r = await http
+            .get(Uri.parse('${DownloadCenterTile._base}/engine/engines.json'));
+        if (r.statusCode == 200) {
+          final j =
+              jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+          _engines = ((j['items'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        }
+      } catch (_) {}
     }
     if (mounted) setState(() {});
+  }
+
+  /// 引擎条目图标：四个资料库各用各的图形，一眼分清是哪一类的。
+  static IconData _engineIcon(String id) {
+    switch (id) {
+      case 'comic':
+        return Icons.photo_library_outlined;
+      case 'music':
+        return Icons.library_music_outlined;
+      case 'video':
+        return Icons.movie_outlined;
+      default:
+        return Icons.menu_book_outlined;
+    }
+  }
+
+  /// 「THP 直连 · v1.10.11 · 46.9 MB」——版本与体积直接摆出来，
+  /// 用户不用点进去才知道要不要下。
+  static String _engineSub(Map<String, dynamic> e) {
+    final v = '${e['version'] ?? ''}'.trim();
+    final size = e['size'];
+    final mb = size is int ? '${(size / 1048576).toStringAsFixed(1)} MB' : '';
+    return ['THP 直连', if (v.isNotEmpty) 'v$v', if (mb.isNotEmpty) mb]
+        .join(' · ');
   }
 
   @override
@@ -11763,40 +11814,67 @@ class _Dct extends State<DownloadCenterTile> {
       // ★ 4.7.2（iOS）：引擎安装/装载入口一律不开放（allowEngineInstall）。
       //   引擎包在 iOS 上既装不了也不该"引导安装"——判定收口在 core/apple_gate.dart。
       if (admin && currentGate().allowEngineInstall) ...[
-        ListTile(
-            dense: true,
-            leading: const Icon(Icons.menu_book, size: 20),
-            title: const Text('开源阅读资料库', style: TextStyle(fontSize: 13)),
-            subtitle: Text('THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}',
-                style: const TextStyle(fontSize: 10)),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => Navigator.push(
-                c,
-                MaterialPageRoute(
-                    builder: (_) => ProductDetailPage(
-                        name: '开源阅读资料库${ev.isEmpty ? '' : ' v$ev'}',
-                        sub: 'Legado 本地资料库(THP 直连)',
-                        url: engineUrl,
-                        icon: Icons.menu_book,
-                        desc:
-                            '兼容"开源阅读"格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
-        ListTile(
-            dense: true,
-            leading: const Icon(Icons.photo_library, size: 20),
-            title: const Text('venera 漫画资料库', style: TextStyle(fontSize: 13)),
-            subtitle: Text('THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}',
-                style: const TextStyle(fontSize: 10)),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => Navigator.push(
-                c,
-                MaterialPageRoute(
-                    builder: (_) => ProductDetailPage(
-                        name: 'venera 漫画资料库${vv.isEmpty ? '' : ' v$vv'}',
-                        sub: 'venera JS 漫画源资料库(THP 直连)',
-                        url: veneraUrl,
-                        icon: Icons.photo_library,
-                        desc:
-                            '兼容 venera JS 格式的独立资料库。支持来源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
+        // ★2026-10-31 四引擎清单（engines.json）：逐条显示真实版本与体积，
+        //   点进去下载（走分段续传 + sha256 校验）。此前这里只有两条写死文案，
+        //   发版后 App 里永远看不到「漫画引擎 1.10.11 已发布」。
+        for (final e in _engines)
+          ListTile(
+              dense: true,
+              leading: Icon(_engineIcon('${e['id']}'), size: 20),
+              title: Text('${e['name'] ?? e['id']}',
+                  style: const TextStyle(fontSize: 13)),
+              subtitle: Text(_engineSub(e),
+                  style: const TextStyle(fontSize: 10),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                      builder: (_) => ProductDetailPage(
+                          name:
+                              '${e['name'] ?? e['id']} v${e['version'] ?? ''}',
+                          sub: '资料库 · THP 协议直连',
+                          url: '${e['url'] ?? ''}',
+                          icon: _engineIcon('${e['id']}'),
+                          desc: '${e['note'] ?? ''}')))),
+        // 清单拉不到（离线/被墙）时退回旧的两个单清单条目，别让管理员看到空白
+        if (_engines.isEmpty) ...[
+          ListTile(
+              dense: true,
+              leading: const Icon(Icons.menu_book, size: 20),
+              title: const Text('开源阅读资料库', style: TextStyle(fontSize: 13)),
+              subtitle: Text('THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}',
+                  style: const TextStyle(fontSize: 10)),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                      builder: (_) => ProductDetailPage(
+                          name: '开源阅读资料库${ev.isEmpty ? '' : ' v$ev'}',
+                          sub: 'Legado 本地资料库(THP 直连)',
+                          url: engineUrl,
+                          icon: Icons.menu_book,
+                          desc:
+                              '兼容"开源阅读"格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
+          ListTile(
+              dense: true,
+              leading: const Icon(Icons.photo_library, size: 20),
+              title: const Text('venera 漫画资料库', style: TextStyle(fontSize: 13)),
+              subtitle: Text('THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}',
+                  style: const TextStyle(fontSize: 10)),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                      builder: (_) => ProductDetailPage(
+                          name: 'venera 漫画资料库${vv.isEmpty ? '' : ' v$vv'}',
+                          sub: 'venera JS 漫画源资料库(THP 直连)',
+                          url: veneraUrl,
+                          icon: Icons.photo_library,
+                          desc:
+                              '兼容 venera JS 格式的独立资料库。支持来源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
+        ],
       ],
     ]);
   }
@@ -11891,11 +11969,19 @@ class Updater {
     return 0;
   }
 
-  static Future<void> check(BuildContext c, {bool manual = false}) async {
+  /// 检查更新。
+  /// [manual] 用户主动点「检查更新」：无论结果都回一句提示。
+  /// [silent] 周期检查：失败什么都不说（别每隔几小时弹一次「暂无更新信息」）。
+  static Future<void> check(BuildContext c,
+      {bool manual = false, bool silent = false}) async {
     if (_checked && !manual) return;
     _checked = true;
     final m = await Cloud.latestManifest('app');
     if (m == null) {
+      // ★拉取失败不能算「已检查」（2026-10-31 修复）：
+      //   启动 4 秒就开始查，那时网络往往还没就绪；旧实现一次失败就置位
+      //   _checked=true 从此永久不再查 —— 用户会觉得「App 从来不提示更新」。
+      _checked = false;
       if (manual && c.mounted)
         ScaffoldMessenger.of(c)
             .showSnackBar(const SnackBar(content: Text('暂无更新信息')));
@@ -11965,7 +12051,7 @@ class Updater {
       }
       if (url.isNotEmpty && c.mounted) {
         newVer = ver;
-        _downloadAndInstall(c, url);
+        _downloadAndInstall(c, url, sha: m['sha256'] as String?);
       }
     }
   }
@@ -12004,8 +12090,13 @@ class Updater {
   // 单镜像下载到文件, 支持断点续传: .part 临时文件 + .meta 记录 url/总长。
   // 同 URL 中断重下 → 发 Range: bytes=pos- 续传; 服务器不认 Range(200) → 从头重写;
   // 换镜像(URL 变了) → 旧进度作废从零开始。progress = 0..1。
-  static Future<void> _fetchTo(
-      String url, File f, ValueNotifier<double> progress) async {
+  //
+  // [detail] 可选：把「已下/总量 · 速度」这类人话通过它推给 UI，
+  // 只给百分比的话用户看不出「到底还在动没有」。
+  // 返回最终落盘字节数（调用方做 sha256 校验要用）。
+  static Future<int> _fetchTo(
+      String url, File f, ValueNotifier<double> progress,
+      {ValueNotifier<String>? detail}) async {
     final part = File('${f.path}.part');
     final meta = File('${f.path}.part.meta');
     final client = HttpClient();
@@ -12017,7 +12108,9 @@ class Updater {
         if (m.isNotEmpty && m[0] == url) {
           pos = await part.length();
           if (m.length > 1) total = int.tryParse(m[1]) ?? 0;
+          if (pos > 0) detail?.value = _bytesHuman(pos, total, 0, '续传');
         } else {
+          // 换了镜像：不同源的字节流不一定同构，旧进度一律作废，避免拼出坏包
           try {
             await part.delete();
           } catch (_) {}
@@ -12042,10 +12135,21 @@ class Updater {
       final sink =
           part.openWrite(mode: append ? FileMode.append : FileMode.write);
       var got = 0;
+      final t0 = DateTime.now().millisecondsSinceEpoch;
+      var lastUi = t0;
       await for (final chunk in resp) {
         sink.add(chunk);
         got += chunk.length;
+        final now = DateTime.now().millisecondsSinceEpoch;
         if (total > 0) progress.value = (pos + got) / total;
+        // 250ms 节流，避免每块都重建 UI
+        if (detail != null && now - lastUi >= 250) {
+          lastUi = now;
+          final secs = (now - t0) / 1000.0;
+          final speed = secs > 0.3 ? got / secs : 0.0; // B/s（只算本次续传的增量）
+          detail.value =
+              _bytesHuman(pos + got, total, speed, append ? '续传' : '');
+        }
       }
       await sink.close();
       final len = await part.length();
@@ -12060,9 +12164,33 @@ class Updater {
       try {
         await meta.delete();
       } catch (_) {}
+      return len;
     } finally {
       client.close();
     }
+  }
+
+  /// 「已下载 / 总大小 · 速度」的人话描述。
+  static String _bytesHuman(int done, int total, double speedBps, String tag) {
+    String mb(int b) => (b / 1048576).toStringAsFixed(1);
+    final buf = StringBuffer();
+    if (tag.isNotEmpty) buf.write('$tag ');
+    if (total > 0) {
+      buf.write('${mb(done)} / ${mb(total)} MB');
+    } else {
+      buf.write('${mb(done)} MB');
+    }
+    if (speedBps > 0) buf.write(' · ${mb(speedBps.round())} MB/s');
+    return buf.toString();
+  }
+
+  /// 算文件 sha256。
+  /// 用 `Sha256().hash(bytes)` 而不是 hashStream：前者在本项目已有多处在用
+  /// （见 Api 的 token 摘要），编译风险为零；30MB 包一次性读入的峰值也可接受，
+  /// 且只在下载完成后执行一次。
+  static Future<String> _fileSha256(File f) async {
+    final h = await Sha256().hash(await f.readAsBytes());
+    return h.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   // 后台下载时把进度同步到通知栏(800ms 节流); 返回清理函数(完成后调用撤掉进度条)
@@ -12087,8 +12215,9 @@ class Updater {
   }
 
   // 通用产品下载(下载中心用): 进度弹窗 + 后台下载 + 完成通知 + 留档
-  static Future<void> downloadProduct(
-      BuildContext c, String url, String name) async {
+  // [sha256] 可选：清单里给了就校验，不符直接判失败（防止下到镜像错误页/半截包）
+  static Future<void> downloadProduct(BuildContext c, String url, String name,
+      {String? sha256}) async {
     // 去重: 已有同版本安装包 → 直接安装, 不重复下载
     final vm0 = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(name);
     final exist = await _findLocalApk(vm0?.group(1) ?? '');
@@ -12113,24 +12242,34 @@ class Updater {
       if (r0 == null) return;
     }
     final progress = ValueNotifier<double>(0);
+    final detail = ValueNotifier<String>('连接中…');
     var background = false;
     showDialog(
         context: c,
         barrierDismissible: false,
         builder: (c2) => AlertDialog(
                 title: Text('正在下载 $name'),
-                content: ValueListenableBuilder<double>(
-                    valueListenable: progress,
-                    builder: (_, v, __) =>
-                        Column(mainAxisSize: MainAxisSize.min, children: [
-                          LinearProgressIndicator(value: v > 0 ? v : null),
-                          const SizedBox(height: 8),
-                          Text(
-                              v > 0
-                                  ? '${(v * 100).toStringAsFixed(0)}%'
-                                  : '连接中…',
-                              style: const TextStyle(fontSize: 12)),
-                        ])),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  ValueListenableBuilder<double>(
+                      valueListenable: progress,
+                      builder: (_, v, __) =>
+                          Column(mainAxisSize: MainAxisSize.min, children: [
+                            LinearProgressIndicator(value: v > 0 ? v : null),
+                            const SizedBox(height: 8),
+                            Text(
+                                v > 0
+                                    ? '${(v * 100).toStringAsFixed(0)}%'
+                                    : '连接中…',
+                                style: const TextStyle(fontSize: 12)),
+                          ])),
+                  const SizedBox(height: 6),
+                  // 「已下 / 总量 · 速度」——只有百分比时用户看不出到底还在动没有
+                  ValueListenableBuilder<String>(
+                      valueListenable: detail,
+                      builder: (_, t, __) => Text(t,
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey))),
+                ]),
                 actions: [
                   TextButton(
                       onPressed: () {
@@ -12144,10 +12283,18 @@ class Updater {
     try {
       final dir = await _updateDir();
       final safe = name.replaceAll(RegExp(r'[\\/:*?"<>| ]'), '-');
-      final f = File('$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
       // 从文件名提取版本号用于拼镜像地址
       final vm = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(name);
-      final mirrors = _mirrorUrls(url, vm?.group(1) ?? '');
+      final verTag = vm?.group(1) ?? '';
+      // ★稳定文件名（2026-10-31 修复）：
+      //   旧实现把毫秒时间戳拼进文件名，每次调用都是**新文件** → `${f.path}.part`
+      //   永远对不上上一次的临时文件 → 断点续传代码全程写对了却从未生效，
+      //   用户看到的就是「中断一次全部重下」。现在同版本永远落同一路径。
+      //   拿不到版本号时才退回时间戳（那种情况也无法判断是不是同一个文件）。
+      final f = File(verTag.isNotEmpty
+          ? '$dir/$safe.apk'
+          : '$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
+      final mirrors = _mirrorUrls(url, verTag);
       Exception? lastErr;
       var ok = false;
       final stopNotify = _bgProgressNotify(progress, 88003, '正在下载 $name');
@@ -12156,9 +12303,11 @@ class Updater {
           try {
             if (i > 0 && c.mounted)
               ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                  content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+                  content:
+                      Text('线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…')));
             progress.value = 0;
-            await _fetchTo(mirrors[i], f, progress);
+            if (i > 0) detail.value = '切换镜像…';
+            await _fetchTo(mirrors[i], f, progress, detail: detail);
             ok = true;
           } catch (e) {
             lastErr = e is Exception ? e : Exception('$e');
@@ -12168,6 +12317,17 @@ class Updater {
         stopNotify();
       }
       if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
+      // ★校验：清单给了 sha256 就必须对得上（防镜像错误页/被篡改/半截包）
+      if (sha256 != null && sha256.trim().isNotEmpty) {
+        detail.value = '校验文件…';
+        final actual = await _fileSha256(f);
+        if (actual.toLowerCase() != sha256.trim().toLowerCase()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+          throw Exception('安装包校验不通过（镜像可能返回了错误内容）');
+        }
+      }
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
       list.add('${f.path}|$name|${DateTime.now().toString().substring(0, 16)}');
@@ -12201,26 +12361,36 @@ class Updater {
     }
   }
 
-  static Future<void> _downloadAndInstall(BuildContext c, String url) async {
+  static Future<void> _downloadAndInstall(BuildContext c, String url,
+      {String? sha}) async {
     final progress = ValueNotifier<double>(0);
+    final detail = ValueNotifier<String>('连接中…');
     var background = false;
     showDialog(
         context: c,
         barrierDismissible: false,
         builder: (c2) => AlertDialog(
                 title: const Text('正在下载更新'),
-                content: ValueListenableBuilder<double>(
-                    valueListenable: progress,
-                    builder: (_, v, __) =>
-                        Column(mainAxisSize: MainAxisSize.min, children: [
-                          LinearProgressIndicator(value: v > 0 ? v : null),
-                          const SizedBox(height: 8),
-                          Text(
-                              v > 0
-                                  ? '${(v * 100).toStringAsFixed(0)}%'
-                                  : '连接中…',
-                              style: const TextStyle(fontSize: 12)),
-                        ])),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  ValueListenableBuilder<double>(
+                      valueListenable: progress,
+                      builder: (_, v, __) =>
+                          Column(mainAxisSize: MainAxisSize.min, children: [
+                            LinearProgressIndicator(value: v > 0 ? v : null),
+                            const SizedBox(height: 8),
+                            Text(
+                                v > 0
+                                    ? '${(v * 100).toStringAsFixed(0)}%'
+                                    : '连接中…',
+                                style: const TextStyle(fontSize: 12)),
+                          ])),
+                  const SizedBox(height: 6),
+                  ValueListenableBuilder<String>(
+                      valueListenable: detail,
+                      builder: (_, t, __) => Text(t,
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey))),
+                ]),
                 actions: [
                   TextButton(
                       onPressed: () {
@@ -12233,8 +12403,9 @@ class Updater {
                 ]));
     try {
       final dir = await _updateDir();
-      final f = File(
-          '$dir/thirdhub-update-${DateTime.now().millisecondsSinceEpoch}.apk');
+      // ★稳定文件名（2026-10-31 修复）：带时间戳会让 .part/.meta 每次都对不上，
+      //   断点续传形同虚设 —— App 自身更新正是用户最常中断的那条下载。
+      final f = File('$dir/thirdhub-update-v$newVer.apk');
       final mirrors = _mirrorUrls(url, newVer);
       Exception? lastErr;
       var ok = false;
@@ -12244,9 +12415,11 @@ class Updater {
           try {
             if (i > 0 && c.mounted)
               ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                  content: Text('主线路失败, 切换镜像 ${i + 1}/${mirrors.length}…')));
+                  content:
+                      Text('线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…')));
             progress.value = 0;
-            await _fetchTo(mirrors[i], f, progress);
+            if (i > 0) detail.value = '切换镜像…';
+            await _fetchTo(mirrors[i], f, progress, detail: detail);
             ok = true;
           } catch (e) {
             lastErr = e is Exception ? e : Exception('$e');
@@ -12256,6 +12429,18 @@ class Updater {
         stopNotify();
       }
       if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
+      // ★校验 sha256：清单里带了就必须对得上。下到半截/镜像错误页/被篡改，
+      //   都在这里拦住，而不是等用户点安装时报「解析包出错」。
+      if (sha != null && sha.trim().isNotEmpty) {
+        detail.value = '校验文件…';
+        final actual = await _fileSha256(f);
+        if (actual.toLowerCase() != sha.trim().toLowerCase()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+          throw Exception('安装包校验不通过（镜像内容不对，请重试）');
+        }
+      }
       // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
