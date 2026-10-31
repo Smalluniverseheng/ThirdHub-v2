@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'ai.dart';
 import 'key_detect.dart';
 import 'vendor_icons.dart';
+import 'i18n.dart';
 
 class AiProvidersPage extends StatefulWidget { const AiProvidersPage({super.key}); @override State<AiProvidersPage> createState() => _AiProv(); }
 class _AiProv extends State<AiProvidersPage> {
@@ -66,13 +67,13 @@ class _AiProv extends State<AiProvidersPage> {
               Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
                 Expanded(child: Text(p.base, style: const TextStyle(fontSize: 10, color: Colors.grey), overflow: TextOverflow.ellipsis)),
                 if (custom) ...[
-                  TextButton(onPressed: () => _customDialog(p), child: const Text('编辑', style: TextStyle(fontSize: 12))),
+                  TextButton(onPressed: () => _customDialog(p), child: Text(tr('编辑'), style: TextStyle(fontSize: 12))),
                   TextButton(onPressed: () async {
                     final ok = await showDialog<bool>(context: c, builder: (c3) => AlertDialog(title: Text('删除自定义厂商「${p.name}」?'),
-                      actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: const Text('取消')),
-                        FilledButton(onPressed: () => Navigator.pop(c3, true), child: const Text('删除'))]));
+                      actions: [TextButton(onPressed: () => Navigator.pop(c3, false), child: Text(tr('取消'))),
+                        FilledButton(onPressed: () => Navigator.pop(c3, true), child: Text(tr('删除')))]));
                     if (ok == true) { await AiRegistry.removeCustomProvider(p.id); await _load(); }
-                  }, child: const Text('删除', style: TextStyle(fontSize: 12, color: Colors.redAccent))),
+                  }, child: Text(tr('删除'), style: TextStyle(fontSize: 12, color: Colors.redAccent))),
                 ],
                 TextButton(onPressed: () => _keyDialog(p), child: Text(keyed.contains(p.id) ? '改Key' : '配Key', style: const TextStyle(fontSize: 12))),
               ])),
@@ -111,7 +112,7 @@ class _AiProv extends State<AiProvidersPage> {
             child: Text('改存到「${suggest!.name}」')))),
         if (testing) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
         TextButton(onPressed: testing ? null : () async {
           setD(() { testing = true; msg = null; suggest = null; });
           final key = ctrl.text.trim();
@@ -132,7 +133,7 @@ class _AiProv extends State<AiProvidersPage> {
             }
           });
         }, child: const Text('验证')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))])));
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))])));
     if (ok == true) { await AiRegistry.setKey(p.id, ctrl.text.trim()); await _load(); }
   }
 
@@ -269,7 +270,7 @@ class _AiProv extends State<AiProvidersPage> {
                           debounce?.cancel();
                           Navigator.pop(ctx);
                         },
-                        child: const Text('关闭')),
+                        child: Text(tr('关闭'))),
                   if (!busy && r == null)
                     FilledButton(
                         onPressed: () => run(setD),
@@ -353,7 +354,7 @@ class _AiProv extends State<AiProvidersPage> {
           child: Text(status, style: TextStyle(fontSize: 11, color: isRelay == true ? Colors.green : Colors.grey))),
         if (busy) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: const Text('关闭')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2), child: Text(tr('关闭'))),
         FilledButton(onPressed: busy ? null : () async {
           final key = ctrl.text.trim(); if (key.isEmpty) return;
           setD(() { busy = true; status = '正在探测(并行请求3个品牌)…'; });
@@ -383,8 +384,8 @@ class _AiProv extends State<AiProvidersPage> {
         TextField(controller: modelsC, maxLines: 2,
           decoration: const InputDecoration(labelText: '模型列表(逗号分隔)', hintText: 'gpt-4o, deepseek-chat, claude-opus-5', isDense: true)),
       ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('保存'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+        FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('保存')))]));
     if (ok != true) return;
     final models = modelsC.text.split(RegExp(r'[,，\n]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (nameC.text.trim().isEmpty || baseC.text.trim().isEmpty || models.isEmpty) {
