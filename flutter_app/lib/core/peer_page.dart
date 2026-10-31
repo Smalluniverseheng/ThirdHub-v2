@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'peer_hub.dart';
+import 'i18n.dart';
 
 class PeerPage extends StatefulWidget {
   const PeerPage({super.key});
@@ -88,7 +89,7 @@ class _PeerPageState extends State<PeerPage> {
           TextField(controller: _pwd, obscureText: true, decoration: const InputDecoration(labelText: '口令', isDense: true)),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           TextButton(
               onPressed: () {
                 _acc.text = '';
@@ -158,7 +159,7 @@ class _PeerPageState extends State<PeerPage> {
           TextField(controller: argsC, decoration: const InputDecoration(labelText: '参数 JSON', isDense: true), maxLines: 3),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('调用')),
         ],
       ),
@@ -197,7 +198,7 @@ class _PeerPageState extends State<PeerPage> {
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('关闭'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('关闭')))],
       ),
     );
   }
@@ -234,7 +235,7 @@ class _PeerPageState extends State<PeerPage> {
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('保存并同步')),
         ],
       ),
@@ -279,7 +280,7 @@ class _PeerPageState extends State<PeerPage> {
                               style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete_outline, size: 18),
-                            tooltip: '删除',
+                            tooltip: tr('删除'),
                             onPressed: () async {
                               await PeerHubClient.delSecret(k);
                               if (c.mounted) Navigator.pop(c);
@@ -291,7 +292,7 @@ class _PeerPageState extends State<PeerPage> {
                       .toList(),
                 ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('关闭'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('关闭')))],
       ),
     );
   }
@@ -357,7 +358,7 @@ class _PeerPageState extends State<PeerPage> {
       appBar: AppBar(
         title: const Text('端网与插件'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), tooltip: '刷新', onPressed: _busy ? null : _refresh),
+          IconButton(icon: const Icon(Icons.refresh), tooltip: tr('刷新'), onPressed: _busy ? null : _refresh),
           IconButton(icon: const Icon(Icons.monitor_heart_outlined), tooltip: '诊断', onPressed: _busy ? null : _runDiag),
         ],
       ),
