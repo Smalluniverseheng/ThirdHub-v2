@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'pro_kit.dart';
+import 'i18n.dart';
 
 /// 腾讯位置服务 key 在本地设置里的键。**绝不写死在代码里**。
 const String kTmapKeyPref = 'tmap_key';
@@ -750,7 +751,7 @@ class _BmState extends State<_BaseMapPage> {
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(c2),
-                        child: const Text('知道了'))
+                        child: Text(tr('知道了')))
                   ],
                 ),
               );
