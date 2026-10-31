@@ -238,7 +238,7 @@ class _ChatState extends State<ChatPage> {
                 avatar: const Icon(Icons.play_arrow, size: 16), label: const Text('开启', style: TextStyle(fontSize: 12)),
                 onPressed: () async { await L.start(); })
               else ActionChip(
-                avatar: Icon(Icons.stop, size: 16), label: const Text(tr('关闭'), style: TextStyle(fontSize: 12)),
+                avatar: Icon(Icons.stop, size: 16), label: Text(tr('关闭'), style: TextStyle(fontSize: 12)),
                 onPressed: () => L.stop()),
               ActionChip(
                 avatar: const Icon(Icons.cleaning_services_outlined, size: 16),
@@ -422,8 +422,8 @@ class _CommunityState extends State<CommunityPage> {
           Row(children: [
             FilledButton.icon(onPressed: () => _edit(c, null), icon: const Icon(Icons.add, size: 18), label: const Text('发帖')),
             const SizedBox(width: 8),
-            TextButton.icon(onPressed: () => _export(c), icon: Icon(Icons.ios_share, size: 16), label: const Text(tr('导出'))),
-            TextButton.icon(onPressed: () => _import(c), icon: Icon(Icons.download, size: 16), label: const Text(tr('导入'))),
+            TextButton.icon(onPressed: () => _export(c), icon: Icon(Icons.ios_share, size: 16), label: Text(tr('导出'))),
+            TextButton.icon(onPressed: () => _import(c), icon: Icon(Icons.download, size: 16), label: Text(tr('导入'))),
           ]),
         ]))),
         const SizedBox(height: 8),
@@ -478,7 +478,7 @@ class _CommunityState extends State<CommunityPage> {
                 onSelected: (_) => set(() => kind = k)),
           ]),
           const SizedBox(height: 8),
-          TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
+          TextField(controller: t, decoration: InputDecoration(labelText: tr('标题'), isDense: true)),
           const SizedBox(height: 8),
           TextField(controller: b, minLines: 4, maxLines: 10,
             decoration: const InputDecoration(labelText: '正文 / 规则内容 / 链接', isDense: true, border: OutlineInputBorder())),
@@ -650,7 +650,7 @@ class _ForumState extends State<ForumPage> {
     final ok = await showDialog<bool>(context: c, builder: (d) => AlertDialog(
       title: Text('在「$_board」发主题'),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
+        TextField(controller: t, decoration: InputDecoration(labelText: tr('标题'), isDense: true)),
         const SizedBox(height: 8),
         TextField(controller: b, minLines: 4, maxLines: 10,
           decoration: const InputDecoration(labelText: '正文', isDense: true, border: OutlineInputBorder())),
