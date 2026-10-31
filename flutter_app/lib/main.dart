@@ -295,7 +295,9 @@ Future<void> main() async {
   runApp(SplashApp(
       anim: AppSettings.splashAnim,
       bootDone: bootDone,
-      onFinish: () { if (!splashDone.isCompleted) splashDone.complete(); }));
+      onFinish: () {
+        if (!splashDone.isCompleted) splashDone.complete();
+      }));
   await Cloud.init();
   // ★2026-10-30 远端配置中心：先用本地缓存（同步就绪、不阻塞），云端返回后覆盖。
   //   目的：第三方 API / 地图 / 语音 / 源模板 / 资源库后端地址都在后台一键替换，不写死在包里。
@@ -593,7 +595,8 @@ class AppSettings {
   //
   // ★只落本地盘、**不进 sync()**：它是"这一次想怎么搜"的操作意图，不是账号偏好。
   //   把一台设备的搜索习惯同步到别的端，只会让人莫名其妙。
-  static String get engineSearchMode => p.getString('engine_search_mode') ?? 'fuzzy';
+  static String get engineSearchMode =>
+      p.getString('engine_search_mode') ?? 'fuzzy';
   static Future<void> setEngineSearchMode(String v) async {
     if (v != 'fuzzy' && v != 'exact' && v != 'deep') return; // 白名单，防脏值写进盘
     await p.setString('engine_search_mode', v);
@@ -1468,9 +1471,9 @@ class LegalDocPage extends StatelessWidget {
   /// 读者看到的就是"一堆乱七八糟的符号"。这里做保守清理，不动正文语义。
   String _clean(String md) {
     return md
-        .replaceAll(RegExp(r'^\s*---+\s*$', multiLine: true), '')   // 分隔线：改成空行
-        .replaceAll(RegExp(r'\\+(?=[*_`#>|-])'), '')                 // 转义反斜杠
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n');                      // 压掉连续空行
+        .replaceAll(RegExp(r'^\s*---+\s*$', multiLine: true), '') // 分隔线：改成空行
+        .replaceAll(RegExp(r'\\+(?=[*_`#>|-])'), '') // 转义反斜杠
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n'); // 压掉连续空行
   }
 
   @override
@@ -1479,7 +1482,8 @@ class LegalDocPage extends StatelessWidget {
       body: FutureBuilder<String>(
           future: rootBundle.loadString(asset),
           builder: (c2, s) {
-            if (!s.hasData) return const Center(child: CircularProgressIndicator());
+            if (!s.hasData)
+              return const Center(child: CircularProgressIndicator());
             final dark = Theme.of(c2).brightness == Brightness.dark;
             final base = Theme.of(c2).textTheme.bodyMedium ?? const TextStyle();
             return Markdown(
@@ -1488,21 +1492,29 @@ class LegalDocPage extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 40),
               styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(c2)).copyWith(
                 p: base.copyWith(fontSize: 14, height: 1.8),
-                h1: base.copyWith(fontSize: 20, fontWeight: FontWeight.w700, height: 1.5),
-                h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w700, height: 1.6),
-                h3: base.copyWith(fontSize: 15, fontWeight: FontWeight.w600, height: 1.6),
+                h1: base.copyWith(
+                    fontSize: 20, fontWeight: FontWeight.w700, height: 1.5),
+                h2: base.copyWith(
+                    fontSize: 17, fontWeight: FontWeight.w700, height: 1.6),
+                h3: base.copyWith(
+                    fontSize: 15, fontWeight: FontWeight.w600, height: 1.6),
                 listBullet: base.copyWith(fontSize: 14, height: 1.8),
                 blockquoteDecoration: BoxDecoration(
                   color: Theme.of(c2).cardTheme.color,
                   borderRadius: BorderRadius.circular(10),
                   border: Border(
                       left: BorderSide(
-                          color: Theme.of(c2).colorScheme.primary.withValues(alpha: dark ? 0.7 : 0.5),
+                          color: Theme.of(c2)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: dark ? 0.7 : 0.5),
                           width: 3)),
                 ),
                 blockquotePadding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                 horizontalRuleDecoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: Theme.of(c2).dividerColor, width: 1))),
+                    border: Border(
+                        top: BorderSide(
+                            color: Theme.of(c2).dividerColor, width: 1))),
               ),
             );
           }));
@@ -2356,15 +2368,13 @@ Future<void> confirmDeleteAccount(BuildContext context,
                       controller: ctrl,
                       autofocus: true,
                       decoration: const InputDecoration(
-                          labelText: '输入「删除」以确认',
-                          border: OutlineInputBorder()),
+                          labelText: '输入「删除」以确认', border: OutlineInputBorder()),
                       onChanged: (v) => setD(() => phrase = v.trim()),
                     ),
                   ]),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(c2),
-                    child: Text(tr('取消'))),
+                    onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
                 FilledButton(
                     style: FilledButton.styleFrom(
                         backgroundColor: Colors.redAccent),
@@ -2386,21 +2396,20 @@ Future<void> confirmDeleteAccount(BuildContext context,
       context: context,
       barrierDismissible: false,
       builder: (_) => const AlertDialog(
-          content: Row(children: [
-        SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.4)),
-        SizedBox(width: 14),
-        Text('正在删除账号…'),
-      ])));
+              content: Row(children: [
+            SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4)),
+            SizedBox(width: 14),
+            Text('正在删除账号…'),
+          ])));
   try {
     // ① 后端痕迹（/v1/pair 的设备注册）—— 尽力清理；后端不在线不影响删号成功，
     //    审核机上根本没有我们的后端，删号必须在"无后端"时照样可用。
     try {
       if (Api.base.isNotEmpty) {
-        await Api
-            .post('/v1/account/delete', {'user_id': Cloud.userId})
+        await Api.post('/v1/account/delete', {'user_id': Cloud.userId})
             .timeout(const Duration(seconds: 6));
       }
     } catch (_) {}
@@ -2410,8 +2419,8 @@ Future<void> confirmDeleteAccount(BuildContext context,
     // 先提示再 after 回调：after 可能会 pop 掉本 context 所在的页面，
     // 之后再 showSnackBar 就会因 context 失效被静默跳过（用户看不到任何反馈）。
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('账号已删除，云端数据已清除')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('账号已删除，云端数据已清除')));
     }
     after?.call();
   } catch (e) {
@@ -2752,7 +2761,8 @@ class _Pf extends State<ProfilePage> {
                   onTap: () => Navigator.push(
                       context,
                       smoothRoute(const BrowserPage(
-                          initialUrl: 'https://thirdhub.pages.dev/admin.html')))),
+                          initialUrl:
+                              'https://thirdhub.pages.dev/admin.html')))),
               _sep(),
             ],
             entry(Icons.extension_outlined, '资料库直连',
@@ -2805,8 +2815,7 @@ class _Pf extends State<ProfilePage> {
                     side: const BorderSide(color: Colors.redAccent),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(23))),
-                onPressed: () => confirmDeleteAccount(context,
-                    after: () {
+                onPressed: () => confirmDeleteAccount(context, after: () {
                       if (mounted) setState(() {});
                     }),
                 child: const Text('删除账号')),
@@ -3035,9 +3044,7 @@ class _Psub extends State<ProfileSubPage> {
     //   这是方法不是 build 的内部闭包，拿不到那个局部量（analyze 会报 undefined_identifier）。
     final bool logged = Cloud.loggedIn;
     final StringBuffer sb = StringBuffer();
-    sb.writeln(logged
-        ? '当前等级：${cur.name}（${cur.nameEn}）'
-        : '当前等级：游客（未登录）');
+    sb.writeln(logged ? '当前等级：${cur.name}（${cur.nameEn}）' : '当前等级：游客（未登录）');
     sb.writeln('云存储额度：${memberStorageText(cur)}');
     final String exp = _expireAt ?? '';
     if (exp.isNotEmpty) sb.writeln('到期：$exp');
@@ -3259,9 +3266,7 @@ class _Psub extends State<ProfileSubPage> {
             //   未登录仍显示「游客」——此时颜色取灰，不借用主题强调色。
             Builder(builder: (ctx) {
               final MemberLevel lv = _level;
-              final Color lvColor = logged
-                  ? Color(lv.colorValue)
-                  : Colors.grey;
+              final Color lvColor = logged ? Color(lv.colorValue) : Colors.grey;
               return Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -3308,8 +3313,12 @@ class _Psub extends State<ProfileSubPage> {
                 // ★2026-10-11 新增：等级 + 额度 + 到期一栏。
                 //   ★刻意**不做购买入口** —— 购买/充值只在网页端（用户既定分工）。
                 //   点击只弹一个说明框，告诉用户去哪升级。
-                row('会员等级', memberSubtitle(
-                    loggedIn: logged, levelId: _levelId, expireAt: _expireAt),
+                row(
+                    '会员等级',
+                    memberSubtitle(
+                        loggedIn: logged,
+                        levelId: _levelId,
+                        expireAt: _expireAt),
                     () => _showLevelInfo()),
               ])),
           if (logged)
@@ -3344,10 +3353,9 @@ class _Psub extends State<ProfileSubPage> {
                         side: const BorderSide(color: Colors.redAccent)),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(18),
-                      onTap: () => confirmDeleteAccount(c,
-                          after: () {
-                            if (c.mounted) Navigator.pop(c);
-                          }),
+                      onTap: () => confirmDeleteAccount(c, after: () {
+                        if (c.mounted) Navigator.pop(c);
+                      }),
                       child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 14),
                           child: Center(
@@ -5452,8 +5460,9 @@ Widget modMenuBtn(BuildContext c) => IconButton(
       final st = c.findAncestorStateOfType<_RootNavState>() ?? RootNav.inst;
       if (st == null || !st.mounted) {
         // 连根导航都拿不到（极端情况）：给个明确反馈，别装作"点了"
-        ScaffoldMessenger.maybeOf(c)?.showSnackBar(
-            const SnackBar(content: Text('模块菜单暂不可用，请返回首页后重试'), duration: Duration(seconds: 2)));
+        ScaffoldMessenger.maybeOf(c)?.showSnackBar(const SnackBar(
+            content: Text('模块菜单暂不可用，请返回首页后重试'),
+            duration: Duration(seconds: 2)));
         return;
       }
       st.openModuleMenu();
@@ -5474,36 +5483,36 @@ class _Nv extends State<NovelSection> {
   int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
-        key: _dk,
-        moduleTitle: '小说',
-        moduleIcon: Icons.menu_book_outlined,
-        currentTab: sub,
-        actions: [
-          ModuleAction(Icons.library_books_outlined, '书架',
-              sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
-          ModuleAction(Icons.history, '历史',
-              sub: '最近读过', onTap: () => setState(() => sub = 1)),
-          ModuleAction(Icons.explore_outlined, '发现',
-              sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
-          ModuleAction(Icons.search, '搜索',
-              sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
-          ModuleAction(Icons.folder_special_outlined, '本地库',
-              sub: '离线内容 · 存储占用',
-              onTap: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
-        ],
-        settings: [
-          ModuleDrawerSwitch(
-            title: '震动反馈',
-            sub: '关掉后所有震动静音',
-            value: Haptic.enabled,
-            onChanged: (v) async {
-              await Haptic.setEnabled(v);
-              setState(() {});
-            },
-          ),
-        ],
-        child: Column(children: [
+      key: _dk,
+      moduleTitle: '小说',
+      moduleIcon: Icons.menu_book_outlined,
+      currentTab: sub,
+      actions: [
+        ModuleAction(Icons.library_books_outlined, '书架',
+            sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
+        ModuleAction(Icons.history, '历史',
+            sub: '最近读过', onTap: () => setState(() => sub = 1)),
+        ModuleAction(Icons.explore_outlined, '发现',
+            sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
+        ModuleAction(Icons.search, '搜索',
+            sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+        ModuleAction(Icons.folder_special_outlined, '本地库',
+            sub: '离线内容 · 存储占用',
+            onTap: () => Navigator.push(c,
+                MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
+      ],
+      settings: [
+        ModuleDrawerSwitch(
+          title: '震动反馈',
+          sub: '关掉后所有震动静音',
+          value: Haptic.enabled,
+          onChanged: (v) async {
+            await Haptic.setEnabled(v);
+            setState(() {});
+          },
+        ),
+      ],
+      child: Column(children: [
         Row(children: [
           SizedBox(
               width: 40,
@@ -6416,7 +6425,8 @@ class _T extends State<TocPage> {
           //   入口本身就是 2.1 完整性问题，所以是整个按钮不渲染，不是禁用）。
           if (OfflineUI.batchDownloadAllowed)
             IconButton(
-                icon: offlineActionIcon(done: complete, busy: hasOff && !complete),
+                icon: offlineActionIcon(
+                    done: complete, busy: hasOff && !complete),
                 tooltip: complete
                     ? '已离线 ${offTotal}章'
                     : hasOff
@@ -6558,32 +6568,36 @@ class _Cs extends State<ComicSection> {
   int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
-        key: _dk,
-        moduleTitle: '漫画',
-        moduleIcon: Icons.auto_stories_outlined,
-        currentTab: sub,
-        actions: [
-          ModuleAction(Icons.library_books_outlined, '书架', sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
-          ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
-          ModuleAction(Icons.explore_outlined, '发现', sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
-          ModuleAction(Icons.search, '搜索', sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
-          ModuleAction(Icons.folder_special_outlined, '本地库',
-              sub: '离线内容 · 存储占用',
-              onTap: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
-        ],
-        settings: [
-          ModuleDrawerSwitch(
-            title: '震动反馈',
-            sub: '关掉后所有震动静音',
-            value: Haptic.enabled,
-            onChanged: (v) async {
-              await Haptic.setEnabled(v);
-              setState(() {});
-            },
-          ),
-        ],
-        child: Column(children: [
+      key: _dk,
+      moduleTitle: '漫画',
+      moduleIcon: Icons.auto_stories_outlined,
+      currentTab: sub,
+      actions: [
+        ModuleAction(Icons.library_books_outlined, '书架',
+            sub: '收藏与在读', onTap: () => setState(() => sub = 0)),
+        ModuleAction(Icons.history, '历史',
+            sub: '最近看过', onTap: () => setState(() => sub = 1)),
+        ModuleAction(Icons.explore_outlined, '发现',
+            sub: '各来源推荐', onTap: () => setState(() => sub = 2)),
+        ModuleAction(Icons.search, '搜索',
+            sub: '跨来源检索', onTap: () => setState(() => sub = 3)),
+        ModuleAction(Icons.folder_special_outlined, '本地库',
+            sub: '离线内容 · 存储占用',
+            onTap: () => Navigator.push(c,
+                MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
+      ],
+      settings: [
+        ModuleDrawerSwitch(
+          title: '震动反馈',
+          sub: '关掉后所有震动静音',
+          value: Haptic.enabled,
+          onChanged: (v) async {
+            await Haptic.setEnabled(v);
+            setState(() {});
+          },
+        ),
+      ],
+      child: Column(children: [
         Row(children: [
           SizedBox(
               width: 40,
@@ -7023,32 +7037,36 @@ class _Ms extends State<MusicSection> {
   int sub = EngineDirect.connected ? 2 : 0;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
-        key: _dk,
-        moduleTitle: '音乐',
-        moduleIcon: Icons.music_note_outlined,
-        currentTab: sub,
-        actions: [
-          ModuleAction(Icons.queue_music, '歌单', sub: '我的收藏', onTap: () => setState(() => sub = 0)),
-          ModuleAction(Icons.history, '历史', sub: '最近听过', onTap: () => setState(() => sub = 1)),
-          ModuleAction(Icons.explore_outlined, '发现', sub: '榜单与推荐', onTap: () => setState(() => sub = 2)),
-          ModuleAction(Icons.search, '搜索', sub: '跨平台检索', onTap: () => setState(() => sub = 3)),
-          ModuleAction(Icons.folder_special_outlined, '本地库',
-              sub: '离线内容 · 存储占用',
-              onTap: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
-        ],
-        settings: [
-          ModuleDrawerSwitch(
-            title: '震动反馈',
-            sub: '关掉后所有震动静音',
-            value: Haptic.enabled,
-            onChanged: (v) async {
-              await Haptic.setEnabled(v);
-              setState(() {});
-            },
-          ),
-        ],
-        child: Column(children: [
+      key: _dk,
+      moduleTitle: '音乐',
+      moduleIcon: Icons.music_note_outlined,
+      currentTab: sub,
+      actions: [
+        ModuleAction(Icons.queue_music, '歌单',
+            sub: '我的收藏', onTap: () => setState(() => sub = 0)),
+        ModuleAction(Icons.history, '历史',
+            sub: '最近听过', onTap: () => setState(() => sub = 1)),
+        ModuleAction(Icons.explore_outlined, '发现',
+            sub: '榜单与推荐', onTap: () => setState(() => sub = 2)),
+        ModuleAction(Icons.search, '搜索',
+            sub: '跨平台检索', onTap: () => setState(() => sub = 3)),
+        ModuleAction(Icons.folder_special_outlined, '本地库',
+            sub: '离线内容 · 存储占用',
+            onTap: () => Navigator.push(c,
+                MaterialPageRoute(builder: (_) => const MediaOfflinePage()))),
+      ],
+      settings: [
+        ModuleDrawerSwitch(
+          title: '震动反馈',
+          sub: '关掉后所有震动静音',
+          value: Haptic.enabled,
+          onChanged: (v) async {
+            await Haptic.setEnabled(v);
+            setState(() {});
+          },
+        ),
+      ],
+      child: Column(children: [
         Row(children: [
           SizedBox(
               width: 40,
@@ -7849,8 +7867,8 @@ class _MPlay extends State<MusicPlayPage> {
   Future<void> _saveOfflineM() async {
     final url = _resolvedUrl ?? '';
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('播放地址还没解析出来，等歌开始播再保存')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('播放地址还没解析出来，等歌开始播再保存')));
       return;
     }
     setState(() => _offSaving = true); // ★M4b：按钮进入"下载中"态
@@ -8154,8 +8172,7 @@ class _Vs extends State<VideoSection> {
             onOpen: (it) => Navigator.push(
                 c,
                 MaterialPageRoute(
-                    builder: (_) =>
-                        EngineItemPage(type: 'video', item: it)))),
+                    builder: (_) => EngineItemPage(type: 'video', item: it)))),
       if (thirdParty) const ModuleSearchTab(tab: 3),
     ];
     final segs = <ButtonSegment<int>>[
@@ -8171,10 +8188,16 @@ class _Vs extends State<VideoSection> {
         moduleIcon: Icons.movie_outlined,
         currentTab: cur,
         actions: [
-          ModuleAction(Icons.video_library_outlined, '片库', sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
-          ModuleAction(Icons.history, '历史', sub: '最近看过', onTap: () => setState(() => sub = 1)),
-          if (thirdParty) ModuleAction(Icons.explore_outlined, '发现', sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
-          if (thirdParty) ModuleAction(Icons.search, '搜索', sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
+          ModuleAction(Icons.video_library_outlined, '片库',
+              sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
+          ModuleAction(Icons.history, '历史',
+              sub: '最近看过', onTap: () => setState(() => sub = 1)),
+          if (thirdParty)
+            ModuleAction(Icons.explore_outlined, '发现',
+                sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
+          if (thirdParty)
+            ModuleAction(Icons.search, '搜索',
+                sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
           ModuleAction(Icons.folder_special_outlined, '本地库',
               sub: '离线内容 · 存储占用',
               onTap: () => Navigator.push(c,
@@ -8192,26 +8215,24 @@ class _Vs extends State<VideoSection> {
           ),
         ],
         child: Column(children: [
-      Row(children: [
-        SizedBox(
-            width: 40,
-            child: IconButton(
-                icon: const Icon(Icons.menu, size: 20),
-                tooltip: '快捷面板',
-                onPressed: () => _dk.currentState?.animateTo(true))),
-        Expanded(
-            child: Center(
-                child: SegmentedButton<int>(
-                    segments: segs,
-                    selected: {
-                      cur
-                    },
-                    onSelectionChanged: (s) =>
-                        setState(() => sub = s.first)))),
-        SizedBox(width: 40, child: modMenuBtn(c))
-      ]),
-      Expanded(child: pages[cur]),
-    ]));
+          Row(children: [
+            SizedBox(
+                width: 40,
+                child: IconButton(
+                    icon: const Icon(Icons.menu, size: 20),
+                    tooltip: '快捷面板',
+                    onPressed: () => _dk.currentState?.animateTo(true))),
+            Expanded(
+                child: Center(
+                    child: SegmentedButton<int>(
+                        segments: segs,
+                        selected: {cur},
+                        onSelectionChanged: (s) =>
+                            setState(() => sub = s.first)))),
+            SizedBox(width: 40, child: modMenuBtn(c))
+          ]),
+          Expanded(child: pages[cur]),
+        ]));
   }
 }
 
@@ -8585,13 +8606,15 @@ class _Vd extends State<VideoDetailPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 36, color: Colors.grey),
+                      const Icon(Icons.error_outline,
+                          size: 36, color: Colors.grey),
                       const SizedBox(height: 8),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32),
                         child: Text(err!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 13)),
                       ),
                       const SizedBox(height: 12),
                       FilledButton.tonal(
@@ -8613,7 +8636,8 @@ class _Vd extends State<VideoDetailPage> {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                         child: GestureDetector(
-                          onTap: () => setState(() => _introExpanded = !_introExpanded),
+                          onTap: () =>
+                              setState(() => _introExpanded = !_introExpanded),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -8621,16 +8645,21 @@ class _Vd extends State<VideoDetailPage> {
                                   maxLines: _introExpanded ? 30 : 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                      color: Colors.grey, fontSize: 12.5, height: 1.6)),
+                                      color: Colors.grey,
+                                      fontSize: 12.5,
+                                      height: 1.6)),
                               const SizedBox(height: 4),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Text(_introExpanded ? '收起' : '展开全部',
                                     style: const TextStyle(
-                                        color: Colors.blueAccent, fontSize: 11.5)),
-                                Icon(_introExpanded
+                                        color: Colors.blueAccent,
+                                        fontSize: 11.5)),
+                                Icon(
+                                    _introExpanded
                                         ? Icons.keyboard_arrow_up
                                         : Icons.keyboard_arrow_down,
-                                    size: 14, color: Colors.blueAccent),
+                                    size: 14,
+                                    color: Colors.blueAccent),
                               ]),
                             ],
                           ),
@@ -8647,11 +8676,11 @@ class _Vd extends State<VideoDetailPage> {
                         const SizedBox(width: 6),
                         Text('选集',
                             style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700)),
+                                fontSize: 14, fontWeight: FontWeight.w700)),
                         const SizedBox(width: 6),
                         Text('共 ${episodes.length} 集',
-                            style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+                            style: const TextStyle(
+                                fontSize: 11.5, color: Colors.grey)),
                       ]),
                     ),
                   ),
@@ -8664,7 +8693,8 @@ class _Vd extends State<VideoDetailPage> {
                       //   main.dart 里该关键字只允许 2 处，且注释里的也算命中 —— 别写出来）。
                       //   选集按钮是"文字宫格"不是封面网格，用固定高度（mainAxisExtent）
                       //   表达更贴切，也避免引入新的 aspect 取值。
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
                         mainAxisSpacing: CoverSpec.gap,
                         crossAxisSpacing: CoverSpec.gap,
@@ -8674,7 +8704,9 @@ class _Vd extends State<VideoDetailPage> {
                         (_, i) {
                           final name = '${episodes[i]['name'] ?? '第${i + 1}集'}';
                           return Material(
-                            color: Theme.of(c).colorScheme.surfaceContainerHighest
+                            color: Theme.of(c)
+                                .colorScheme
+                                .surfaceContainerHighest
                                 .withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(9),
                             child: InkWell(
@@ -8692,7 +8724,8 @@ class _Vd extends State<VideoDetailPage> {
                                           episodes: episodes,
                                           index: i))),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
                                 child: Center(
                                   child: Text(name,
                                       maxLines: 2,
@@ -8710,6 +8743,7 @@ class _Vd extends State<VideoDetailPage> {
                   ),
                 ]));
 }
+
 class VideoPlayPage extends StatefulWidget {
   final String sourceId, epUrl, flag, title;
 
@@ -8776,8 +8810,8 @@ class _Vp extends State<VideoPlayPage> {
     if (r <= 0) {
       _sleepTimer?.cancel();
       setState(() => _sleepEnd = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已取消定时关闭')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已取消定时关闭')));
       return;
     }
     _sleepTimer?.cancel();
@@ -8786,13 +8820,14 @@ class _Vp extends State<VideoPlayPage> {
       _vc?.pause();
       if (mounted) {
         setState(() => _sleepEnd = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('定时关闭：已暂停播放')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('定时关闭：已暂停播放')));
       }
     });
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('$r 分钟后自动暂停')));
   }
+
   double get _aspect {
     final v = _vc;
     if (v == null || !v.value.isInitialized) return 16 / 9;
@@ -8829,7 +8864,8 @@ class _Vp extends State<VideoPlayPage> {
     try {
       // chapter 用 '0'：影视 THP 的单集播放地址就是第 0 章（与漫画/音乐同约定）
       final d = await EngineDirect.content('video', id, '0');
-      final url = '${d['url'] ?? d['playUrl'] ?? d['content'] ?? ''}'.toString().trim();
+      final url =
+          '${d['url'] ?? d['playUrl'] ?? d['content'] ?? ''}'.toString().trim();
       if (url.isEmpty) return null;
       return url;
     } catch (_) {
@@ -8845,7 +8881,7 @@ class _Vp extends State<VideoPlayPage> {
       Map<String, dynamic> r = const {};
       if (url == null) {
         r = await Api.get(
-          '/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
+            '/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
         if (r['object'] == 'error') {
           setState(() {
             loading = false;
@@ -8871,8 +8907,8 @@ class _Vp extends State<VideoPlayPage> {
       }
       _resolvedUrl = url;
       // 本地优先：这集保存过就播本地文件 —— 断网/引擎关了照样能看。
-      final lf = await MediaOfflineStore.localFileOf(_videoKey,
-          title: widget.title);
+      final lf =
+          await MediaOfflineStore.localFileOf(_videoKey, title: widget.title);
       _vc = lf != null
           ? VideoPlayerController.file(lf)
           : VideoPlayerController.networkUrl(Uri.parse(url));
@@ -8962,8 +8998,7 @@ class _Vp extends State<VideoPlayPage> {
         _autoNextArmed = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('本集播完，自动播放下一集'),
-              duration: Duration(seconds: 2)));
+              content: Text('本集播完，自动播放下一集'), duration: Duration(seconds: 2)));
           goEpisode(idx + 1);
         }
       }
@@ -8978,8 +9013,8 @@ class _Vp extends State<VideoPlayPage> {
     v.seekTo(t < Duration.zero ? Duration.zero : t);
     HapticFeedback.selectionClick();
     _hintTimer?.cancel();
-    setState(() => _seekHint =
-        seconds > 0 ? '快进 ${seconds}s ▶▶' : '◀◀ 快退 ${-seconds}s');
+    setState(() =>
+        _seekHint = seconds > 0 ? '快进 ${seconds}s ▶▶' : '◀◀ 快退 ${-seconds}s');
     _hintTimer = Timer(const Duration(milliseconds: 700), () {
       if (mounted) setState(() => _seekHint = '');
     });
@@ -9109,16 +9144,16 @@ class _Vp extends State<VideoPlayPage> {
       n++;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('已加入下载队列（$n 集）—— 进度到「离线内容」里看')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已加入下载队列（$n 集）—— 进度到「离线内容」里看')));
   }
 
   /// 保存这一集到本机（断网也能看）。
   Future<void> _saveOffline() async {
     final url = _resolvedUrl ?? '';
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('播放地址还没解析出来，等画面出来后再保存')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('播放地址还没解析出来，等画面出来后再保存')));
       return;
     }
     setState(() => _offSaving = true); // ★M4b：按钮进入"下载中"态
@@ -9243,8 +9278,8 @@ class _Vp extends State<VideoPlayPage> {
                           }
                           _dragTarget = -1;
                           _hintTimer?.cancel();
-                          _hintTimer = Timer(
-                              const Duration(milliseconds: 800), () {
+                          _hintTimer =
+                              Timer(const Duration(milliseconds: 800), () {
                             if (mounted) setState(() => _seekHint = '');
                           });
                         },
@@ -9326,144 +9361,157 @@ class ModuleDef {
 
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
-  '搜索': ModuleDef('搜索', Icons.search,() => (const SearchSection())),
-  '小说': ModuleDef('小说', Icons.menu_book,() => (const NovelSection()),
+  '搜索': ModuleDef('搜索', Icons.search, () => (const SearchSection())),
+  '小说': ModuleDef('小说', Icons.menu_book, () => (const NovelSection()),
       localKind: 'novel'),
-  '漫画': ModuleDef('漫画', Icons.photo_library,() => (const ComicSection()),
+  '漫画': ModuleDef('漫画', Icons.photo_library, () => (const ComicSection()),
       localKind: 'comic'),
-  '视频': ModuleDef('视频', Icons.play_circle,() => (const VideoSection()),
+  '视频': ModuleDef('视频', Icons.play_circle, () => (const VideoSection()),
       localKind: 'video'),
-  '音乐': ModuleDef('音乐', Icons.music_note,() => (const MusicSection()),
+  '音乐': ModuleDef('音乐', Icons.music_note, () => (const MusicSection()),
       localKind: 'music'),
-  'AI': ModuleDef('AI', Icons.smart_toy_outlined,() => (AiSection())),
+  'AI': ModuleDef('AI', Icons.smart_toy_outlined, () => (AiSection())),
   // ★4.44.0 端网：前端/后端/插件/DSA 任意组合互相插线的地方。
   //   放在「核心」分类紧挨 AI —— 它是 AI 能力的延伸（让模型能指挥别的端）。
-  '端网': ModuleDef('端网', Icons.hub_outlined,() => (PeerPage())),
-  '聊天': ModuleDef('聊天', Icons.forum_outlined,() => (ChatHomePage())),
-  '游戏': ModuleDef('游戏', Icons.sports_esports_outlined,() => (GamesPage())),
-  '社区': ModuleDef('社区', Icons.groups_outlined,() => (CommunityPage())),
-  '论坛': ModuleDef('论坛', Icons.article_outlined,() => (ForumPage())),
-  '直播': ModuleDef('直播', Icons.live_tv,() => (LivePage())),
-  '浏览器': ModuleDef('浏览器', Icons.language,() => (BrowserPage())),
-  '相册': ModuleDef('相册', Icons.photo_library_outlined,() => (GalleryPage())),
-  '文件': ModuleDef('文件', Icons.folder_outlined,() => (FilesPage())),
-  '我的': ModuleDef('我的', Icons.person_outline,() => (const ProfilePage())),
+  '端网': ModuleDef('端网', Icons.hub_outlined, () => (PeerPage())),
+  '聊天': ModuleDef('聊天', Icons.forum_outlined, () => (ChatHomePage())),
+  '游戏': ModuleDef('游戏', Icons.sports_esports_outlined, () => (GamesPage())),
+  '社区': ModuleDef('社区', Icons.groups_outlined, () => (CommunityPage())),
+  '论坛': ModuleDef('论坛', Icons.article_outlined, () => (ForumPage())),
+  '直播': ModuleDef('直播', Icons.live_tv, () => (LivePage())),
+  '浏览器': ModuleDef('浏览器', Icons.language, () => (BrowserPage())),
+  '相册': ModuleDef('相册', Icons.photo_library_outlined, () => (GalleryPage())),
+  '文件': ModuleDef('文件', Icons.folder_outlined, () => (FilesPage())),
+  '我的': ModuleDef('我的', Icons.person_outline, () => (const ProfilePage())),
   // ═══ 规划文档 v2.0 全量模块框架(骨架页, 功能按版本逐步落地) ═══
   // ── Work 模式 ──
   // ★原名「作业中心」极易被理解成"学生写作业"，实际是本地**任务调度运行时**
   //   (作业队列/步骤回放/定时调度/模板/归档/待确认审批)，故改名。
-  '自动化任务': ModuleDef('自动化任务', Icons.auto_mode_outlined,() => (const JobCenterPage())),
+  '自动化任务': ModuleDef(
+      '自动化任务', Icons.auto_mode_outlined, () => (const JobCenterPage())),
   // ── 私有数据 ──
-  '笔记': ModuleDef('笔记', Icons.edit_note,() => (NotesPage())),
-  '待办': ModuleDef('待办', Icons.check_circle_outline,() => (TodoPage())),
-  '录音机': ModuleDef('录音机', Icons.mic_none,() => (RecorderPage())),
-  '日历': ModuleDef('日历', Icons.calendar_month_outlined,() => (CalendarPage())),
-  '提醒中心': ModuleDef('提醒中心', Icons.alarm,() => (RemindersPage())),
-  '日记': ModuleDef('日记', Icons.book_outlined,() => (DiaryPage())),
+  '笔记': ModuleDef('笔记', Icons.edit_note, () => (NotesPage())),
+  '待办': ModuleDef('待办', Icons.check_circle_outline, () => (TodoPage())),
+  '录音机': ModuleDef('录音机', Icons.mic_none, () => (RecorderPage())),
+  '日历': ModuleDef('日历', Icons.calendar_month_outlined, () => (CalendarPage())),
+  '提醒中心': ModuleDef('提醒中心', Icons.alarm, () => (RemindersPage())),
+  '日记': ModuleDef('日记', Icons.book_outlined, () => (DiaryPage())),
   '记账': ModuleDef(
-      '记账', Icons.account_balance_wallet_outlined,() => (LedgerPage())),
-  '剪贴板': ModuleDef('剪贴板', Icons.content_paste,() => (ClipboardPage())),
-  '书签': ModuleDef('书签', Icons.bookmark_border,() => (BookmarksPage())),
-  '代码片段': ModuleDef('代码片段', Icons.code,() => (SnippetsPage())),
-  'Markdown': ModuleDef('Markdown', Icons.text_fields,() => (MarkdownPage())),
-  '健康记录': ModuleDef('健康记录', Icons.favorite_border,() => (HealthPage())),
+      '记账', Icons.account_balance_wallet_outlined, () => (LedgerPage())),
+  '剪贴板': ModuleDef('剪贴板', Icons.content_paste, () => (ClipboardPage())),
+  '书签': ModuleDef('书签', Icons.bookmark_border, () => (BookmarksPage())),
+  '代码片段': ModuleDef('代码片段', Icons.code, () => (SnippetsPage())),
+  'Markdown': ModuleDef('Markdown', Icons.text_fields, () => (MarkdownPage())),
+  '健康记录': ModuleDef('健康记录', Icons.favorite_border, () => (HealthPage())),
   '通讯录备份':
-      ModuleDef('通讯录备份', Icons.contacts_outlined,() => (ContactsBackupPage())),
-  '短信备份': ModuleDef('短信备份', Icons.sms_outlined,() => (SmsBackupPage())),
+      ModuleDef('通讯录备份', Icons.contacts_outlined, () => (ContactsBackupPage())),
+  '短信备份': ModuleDef('短信备份', Icons.sms_outlined, () => (SmsBackupPage())),
   // ── 内容消费 ──
-  '播客': ModuleDef('播客', Icons.podcasts,() => (PodcastPage())),
-  '有声书': ModuleDef('有声书', Icons.headphones_outlined,() => (AudiobookPage())),
-  '广播': ModuleDef('广播', Icons.radio,() => (RadioPage())),
-  '短剧': ModuleDef('短剧', Icons.movie_outlined,() => (ShortPlayPage())),
-  '壁纸': ModuleDef('壁纸', Icons.wallpaper,() => (WallpaperPage())),
-  '资讯': ModuleDef('资讯', Icons.newspaper,() => (NewsPage())),
-  '天气与快递': ModuleDef('天气与快递', Icons.wb_sunny_outlined,() => (WeatherPage())),
-  '菜谱': ModuleDef('菜谱', Icons.restaurant_menu,() => (RecipePage())),
+  '播客': ModuleDef('播客', Icons.podcasts, () => (PodcastPage())),
+  '有声书': ModuleDef('有声书', Icons.headphones_outlined, () => (AudiobookPage())),
+  '广播': ModuleDef('广播', Icons.radio, () => (RadioPage())),
+  '短剧': ModuleDef('短剧', Icons.movie_outlined, () => (ShortPlayPage())),
+  '壁纸': ModuleDef('壁纸', Icons.wallpaper, () => (WallpaperPage())),
+  '资讯': ModuleDef('资讯', Icons.newspaper, () => (NewsPage())),
+  '天气与快递': ModuleDef('天气与快递', Icons.wb_sunny_outlined, () => (WeatherPage())),
+  '菜谱': ModuleDef('菜谱', Icons.restaurant_menu, () => (RecipePage())),
   // ★原名「学习工具」名不副实：页面里只有"单词卡/背诵卡"一种功能，故改名。
-  '记忆卡': ModuleDef('记忆卡', Icons.style_outlined,() => (StudyPage())),
-  '课程表': ModuleDef('课程表', Icons.table_chart_outlined,() => (TimetablePage())),
+  '记忆卡': ModuleDef('记忆卡', Icons.style_outlined, () => (StudyPage())),
+  '课程表': ModuleDef('课程表', Icons.table_chart_outlined, () => (TimetablePage())),
   // ── 工具效率 ──
-  '翻译': ModuleDef('翻译', Icons.translate,() => (TranslatePage())),
-  '扫描仪': ModuleDef('扫描仪', Icons.document_scanner_outlined,() => (ScannerPage())),
-  '二维码': ModuleDef('二维码', Icons.qr_code_scanner,() => (QrPage())),
-  '悬浮便签': ModuleDef('悬浮便签', Icons.note_alt_outlined,() => (QuickNotePage())),
-  '计算器': ModuleDef('计算器', Icons.calculate_outlined,() => (CalcPage())),
-  '白板': ModuleDef('白板', Icons.draw_outlined,() => (WhiteboardPage())),
+  '翻译': ModuleDef('翻译', Icons.translate, () => (TranslatePage())),
+  '扫描仪':
+      ModuleDef('扫描仪', Icons.document_scanner_outlined, () => (ScannerPage())),
+  '二维码': ModuleDef('二维码', Icons.qr_code_scanner, () => (QrPage())),
+  '悬浮便签': ModuleDef('悬浮便签', Icons.note_alt_outlined, () => (QuickNotePage())),
+  '计算器': ModuleDef('计算器', Icons.calculate_outlined, () => (CalcPage())),
+  '白板': ModuleDef('白板', Icons.draw_outlined, () => (WhiteboardPage())),
   '文本工具箱':
-      ModuleDef('文本工具箱', Icons.text_snippet_outlined,() => (TextToolsPage())),
-  '传感器': ModuleDef('传感器', Icons.sensors,() => (SensorPage())),
-  '文件互传': ModuleDef('文件互传', Icons.send_to_mobile_outlined,() => (FileSharePage())),
-  '远程打印': ModuleDef('远程打印', Icons.print_outlined,() => (const RemotePrintPage())),
+      ModuleDef('文本工具箱', Icons.text_snippet_outlined, () => (TextToolsPage())),
+  '传感器': ModuleDef('传感器', Icons.sensors, () => (SensorPage())),
+  '文件互传':
+      ModuleDef('文件互传', Icons.send_to_mobile_outlined, () => (FileSharePage())),
+  '远程打印':
+      ModuleDef('远程打印', Icons.print_outlined, () => (const RemotePrintPage())),
   // ── 家庭/多端 ──
-  '共享相册': ModuleDef('共享相册', Icons.photo_library_outlined,() => (SharedAlbumPage())),
-  '共享清单': ModuleDef('共享清单', Icons.checklist_outlined,() => (SharedListPage())),
-  '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined,() => (HomeCinemaPage())),
-  '家庭音乐库': ModuleDef('家庭音乐库', Icons.library_music_outlined,() => (HomeMusicPage())),
-  '摄像头': ModuleDef('摄像头', Icons.videocam_outlined,() => (CameraPage())),
-  '智能家居': ModuleDef('智能家居', Icons.home_outlined,() => (const SmartHomePage())),
-  '设备互联': ModuleDef('设备互联', Icons.devices_outlined,() => (DeviceLinkPage())),
-  '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined,() => (const CalendarPage(storageKey: 'family_calendar_events'))),
+  '共享相册': ModuleDef(
+      '共享相册', Icons.photo_library_outlined, () => (SharedAlbumPage())),
+  '共享清单': ModuleDef('共享清单', Icons.checklist_outlined, () => (SharedListPage())),
+  '家庭影院': ModuleDef('家庭影院', Icons.weekend_outlined, () => (HomeCinemaPage())),
+  '家庭音乐库':
+      ModuleDef('家庭音乐库', Icons.library_music_outlined, () => (HomeMusicPage())),
+  '摄像头': ModuleDef('摄像头', Icons.videocam_outlined, () => (CameraPage())),
+  '智能家居': ModuleDef('智能家居', Icons.home_outlined, () => (const SmartHomePage())),
+  '设备互联': ModuleDef('设备互联', Icons.devices_outlined, () => (DeviceLinkPage())),
+  '家庭日历': ModuleDef('家庭日历', Icons.family_restroom_outlined,
+      () => (const CalendarPage(storageKey: 'family_calendar_events'))),
   // ── 聚合入口(一个模块装一类, 导航栏不再排长队) ──
   '工具箱': ModuleDef(
       '工具箱',
-      Icons.construction_outlined,() => (ModuleHubPage(
-          name: '工具箱',
-          icon: Icons.construction_outlined,
-          desc: '效率工具聚合: 翻译/扫描/二维码/计算器等一处直达',
-          children: [
-            '翻译',
-            '扫描仪',
-            '二维码',
-            '悬浮便签',
-            '计算器',
-            '白板',
-            '文本工具箱',
-            '传感器',
-            '文件互传',
-            '远程打印'
-          ]))),
+      Icons.construction_outlined,
+      () => (ModuleHubPage(
+              name: '工具箱',
+              icon: Icons.construction_outlined,
+              desc: '效率工具聚合: 翻译/扫描/二维码/计算器等一处直达',
+              children: [
+                '翻译',
+                '扫描仪',
+                '二维码',
+                '悬浮便签',
+                '计算器',
+                '白板',
+                '文本工具箱',
+                '传感器',
+                '文件互传',
+                '远程打印'
+              ]))),
   '家庭中心': ModuleDef(
       '家庭中心',
-      Icons.home_work_outlined,() => (ModuleHubPage(
-          name: '家庭中心',
-          icon: Icons.home_work_outlined,
-          desc: '家庭/多端聚合: 共享相册/影院/智能家居等一处直达',
-          children: [
-            '共享相册',
-            '共享清单',
-            '家庭影院',
-            '家庭音乐库',
-            '摄像头',
-            '智能家居',
-            '设备互联',
-            '家庭日历'
-          ]))),
+      Icons.home_work_outlined,
+      () => (ModuleHubPage(
+              name: '家庭中心',
+              icon: Icons.home_work_outlined,
+              desc: '家庭/多端聚合: 共享相册/影院/智能家居等一处直达',
+              children: [
+                '共享相册',
+                '共享清单',
+                '家庭影院',
+                '家庭音乐库',
+                '摄像头',
+                '智能家居',
+                '设备互联',
+                '家庭日历'
+              ]))),
   // ★2026-09-19 用户反馈"功能全拆开了、找的时候非常麻烦"→ 按**同一使用场景**合并：
   //   只有"同一件事的不同步骤/同类物"才合进一个入口，避免又造出一堆平级模块。
   '学习中心': ModuleDef(
       '学习中心',
-      Icons.school_outlined,() => (ModuleHubPage(
+      Icons.school_outlined,
+      () => (ModuleHubPage(
           name: '学习中心',
           icon: Icons.school_outlined,
           desc: '学习聚合: 记忆卡(背单词/问答卡) + 课程表',
           children: ['记忆卡', '课程表']))),
   '音频中心': ModuleDef(
       '音频中心',
-      Icons.headphones,() => (ModuleHubPage(
+      Icons.headphones,
+      () => (ModuleHubPage(
           name: '音频中心',
           icon: Icons.headphones,
           desc: '「听」的聚合: 播客/有声书/广播电台一处直达（音乐播放器仍在「音乐」）',
           children: ['播客', '有声书', '广播']))),
   '记录中心': ModuleDef(
       '记录中心',
-      Icons.edit_note,() => (ModuleHubPage(
+      Icons.edit_note,
+      () => (ModuleHubPage(
           name: '记录中心',
           icon: Icons.edit_note,
           desc: '随手写与临时存: 笔记/日记/便签/Markdown/代码片段/书签/剪贴板',
           children: ['笔记', '日记', '悬浮便签', 'Markdown', '代码片段', '书签', '剪贴板']))),
   '备份迁移': ModuleDef(
       '备份迁移',
-      Icons.settings_backup_restore,() => (ModuleHubPage(
+      Icons.settings_backup_restore,
+      () => (ModuleHubPage(
           name: '备份迁移',
           icon: Icons.settings_backup_restore,
           desc: '换机/存档: 通讯录与短信备份一处直达',
@@ -9691,6 +9739,7 @@ class RootNav extends StatefulWidget {
   // 当前模块广播(模块切换时 +1): AI 抽屉等用它静默收起, 避免切模块误触发侧边栏
   static final ValueNotifier<int> moduleTick = ValueNotifier(0);
   static String currentModuleKey = '';
+
   /// 根导航 State 的全局登记：给「被 Navigator.push 打开的独立路由里的 ⋯ 按钮」兜底
   /// （那些页面祖先链里没有 _RootNavState，原来会静默失效 → 表现为"点了没反应"）。见 modMenuBtn。
   static _RootNavState? inst;
@@ -9917,7 +9966,6 @@ class _RootNavState extends State<RootNav> {
       }
     };
 
-
     LocalHooks.gotoModule = (m) async {
       final name = m.trim();
       var i = enabled.indexOf(name);
@@ -10084,7 +10132,8 @@ class _RootNavState extends State<RootNav> {
     // ★ 5.2.3/§5.3（iOS）：第三方采集类模块整体不进导航（如「直播」）。
     //   只滤**显示**，回写仍用 migrated 全量 —— 平台门不该改写用户的模块意愿，
     //   否则 iOS 端一启动就把「直播」从共享布局里抹掉，Android 端跟着丢。
-    final visible = migrated.where((k) => currentGate().allowModule(k)).toList();
+    final visible =
+        migrated.where((k) => currentGate().allowModule(k)).toList();
     setState(() {
       enabled = visible;
       if (idx >= enabled.length) idx = 0;
@@ -10408,8 +10457,9 @@ class _RootNavState extends State<RootNav> {
     // ★2026-10-30：原来是 `kModules[key]!` —— 模块被下线/键漂移时这里直接抛
     // null check 异常，整个菜单等于"点了没反应"（异常被 Flutter 吞掉，用户只看到没反应）。
     if (mod == null) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('模块「$key」未注册，菜单不可用'), duration: const Duration(seconds: 2)));
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text('模块「$key」未注册，菜单不可用'),
+          duration: const Duration(seconds: 2)));
       return;
     }
     final fsNow = RootNav.fullscreen.value;
@@ -10505,12 +10555,20 @@ class _RootNavState extends State<RootNav> {
                     const ReadStatsPage()),
               if (key == '视频' || key == '音乐') ...[
                 // ★播放设置（2026-10-12）：续播/连播/长按 2x/步长/倍速收拢一处。
-                proEntry(c2, Icons.tune_outlined, '播放设置',
-                    '续播 · 自动连播 · 长按 2x · 步长 · 倍速', const PlaybackSettingsPage()),
+                proEntry(
+                    c2,
+                    Icons.tune_outlined,
+                    '播放设置',
+                    '续播 · 自动连播 · 长按 2x · 步长 · 倍速',
+                    const PlaybackSettingsPage()),
                 // ★高级播放设置（2026-10-14）：手势 / 字幕 / 弹幕 / 画面比例 / 跳过片头片尾 /
                 //   硬件解码 / 后台播放 / 缓存策略等，分五组共 29 项 —— 对齐主流播放器的功能矩阵。
-                proEntry(c2, Icons.high_quality_outlined, '高级播放设置',
-                    '手势 · 字幕 · 弹幕 · 画面 · 解码 · 缓存', const AdvancedPlaybackPage()),
+                proEntry(
+                    c2,
+                    Icons.high_quality_outlined,
+                    '高级播放设置',
+                    '手势 · 字幕 · 弹幕 · 画面 · 解码 · 缓存',
+                    const AdvancedPlaybackPage()),
                 proEntry(c2, Icons.cast_outlined, tr('影音进阶'),
                     tr('投屏 DLNA · 下载归一 · 画中画'), const MediaProPage()),
                 proEntry(c2, Icons.play_circle_outline, '最近播放', '',
@@ -11072,7 +11130,8 @@ Future<void> showNavSettings(BuildContext c) async {
   final saved = migrateModuleKeys(p.getStringList('nav_modules') ?? ['我的']);
   final order = <String>[
     // ★ iOS：第三方采集类模块（直播）不进选择器 —— 平台门收口（§5.3）
-    ...saved.where((k) => kModules.containsKey(k) && currentGate().allowModule(k))
+    ...saved
+        .where((k) => kModules.containsKey(k) && currentGate().allowModule(k))
   ]; // 已启用(可拖动排序)
   final sel = order.toSet();
   // 未启用模块按分类树状分组
@@ -11247,21 +11306,27 @@ class _At extends State<AccountTile> {
                 builder: (c2, setSt) {
                   void fail(String m) => setSt(() => tip = m);
                   return AlertDialog(
-                      title: Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
-                      content: Column(mainAxisSize: MainAxisSize.min, children: [
+                      title:
+                          Text(isLogin ? '登录 ThirdHub 账号' : '注册 ThirdHub 账号'),
+                      content:
+                          Column(mainAxisSize: MainAxisSize.min, children: [
                         TextField(
                             controller: mailC,
                             autofocus: true,
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
-                            onChanged: (_) { if (tip != null) fail(''); },
+                            onChanged: (_) {
+                              if (tip != null) fail('');
+                            },
                             decoration: const InputDecoration(
                                 labelText: '邮箱', isDense: true)),
                         TextField(
                             controller: passC,
                             obscureText: obscure,
                             textInputAction: TextInputAction.done,
-                            onChanged: (_) { if (tip != null) fail(''); },
+                            onChanged: (_) {
+                              if (tip != null) fail('');
+                            },
                             onSubmitted: (_) {
                               final m = mailC.text.trim();
                               final p = passC.text;
@@ -11294,7 +11359,8 @@ class _At extends State<AccountTile> {
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Text(tip!,
                                   style: const TextStyle(
-                                      fontSize: 11.5, color: Colors.redAccent))),
+                                      fontSize: 11.5,
+                                      color: Colors.redAccent))),
                         const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
                             style: TextStyle(fontSize: 11, color: Colors.grey)),
                       ]),
@@ -12780,8 +12846,8 @@ class _Lvp extends State<LocalVideoPlayerPage> {
     if (r <= 0) {
       _sleepTimer?.cancel();
       setState(() => _sleepEnd = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已取消定时关闭')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已取消定时关闭')));
       return;
     }
     _sleepTimer?.cancel();
@@ -12790,13 +12856,14 @@ class _Lvp extends State<LocalVideoPlayerPage> {
       ctrl?.pause();
       if (mounted) {
         setState(() => _sleepEnd = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('定时关闭：已暂停播放')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('定时关闭：已暂停播放')));
       }
     });
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('$r 分钟后自动暂停')));
   }
+
   // 外挂字幕: 同目录同前缀的 srt/vtt/ass 自动挂上, 可在右上角切换或关闭
   List<String> _subs = <String>[];
   List<Cue> _cues = <Cue>[];
@@ -13074,7 +13141,9 @@ class _Lvp extends State<LocalVideoPlayerPage> {
               // ★视频定时关闭（2026-10-12）。
               IconButton(
                   icon: Icon(
-                      _sleepEnd == null ? Icons.bedtime_outlined : Icons.bedtime,
+                      _sleepEnd == null
+                          ? Icons.bedtime_outlined
+                          : Icons.bedtime,
                       size: 20,
                       color: _sleepEnd == null ? null : Colors.blueAccent),
                   tooltip: '定时关闭',
@@ -13512,8 +13581,7 @@ class ScreenFit {
   }
 
   /// 页面留白随档位走：手表 8 / compact 14 / medium 起 20。
-  static double get pad =>
-      isWatch ? 8 : (cls == WindowClass.compact ? 14 : 20);
+  static double get pad => isWatch ? 8 : (cls == WindowClass.compact ? 14 : 20);
   static double contentWidth(double w) =>
       w >= Breakpoints.expandedMin ? 900 : w;
 }
@@ -14156,16 +14224,16 @@ class _Ape extends State<AppearancePage> {
           ListTile(
               leading: const Icon(Icons.animation_outlined, size: 20),
               title: Text(tr('动效强度'), style: const TextStyle(fontSize: 14)),
-              subtitle: Text(tr('关闭可提升低端机流畅度'),
-                  style: const TextStyle(fontSize: 11)),
+              subtitle:
+                  Text(tr('关闭可提升低端机流畅度'), style: const TextStyle(fontSize: 11)),
               trailing: SizedBox(
                   width: 168,
                   child: SpringSegments<String>(
                     values: const ['full', 'calm', 'off'],
                     labels: [tr('流畅'), tr('轻动效'), tr('关闭')],
                     value: AppSettings.motionLevel,
-                    onChanged: (v) =>
-                        AppSettings.setMotionLevel(v).then((_) => setState(() {})),
+                    onChanged: (v) => AppSettings.setMotionLevel(v)
+                        .then((_) => setState(() {})),
                   ))),
           const Divider(height: 1, indent: 56),
           ListTile(
@@ -14256,7 +14324,10 @@ Widget _skinSwatch(BuildContext c, Skin sk) {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [sk.seed, Color.alphaBlend(Colors.white.withValues(alpha: 0.35), sk.seed)],
+              colors: [
+                sk.seed,
+                Color.alphaBlend(Colors.white.withValues(alpha: 0.35), sk.seed)
+              ],
             ),
             border: Border.all(
                 color: sel
@@ -14274,7 +14345,10 @@ Widget _skinSwatch(BuildContext c, Skin sk) {
             style: TextStyle(
               fontSize: 11,
               fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: sel ? 1 : 0.6),
+              color: Theme.of(c)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: sel ? 1 : 0.6),
             )),
       ],
     ),
@@ -14490,7 +14564,8 @@ class _Sy extends State<SystemPage> {
           ListTile(
               leading: const Icon(Icons.dns_outlined, size: 20),
               title: const Text('资源库状态', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('查看后端与在线资料库', style: TextStyle(fontSize: 11)),
+              subtitle:
+                  const Text('查看后端与在线资料库', style: TextStyle(fontSize: 11)),
               onTap: () => Navigator.push(c, smoothRoute(const EnginesPage()))),
           const Divider(height: 1, indent: 56),
           ListTile(
@@ -14639,7 +14714,9 @@ class _CloudPageState extends State<CloudPage> {
         Cloud.profileData['expire_at'] ?? Cloud.profileData['expireAt'];
     final MemberLevel lv = memberLevelById(levelId);
     final String levelLine = memberSubtitle(
-        loggedIn: logged, levelId: levelId, expireAt: expRaw == null ? null : '$expRaw');
+        loggedIn: logged,
+        levelId: levelId,
+        expireAt: expRaw == null ? null : '$expRaw');
     return Scaffold(
         appBar: AppBar(title: Text(tr('云端'))),
         body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
@@ -14656,8 +14733,7 @@ class _CloudPageState extends State<CloudPage> {
                 leading: Icon(Icons.workspace_premium_outlined,
                     size: 20, color: Color(lv.colorValue)),
                 title: Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
-                subtitle: Text(levelLine,
-                    style: const TextStyle(fontSize: 11)),
+                subtitle: Text(levelLine, style: const TextStyle(fontSize: 11)),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () => _openLevel(levelLine)),
           ])),
@@ -14760,7 +14836,8 @@ class _Ei extends State<EngineItemPage> {
   String get introS => '${widget.item['intro'] ?? ''}';
 
   /// 这本书来自哪个源（引擎搜索结果带的 `sourceName`，引擎侧扩展字段）。
-  String get sourceName => '${widget.item['sourceName'] ?? widget.item['originName'] ?? ''}';
+  String get sourceName =>
+      '${widget.item['sourceName'] ?? widget.item['originName'] ?? ''}';
 
   /// 页面级提示（与本页既有的 SnackBar 用法一致）。
   void _toast(String s) {
@@ -14799,7 +14876,9 @@ class _Ei extends State<EngineItemPage> {
     // 只认「书名完全一致」的，且必须**换了个源** —— 换源换源，换回自己没意义
     final sameName =
         found.where((it) => '${it['name'] ?? ''}'.trim() == q).toList();
-    final other = sameName.where((it) => '${it['sourceName'] ?? ''}' != sourceName).toList();
+    final other = sameName
+        .where((it) => '${it['sourceName'] ?? ''}' != sourceName)
+        .toList();
     final pool = other.isNotEmpty
         ? other
         : (sameName.isNotEmpty ? sameName : <Map<String, dynamic>>[]);
@@ -14823,9 +14902,9 @@ class _Ei extends State<EngineItemPage> {
         context,
         MaterialPageRoute(
             builder: (_) => EngineItemPage(
-                type: 'novel',
-                item: Map<String, dynamic>.from(pool.first))));
+                type: 'novel', item: Map<String, dynamic>.from(pool.first))));
   }
+
   bool shelved = false;
 
   // ── ★4.51.0 详情页信息补全（用户：「前端和引擎之间丢失了太多信息了」）──
@@ -14887,7 +14966,6 @@ class _Ei extends State<EngineItemPage> {
   }
 
   bool extraOpen = false; // 自由字段是否展开
-
 
   /// 标签原文（引擎扩展字段；`tags` 是部分引擎的别名）。
   String get kindS =>
@@ -15295,41 +15373,57 @@ class _Ei extends State<EngineItemPage> {
                                     // ★2026-10-16 评分 / 状态（引擎给哪个显示哪个）
                                     if (scoreS.isNotEmpty || statusS.isNotEmpty)
                                       Padding(
-                                          padding: const EdgeInsets.only(top: 4),
+                                          padding:
+                                              const EdgeInsets.only(top: 4),
                                           child: Row(children: [
                                             if (scoreS.isNotEmpty)
                                               Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                      horizontal: 6, vertical: 1),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 1),
                                                   decoration: BoxDecoration(
                                                       color: Colors.amber
-                                                          .withValues(alpha: 0.15),
+                                                          .withValues(
+                                                              alpha: 0.15),
                                                       borderRadius:
-                                                          BorderRadius.circular(4)),
-                                                  child: Row(mainAxisSize: MainAxisSize.min,
+                                                          BorderRadius.circular(
+                                                              4)),
+                                                  child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
                                                       children: [
-                                                    const Icon(Icons.star_rounded,
-                                                        size: 11,
-                                                        color: Colors.amber),
-                                                    const SizedBox(width: 2),
-                                                    Text(scoreS,
-                                                        style: const TextStyle(
-                                                            fontSize: 11,
-                                                            fontWeight: FontWeight.w700,
-                                                            color: Colors.amber)),
-                                                  ])),
-                                            if (scoreS.isNotEmpty && statusS.isNotEmpty)
+                                                        const Icon(
+                                                            Icons.star_rounded,
+                                                            size: 11,
+                                                            color:
+                                                                Colors.amber),
+                                                        const SizedBox(
+                                                            width: 2),
+                                                        Text(scoreS,
+                                                            style: const TextStyle(
+                                                                fontSize: 11,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                color: Colors
+                                                                    .amber)),
+                                                      ])),
+                                            if (scoreS.isNotEmpty &&
+                                                statusS.isNotEmpty)
                                               const SizedBox(width: 8),
                                             if (statusS.isNotEmpty)
                                               Text(statusS,
                                                   style: const TextStyle(
                                                       fontSize: 11,
-                                                      color: Colors.blueAccent)),
+                                                      color:
+                                                          Colors.blueAccent)),
                                           ])),
                                     // ★2026-10-16 地区 · 年份 · 更新时间（有哪项拼哪项）
                                     if (metaLine.isNotEmpty)
                                       Padding(
-                                          padding: const EdgeInsets.only(top: 3),
+                                          padding:
+                                              const EdgeInsets.only(top: 3),
                                           child: Text(metaLine,
                                               style: const TextStyle(
                                                   fontSize: 10.5,
@@ -15341,8 +15435,8 @@ class _Ei extends State<EngineItemPage> {
                                           onTap: () => setState(
                                               () => extraOpen = !extraOpen),
                                           child: Padding(
-                                              padding: const EdgeInsets.only(
-                                                  top: 4),
+                                              padding:
+                                                  const EdgeInsets.only(top: 4),
                                               child: Row(
                                                   mainAxisSize:
                                                       MainAxisSize.min,
@@ -15353,12 +15447,14 @@ class _Ei extends State<EngineItemPage> {
                                                             : '更多详情 (${extraPairs.length})',
                                                         style: const TextStyle(
                                                             fontSize: 10.5,
-                                                            color:
-                                                                Colors.blueAccent)),
+                                                            color: Colors
+                                                                .blueAccent)),
                                                     Icon(
                                                         extraOpen
-                                                            ? Icons.keyboard_arrow_up
-                                                            : Icons.keyboard_arrow_down,
+                                                            ? Icons
+                                                                .keyboard_arrow_up
+                                                            : Icons
+                                                                .keyboard_arrow_down,
                                                         size: 13,
                                                         color:
                                                             Colors.blueAccent),
@@ -15372,8 +15468,7 @@ class _Ei extends State<EngineItemPage> {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   for (final e in extraPairs)
-                                                    Text(
-                                                        '${e.key}：${e.value}',
+                                                    Text('${e.key}：${e.value}',
                                                         style: const TextStyle(
                                                             fontSize: 10.5,
                                                             color: Colors.grey,
@@ -15479,7 +15574,214 @@ class _Ei extends State<EngineItemPage> {
                                         fontSize: 12,
                                         color: Colors.blueAccent))),
                             onTap: () => setState(() => chapOpen = !chapOpen))),
+                  // ── 评论区 + 点赞（仅漫画；引擎 THP /thp/comments、/thp/like）──
+                  if (widget.type == 'comic')
+                    SliverToBoxAdapter(
+                        child: _EiComments(
+                            type: widget.type,
+                            id: id,
+                            initialLiked: widget.item['isLiked'] == true,
+                            initialLikes: widget.item['likesCount'] is int
+                                ? widget.item['likesCount'] as int
+                                : null)),
                 ]));
+}
+
+// ─── 漫画评论区 + 点赞（引擎 THP /thp/comments、/thp/like，2026-10-31）───
+///
+/// 为什么独立组件：评论列表自己有「分页/加载更多/不支持」三套状态，
+/// 若塞进详情页的 setState 里，展开目录等任意动作都会把分页进度清掉。
+/// 引擎侧 commentsLoader/likeOrUnlikeComic 能力一直存在（Venera 模型自带），
+/// 只是 THP 此前没暴露端点 —— 引擎 1.10.10 起可用，旧引擎包返回
+/// 「未知端点」→ 这里落成「该图源不支持评论」的灰色提示，不报错弹栈。
+class _EiComments extends StatefulWidget {
+  final String type;
+  final String id;
+  final bool initialLiked;
+  final int? initialLikes;
+  const _EiComments(
+      {required this.type,
+      required this.id,
+      this.initialLiked = false,
+      this.initialLikes});
+  @override
+  State<_EiComments> createState() => _EiC();
+}
+
+class _EiC extends State<_EiComments> {
+  final List<Map<String, dynamic>> items = [];
+  int page = 0;
+  bool loading = true;
+  bool loadingMore = false;
+  bool hasMore = true;
+  String unsupported = '';
+  late bool liked = widget.initialLiked;
+  int? likes = widget.initialLikes;
+  bool liking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (loadingMore || !hasMore || unsupported.isNotEmpty) return;
+    setState(() => loadingMore = true);
+    try {
+      final next =
+          await EngineDirect.comments(widget.type, widget.id, page: page + 1);
+      if (!mounted) return;
+      setState(() {
+        page += 1;
+        loading = false;
+        loadingMore = false;
+        if (next.isEmpty) {
+          hasMore = false;
+        } else {
+          items.addAll(next);
+          // 不满一页视为到底（引擎 hasMore 不可靠时的兜底）
+          if (next.length < 20) hasMore = false;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final msg = '$e';
+      setState(() {
+        loading = false;
+        loadingMore = false;
+        if (page == 0 &&
+            (msg.contains('未知端点') ||
+                msg.contains('UNSUPPORTED') ||
+                msg.contains('NOT_FOUND') ||
+                msg.contains('HTTP 404'))) {
+          unsupported = tr('该图源不支持评论');
+          hasMore = false;
+        }
+      });
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (liking) return;
+    setState(() => liking = true);
+    try {
+      final now =
+          await EngineDirect.likeItem(widget.type, widget.id, isLiking: !liked);
+      if (!mounted) return;
+      setState(() {
+        liked = now;
+        if (likes != null) likes = likes! + (now ? 1 : -1);
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('${tr('点赞')} · ${tr('失败')}')));
+      }
+    } finally {
+      if (mounted) setState(() => liking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final cs = Theme.of(c).colorScheme;
+    return SizedBox(
+        height: 340,
+        child: Column(children: [
+          Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 2),
+              child: Row(children: [
+                const Icon(Icons.mode_comment_outlined,
+                    size: 15, color: Colors.grey),
+                const SizedBox(width: 5),
+                Text(tr('评论'),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                ActionChip(
+                    avatar: Icon(liked ? Icons.favorite : Icons.favorite_border,
+                        size: 16, color: liked ? Colors.redAccent : null),
+                    label: Text(likes == null ? tr('点赞') : '$likes'),
+                    onPressed: liking ? null : _toggleLike,
+                    visualDensity: VisualDensity.compact),
+                const SizedBox(width: 6),
+              ])),
+          const Divider(height: 1),
+          Expanded(child: () {
+            if (loading) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (unsupported.isNotEmpty) {
+              return Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(unsupported,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey))));
+            }
+            if (items.isEmpty) {
+              return Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(tr('暂无评论'),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey))));
+            }
+            return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+                itemCount: items.length + (hasMore ? 1 : 0),
+                separatorBuilder: (_, __) => const Divider(height: 12),
+                itemBuilder: (_, i) {
+                  if (i >= items.length) {
+                    return TextButton(
+                        onPressed: _loadMore,
+                        child: Text(loadingMore ? tr('加载中') : tr('加载更多'),
+                            style: const TextStyle(fontSize: 12)));
+                  }
+                  final it = items[i];
+                  final who = '${it['userName'] ?? ''}';
+                  final body = '${it['content'] ?? ''}';
+                  final time = '${it['time'] ?? ''}';
+                  return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                            radius: 14,
+                            backgroundColor: cs.surfaceContainerHighest,
+                            backgroundImage: (it['avatar'] ?? '') != ''
+                                ? NetworkImage('${it['avatar']}')
+                                : null,
+                            child: (it['avatar'] ?? '') == ''
+                                ? Text(
+                                    who.isNotEmpty ? who.substring(0, 1) : '?',
+                                    style: const TextStyle(fontSize: 12))
+                                : null),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                              Text(who.isNotEmpty ? who : tr('评论'),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w500)),
+                              if (time.isNotEmpty)
+                                Text(time,
+                                    style: const TextStyle(
+                                        fontSize: 10, color: Colors.grey)),
+                              const SizedBox(height: 2),
+                              Text(body, style: const TextStyle(fontSize: 13)),
+                            ])),
+                      ]);
+                });
+          }()),
+        ]));
+  }
 }
 
 // 直链视频播放器(引擎直连内容用)
@@ -15657,13 +15959,13 @@ class _Ecr extends State<EngineComicReader> {
   /// 保存本话到本机（断网也能看）。
   Future<void> _saveOfflineC() async {
     if (_fromLocal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('本话已经保存过了')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('本话已经保存过了')));
       return;
     }
     if (images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('本话还没有图片，等加载出来再保存')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('本话还没有图片，等加载出来再保存')));
       return;
     }
     final s = await OfflineUI.mediaDownload(context,
@@ -15718,9 +16020,8 @@ class _Ecr extends State<EngineComicReader> {
     return Image.network(images[i],
         headers: headers,
         fit: fit,
-        loadingBuilder: (_, w, q) => q == null
-            ? w
-            : const Center(child: CircularProgressIndicator()),
+        loadingBuilder: (_, w, q) =>
+            q == null ? w : const Center(child: CircularProgressIndicator()),
         errorBuilder: (_, __, ___) =>
             const Icon(Icons.broken_image, color: Colors.grey));
   }
@@ -15734,9 +16035,9 @@ class _Ecr extends State<EngineComicReader> {
             // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
             if (OfflineUI.batchDownloadAllowed)
               IconButton(
-                  icon: offlineActionIcon(done: _fromLocal, busy: false, size: 20),
-                  tooltip:
-                      _fromLocal ? '本话已保存到本机' : '保存本话到本机（断网也能看）',
+                  icon: offlineActionIcon(
+                      done: _fromLocal, busy: false, size: 20),
+                  tooltip: _fromLocal ? '本话已保存到本机' : '保存本话到本机（断网也能看）',
                   onPressed: _saveOfflineC),
             IconButton(
                 icon: Icon(paged ? Icons.view_day : Icons.chrome_reader_mode,
@@ -15758,8 +16059,8 @@ class _Ecr extends State<EngineComicReader> {
                   ? PageView.builder(
                       controller: pc,
                       itemCount: images.length,
-                      itemBuilder: (_, i) => InteractiveViewer(
-                          child: Center(child: _img(i))))
+                      itemBuilder: (_, i) =>
+                          InteractiveViewer(child: Center(child: _img(i))))
                   : ListView.builder(
                       itemCount: images.length + 1,
                       itemBuilder: (_, i) {
