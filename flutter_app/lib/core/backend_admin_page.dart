@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../main.dart' show Api;
+import 'i18n.dart';
 
 class BackendAdminPage extends StatefulWidget { const BackendAdminPage({super.key}); @override State<BackendAdminPage> createState() => _Ba(); }
 
@@ -46,7 +47,7 @@ class _Ba extends State<BackendAdminPage> {
 
   @override Widget build(BuildContext c) => Scaffold(
     appBar: AppBar(title: const Text('后端管理'), actions: [
-      IconButton(icon: const Icon(Icons.refresh), tooltip: '刷新', onPressed: _load)]),
+      IconButton(icon: const Icon(Icons.refresh), tooltip: tr('刷新'), onPressed: _load)]),
     body: Api.base.isEmpty
       ? Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.dns_outlined, size: 48, color: Colors.grey),
@@ -146,7 +147,7 @@ class _Ba extends State<BackendAdminPage> {
           style: const TextStyle(fontSize: 11, color: Colors.grey)),
         const Spacer(),
         TextButton.icon(onPressed: _addTask, icon: const Icon(Icons.add_link, size: 15),
-          label: const Text('添加', style: TextStyle(fontSize: 12))),
+          label: Text(tr('添加'), style: TextStyle(fontSize: 12))),
       ]),
       for (final t in [...active, ...waiting, ...stopped.take(5)]) taskTile(Map<String, dynamic>.from(t as Map)),
       if (active.isEmpty && waiting.isEmpty && stopped.isEmpty)
@@ -174,7 +175,7 @@ class _Ba extends State<BackendAdminPage> {
       title: const Text('添加下载任务'),
       content: TextField(controller: ctrl, autofocus: true, maxLines: 3,
         decoration: const InputDecoration(hintText: '磁力链接 magnet: 或 直链 https://', isDense: true, border: OutlineInputBorder())),
-      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
+      actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
         FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('开始下载'))]));
     final u = ctrl.text.trim();
     if (ok != true || u.isEmpty) return;
