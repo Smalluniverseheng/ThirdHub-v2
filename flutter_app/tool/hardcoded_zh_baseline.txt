@@ -1,0 +1,1176 @@
+# 已存在的硬编码中文 UI 文案（ratchet 基线，只降不升）
+# 格式：<lib 下相对路径>\t<文案原文>
+# 修好一条就删掉对应的行；**不要因为想"变绿"而往里加行**。
+core/advanced_playback_page.dart	字幕颜色
+core/advanced_playback_page.dart	恢复默认
+core/advanced_playback_page.dart	把本页所有项恢复为默认值？已保存的观影偏好会一起重置。
+core/advanced_playback_page.dart	按钮点击 / 滑出面板时的轻震；关闭后完全静音
+core/advanced_playback_page.dart	提示：改动即时生效，下一次播放即按新设置执行。
+core/advanced_playback_page.dart	显示对话头像
+core/advanced_playback_page.dart	震动反馈
+core/advanced_playback_page.dart	高级播放设置
+core/advanced_playback_page.dart	默认不显示（纯文字更省空间）；想看到头像就打开
+core/ai_agent_page.dart	${_events.length} 条事件 · seq $_lastSeq
+core/ai_agent_page.dart	${d.hunks} 处改动 · +${d.added} −${d.removed}
+core/ai_agent_page.dart	① 对话风格  ② 全局指令  ③ 智能体人格  ④ 技能  ⑤ 长期记忆  ⑥ 会话钉注  ⑦ 工具清单
+core/ai_agent_page.dart	不加任何风格约束
+core/ai_agent_page.dart	不调工具
+core/ai_agent_page.dart	人格指令(system)
+core/ai_agent_page.dart	例: 我在杭州，做后端，习惯用 Dart
+core/ai_agent_page.dart	停止 DSH
+core/ai_agent_page.dart	允许一次
+core/ai_agent_page.dart	全局指令
+core/ai_agent_page.dart	全部
+core/ai_agent_page.dart	关闭时，改文件/删文件/写剪贴板等操作会先弹确认
+core/ai_agent_page.dart	写在这里的事实，之后「每个」会话都会自动带上。适合记"我是谁""我的偏好"。
+core/ai_agent_page.dart	写给所有会话的"使用说明书"，每轮对话都会带上。例：我是做后端的，少讲前端；回答先给结论。
+core/ai_agent_page.dart	协议 ${_h.protocolVersion.isEmpty ? 
+core/ai_agent_page.dart	去填后端地址
+core/ai_agent_page.dart	取消钉住
+core/ai_agent_page.dart	只作用于当前这条会话，每轮都会随请求带上。适合钉一份资料、一段规则。
+core/ai_agent_page.dart	只用 MCP
+core/ai_agent_page.dart	只用本机
+core/ai_agent_page.dart	只读不写
+core/ai_agent_page.dart	可执行 $a · 需确认 $c2 · 禁用 $d
+core/ai_agent_page.dart	可执行 ${s[
+core/ai_agent_page.dart	名称不能为空
+core/ai_agent_page.dart	启动 DSH
+core/ai_agent_page.dart	图标填图标键即可：robot / research / code / device / chart / writer / 
+core/ai_agent_page.dart	在这里写你的全局指令…
+core/ai_agent_page.dart	填 local / mcp 表示整类放行；也可写精确工具名或 local_file_* 前缀通配。留空 = 全部工具。
+core/ai_agent_page.dart	对话风格
+core/ai_agent_page.dart	展开全部（共 ${d.lines.length} 行）
+core/ai_agent_page.dart	工具: ${a.grant} · 最多 ${a.maxRounds} 轮
+core/ai_agent_page.dart	工具与权限
+core/ai_agent_page.dart	工具授权
+core/ai_agent_page.dart	已答复
+core/ai_agent_page.dart	已载入全文
+core/ai_agent_page.dart	当前实际档位：$_profile（不在普通用户可见列表内，仅管理侧使用）
+core/ai_agent_page.dart	待确认
+core/ai_agent_page.dart	拉取新事件
+core/ai_agent_page.dart	拒绝
+core/ai_agent_page.dart	收起
+core/ai_agent_page.dart	新任务
+core/ai_agent_page.dart	新建
+core/ai_agent_page.dart	智能体 = 人格 + 工具授权 + 轮数上限
+core/ai_agent_page.dart	智能体 · 任务 · 指令 · 记忆
+core/ai_agent_page.dart	暂无记录。工具的每次放行 / 拒绝 / 待确认都会在这里留痕。
+core/ai_agent_page.dart	最近审计
+core/ai_agent_page.dart	本次会话还没有钉注
+core/ai_agent_page.dart	本次会话钉注
+core/ai_agent_page.dart	权限档位
+core/ai_agent_page.dart	档位判定：$reason
+core/ai_agent_page.dart	模型与密钥
+core/ai_agent_page.dart	粘贴资料 / 写规则…
+core/ai_agent_page.dart	编辑记忆
+core/ai_agent_page.dart	自动批准工具执行
+core/ai_agent_page.dart	装配顺序（由弱到强）
+core/ai_agent_page.dart	记住
+core/ai_agent_page.dart	越靠后优先级越高；上下文超预算时自动折叠早期消息为摘要。
+core/ai_agent_page.dart	轮数上限(最多"想-做-看"几轮)
+core/ai_agent_page.dart	还没有记忆条目\n和智能体聊几次、或让它记住事情，就会出现在这里
+core/ai_agent_page.dart	这轮任务想执行一个操作
+core/ai_agent_page.dart	重新检测
+core/ai_agent_page.dart	钉住
+core/ai_agent_page.dart	长期记忆
+core/ai_agent_page.dart	需要你确认
+core/ai_agent_page.dart	预览已截断，但服务端未给出全文地址
+core/ai_page.dart	${AiRegistry.providers.length} 家厂商 · ${AiRegistry.providers.fold<int>(0, (a, b) => a + b.models.length)} 个模型
+core/ai_page.dart	${a.grant} · ≤${a.maxRounds}轮
+core/ai_page.dart	${models.length} 个模型
+core/ai_page.dart	AI 回复由第三方大模型服务生成 · 你输入的内容会发送给所选 AI 服务商处理
+core/ai_page.dart	AI 想执行一个操作
+core/ai_page.dart	AI 数据使用说明
+core/ai_page.dart	AI 设置
+core/ai_page.dart	API Key(可留空)
+core/ai_page.dart	MCP 服务管理
+core/ai_page.dart	「${v.name}」没能识别
+core/ai_page.dart	上下文管理
+core/ai_page.dart	人格与全局指令 / 长期记忆 / 工具授权审批
+core/ai_page.dart	你好，我是 ${s.model}
+core/ai_page.dart	停止朗读
+core/ai_page.dart	允许执行
+core/ai_page.dart	先检索再把结果注入模型上下文
+core/ai_page.dart	准备开放
+core/ai_page.dart	切换键盘输入
+core/ai_page.dart	厂商与 Key 管理
+core/ai_page.dart	历史模型 (${p.deprecated.length})
+core/ai_page.dart	去语音设置
+core/ai_page.dart	同意并继续
+core/ai_page.dart	复制
+core/ai_page.dart	太短了，按住说完整一句话再松手。
+core/ai_page.dart	实例地址
+core/ai_page.dart	对话长度
+core/ai_page.dart	对话风格 · 上下文 · 工具 · 语音 · 记忆
+core/ai_page.dart	工具调用(Harness)
+core/ai_page.dart	左滑边缘或点菜单打开抽屉: 历史/模型/智能体/灵感
+core/ai_page.dart	已保存联网搜索配置
+core/ai_page.dart	已加入排队, 上一条完成后自动发送
+core/ai_page.dart	已填入输入框
+core/ai_page.dart	已更新常用模型(顶栏模型名下拉里可快速切换)
+core/ai_page.dart	已识别（${v.name} · ${(ms / 1000).toStringAsFixed(1)}s）
+core/ai_page.dart	当前模型未配置 API Key · 点抽屉顶部设置去配置 ${prov.name}
+core/ai_page.dart	当前资料库：${snap.data ?? 
+core/ai_page.dart	当前：$_asrLabel
+core/ai_page.dart	当前：$_ttsLabel
+core/ai_page.dart	快速对话, 即时响应
+core/ai_page.dart	思考等级
+core/ai_page.dart	技能(注入上下文)
+core/ai_page.dart	拒绝
+core/ai_page.dart	换资料库 / 给厂商填 Key / 试听
+core/ai_page.dart	排队 | ${_queue.length} 条消息排队中${queuePaused ? 
+core/ai_page.dart	排队中 (${_queue.length})
+core/ai_page.dart	搜索历史对话
+core/ai_page.dart	数据综合自公开榜单约值快照 · 随版本更新
+core/ai_page.dart	新会话
+core/ai_page.dart	新对话
+core/ai_page.dart	智能体 · 指令 · 记忆
+core/ai_page.dart	暂不使用
+core/ai_page.dart	暂无会话
+core/ai_page.dart	更多功能
+core/ai_page.dart	朗读这条
+core/ai_page.dart	本机工具 ${LocalTools.all.length} 个 + MCP ${Mcp.servers.where((s) => s.enabled && s.status == 
+core/ai_page.dart	本机工具(开启工具调用后 AI 自动使用)
+core/ai_page.dart	本机工具清单
+core/ai_page.dart	每条回答生成后自动念出来（默认关）
+core/ai_page.dart	没录到声音。靠近麦克风按住再说一次。
+core/ai_page.dart	没有麦克风权限，或录音器被占用。到系统设置里允许后再试。
+core/ai_page.dart	清空排队
+core/ai_page.dart	移出常用
+core/ai_page.dart	立即发送
+core/ai_page.dart	联网搜索
+core/ai_page.dart	联网搜索失败: $e
+core/ai_page.dart	联网搜索服务
+core/ai_page.dart	联网搜索服务配置
+core/ai_page.dart	联网搜索未配置 · 点输入框左侧 + → 联网搜索 去配置
+core/ai_page.dart	自动朗读回复
+core/ai_page.dart	设备信息/剪贴板/朗读/文件/分享/打开链接…
+core/ai_page.dart	语音朗读设置
+core/ai_page.dart	语音输入(点按进入, 按住说话)
+core/ai_page.dart	语音输入设置
+core/ai_page.dart	输入消息…
+core/ai_page.dart	还没有可用的语音识别。\n
+core/ai_page.dart	还没有常用模型 · 去抽屉模型列表长按任意模型设为常用
+core/ai_page.dart	限制每次请求携带的历史消息条数, 省 token、防超长; 系统提示词始终携带
+core/ai_providers_page.dart	${AiRegistry.all.length} 家厂商 · ${AiRegistry.all.fold<int>(0, (a, b) => a + b.models.length)} 个模型 · 已配 ${keyed.length} 个Key
+core/ai_providers_page.dart	${p.models.length} 个模型${keyed.contains(p.id) ? 
+core/ai_providers_page.dart	中转站 Key
+core/ai_providers_page.dart	从网站同步
+core/ai_providers_page.dart	删除自定义厂商「${p.name}」?
+core/ai_providers_page.dart	厂商与密钥
+core/ai_providers_page.dart	只看已配Key
+core/ai_providers_page.dart	可用模型 ${models.length} 个：${models.take(3).join(
+core/ai_providers_page.dart	名称
+core/ai_providers_page.dart	名称 / 接口地址 / 模型列表 不能为空
+core/ai_providers_page.dart	完成
+core/ai_providers_page.dart	我的中转站
+core/ai_providers_page.dart	探测并保存
+core/ai_providers_page.dart	接口地址
+core/ai_providers_page.dart	搜索厂商或模型…
+core/ai_providers_page.dart	改存到「${suggest!.name}」
+core/ai_providers_page.dart	模型列表(逗号分隔)
+core/ai_providers_page.dart	立即识别
+core/ai_providers_page.dart	第三方中转站(聚合API)的通用 Key: 自动探测, 确认后一键填到所有支持的厂商
+core/ai_providers_page.dart	粘贴 API Key（自动识别）
+core/ai_providers_page.dart	自动识别 Key
+core/ai_providers_page.dart	自定义
+core/ai_providers_page.dart	自定义厂商
+core/ai_providers_page.dart	适合中转站 / 自建网关 / 网站未收录的 OpenAI 兼容服务
+core/ai_providers_page.dart	验证
+core/ai_settings_page.dart	AI 设置
+core/ai_settings_page.dart	例如：叫我英莉；回答先给结论；代码用 Dart。
+core/ai_settings_page.dart	全局指令
+core/ai_settings_page.dart	全部清空
+core/ai_settings_page.dart	启用工具（MCP）
+core/ai_settings_page.dart	回答前先检索，并把结果注入上下文
+core/ai_settings_page.dart	对话风格
+core/ai_settings_page.dart	工具失败自动回退
+core/ai_settings_page.dart	模型不支持原生工具调用时，用文本协议兜底
+core/ai_settings_page.dart	每次对话都会追加到系统提示。写你的称呼、习惯、禁忌、常用格式。
+core/ai_settings_page.dart	涉及写文件 / 执行命令时先问你一句
+core/ai_settings_page.dart	联网搜索
+core/ai_settings_page.dart	让模型能调用你配置的 MCP 服务与本机能力
+core/ai_settings_page.dart	调用工具前确认
+core/ai_settings_page.dart	还没有记忆。在对话里说「记住：…」即可添加。
+core/ai_settings_page.dart	这些设置保存在本机，换设备不同步；密钥类走「统一密钥库」加密存储。
+core/ai_settings_page.dart	长期记忆（${AiMemory.entries.length}）
+core/api_keys_page.dart	${_nameOf(id)} 的 Key
+core/api_keys_page.dart	API 密钥库
+core/api_keys_page.dart	一处填写，处处可用
+core/api_keys_page.dart	并入历史 Key
+core/api_keys_page.dart	粘贴 API Key（留空 = 删除）
+core/app_bridge.dart	只有安卓端支持提取应用安装包。
+core/app_bridge.dart	搜索应用名或包名
+core/app_bridge.dart	选择要发送的应用
+core/asr_settings_page.dart	faster-whisper / FunASR 等 OpenAI 兼容端点的根地址，不要带 /v1
+core/asr_settings_page.dart	保存地址
+core/asr_settings_page.dart	就绪
+core/asr_settings_page.dart	已从密钥库带出（AI / 语音朗读里填过）—— 不用重填
+core/asr_settings_page.dart	已保存「${v.name}」的 Key
+core/asr_settings_page.dart	已保存服务地址
+core/asr_settings_page.dart	把语音转成文字，走你自己选的厂商
+core/asr_settings_page.dart	服务地址
+core/asr_settings_page.dart	测连通
+core/asr_settings_page.dart	点下面的按钮开始说话，3 秒自动停，然后立刻识别。
+core/asr_settings_page.dart	识别引擎
+core/asr_settings_page.dart	试录（3 秒）
+core/asr_settings_page.dart	语音识别
+core/auto_scan_page.dart	.${g.key} · ${g.value.length} 个
+core/auto_scan_page.dart	从系统文件管理器里挑
+core/auto_scan_page.dart	导入 ${_sel.length} 项
+core/auto_scan_page.dart	导入失败: $e
+core/auto_scan_page.dart	扫描中… 已发现 $_found 个
+core/auto_scan_page.dart	扫描失败: $e
+core/auto_scan_page.dart	自动扫描本机里所有支持的格式
+core/auto_scan_page.dart	自动识别
+core/auto_scan_page.dart	自动识别$kn
+core/auto_scan_page.dart	选择文件
+core/backend_admin_page.dart	任务已发布
+core/backend_admin_page.dart	发布失败: $e
+core/backend_admin_page.dart	后端管理
+core/backend_admin_page.dart	失败: $e
+core/backend_admin_page.dart	已执行: $act
+core/backend_admin_page.dart	开始下载
+core/backend_admin_page.dart	改下载目录在「资源库 → 设置」里操作(按内容类型分目录)
+core/backend_admin_page.dart	暂无任务
+core/backend_admin_page.dart	暂无资料库数据
+core/backend_admin_page.dart	添加下载任务
+core/backend_admin_page.dart	登录账号后自动发现并连接你的后端设备;\n也可在「设备互联」里手动配对。
+core/backend_admin_page.dart	磁力链接 magnet: 或 直链 https://
+core/backend_admin_page.dart	还没有连接后端
+core/backend_admin_page.dart	进行中 ${active.length} · 排队 ${waiting.length} · 已结束 ${stopped.length}
+core/browser_page.dart	先打开一个网页
+core/browser_page.dart	全屏浏览
+core/browser_page.dart	切换搜索引擎
+core/browser_page.dart	切换模块
+core/browser_page.dart	前进
+core/browser_page.dart	历史记录
+core/browser_page.dart	后退
+core/browser_page.dart	回到主页
+core/browser_page.dart	在上方地址栏搜索或输入网址
+core/browser_page.dart	夜间模式 开/关
+core/browser_page.dart	广告拦截 开/关
+core/browser_page.dart	指纹保护
+core/browser_page.dart	指纹档位: ${Fingerprint.byId(v ?? 
+core/browser_page.dart	搜索引擎
+core/browser_page.dart	搜索或输入网址
+core/browser_page.dart	整页长截图存相册
+core/browser_page.dart	新建
+core/browser_page.dart	新建无痕标签页
+core/browser_page.dart	新建标签页
+core/browser_page.dart	无痕
+core/browser_page.dart	暂无记录
+core/browser_page.dart	最近访问
+core/browser_page.dart	标签页
+core/browser_page.dart	标签页 (${tabs.length})
+core/browser_page.dart	正在提取正文…
+core/browser_page.dart	正文提取失败: $e
+core/browser_page.dart	浏览器增强(UA/手势/书签同步)
+core/browser_page.dart	翻译本页正文
+core/browser_page.dart	让网站在「同一台设备」上认不出你。改动即时生效，换页后按新档位执行。
+core/browser_page.dart	这页提取不到成段正文(可能是列表页/脚本页)
+core/browser_page.dart	阅读模式(交给小说阅读器)
+core/chat.dart	$pendingOut 条还没发出去
+core/chat.dart	${msgs.length} 条 · 本地优先，连上后端自动补发
+core/chat.dart	AI 摘要
+core/chat.dart	新建会话
+core/chat.dart	立即同步
+core/chat.dart	聊天
+core/chat.dart	说点什么
+core/chat_v2_page.dart	${typing.join("、")} 正在输入…
+core/chat_v2_page.dart	公钥指纹
+core/chat_v2_page.dart	公钥指纹（16 位十六进制）
+core/chat_v2_page.dart	加好友
+core/chat_v2_page.dart	同网段的设备会在列表里看到这个名字
+core/chat_v2_page.dart	图片
+core/chat_v2_page.dart	对方指纹
+core/chat_v2_page.dart	应用
+core/chat_v2_page.dart	待送达
+core/chat_v2_page.dart	我的局域网地址
+core/chat_v2_page.dart	我的设备
+core/chat_v2_page.dart	我的设备与指纹
+core/chat_v2_page.dart	我的设备指纹（给对方核对用）
+core/chat_v2_page.dart	戳一戳
+core/chat_v2_page.dart	指纹一致，保存
+core/chat_v2_page.dart	按住说话
+core/chat_v2_page.dart	接收
+core/chat_v2_page.dart	改昵称
+core/chat_v2_page.dart	文件
+core/chat_v2_page.dart	新建会话
+core/chat_v2_page.dart	昵称
+core/chat_v2_page.dart	更多
+core/chat_v2_page.dart	本机在局域网内可见，同网段设备都能看到「${h.name}」
+core/chat_v2_page.dart	核对身份
+core/chat_v2_page.dart	正在录音…松开发送
+core/chat_v2_page.dart	移除好友（保留聊天记录）
+core/chat_v2_page.dart	聊天
+core/chat_v2_page.dart	设备「$name」
+core/chat_v2_page.dart	还没有人说话。让另一台设备也打开这个页面。
+core/chat_v2_page.dart	还没有消息，打个招呼吧
+core/chat_v2_page.dart	退出全屏
+core/engine_direct_page.dart	${items.where((i) => i.ok).length}/${items.length} 通过
+core/engine_direct_page.dart	一键自检
+core/engine_direct_page.dart	不经过后端, 前端直接连接局域网资料库搜索与发现(THP 协议)
+core/engine_direct_page.dart	主动扫描本机与局域网
+core/engine_direct_page.dart	从网络层到数据层逐项检查；标红的那一项就是该修的地方。
+core/engine_direct_page.dart	例：192.168.1.5  或  [240e::1]:1234
+core/engine_direct_page.dart	内容来自资料库各源的推荐与分类，不用搜也能逛
+core/engine_direct_page.dart	加载更多
+core/engine_direct_page.dart	发现$_typeLabel
+core/engine_direct_page.dart	发现的资料库（广播 + 主动扫描）
+core/engine_direct_page.dart	局域网发现的资料库
+core/engine_direct_page.dart	手动填写资料库地址
+core/engine_direct_page.dart	手动填地址
+core/engine_direct_page.dart	换个分类或源试试；内容来自各站点，偶尔会空
+core/engine_direct_page.dart	搜索$_typeLabel…
+core/engine_direct_page.dart	断开
+core/engine_direct_page.dart	暂未发现资料库
+core/engine_direct_page.dart	省略端口默认 1234（资料库）
+core/engine_direct_page.dart	资料库应用启动后会广播(THP UDP 19527)；\n
+core/engine_direct_page.dart	资料库应用的「关于」页会显示本机地址；也可在路由器 DHCP 列表里找。
+core/engine_direct_page.dart	资料库直连
+core/engine_direct_page.dart	资料库直连管理
+core/engine_direct_page.dart	这个分类暂时没有内容
+core/engine_direct_page.dart	连上后这里会自动展示各源的推荐内容
+core/engine_direct_page.dart	连接
+core/engine_direct_page.dart	连接自检
+core/engine_direct_page.dart	重新探测/连接
+core/engine_direct_page.dart	重新连接
+core/engine_direct_page.dart	重试连接
+core/feedback_page.dart	$_outbox 条反馈待发送
+core/feedback_page.dart	QQ / 邮箱 / 都行
+core/feedback_page.dart	反馈中心
+core/feedback_page.dart	反馈只发给你自己的后端，不经任何第三方服务器。图片随文字一起存储在后端 data/feedback/。
+core/feedback_page.dart	尽量说清楚：哪个模块、做了什么、期望怎样、实际怎样
+core/feedback_page.dart	截图（可选，最多 6 张）
+core/feedback_page.dart	添加图片
+core/feedback_page.dart	立即补发
+core/feedback_page.dart	联系方式（可选，方便回访）
+core/feedback_page.dart	连接后端后自动补发
+core/feedback_page.dart	遇到了什么问题？有什么建议？
+core/files_page.dart	分享
+core/files_page.dart	创建
+core/files_page.dart	删除「${_name(e)}」?
+core/files_page.dart	打开
+core/files_page.dart	排序
+core/files_page.dart	搜索中…
+core/files_page.dart	搜索当前目录(含子目录)…
+core/files_page.dart	文件夹名
+core/files_page.dart	新建文件夹
+core/files_page.dart	没有找到匹配的文件
+core/files_page.dart	空文件夹
+core/files_page.dart	返回可用目录
+core/files_page.dart	重命名
+core/files_page.dart	降序
+core/gallery_page.dart	删除这张照片?
+core/gallery_page.dart	去授权
+core/gallery_page.dart	没有照片
+core/gallery_page.dart	需要相册权限才能浏览照片
+core/home_io.dart	HA 地址
+core/home_io.dart	HTTP 接口
+core/home_io.dart	仅显示前 60 个传感器, 用上方筛选缩小范围
+core/home_io.dart	传感器
+core/home_io.dart	保存并连接
+core/home_io.dart	共 ${HaClient.entities.length} 个实体 · 可控 ${ctrl.length} 个
+core/home_io.dart	内容
+core/home_io.dart	加进队列
+core/home_io.dart	可控设备
+core/home_io.dart	在 HA 个人资料页生成
+core/home_io.dart	填写地址与令牌
+core/home_io.dart	打印文件
+core/home_io.dart	打印文本
+core/home_io.dart	打印服务地址
+core/home_io.dart	打印本机文件
+core/home_io.dart	按名称筛选
+core/home_io.dart	提交
+core/home_io.dart	提交队列
+core/home_io.dart	文件绝对路径
+core/home_io.dart	智能家居 · 接你的 Home Assistant
+core/home_io.dart	标题(可留空)
+core/home_io.dart	清掉已提交
+core/home_io.dart	移除
+core/home_io.dart	触发
+core/home_io.dart	这个模块不自带任何设备协议, 而是直连你自己那套 Home Assistant:\n
+core/home_io.dart	连接 Home Assistant
+core/home_io.dart	重置
+core/home_io.dart	长期访问令牌
+core/home_io.dart	队列 $waiting 项待提交 · 记录 ${PrintStore.jobs.length} 条
+core/home_io.dart	队列是空的
+core/job_center.dart	${r.doneCount}/${r.steps.length} 步 · ${_ago(r.createdAt)}${r.resultPath.isNotEmpty ? 
+core/job_center.dart	(还没有输出)
+core/job_center.dart	作业已被移除
+core/job_center.dart	关于「维护/开发类作业」
+core/job_center.dart	创建 ${_fmt(r.createdAt)}
+core/job_center.dart	取消作业
+core/job_center.dart	定时调度: 今日已有 $_initialDue 个每日作业自动入队
+core/job_center.dart	已入队: ${t.name}
+core/job_center.dart	批准继续
+core/job_center.dart	批量 URL 替换 / 索引重建 / 规则批量测试 / 生成修复代码 这四项需要读取并改写**源资料库**的内部数据, 
+core/job_center.dart	正在: ${r.current?.title ?? 
+core/job_center.dart	步骤回放
+core/job_center.dart	清掉已结束
+core/job_center.dart	移除
+core/job_center.dart	立即跑每日
+core/job_center.dart	第 ${i + 1} 步 · ${s.title}
+core/job_center.dart	结果: ${r.resultPath}
+core/job_center.dart	自动化任务
+core/job_center.dart	还没有作业。点上面任一模板即可入队。
+core/job_center.dart	重跑
+core/job_center.dart	长任务交给它跑: 排队执行 · 步骤可回放 · 危险步骤先确认 · 定时自动补跑
+core/lab_games.dart	五子棋
+core/lab_games.dart	再来一局
+core/lab_games.dart	吃到 ${g.eaten} 个
+core/lab_games.dart	得分 ${g.score}\n最高分 ${best > g.score ? best : g.score}${g.won ? 
+core/lab_games.dart	战绩 $wins 胜 $losses 负
+core/lab_games.dart	撞了
+core/lab_games.dart	撞了 · 点右上角重开
+core/lab_games.dart	最高 $best
+core/lab_games.dart	本局结束
+core/lab_games.dart	滑动操作 · 也可用下方方向键
+core/lab_games.dart	纯离线小游戏, 不联网、不采集、不占后台。最高分记在本机。
+core/lab_games.dart	贪吃蛇
+core/lab_games.dart	这一局吃了 ${g.eaten} 个\n最高纪录 $best
+core/lab_games.dart	速度 ${(1000 / g.speed).toStringAsFixed(1)} 格/秒
+core/lab_social.dart	${t.replies.length} 回复 · ${_ago(t.ts)}${t.body.isNotEmpty ? 
+core/lab_social.dart	${topic.replies.length} 条回复
+core/lab_social.dart	「$_board」板块还没有主题
+core/lab_social.dart	下面是当前全部主题的 JSON, 可直接复制走。把它粘回来再点"导入"即可合并。
+core/lab_social.dart	主题
+core/lab_social.dart	主题已被删除
+core/lab_social.dart	例如: 客厅平板
+core/lab_social.dart	发主题
+core/lab_social.dart	发布
+core/lab_social.dart	发帖
+core/lab_social.dart	回复…
+core/lab_social.dart	在「$_board」发主题
+core/lab_social.dart	在线设备 ${L.peers.length}
+core/lab_social.dart	复制
+core/lab_social.dart	复制正文
+core/lab_social.dart	好
+core/lab_social.dart	导入 / 导出
+core/lab_social.dart	导入/导出
+core/lab_social.dart	导入分享内容
+core/lab_social.dart	导出完成
+core/lab_social.dart	开启
+core/lab_social.dart	我是 ${L.name}
+core/lab_social.dart	把你在别处看到的好规则、好源配置、踩坑经验存下来。存的是本机, 导出成 JSON 就能带走或分享给家人。
+core/lab_social.dart	把导出的 JSON 粘在这里
+core/lab_social.dart	按板块组织的长文讨论区(和「社区」的分工: 社区放短平快的规则与链接, 论坛放需要来回讨论的主题)。
+core/lab_social.dart	搜索标题 / 正文 / 标签
+core/lab_social.dart	改昵称
+core/lab_social.dart	新增 $n 个主题
+core/lab_social.dart	有用
+core/lab_social.dart	标签(空格分隔)
+core/lab_social.dart	正文
+core/lab_social.dart	正文 / 规则内容 / 链接
+core/lab_social.dart	清空记录
+core/lab_social.dart	规则/源/心得 分享板
+core/lab_social.dart	解析失败: $e
+core/lab_social.dart	论坛
+core/lab_social.dart	设备昵称
+core/lab_social.dart	说点什么…
+core/lab_social.dart	还没有发现其他设备。让另一台设备也打开这个页面。
+core/lab_social.dart	还没有消息
+core/lab_social.dart	这里还没有内容
+core/log_page.dart	${_all.length} 条 · 错误 $errN · 警告 $warnN
+core/log_page.dart	1000 条
+core/log_page.dart	2000 条
+core/log_page.dart	500 条
+core/log_page.dart	5000 条
+core/log_page.dart	导出失败: $e
+core/log_page.dart	导出日志
+core/log_page.dart	搜索日志内容…
+core/log_page.dart	最多保留
+core/log_page.dart	诊断中心
+core/log_page.dart	还没有日志文件
+core/log_page.dart	重新自检
+core/mcp_page.dart	${s.tools.length} 个工具
+core/mcp_page.dart	${tools.length} 个工具
+core/mcp_page.dart	MCP 服务
+core/mcp_page.dart	MCP 服务加到哪里？
+core/mcp_page.dart	从后端注册表删除该服务?
+core/mcp_page.dart	删除该 MCP 服务?
+core/mcp_page.dart	刷新后端托管列表
+core/mcp_page.dart	名称
+core/mcp_page.dart	后端托管（推荐）
+core/mcp_page.dart	我的 MCP 服务
+core/mcp_page.dart	手机直接连服务；没有后端时仍可用，但不进审计
+core/mcp_page.dart	支持 SSE / Streamable HTTP 传输的远程服务
+core/mcp_page.dart	服务地址
+core/mcp_page.dart	未连接家庭后端
+core/mcp_page.dart	本机没有直连的 MCP 服务。
+core/mcp_page.dart	本机直连（兼容）
+core/mcp_page.dart	添加并连接
+core/mcp_page.dart	现象：后端托管列表为空。原因：MCP 注册表存在服务端，本机没连上就没得读。
+core/mcp_page.dart	还没有后端托管的 MCP 服务，点右上角 + 添加。
+core/mcp_page.dart	远程服务可在 mcp.so / mcp.tools 查找，复制地址粘贴即可。
+core/mcp_page.dart	重新连接
+core/mini_modules.dart	互换
+core/mini_modules.dart	从
+core/mini_modules.dart	保存 PNG
+core/mini_modules.dart	保存失败: $e
+core/mini_modules.dart	共 ${items.length} 条
+core/mini_modules.dart	删除「${n[
+core/mini_modules.dart	删除笔记
+core/mini_modules.dart	到
+core/mini_modules.dart	基准 1 元人民币。$ratesStamp，可点下方按钮联网刷新。
+core/mini_modules.dart	处理
+core/mini_modules.dart	备注(可空)
+core/mini_modules.dart	复制大写
+core/mini_modules.dart	复制结果
+core/mini_modules.dart	如 12345.67
+core/mini_modules.dart	已保存: ${f.path}
+core/mini_modules.dart	已复制回剪贴板
+core/mini_modules.dart	已完成 ${done.length}
+core/mini_modules.dart	常用示例
+core/mini_modules.dart	当前剪贴板为空(或系统限制读取)
+core/mini_modules.dart	报销、开票、写收据时用。支持到万亿位，角分按财务惯例处理。
+core/mini_modules.dart	搜索笔记…
+core/mini_modules.dart	支持 Markdown: # 标题 **加粗** - 列表…
+core/mini_modules.dart	收藏当前剪贴板
+core/mini_modules.dart	数值
+core/mini_modules.dart	数字 → 人民币大写
+core/mini_modules.dart	新建笔记
+core/mini_modules.dart	汇率刷新失败（$e），继续用内置表
+core/mini_modules.dart	汇率换算
+core/mini_modules.dart	添加待办…
+core/mini_modules.dart	生成二维码
+core/mini_modules.dart	生成历史(点按重现)
+core/mini_modules.dart	粘贴
+core/mini_modules.dart	结果
+core/mini_modules.dart	结果已复制
+core/mini_modules.dart	记一笔
+core/mini_modules.dart	输入文本 / 链接 / WiFi(WIFI:T:WPA;S:名称;P:密码;;)…
+core/mini_modules.dart	还没有待办\n输入内容回车即可添加
+core/mini_modules.dart	还没有笔记\n点右上角 + 新建
+core/mini_modules.dart	还没有记录\n复制内容后点上方按钮收藏
+core/mini_modules.dart	还没有账目\n点上方 + 记一笔
+core/mini_modules.dart	金额
+core/mini_modules.dart	金额(元)
+core/mini_modules.dart	金额（元）
+core/mini_modules10.dart	创建
+core/mini_modules10.dart	已完成
+core/mini_modules10.dart	新建清单
+core/mini_modules10.dart	添加事项
+core/mini_modules10.dart	清单名, 如: 周末采购
+core/mini_modules10.dart	点右下角添加第一条\n登录后这份清单会同步到你的其它端
+core/mini_modules10.dart	要买/要做的事
+core/mini_modules10.dart	谁添加的(可选)
+core/mini_modules11.dart	$kind (端口 $port)
+core/mini_modules11.dart	名字, 如: 客厅
+core/mini_modules11.dart	流地址 http(s)://…（例 http://192.168.1.9:8080/live.mp4）
+core/mini_modules11.dart	添加家里网络摄像头的流地址\n(同一局域网内的 http/mjpeg 摄像头)
+core/mini_modules11.dart	添加摄像头
+core/mini_modules11.dart	添加网络摄像头
+core/mini_modules11.dart	用内置浏览器打开
+core/mini_modules11.dart	连接中…
+core/mini_modules2.dart	$date 的日记
+core/mini_modules2.dart	${day.month}月${day.day}日
+core/mini_modules2.dart	${day.month}月${day.day}日 新日程
+core/mini_modules2.dart	${view.year} 年 ${view.month} 月
+core/mini_modules2.dart	事项
+core/mini_modules2.dart	今天
+core/mini_modules2.dart	今天发生了什么…
+core/mini_modules2.dart	保存 PNG
+core/mini_modules2.dart	保存失败: $e
+core/mini_modules2.dart	先写一条便签再悬浮
+core/mini_modules2.dart	删除 ${e[
+core/mini_modules2.dart	删除日记
+core/mini_modules2.dart	加日程
+core/mini_modules2.dart	已保存: ${f.path}
+core/mini_modules2.dart	录音 ${DateTime.fromMillisecondsSinceEpoch(e[
+core/mini_modules2.dart	时间 ${time.format(c2)}
+core/mini_modules2.dart	请在系统设置里允许悬浮窗权限后回来再点一次
+core/mini_modules2.dart	还没有录音
+core/mini_modules2.dart	还没有日记\n从今天开始记录吧
+core/mini_modules2.dart	还没有速记
+core/mini_modules2.dart	这天没有日程
+core/mini_modules2.dart	速记: 想到什么写什么, 回车即存…
+core/mini_modules2.dart	需要麦克风权限
+core/mini_modules3.dart	${zh(cur)} · 体感 ${cur[
+core/mini_modules3.dart	周${dayNames[day - 1]} 第$sec节
+core/mini_modules3.dart	地点(可空)
+core/mini_modules3.dart	地震速报 · 中国地震台网
+core/mini_modules3.dart	地震速报获取失败: $qErr
+core/mini_modules3.dart	天气获取失败: $err\n可换个城市名(中英文都行)
+core/mini_modules3.dart	已完成
+core/mini_modules3.dart	快递查询
+core/mini_modules3.dart	提醒内容
+core/mini_modules3.dart	数据源: Wolfx 公共接口 · 免费无需密钥
+core/mini_modules3.dart	新建提醒
+core/mini_modules3.dart	日期 ${day.month}-${day.day}
+core/mini_modules3.dart	时间 ${time.format(c2)}
+core/mini_modules3.dart	时间已过, 请选将来的时间
+core/mini_modules3.dart	查询
+core/mini_modules3.dart	点空格子添加课程 · 点课程修改/删除
+core/mini_modules3.dart	节数: 
+core/mini_modules3.dart	课程名
+core/mini_modules3.dart	输入城市(如 深圳 / Shenzhen)
+core/mini_modules3.dart	输入快递单号
+core/mini_modules3.dart	还没有提醒\n到点会弹系统通知, 关屏也响
+core/mini_modules4.dart	下载原图
+core/mini_modules4.dart	下载失败: $e
+core/mini_modules4.dart	代码已复制
+core/mini_modules4.dart	例如：故事FM / 忽左忽右
+core/mini_modules4.dart	加 RSS
+core/mini_modules4.dart	加载失败: $err
+core/mini_modules4.dart	原因: $err
+core/mini_modules4.dart	名称
+core/mini_modules4.dart	在线找播客源
+core/mini_modules4.dart	在线找源
+core/mini_modules4.dart	已保存: ${f.path}\n可到 文件 模块设为壁纸
+core/mini_modules4.dart	找到 ${found.length} 个源
+core/mini_modules4.dart	按节目名或关键词搜索（Apple Podcasts 公开目录）
+core/mini_modules4.dart	换个源
+core/mini_modules4.dart	搜索壁纸(英文更准, 如 nature / anime)…
+core/mini_modules4.dart	搜索电台(如 BBC / 中文 / jazz)…
+core/mini_modules4.dart	播放失败: $e
+core/mini_modules4.dart	新建片段
+core/mini_modules4.dart	标题(如: 防抖函数)
+core/mini_modules4.dart	添加 RSS
+core/mini_modules4.dart	添加书签
+core/mini_modules4.dart	添加书签(与浏览器同步)
+core/mini_modules4.dart	添加播客 RSS
+core/mini_modules4.dart	贴代码…
+core/mini_modules4.dart	还没有书签\n浏览器里点地址栏右侧书签图标也会进这里
+core/mini_modules4.dart	还没有代码片段\n点右上角 + 收藏一段
+core/mini_modules4.dart	链接
+core/mini_modules5.dart	# 标题\n**加粗** *斜体*\n- 列表\n> 引用\n`代码`
+core/mini_modules5.dart	做法
+core/mini_modules5.dart	共 ${cards.length} 张 · 已记住 $known
+core/mini_modules5.dart	删除「${d[
+core/mini_modules5.dart	删除文档
+core/mini_modules5.dart	删除这张
+core/mini_modules5.dart	加载失败: $err
+core/mini_modules5.dart	历史记录
+core/mini_modules5.dart	复制全文
+core/mini_modules5.dart	已复制 Markdown 源码
+core/mini_modules5.dart	打不开这道菜 · 菜谱库（TheMealDB）没连上，或这道菜已下架 —— 稍后再试一次
+core/mini_modules5.dart	接口: MyMemory 免费翻译(每日有额度); 接入自己的 AI 密钥后可在 AI 模块获得更高质量翻译
+core/mini_modules5.dart	搜索菜谱(英文库, 如 chicken / beef)…
+core/mini_modules5.dart	新建 Markdown 文档
+core/mini_modules5.dart	新建卡片
+core/mini_modules5.dart	正面(单词/问题)
+core/mini_modules5.dart	点按看答案
+core/mini_modules5.dart	粘贴
+core/mini_modules5.dart	背面(释义/答案)
+core/mini_modules5.dart	记住了
+core/mini_modules5.dart	输入要翻译的文本…
+core/mini_modules5.dart	还不熟
+core/mini_modules5.dart	还没有卡片\n点右上角 + 建一张单词卡/问题卡
+core/mini_modules5.dart	还没有文档
+core/mini_modules5.dart	配料
+core/mini_modules6.dart	加 RSS
+core/mini_modules6.dart	加源
+core/mini_modules6.dart	加载失败: $err
+core/mini_modules6.dart	原因: $err
+core/mini_modules6.dart	换个源
+core/mini_modules6.dart	添加资讯 RSS 源
+core/mini_modules6.dart	舒张压(低压)
+core/mini_modules6.dart	记一条
+core/mini_modules6.dart	记录$type
+core/mini_modules6.dart	还没有$type记录\n点右上角 + 记一条
+core/mini_modules7.dart	关键词搜索…
+core/mini_modules7.dart	历史备份(点按恢复 · 长按删除)
+core/mini_modules7.dart	只看验证码
+core/mini_modules7.dart	将备份中的联系人写回手机通讯录(不会删除现有联系人)。继续?
+core/mini_modules7.dart	恢复通讯录
+core/mini_modules7.dart	点上方按钮读取短信\n数据只存本机, 不上传
+core/mini_modules7.dart	还没有备份
+core/mini_modules7.dart	通讯录加密备份的规划是存到自有资源库; 当前版本先存本机应用目录(JSON), 换机可导出文件带走。\n数据不经过任何第三方服务器。
+core/mini_modules7.dart	验证码 $otp 已复制
+core/mini_modules8.dart	从相册选
+core/mini_modules8.dart	停止共享
+core/mini_modules8.dart	失败: $e
+core/mini_modules8.dart	已被下载 $downloads 次 · 共享中, 离开本页面前请先停止
+core/mini_modules8.dart	手机↔电脑/另一台手机 同局域网秒传: 选文件 → 对方扫码或开链接即下载, 不过任何服务器。
+core/mini_modules8.dart	拍照扫描
+core/mini_modules8.dart	第 ${i + 1} 集
+core/mini_modules8.dart	第 ${idx + 1} 集 / 共 ${widget.files.length} 集
+core/mini_modules8.dart	自动灰度+对比度增强(文档效果) · OCR 文字识别后续接入
+core/mini_modules8.dart	还没有扫描件
+core/mini_modules8.dart	选一个装有声书的文件夹\n里面的音频会按文件名排序连播
+core/mini_modules8.dart	选一个装短剧的文件夹\n按文件名排序, 点集数竖屏连播
+core/mini_modules8.dart	选择文件并开始共享
+core/mini_modules8.dart	选择有声书文件夹(mp3/m4a/flac)
+core/mini_modules8.dart	选择短剧文件夹(mp4)
+core/mini_modules8.dart	链接已复制
+core/mini_modules9.dart	选一个装音乐的文件夹\n支持 mp3/flac/m4a 等, 自动扫描子目录
+core/module_clog_page.dart	$_module · 更新公告
+core/module_clog_page.dart	$_module 暂无单独的更新记录
+core/module_clog_page.dart	${r.items.length} 条
+core/module_drawer.dart	常用设置
+core/module_drawer.dart	当前
+core/module_drawer.dart	快捷面板
+core/module_drawer.dart	快速进入
+core/novel_reader.dart	$cur（未配置）
+core/novel_reader.dart	上一段
+core/novel_reader.dart	上一章
+core/novel_reader.dart	下一段
+core/novel_reader.dart	下一章
+core/novel_reader.dart	从此段开始听书
+core/novel_reader.dart	停止
+core/novel_reader.dart	后端合成
+core/novel_reader.dart	后端合成失败已降级系统朗读: ${TtsManager.backendError}
+core/novel_reader.dart	在线语音不可用已降级系统朗读:\n${TtsManager.onlineError}
+core/novel_reader.dart	复制本段
+core/novel_reader.dart	已添加书签
+core/novel_reader.dart	开源资料库不可用已降级系统朗读: ${TtsManager.openSourceError}
+core/novel_reader.dart	护眼模式
+core/novel_reader.dart	换一来源失败：$e
+core/novel_reader.dart	提示: 听书是屏幕上的圆形悬浮球, 按住可拖到任意位置, 点一下打开听书面板
+core/novel_reader.dart	搜索本章内容
+core/novel_reader.dart	暂无书签\n下拉页面顶部或长按段落可添加
+core/novel_reader.dart	更多 · 第 ${idx + 1}/${widget.chapters.length} 章
+core/novel_reader.dart	朗读本段
+core/novel_reader.dart	朗读本章
+core/novel_reader.dart	朗读资料库
+core/novel_reader.dart	本章加入书签
+core/novel_reader.dart	本章完
+core/novel_reader.dart	本章未找到
+core/novel_reader.dart	目录 · 共${widget.chapters.length}章
+core/novel_reader.dart	系统朗读离线免费; 后端合成走自己的后端(piper离线/edge-tts在线); 在线资料库需在 AI 模块配置对应厂商的 API Key
+core/novel_reader.dart	系统离线朗读
+core/novel_reader.dart	翻页间隔
+core/novel_reader.dart	自定义图片做阅读背景
+core/novel_reader.dart	语速
+core/novel_reader.dart	语音厂商设置
+core/novel_reader.dart	输入关键词
+core/novel_reader.dart	间距设置
+core/novel_reader.dart	阅读字体
+core/offline_ui.dart	下载任务
+core/offline_ui.dart	书留在书架，只是不再占用本机空间
+core/offline_ui.dart	全选 / 全不选
+core/offline_ui.dart	删除离线内容
+core/offline_ui.dart	删除（5 秒内可撤销）
+core/offline_ui.dart	删除（小说离线不可撤销）
+core/offline_ui.dart	合成一个文件，方便拷去电脑或别的阅读器
+core/offline_ui.dart	多选删除
+core/offline_ui.dart	失败：${j.message}
+core/offline_ui.dart	好
+core/offline_ui.dart	导出为单个 txt
+core/offline_ui.dart	小说
+core/offline_ui.dart	已选 ${_sel.length} 项
+core/offline_ui.dart	清记录
+core/offline_ui.dart	离线内容
+core/offline_ui.dart	离线占用 ${MediaOfflinePlan.bytesLabel(total)}
+core/offline_ui.dart	离线存储上限
+core/offline_ui.dart	离线空间超过上限，已自动清理 ${plan.length} 项（最早下载的优先）
+core/offline_ui.dart	移出书架
+core/offline_ui.dart	视频 / 音乐 / 漫画
+core/offline_ui.dart	还没有离线内容\n看书/看剧/听歌时点「保存到本机」，断网也能用
+core/offline_ui.dart	退出多选
+core/offline_ui.dart	逐章抓取并存到本机，中途可取消、再点会接着下
+core/peer_page.dart	${m.fromName.isEmpty ? m.from : m.fromName}（${m.topic}）：${m.text().isEmpty ? "(无正文)" : m.text()}
+core/peer_page.dart	为什么连不上？
+core/peer_page.dart	保存并同步
+core/peer_page.dart	值
+core/peer_page.dart	参数 JSON
+core/peer_page.dart	口令
+core/peer_page.dart	同步密钥
+core/peer_page.dart	在插件侧填入账号口令即可接入（UDP 只负责让它被看见，不负责授权）
+core/peer_page.dart	工具名
+core/peer_page.dart	广播
+core/peer_page.dart	待登录（局域网里已经发现，还没接入）
+core/peer_page.dart	接入端网
+core/peer_page.dart	收取
+core/peer_page.dart	断开
+core/peer_page.dart	新增
+core/peer_page.dart	新增/覆盖密钥
+core/peer_page.dart	暂无。在任意一端保存密钥后，点「同步密钥」即可统一过来。
+core/peer_page.dart	本端密钥（${keys.length} 条）
+core/peer_page.dart	查看本端
+core/peer_page.dart	用后端密钥
+core/peer_page.dart	用账号口令登录后即可与其他端互通；也可以用已配对的后端密钥直接接入。
+core/peer_page.dart	登录并接入
+core/peer_page.dart	离线（曾登记过）
+core/peer_page.dart	端网与插件
+core/peer_page.dart	要广播给其他端的内容
+core/peer_page.dart	诊断
+core/peer_page.dart	调用
+core/peer_page.dart	调用 ${p.name.isEmpty ? p.iid : p.name}
+core/peer_page.dart	调用它的工具
+core/peer_page.dart	账号
+core/peer_page.dart	键名
+core/peer_page.dart	键名会自动归一：OpenAI_Key / openai-key 都写成 openai.key
+core/photo_map.dart	关于底图
+core/photo_map.dart	底图地图
+core/photo_map.dart	按经纬网格聚合，不画国界（避免边界错绘）
+core/photo_map.dart	照片地图
+core/photo_map.dart	用底图看（需自备 Key）
+core/playback_settings_page.dart	$_seekStep 秒
+core/playback_settings_page.dart	$o 秒
+core/playback_settings_page.dart	一集放完自动进下一集；关掉则停在片尾
+core/playback_settings_page.dart	上次看到哪，这次从哪继续（播完自动清位）
+core/playback_settings_page.dart	双击快进 / 快退步长
+core/playback_settings_page.dart	当前：$_seekStep 秒（双击画面左 / 右半边）
+core/playback_settings_page.dart	按住画面快放 2 倍速，松开还原（与倍速菜单不冲突）
+core/playback_settings_page.dart	播完自动连播下一集
+core/playback_settings_page.dart	播放中仍可随时在播放器里改
+core/playback_settings_page.dart	播放设置
+core/playback_settings_page.dart	本地播放记住上次位置（同目录重看会接着放）
+core/playback_settings_page.dart	续播
+core/playback_settings_page.dart	长按 2x 快放
+core/playback_settings_page.dart	默认播放速度
+core/pro_ai.dart	${t.name} 返回
+core/pro_ai.dart	MCP tools/list 结果
+core/pro_ai.dart	上报
+core/pro_ai.dart	批准
+core/pro_ai.dart	拒绝
+core/pro_ai.dart	清理
+core/pro_ai.dart	清零
+core/pro_ai.dart	试跑
+core/pro_ai.dart	语义树快照
+core/pro_browser.dart	交给小说阅读器(可听书)
+core/pro_browser.dart	原文
+core/pro_browser.dart	浏览器增强
+core/pro_browser.dart	看原文
+core/pro_browser.dart	译文 · $title
+core/pro_browser.dart	默认跟随系统
+core/pro_gallery.dart	取回这一版
+core/pro_gallery.dart	合计 ${HashX.human(total)}
+core/pro_gallery.dart	备份提示
+core/pro_gallery.dart	时间轴
+core/pro_gallery.dart	时间轴 · ${items.length} 项
+core/pro_gallery.dart	解密导出
+core/pro_gallery.dart	选择照片
+core/pro_gallery.dart	选择要加密的照片
+core/pro_reading.dart	${shown.length} 条
+core/pro_reading.dart	Markdown 全文
+core/pro_reading.dart	导出 Markdown
+core/pro_reading.dart	想法
+core/pro_reading.dart	搜索书名 / 原文 / 想法
+core/pro_reading.dart	标记失败
+core/pro_reading.dart	清空统计
+core/pro_system.dart	THP 契约 / Engine SDK
+core/pro_system.dart	底部导航模块 (${sel.length})
+core/pro_system.dart	探活
+core/pro_system.dart	该资源需要付费
+core/sensor_page.dart	$label 已复制: $text
+core/sensor_page.dart	$name 不可用
+core/sensor_page.dart	· 远离磁铁、音箱、笔记本等干扰源, 否则指针会偏\n
+core/sensor_page.dart	使用提示
+core/sensor_page.dart	取色器完全在本机运算, 不上传任何数据。
+core/sensor_page.dart	复制色值
+core/sensor_page.dart	存入色卡
+core/sensor_page.dart	屏幕尺子
+core/sensor_page.dart	怎么用
+core/sensor_page.dart	把手机平放在被测面上, 气泡进入中心小圈即水平。\n
+core/sensor_page.dart	按标准屏幕密度估算。拿一张银行卡(标准宽 8.56cm)贴在屏幕上对比, 用滑块校准, 校准值会记住。
+core/sensor_page.dart	校准
+core/sensor_page.dart	约 $cmCount cm 宽
+core/sensor_page.dart	色卡(点一下复制, 长按删除)
+core/sensor_page.dart	色相
+core/sensor_page.dart	还没有色卡, 调好颜色点「存入色卡」
+core/sensor_page.dart	这台设备没有对应传感器, 或传感器读取被系统拒绝。真机一般都有。
+core/sensor_page.dart	饱和度 · 明度
+core/share_card.dart	$what失败：$e
+core/share_card.dart	$what已保存\n$p
+core/share_card.dart	保存二维码
+core/share_card.dart	保存分享图
+core/share_card.dart	分享
+core/share_card.dart	分享失败：$e
+core/share_card.dart	正在生成…
+core/splash_page.dart	一个入口 · One Hub
+core/splash_page.dart	第三方聚合
+core/tts_autopair_page.dart	一键配对语音引擎
+core/tts_autopair_page.dart	只在本机使用；探测会合成一个字，属于一次真实调用。
+core/tts_autopair_page.dart	逐家结果
+core/tts_engines_page.dart	TTS/1 接入协议
+core/tts_engines_page.dart	填入 :${p.defaultPort}
+core/tts_engines_page.dart	复制启动命令
+core/tts_engines_page.dart	完整协议见仓库 docs/TTS-PROTOCOL.md
+core/tts_engines_page.dart	客户端只要求服务端实现两个端点：
+core/tts_engines_page.dart	开源 TTS 引擎
+core/tts_engines_page.dart	引擎地址
+core/tts_engines_page.dart	打开项目主页
+core/tts_engines_page.dart	接入协议说明
+core/tts_engines_page.dart	服务端只需两个端点：
+core/tts_engines_page.dart	缺端口时会按 5100 补齐；同一局域网才能连上
+core/tts_engines_page.dart	重放
+core/tts_settings_page.dart	「${v.name}」的地址与模板会一并删除，已保存的 Key 也会清掉。
+core/tts_settings_page.dart	一键配对（拿一个 Key 试出它是哪家）
+core/tts_settings_page.dart	切到 ${_firstReady!.name}
+core/tts_settings_page.dart	删除这个自定义接口？
+core/tts_settings_page.dart	家庭后端
+core/tts_settings_page.dart	已保存「${v.name}」
+core/tts_settings_page.dart	已配置
+core/tts_settings_page.dart	已配置「${_firstReady!.name}」的 Key
+core/tts_settings_page.dart	常用音色（可直接选，也可自己填）
+core/tts_settings_page.dart	开源引擎接入指引（自己跑 piper 等）
+core/tts_settings_page.dart	开源引擎直连
+core/tts_settings_page.dart	当前朗读引擎
+core/tts_settings_page.dart	文档：${v.docUrl}
+core/tts_settings_page.dart	暂未适配的厂商（${kTtsPendingVendors.length} 家）
+core/tts_settings_page.dart	未配置
+core/tts_settings_page.dart	添加自定义 TTS 接口
+core/tts_settings_page.dart	系统离线
+core/tts_settings_page.dart	系统离线零配置零费用、音质一般；下面的在线厂商音质更好，需要各自申请 Key。
+core/tts_settings_page.dart	计费方式（决定请求打到哪个端点）
+core/tts_settings_page.dart	试听
+core/tts_settings_page.dart	试听「${v.name}」失败
+core/tts_settings_page.dart	语音朗读
+core/tts_settings_page.dart	这些厂商要客户端算签名或走 WebSocket，当前版本还接不了
+main.dart	  ${chapters.length}章  
+main.dart	  ${chapters.length}话  
+main.dart	 与 
+main.dart	$e\n\n账号未被删除，你可以稍后重试。
+main.dart	$label 已复制
+main.dart	$lockKey 已锁定
+main.dart	$m 分钟后停止
+main.dart	$m 分钟后暂停
+main.dart	$pages 页
+main.dart	$r 分钟后自动暂停
+main.dart	${AppSettings.autoFsSec} 秒
+main.dart	${chapters.length} 个章节/选集
+main.dart	${idx + 1}/${widget.chapters.length} 话
+main.dart	${mod.name}更新公告
+main.dart	${mod.name}设置
+main.dart	${tr(mod.name)} · 模块菜单
+main.dart	AI Key等敏感信息, AES加密存资源库
+main.dart	PIN 不正确
+main.dart	PIN锁 · 在"连接资源库"页设置
+main.dart	THP 直连 · 最新 ${ev.isEmpty ? 
+main.dart	THP 直连 · 最新 ${vv.isEmpty ? 
+main.dart	ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留
+main.dart	ThirdHub 已锁定
+main.dart	ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的资料库提供
+main.dart	Work 作业完成/待确认时提醒
+main.dart	v${Updater.currentVersion} · 点按检查更新
+main.dart	venera 漫画资料库
+main.dart	…还有 ${synced.length - 8} 张
+main.dart	上一话
+main.dart	上次读到: ${chapters[lastRead][
+main.dart	下一话
+main.dart	下拉此页即可重试；更新记录不随安装包下发，需要联网获取。
+main.dart	下载 App
+main.dart	下载与存储
+main.dart	下载任务 (${active.length}进行中/${waiting.length}等待)
+main.dart	下载全部集
+main.dart	下载到后端资源库
+main.dart	下载到哪里？
+main.dart	下载到本机
+main.dart	下载失败: $e
+main.dart	下载已暂停，随时可以继续
+main.dart	下载整部
+main.dart	下载此版本
+main.dart	下载软件
+main.dart	不加密
+main.dart	不同意并退出
+main.dart	个人资料
+main.dart	书架有新章节时提醒
+main.dart	今日字数
+main.dart	今日时长
+main.dart	仍然关闭
+main.dart	从书架移除(不删本地文件)
+main.dart	会员等级
+main.dart	传输加密
+main.dart	作业完成提醒
+main.dart	修改昵称(同步到云端)
+main.dart	倍速
+main.dart	像网站一样自定义显示哪些模块
+main.dart	全选
+main.dart	全选上传
+main.dart	全部历史
+main.dart	全部更新历史
+main.dart	全部模块(按分类)
+main.dart	公告通知
+main.dart	共 ${chapters.length} 章
+main.dart	共 ${episodes.length} 集
+main.dart	关闭后可自由拖动, 停哪放哪
+main.dart	关闭后该模块不再自动进入全屏
+main.dart	关闭字幕
+main.dart	关闭开屏动画
+main.dart	内容从哪来?
+main.dart	内置 · 使用说明
+main.dart	内置说明书
+main.dart	切换模块
+main.dart	删除 ${sel.length} 本书?
+main.dart	删除失败
+main.dart	删除安装包
+main.dart	删除本地书
+main.dart	删除的书架/歌单/安装包会先进入回收站, 可恢复或彻底删除
+main.dart	删除账号
+main.dart	前后端登录同一账号即可自动配对连接, 无需填地址
+main.dart	前端⇄后端 · 默认不加密(局域网信任)
+main.dart	加载中…
+main.dart	加载失败: $err
+main.dart	加载目录失败: $err
+main.dart	单曲
+main.dart	历史版本更新记录
+main.dart	发现新版本 v$ver
+main.dart	只存在这台设备, 不占资源库空间
+main.dart	只显示与这个模块有关的改动
+main.dart	各开源阅读、漫画与聚合方案的作者，以及全体开源社区
+main.dart	同意并继续
+main.dart	同步等级
+main.dart	后台下载
+main.dart	后端/资料库连不上?
+main.dart	后端下载任务 · 网盘
+main.dart	回收站
+main.dart	回收站为空
+main.dart	夜
+main.dart	失败: $e
+main.dart	字幕
+main.dart	存进资源库, 所有前端设备共享
+main.dart	它已经在书架里了
+main.dart	安装 ThirdHub 阅读资料库 / venera 漫画资料库后,\n同一局域网下会自动配对出现在这里
+main.dart	安装包已保存: ${f.path}
+main.dart	定时关闭：已暂停播放
+main.dart	密钥库
+main.dart	导入本地文件
+main.dart	导航形态
+main.dart	导航栏
+main.dart	将按顺序下载全部 ${chapters.length} 话
+main.dart	将按顺序下载全部 ${widget.episodes.length} 集
+main.dart	局域网发现的设备
+main.dart	左右滑动切换模块
+main.dart	已下到本机，个别章节没取到，可再点一次补
+main.dart	已下载的安装包(点按安装 · 长按删除)
+main.dart	已下载过该版本
+main.dart	已从 ${_fmt(Duration(seconds: s))} 继续播放
+main.dart	已从上次位置继续 ${_fmtClock(savedSec)}
+main.dart	已保存 · 已即时生效
+main.dart	已保存: ${f.path}
+main.dart	已关闭
+main.dart	已加入下载队列（$n 集）—— 进度到「离线内容」里看
+main.dart	已加入书架
+main.dart	已取出(请谨慎粘贴)
+main.dart	已取消定时关闭
+main.dart	已同步 ${synced.length} 张(点右上角管理删除)
+main.dart	已恢复
+main.dart	已按你的要求永久关闭：滑动只在当前模块内生效, 不会切到别的模块
+main.dart	已收藏到音乐架
+main.dart	已放回书架第一格
+main.dart	已是最新版本
+main.dart	已登录
+main.dart	已离线，断网也能读
+main.dart	已转入后台下载, 完成后会通知你
+main.dart	帮助中心
+main.dart	常见问题
+main.dart	底部导航栏
+main.dart	底部导航栏 · 折叠 · 悬浮球
+main.dart	开始下载
+main.dart	开源阅读资料库
+main.dart	彻底删除
+main.dart	恢复失败: $e
+main.dart	悬浮球
+main.dart	悬浮球自动吸附边缘
+main.dart	成功率${e[
+main.dart	手动输入地址 / 局域网自动发现
+main.dart	打开
+main.dart	扫码安装 / 分享给家人
+main.dart	扫码直接下载最新版 · 或保存分享图发到群里
+main.dart	把 App 分享给家人
+main.dart	折叠
+main.dart	按天明细
+main.dart	换一来源 · 同一本书的其它来源（${list.length}）
+main.dart	换一来源失败: ${snap.error}
+main.dart	播完本曲停止
+main.dart	播放地址还没解析出来，等歌开始播再保存
+main.dart	播放地址还没解析出来，等画面出来后再保存
+main.dart	播放失败: $err
+main.dart	播放错误: $err
+main.dart	改昵称
+main.dart	数据存在哪?
+main.dart	无损
+main.dart	无法自动调起安装(${r.message})\n请到 下载App 页找到安装包手动安装
+main.dart	日
+main.dart	暂无更新信息
+main.dart	暂无歌词\n这首歌没有找到，换一首试试
+main.dart	暂无网络资料库在线
+main.dart	暂未发现 · 资源库/资料库开机后会自动广播
+main.dart	更新历史
+main.dart	最近播放
+main.dart	本周字数
+main.dart	本周时长
+main.dart	本地
+main.dart	本地库
+main.dart	本地漫画
+main.dart	本地视频
+main.dart	本地音乐
+main.dart	本机+资源库各存一份
+main.dart	本章无图片
+main.dart	本话已经保存过了
+main.dart	本话还没有图片，等加载出来再保存
+main.dart	本集播完，自动播放下一集
+main.dart	条漫
+main.dart	来源 $sourceS
+main.dart	查看后端与在线资料库
+main.dart	检测到本地已存在该版本的安装包, 可直接安装(覆盖安装数据保留)
+main.dart	模块「$key」未注册，菜单不可用
+main.dart	模块介绍
+main.dart	模块菜单暂不可用，请返回首页后重试
+main.dart	歌单为空\n播放过的歌自动入单 · 本地导入的歌也在这里
+main.dart	正在下载 $name
+main.dart	正在下载更新
+main.dart	正在删除账号…
+main.dart	每个功能在哪里点、出错怎么查
+main.dart	永久删除
+main.dart	没找到外挂字幕。把 srt/vtt/ass 放在视频同目录、与视频同名即可自动识别
+main.dart	清空搜索历史
+main.dart	清除封面
+main.dart	点一下正文收起为 1/3 细条并保持, 点细条恢复; 长按底栏弹出模块抽屉
+main.dart	点击正文自动收起导航栏
+main.dart	点开即读 · 不可删除
+main.dart	版本公告与活动
+main.dart	用户协议与隐私政策
+main.dart	用户数据全部存你自己的资源库; 云端只存账号、头像、设置与公钥
+main.dart	用系统播放器打开
+main.dart	目录
+main.dart	直接安装
+main.dart	相册同步
+main.dart	相册权限被拒
+main.dart	移出
+main.dart	移出书架
+main.dart	稍后
+main.dart	空
+main.dart	等待音频会话就绪…
+main.dart	简介
+main.dart	纯播放器前端 · 连接资源库开始
+main.dart	纸
+main.dart	线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…
+main.dart	缓存已清理
+main.dart	编辑书籍
+main.dart	翻页
+main.dart	自动全屏
+main.dart	获取播放地址失败: $e
+main.dart	覆盖安装, 数据自动保留\n下载完成的安装包会保存在"已下载的安装包"列表, 可随时重装或长按删除
+main.dart	解锁
+main.dart	触发秒数
+main.dart	该模块暂无播放器设置\n全局设置在「我的」里
+main.dart	语言 / Language
+main.dart	账号
+main.dart	账号已删除，云端数据已清除
+main.dart	资源库状态
+main.dart	跟随系统 / System
+main.dart	身份码
+main.dart	身份码 ${AppSettings.identityCode}
+main.dart	身份码已复制
+main.dart	近期
+main.dart	还没有播放记录\n去音乐/视频/有声书/广播里播点什么
+main.dart	还没有本地小说\n点右上角 + 导入 txt / epub
+main.dart	还没有本地漫画\n点右上角 + 导入图片或 zip/cbz
+main.dart	还没有本地视频\n点右上角 + 导入 mp4 等
+main.dart	还没有本地音乐\n点右上角 + 导入 mp3 等
+main.dart	还没有阅读记录\n打开任意一本小说开始计时
+main.dart	还没有阅读记录\n打开任意一本小说，阅读时长会自动记在这里
+main.dart	这个文件系统解码器打不开
+main.dart	这台设备/当前状态进不了画中画
+main.dart	这本《使用说明书》随应用内置，
+main.dart	这条字幕没解析出内容: ${_subs[i].split(
+main.dart	连接
+main.dart	连接资源库
+main.dart	追更提醒
+main.dart	选择头像
+main.dart	选择照片 (${assets.length}张可选前50)
+main.dart	逐模块全屏开关
+main.dart	通知
+main.dart	都下
+main.dart	重新下载
+main.dart	重新扫描
+main.dart	错误: $e
+main.dart	阅读统计
+main.dart	队列为空
+main.dart	随机
+main.dart	顺序
