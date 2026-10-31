@@ -180,14 +180,16 @@ Map<String, Map<String, String>> parseDict(String src) {
 void main() {
   final mainSrc = File('lib/core/i18n.dart').readAsStringSync();
   final extraSrc = File('lib/core/i18n_extra.dart').readAsStringSync();
+  final uiWordsSrc = File('lib/core/i18n_ui_words.dart').readAsStringSync();
 
   final d1 = parseDict(mainSrc);
   final d2 = parseDict(extraSrc);
+  final d3 = parseDict(uiWordsSrc);
 
   // 合并方向必须与 `_mergeExtra` 一致：**extra 覆盖基础**。
   final dict = <String, Map<String, String>>{};
   for (final l in kLocales) {
-    dict[l] = {...?d1[l], ...?d2[l]};
+    dict[l] = {...?d1[l], ...?d2[l], ...?d3[l]};
   }
 
   // ── 1. 解析器自检（防止"审计本身错了"） ──
