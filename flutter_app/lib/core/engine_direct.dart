@@ -569,7 +569,9 @@ class EngineDirect {
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - lastTick > 200) {
         lastTick = now;
-        try { onDownloadProgress?.call(b.length, cap); } catch (_) {}
+        try {
+          onDownloadProgress?.call(b.length, cap);
+        } catch (_) {}
       }
       if (b.length > cap) done.complete(false);
     }, onDone: () {
@@ -815,7 +817,8 @@ class EngineDirect {
   }) async {
     // mode 只在引擎声明了 search-mode 时才发 —— 老引擎忽略未知参数虽无副作用，
     // 但少发一个参数就少一处"版本漂移时行为不一致"的可能。
-    final modeQ = supportsSearchMode ? '&mode=${Uri.encodeComponent(mode)}' : '';
+    final modeQ =
+        supportsSearchMode ? '&mode=${Uri.encodeComponent(mode)}' : '';
     // deep：让引擎忽略时间预算上限（协议里等价于 full=1），配流式一路扫到底。
     final deepQ = (deep || mode == 'deep') ? '&full=1' : '';
     final path = '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
@@ -904,9 +907,8 @@ class EngineDirect {
         }
         // ★NDJSON：按行切。BufferingStreamedResponse 已经做过一层缓冲，
         //   这里再挂 utf8.decoder + LineSplitter，天然处理"半个多字节字符跨块"。
-        final lines = res.stream
-            .transform(utf8.decoder)
-            .transform(const LineSplitter());
+        final lines =
+            res.stream.transform(utf8.decoder).transform(const LineSplitter());
         final doneCtl = Completer<void>();
         sub = lines.listen((line) {
           final t = line.trim();
@@ -965,6 +967,13 @@ class EngineDirect {
   ///   （小说不受影响，所以问题表现为"部分能用、部分调不动"）。
   ///   网页端 thp-direct.js 早已按此分流，本文件对齐它。
   ///
+  /// ★2026-10-31 回落修复（用户报「内容拉取不出来」的真凶）：
+  ///   漫画引擎 1.10.9 的 THP 只实现了兼容端点 /thp/content（回 data.images），
+  ///   没有 /thp/m/comic/content → 上面的分流对漫画恒 404「未知端点」。
+  ///   音乐/影视引擎两套端点都实现了（Java 侧 path 双匹配），不受影响。
+  ///   修法：规范端点失败（404/未知端点）时回落兼容端点 /thp/content?type=mod，
+  ///   新旧引擎通吃；其余错误（上游失败/超时）原样抛，别把真原因吞掉。
+  ///
   /// 返回统一归一成调用方契约：text/content、images/pages、header/headers
   /// 各键都补齐（NovelReaderPage 要 text、EngineComicReader 要 images+headers、
   /// 播放器要 url+headers）。
@@ -975,9 +984,21 @@ class EngineDirect {
     // 空章节引用(音乐单曲/视频直链这类无目录条目)退化为第 0 章，
     // 否则引擎回 400「缺参数 chapterId」，用户只看到一句取内容失败。
     final ch = Uri.encodeComponent(chapter.trim().isEmpty ? '0' : chapter);
-    final r = mod == 'novel'
-        ? await _get('/thp/content?type=novel&id=$eid&chapter=$ch', false, 30)
-        : await _get('/thp/m/$mod/content?id=$eid&chapter=$ch', false, 30);
+    Map<String, dynamic> r;
+    if (mod == 'novel') {
+      r = await _get('/thp/content?type=novel&id=$eid&chapter=$ch', false, 30);
+    } else {
+      try {
+        r = await _get('/thp/m/$mod/content?id=$eid&chapter=$ch', false, 30);
+      } catch (e) {
+        final msg = '$e';
+        final notFound = msg.contains('未知端点') ||
+            msg.contains('NOT_FOUND') ||
+            msg.contains('HTTP 404');
+        if (!notFound) rethrow;
+        r = await _get('/thp/content?type=$mod&id=$eid&chapter=$ch', false, 30);
+      }
+    }
     final d = r['data'];
     final m = Map<String, dynamic>.from(d is Map ? d : {'text': '$d'});
     if (m['images'] == null && m['pages'] != null) m['images'] = m['pages'];
@@ -988,6 +1009,58 @@ class EngineDirect {
       };
     }
     return m;
+  }
+
+  /// 评论列表（漫画级或章节级）。★2026-10-31 漫画引擎 THP 新增 /thp/comments。
+  ///
+  /// 端点是引擎私有扩展（小说/音乐/影视引擎没有 → 会抛「未知端点」，
+  /// 调用方按不支持处理）。返回引擎信封里 data.items，键：
+  /// userName/avatar/content/time/replyCount/id/score/isLiked/voteStatus。
+  ///
+  /// [ep] 非空时取章节评论（需引擎图源声明 chapterCommentsLoader），
+  /// [subId]/[replyTo] 用于楼中楼翻页。
+  static Future<List<Map<String, dynamic>>> comments(
+    String type,
+    String id, {
+    int page = 1,
+    String? ep,
+    String? subId,
+    String? replyTo,
+  }) async {
+    final mod = moduleOf(type);
+    final eid = Uri.encodeComponent(id);
+    // type=comic 给 moduleOfPath 路由用（兼容端点形态 /thp/<op>?type=<mod>），
+    // 否则评论会打到「当前默认资料库」而不是漫画资料库。
+    final buf = StringBuffer('/thp/comments?id=$eid&page=$page&type=$mod');
+    if (ep != null && ep.isNotEmpty)
+      buf.write('&ep=${Uri.encodeComponent(ep)}');
+    if (subId != null && subId.isNotEmpty) {
+      buf.write('&subId=${Uri.encodeComponent(subId)}');
+    }
+    if (replyTo != null && replyTo.isNotEmpty) {
+      buf.write('&replyTo=${Uri.encodeComponent(replyTo)}');
+    }
+    // type 决定走哪个资料库（moduleOf 路由），端点路径本身不带模块。
+    final r = await _get(buf.toString(), false, 20);
+    final d = r['data'];
+    final list = d is Map ? d['items'] : null;
+    if (list is! List) return const [];
+    return [for (final e in list) Map<String, dynamic>.from(e as Map)];
+  }
+
+  /// 点赞/取消点赞（漫画级）。★2026-10-31 漫画引擎 THP 新增 /thp/like。
+  /// 返回后端确认后的 isLiked（引擎拿不到最新态时回显请求值）。
+  static Future<bool> likeItem(String type, String id,
+      {required bool isLiking}) async {
+    final mod = moduleOf(type);
+    final eid = Uri.encodeComponent(id);
+    final r = await _get(
+        '/thp/like?id=$eid&action=${isLiking ? 'like' : 'unlike'}&type=$mod',
+        false,
+        15);
+    final d = r['data'];
+    if (d is Map && d['isLiked'] is bool) return d['isLiked'] as bool;
+    return isLiking;
   }
 
   /// 前端类型 → 引擎模块名。引擎只注册了 novel/comic/music/video 四个模块
@@ -1035,7 +1108,10 @@ class EngineDirect {
     final m1 = RegExp(r'^/thp/m/([a-z]+)/').firstMatch(path);
     if (m1 != null) {
       final raw = m1.group(1)!;
-      return (raw == 'novel' || raw == 'comic' || raw == 'music' || raw == 'video')
+      return (raw == 'novel' ||
+              raw == 'comic' ||
+              raw == 'music' ||
+              raw == 'video')
           ? raw
           : '';
     }
@@ -1081,7 +1157,10 @@ class EngineDirect {
       for (final c in d.caps) {
         if (!c.startsWith('m:')) continue;
         final mod = c.substring(2);
-        if (mod == 'novel' || mod == 'comic' || mod == 'music' || mod == 'video') {
+        if (mod == 'novel' ||
+            mod == 'comic' ||
+            mod == 'music' ||
+            mod == 'video') {
           map.putIfAbsent(mod, () => d.url);
         }
       }
@@ -1105,8 +1184,6 @@ class EngineDirect {
       _moduleUrls[mod] = u.trim();
     }
   }
-
-
 
   /// 发现页结构: 各书源的分类标签 [{source, sourceName, tags:[{name,url}]}]
   /// 空 url 的标签会被引擎过滤；这里再兜一层，避免 UI 渲染出点了必 400 的标签。
