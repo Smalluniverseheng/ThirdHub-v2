@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
+import 'i18n.dart';
 
 class GalleryPage extends StatefulWidget { const GalleryPage({super.key}); @override State<GalleryPage> createState() => _Gp(); }
 class _Gp extends State<GalleryPage> {
@@ -75,8 +76,8 @@ class _Vw extends State<_Viewer> {
       title: Text('${i + 1}/${widget.photos.length}', style: const TextStyle(fontSize: 13)),
       actions: [IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async {
         final ok = await showDialog<bool>(context: c, builder: (c2) => AlertDialog(title: const Text('删除这张照片?'),
-          actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除'))]));
+          actions: [TextButton(onPressed: () => Navigator.pop(c2, false), child: Text(tr('取消'))),
+            FilledButton(onPressed: () => Navigator.pop(c2, true), child: Text(tr('删除')))]));
         if (ok == true) { await PhotoManager.editor.deleteWithIds([e.id]); if (c.mounted) Navigator.pop(c); }
       })]),
       body: PageView.builder(controller: pc, itemCount: widget.photos.length,
