@@ -392,7 +392,29 @@ class I18n extends ChangeNotifier {
     i18nUiWords.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-01 第二批：main.dart 外壳的硬编码文案（见 i18n_ui_words.dart）。
+    i18nUiWords2.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
+  }
+
+  /// 带占位符的翻译：key 与译文都用 `{name}` 占位，按 vars 逐项替换。
+  ///
+  /// 为什么需要它：`tr()` 只做查表。像 `'第${i + 1}集'` 这种**在调用前就已经
+  /// 拼好**的字符串，字典里永远查不到（`第7集` ≠ `第{n}集`），只能整句回落中文。
+  /// 所以这类文案改成 `trf('第{n}集', {'n': '${i + 1}'})`：
+  /// 先用**模板**查表拿到译文，再做替换 —— 语序也能跟着语言走
+  /// （英文 `Ep 7`、日文 `第7話`，直接拼串是做不到的）。
+  ///
+  /// ★注意变量占位写 `{$k}`（花括号在外）**不是** `$k`：后者会被 Dart 当字符串
+  ///   插值求值，查表前就拼死了，等于没做国际化。
+  static String trf(String zh, Map<String, Object?> vars) {
+    var s = tr(zh);
+    vars.forEach((k, v) {
+      s = s.replaceAll('{$k}', "${v ?? ''}");
+    });
+    return s;
   }
 
   /// 查找链：**当前语言 → 英文 → 中文原文**。
@@ -420,6 +442,12 @@ class I18n extends ChangeNotifier {
 }
 
 String tr(String s) => I18n.tr(s);
+
+/// 顶层 `trf` 快捷入口 —— 与 `tr` 保持同一套用法（页面里一律写 `trf(...)`）。
+///
+/// ★必须有这一层：`trf` 先写成 `I18n` 的静态方法，而页面里全都裸写 `trf(...)`。
+///   少了这个 wrapper，`main.dart` 里会出现 `Undefined function 'trf'`。
+String trf(String zh, Map<String, Object?> vars) => I18n.trf(zh, vars);
 
 /// 分段控件（`SegmentedButton`）专用标签：**强制单行 + 超出省略**。
 ///
