@@ -461,7 +461,7 @@ class _RemotePrintState extends State<RemotePrintPage> {
     final ok = await showDialog<bool>(context: c, builder: (d) => AlertDialog(
       title: const Text('打印文本'),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
+        TextField(controller: t, decoration: InputDecoration(labelText: tr('标题'), isDense: true)),
         const SizedBox(height: 8),
         TextField(controller: b, minLines: 4, maxLines: 10,
           decoration: const InputDecoration(labelText: '内容', isDense: true, border: OutlineInputBorder())),
