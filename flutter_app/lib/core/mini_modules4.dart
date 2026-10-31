@@ -431,7 +431,7 @@ class _Pod extends State<PodcastPage> {
       Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
         if (failed) FilledButton.tonalIcon(
           onPressed: () { final f = feeds.firstWhere((x) => x['title'] == curFeed, orElse: () => const {}); if (f.isNotEmpty) _openFeed(f); },
-          icon: Icon(Icons.refresh, size: 16), label: const Text(tr('重试'))),
+          icon: Icon(Icons.refresh, size: 16), label: Text(tr('重试'))),
         if (failed && feeds.length > 1) FilledButton.tonalIcon(
           onPressed: () {
             final i = feeds.indexWhere((x) => x['title'] == curFeed);
