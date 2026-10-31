@@ -3325,7 +3325,7 @@ class _Psub extends State<ProfileSubPage> {
                           Navigator.pop(c);
                         }
                       },
-                      child: const Padding(
+                      child: Padding(
                           padding: EdgeInsets.symmetric(vertical: 14),
                           child: Center(
                               child: Text(tr('退出登录'),
