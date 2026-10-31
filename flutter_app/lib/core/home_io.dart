@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lab_logic.dart';
+import 'i18n.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // A. 智能家居 (Home Assistant)
@@ -213,7 +214,7 @@ class _SmartHomeState extends State<SmartHomePage> {
           style: TextStyle(fontSize: 11, color: Colors.grey))),
       ])),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('保存并连接')),
       ]));
     final bb = b.text, tt = t.text;
@@ -444,8 +445,8 @@ class _RemotePrintState extends State<RemotePrintPage> {
           style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.6))),
       ])),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
-        TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('保存')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
+        TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('保存'))),
       ]));
     final v = ctl.text;
     ctl.dispose();
@@ -460,13 +461,13 @@ class _RemotePrintState extends State<RemotePrintPage> {
     final ok = await showDialog<bool>(context: c, builder: (d) => AlertDialog(
       title: const Text('打印文本'),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: t, decoration: const InputDecoration(labelText: '标题', isDense: true)),
+        TextField(controller: t, decoration: const InputDecoration(labelText: tr('标题'), isDense: true)),
         const SizedBox(height: 8),
         TextField(controller: b, minLines: 4, maxLines: 10,
           decoration: const InputDecoration(labelText: '内容', isDense: true, border: OutlineInputBorder())),
       ])),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('加进队列')),
       ]));
     final title = t.text.trim(), body = b.text;
@@ -492,7 +493,7 @@ class _RemotePrintState extends State<RemotePrintPage> {
           style: TextStyle(fontSize: 11, color: Colors.grey))),
       ])),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('取消'))),
         TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('加进队列')),
       ]));
     final path = f.text.trim(), title = t.text.trim();
