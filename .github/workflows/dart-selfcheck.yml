@@ -207,6 +207,20 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/i18n_hardcoded_scan.dart
 
+      # ★第 14 条 storage_usage（2026-11-02 加）—— 「云存储」明细的口径闸门。
+      #
+      #   两件事，缺一都会变成"界面看着对、数字是错的"：
+      #   ① 口径：分组（文件/会话/设置）的条数与合计必须等于输入之和。数字错了
+      #      在界面上和数字对了长得一样，只能靠断言。
+      #   ② 动态 i18n key：明细行是**数据驱动**的（`tr(r.label)`），
+      #      i18n_selfcheck 用的是 `tr('字面量')` 正则 —— 这批中文 key 它一个都
+      #      看不见，等于绕开"6 语言必须齐全"。本自检独立查一遍，
+      #      并要求清单与 plan/cloud 源码一致（防止白名单过期）。
+      #   实测 2026-11-02：PASS 30 / FAIL 0，exit 0。
+      - name: storage_usage（云存储明细：分组口径/合计/空数据 + 数据驱动文案 6 语言）
+        working-directory: flutter_app
+        run: dart run tool/storage_usage_selfcheck.dart
+
       - name: chat_proto（局域网聊天 LANCHAT/1：信封/去重排序/降级原因/端到端加密）
         working-directory: flutter_app
         run: dart run tool/chat_proto_selfcheck.dart

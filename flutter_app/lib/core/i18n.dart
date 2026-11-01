@@ -396,6 +396,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords2.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-02 第三批：「云存储」页的存储明细（清单第 2 项）。
+    i18nUiWords3.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

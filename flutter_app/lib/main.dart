@@ -57,6 +57,7 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/storage_usage.dart';
 import 'core/remote_config.dart';
 import 'core/member_levels.dart';
 import 'core/module_registry.dart';
@@ -14851,6 +14852,22 @@ class CloudPage extends StatefulWidget {
 }
 
 class _CloudPageState extends State<CloudPage> {
+  /// 本机存储明细快照（null = 还没算完 / 算失败）。
+  ///
+  /// ★2026-11-02（待办清单第 2 项）：此前这一页只有一个数字
+  ///   `AppSettings.localUsageKB`，而它的算法是「5 个 prefs 键的字符串长度之和」，
+  ///   既不含落盘文件、也不含会话消息 —— 用户在系统设置里看到几百 MB，
+  ///   在这里看到 12KB，两个数字互相打架，还说不出"到底存了什么"。
+  StorageUsage? _usage;
+
+  /// 云端各表存量（null = 未登录或还没拉到）。
+  List<CloudTableStat>? _cloud;
+
+  /// 上次成功同步时刻（epoch ms，0 = 从未同步）。
+  int _syncedAt = 0;
+
+  bool _busy = false;
+
   /// ★2026-10-11：此前这一栏写死「免费 · 会员体系冻结期」且 `enabled: false`
   ///   —— 既不准（付费用户也显示"免费"），又不可点（看不到任何解释）。
   ///   现在改为**读真实等级**（与个人资料页同一数据源 core/member_levels.dart），
@@ -14858,16 +14875,105 @@ class _CloudPageState extends State<CloudPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // ★ 不在 initState 里调 _refresh()：它第一行就是 setState，而 initState 发生在
+    //   父级 build 期间（owner._debugBuilding == true），同步 setState 会撞
+    //   「setState() called during build」。这里直接置标志位，等首帧之后再扫。
+    _busy = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
-  Future<void> _load() async {
-    if (!Cloud.loggedIn || Cloud.profileData.isNotEmpty) return;
-    try {
-      await Cloud.profile();
-    } catch (_) {}
-    if (mounted) setState(() {});
+  /// 用户主动刷新（按钮 / 下拉）：带忙碌判定，避免并发扫两遍。
+  Future<void> _refresh() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await _load();
   }
+
+  /// 真正干活的部分：本机明细 + 云端存量 + 上次同步时刻。
+  ///
+  /// 不放 FutureBuilder：云端那 7 个 REST 请求如果跟着 build 走，每次 setState
+  /// 都会重发一遍；这里只在进页面 / 点刷新 / 下拉时跑。
+  /// 统计失败一律降级（明细留空），**不能挡住会员等级这条主信息**。
+  Future<void> _load() async {
+    try {
+      if (Cloud.loggedIn && Cloud.profileData.isEmpty) {
+        try {
+          await Cloud.profile();
+        } catch (_) {}
+      }
+      final StorageUsage u = await scanStorageUsage();
+      List<CloudTableStat>? c;
+      if (Cloud.loggedIn) {
+        try {
+          c = await Cloud.cloudInventory();
+        } catch (_) {}
+      }
+      final int at = await Cloud.lastSyncedAt();
+      if (!mounted) return;
+      setState(() {
+        _usage = u;
+        _cloud = c;
+        _syncedAt = at;
+      });
+    } catch (_) {
+      // 明细算不出来不影响本页其他内容
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 云端已用（只算成功读到的行载荷，≈）。
+  int _cloudBytes() {
+    final List<CloudTableStat>? c = _cloud;
+    if (c == null) return 0;
+    return c.where((e) => e.ok).fold(0, (a, e) => a + e.bytes);
+  }
+
+  String _localTotalText(StorageUsage u) => trf('本机合计 {size} · {n} 项', {
+        'size': StorageUsage.formatSize(u.totalBytes),
+        'n': '${u.totalItems}',
+      });
+
+  String _fmtTime(int ms) {
+    final DateTime d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} '
+        '${two(d.hour)}:${two(d.minute)}';
+  }
+
+  Widget _groupHeader(String title, int bytes) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+        child: Row(children: [
+          Text(tr(title),
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(StorageUsage.formatSize(bytes),
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ]),
+      );
+
+  /// 一行明细：左边是什么、副标题是多少个、右边占多大。
+  ///
+  /// [failed] 单独一个参数而不是拿 `bytes == 0` 推断 —— 云端"读取失败"与
+  /// "确实 0 条"在界面上必须分得开（前者要用户去查网络/登录态）。
+  Widget _rowTile(String label, String unit, int count, int bytes,
+          {bool failed = false}) =>
+      ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        title: Text(tr(label), style: const TextStyle(fontSize: 13)),
+        subtitle: Text(
+            failed
+                ? tr('读取失败')
+                : trf('{n} {unit}', {'n': '$count', 'unit': tr(unit)}),
+            style: const TextStyle(fontSize: 10.5)),
+        trailing: Text(failed ? '—' : StorageUsage.formatSize(bytes),
+            style:
+                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+      );
 
   Future<void> _openLevel(String subtitle) async {
     final StringBuffer sb = StringBuffer();
@@ -14919,32 +15025,146 @@ class _CloudPageState extends State<CloudPage> {
         loggedIn: logged,
         levelId: levelId,
         expireAt: expRaw == null ? null : '$expRaw');
+    final StorageUsage? u = _usage;
+    final int quota = lv.storageBytes;
+    final double pct = (!lv.unlimitedStorage && quota > 0)
+        ? (_cloudBytes() / quota).clamp(0.0, 1.0).toDouble()
+        : 0.0;
     return Scaffold(
-        appBar: AppBar(title: Text(tr('云端'))),
-        body: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
-          Card(
-              child: Column(children: [
-            ListTile(
-                leading: const Icon(Icons.cloud_outlined, size: 20),
-                title: Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
-                subtitle: Text(
-                    trf('用量 {used} / {total} · 进度存自己后端不占配额', {
-                      'used':
-                          '${AppSettings.localUsageKB.toStringAsFixed(1)}KB',
-                      'total': memberStorageText(lv)
-                    }),
-                    style: const TextStyle(fontSize: 11))),
-            const Divider(height: 1, indent: 56),
-            ListTile(
-                leading: Icon(Icons.workspace_premium_outlined,
-                    size: 20, color: Color(lv.colorValue)),
-                title: Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
-                subtitle: Text(levelLine, style: const TextStyle(fontSize: 11)),
-                trailing: const Icon(Icons.chevron_right, size: 18),
-                onTap: () => _openLevel(levelLine)),
-          ])),
-        ]));
+        appBar: AppBar(title: Text(tr('云端')), actions: [
+          IconButton(
+            tooltip: tr('重新统计'),
+            onPressed: _busy ? null : _refresh,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh, size: 20),
+          ),
+        ]),
+        body: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(padding: EdgeInsets.all(ScreenFit.pad), children: [
+              Card(
+                  child: Column(children: [
+                ListTile(
+                    leading: const Icon(Icons.cloud_outlined, size: 20),
+                    title: Text(tr('云存储'),
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text(
+                        trf('云配额 {used} / {total}', {
+                          'used': StorageUsage.formatSize(_cloudBytes()),
+                          'total': lv.unlimitedStorage
+                              ? tr('不限')
+                              : StorageUsage.formatSize(quota),
+                        }),
+                        style: const TextStyle(fontSize: 11))),
+                if (logged)
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                              value: pct, minHeight: 5))),
+                if (u != null)
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(_localTotalText(u),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey)))),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                    leading: Icon(Icons.workspace_premium_outlined,
+                        size: 20, color: Color(lv.colorValue)),
+                    title: Text(tr('会员等级'),
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text(levelLine,
+                        style: const TextStyle(fontSize: 11)),
+                    trailing: const Icon(Icons.chevron_right, size: 18),
+                    onTap: () => _openLevel(levelLine)),
+              ])),
+              const SizedBox(height: 8),
+              Card(
+                  child: Column(children: [
+                const SizedBox(height: 10),
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+                    child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(tr('存储明细'),
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)))),
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+                    child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(tr('按类别列出存了什么、各占多少'),
+                            style: const TextStyle(
+                                fontSize: 10.5, color: Colors.grey)))),
+                if (u == null)
+                  ListTile(
+                      dense: true,
+                      title: Text(tr('统计中…'),
+                          style: const TextStyle(fontSize: 12.5)))
+                else
+                  for (final UsageGroup g in u.groups) ...[
+                    _groupHeader(g.title, g.bytes),
+                    for (final UsageRow r in g.rows)
+                      _rowTile(r.label, r.unit, r.count, r.bytes),
+                  ],
+                if (logged) ...[
+                  _groupHeader('云端', _cloudBytes()),
+                  if (_cloud == null)
+                    ListTile(
+                        dense: true,
+                        title: Text(tr('统计中…'),
+                            style: const TextStyle(fontSize: 12.5)))
+                  else ...[
+                    for (final CloudTableStat s in _cloud!)
+                      _rowTile(s.label, '条', s.rows, s.bytes, failed: !s.ok),
+                    Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                        child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                                _syncedAt <= 0
+                                    ? tr('尚未同步')
+                                    : '${tr('上次同步')} · ${_fmtTime(_syncedAt)}',
+                                style: const TextStyle(
+                                    fontSize: 10.5, color: Colors.grey)))),
+                  ],
+                ] else
+                  ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.login, size: 18),
+                      title: Text(tr('未登录 · 登录后显示云端明细'),
+                          style: const TextStyle(fontSize: 12))),
+                const SizedBox(height: 6),
+              ])),
+              const SizedBox(height: 8),
+              Card(
+                  child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                                tr('只有账号数据计入云配额；会话与文件存在本机或自己的后端，不占配额'),
+                                style: const TextStyle(
+                                    fontSize: 11, height: 1.6)),
+                            const SizedBox(height: 6),
+                            Text(
+                                tr('文件部分统计的是应用私有目录（含离线/导入/接收/日志）；系统相册与外部存储不在其中'),
+                                style: const TextStyle(
+                                    fontSize: 11, height: 1.6)),
+                          ]))),
+              const SizedBox(height: 20),
+            ])));
   }
+
 }
 
 // ── 子页面: 关于(模块介绍 + 协议入口 + 致谢) ──

@@ -271,6 +271,56 @@ class Cloud {
     } catch (_) { return false; }
   }
 
+  /// 一张同步表的云端存量（行数 + 载荷字节数）。
+  ///
+  /// ★ [ok] 必须与"0 行"分开：此前只有 `tableDown()` 返回 `List`，
+  ///   读取失败和"云端确实没有数据"都返回 `[]`，界面上就无法区分
+  ///   「你还没同步过」和「网络/RLS 出错，读到的是空」—— 这两种情况
+  ///   用户要做的事完全不同（一个是去同步，一个是去查网络/登录态）。
+  static Future<CloudTableStat> tableStat(String table) async {
+    if (!loggedIn || !syncTables.contains(table)) {
+      return CloudTableStat(table, 0, 0, false);
+    }
+    try {
+      final r = await http.get(
+          Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&select=*'),
+          headers: _authHeaders);
+      if (r.statusCode != 200) return CloudTableStat(table, 0, 0, false);
+      final body = utf8.decode(r.bodyBytes);
+      final list = jsonDecode(body) as List;
+      return CloudTableStat(table, list.length, body.length, true);
+    } catch (_) {
+      return CloudTableStat(table, 0, 0, false);
+    }
+  }
+
+  /// 云端设置行的存量（`th_settings` 不在 syncTables 里，单列一条）。
+  static Future<CloudTableStat> settingsStat() async {
+    if (!loggedIn) return const CloudTableStat('th_settings', 0, 0, false);
+    try {
+      final r = await http.get(
+          Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=id,data,updated_at'),
+          headers: _authHeaders);
+      if (r.statusCode != 200) return const CloudTableStat('th_settings', 0, 0, false);
+      final body = utf8.decode(r.bodyBytes);
+      final list = jsonDecode(body) as List;
+      return CloudTableStat('th_settings', list.length, body.length, true);
+    } catch (_) {
+      return const CloudTableStat('th_settings', 0, 0, false);
+    }
+  }
+
+  /// 云端存量清单（设置行 + 6 张同步表；未登录返回空表）。
+  ///
+  /// 只用于「云存储」页的明细展示，不参与同步判定，所以失败一律降级成 ok=false。
+  static Future<List<CloudTableStat>> cloudInventory() async {
+    if (!loggedIn) return const <CloudTableStat>[];
+    return Future.wait([
+      settingsStat(),
+      for (final t in syncTables) tableStat(t),
+    ]);
+  }
+
   /// 通用：按表读回本用户的全部行
   static Future<List<Map<String, dynamic>>> tableDown(String table) async {
     if (!loggedIn || !syncTables.contains(table)) return [];
@@ -517,5 +567,38 @@ class Cloud {
       if (localAt > cloudAt) return {'result': (await settingsUp()) ? 'pushed' : 'error', 'keys': 0};
       return {'result': 'same', 'keys': 0};
     } catch (_) { return {'result': 'error', 'keys': 0}; }
+  }
+}
+
+/// 一张云端表的存量。`bytes` 是**响应体长度**（含 JSON 包装），
+/// 与 App 内 prefs 的口径一样是"大致占用"，UI 上标 `≈`。
+class CloudTableStat {
+  final String table;
+  final int rows;
+  final int bytes;
+
+  /// 读取是否成功。false 时 [rows] 恒为 0，**不代表云端为空**。
+  final bool ok;
+
+  const CloudTableStat(this.table, this.rows, this.bytes, this.ok);
+
+  /// 表名 → 明细行名（中文原文即 i18n key）。未知表原样返回表名。
+  String get label {
+    switch (table) {
+      case 'th_settings':
+        return '云端设置';
+      case 'th_bookshelf':
+        return '书架';
+      case 'th_reading_progress':
+        return '阅读进度';
+      case 'th_history':
+        return '历史';
+      case 'th_favorites':
+        return '收藏';
+      case 'th_user_devices':
+        return '设备';
+      default:
+        return table;
+    }
   }
 }
