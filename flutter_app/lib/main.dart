@@ -2369,7 +2369,8 @@ Future<void> confirmDeleteAccount(BuildContext context,
                       controller: ctrl,
                       autofocus: true,
                       decoration: InputDecoration(
-                          labelText: tr('输入「删除」以确认'), border: OutlineInputBorder()),
+                          labelText: tr('输入「删除」以确认'),
+                          border: OutlineInputBorder()),
                       onChanged: (v) => setD(() => phrase = v.trim()),
                     ),
                   ]),
@@ -2943,7 +2944,8 @@ class HelpPage extends StatelessWidget {
                   () => Navigator.push(
                       c,
                       smoothRoute(LegalDocPage(
-                          title: tr('隐私政策'), asset: 'assets/legal/privacy.md')))),
+                          title: tr('隐私政策'),
+                          asset: 'assets/legal/privacy.md')))),
               const Divider(height: 1, indent: 52),
               _row(
                   c,
@@ -2952,7 +2954,8 @@ class HelpPage extends StatelessWidget {
                   () => Navigator.push(
                       c,
                       smoothRoute(LegalDocPage(
-                          title: tr('用户服务协议'), asset: 'assets/legal/terms.md')))),
+                          title: tr('用户服务协议'),
+                          asset: 'assets/legal/terms.md')))),
             ])),
         const Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 14, 6),
@@ -3280,7 +3283,10 @@ class _Psub extends State<ProfileSubPage> {
                     Icon(Icons.workspace_premium_outlined,
                         size: 12, color: lvColor),
                     const SizedBox(width: 4),
-                    Text(logged ? lv.name : (lv.name.isEmpty ? tr('游客') : lv.name),
+                    Text(
+                        logged
+                            ? lv.name
+                            : (lv.name.isEmpty ? tr('游客') : lv.name),
                         style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w700,
@@ -3296,7 +3302,8 @@ class _Psub extends State<ProfileSubPage> {
                     () => _editField('nickname', '昵称', nick)),
                 const Divider(height: 1, indent: 16),
                 if (logged) ...[
-                  row(tr('邮箱'), Cloud.email, () => _copy(tr('邮箱'), Cloud.email)),
+                  row(tr('邮箱'), Cloud.email,
+                      () => _copy(tr('邮箱'), Cloud.email)),
                   const Divider(height: 1, indent: 16)
                 ],
                 row(
@@ -5933,9 +5940,8 @@ class _Sh extends State<ShelfPage> {
                               context: c,
                               builder: (c2) => AlertDialog(
                                       title: const Text('删除本地书'),
-                                      content:
-                                          Text(trf('《{name}》\n将同时删除本地文件',
-                                              {'name': lb['name'] ?? ''})),
+                                      content: Text(trf('《{name}》\n将同时删除本地文件',
+                                          {'name': lb['name'] ?? ''})),
                                       actions: [
                                         TextButton(
                                             onPressed: () =>
@@ -7863,9 +7869,8 @@ class _MPlay extends State<MusicPlayPage> {
     }
     if (mounted) setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(minutes < 0
-            ? tr('将在本曲播完后停止')
-            : trf('{n} 分钟后停止播放', {'n': minutes})),
+        content: Text(
+            minutes < 0 ? tr('将在本曲播完后停止') : trf('{n} 分钟后停止播放', {'n': minutes})),
         duration: const Duration(seconds: 1)));
   }
 
@@ -9090,7 +9095,8 @@ class _Vp extends State<VideoPlayPage> {
                       goEpisode(i);
                     },
                     child: Text(
-                        widget.episodes[i]['name'] ?? trf('第{n}集', {'n': i + 1}),
+                        widget.episodes[i]['name'] ??
+                            trf('第{n}集', {'n': i + 1}),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 11))))));
@@ -9200,8 +9206,7 @@ class _Vp extends State<VideoPlayPage> {
             if (widget.episodes.length > 1 && OfflineUI.batchDownloadAllowed)
               IconButton(
                   icon: const Icon(Icons.playlist_add, size: 20),
-                  tooltip: trf('下载全部 {n} 集',
-                      {'n': widget.episodes.length}),
+                  tooltip: trf('下载全部 {n} 集', {'n': widget.episodes.length}),
                   onPressed: _downloadAllEpisodes),
             // ★视频定时关闭（2026-10-12）。
             IconButton(
@@ -9755,7 +9760,7 @@ class RootNav extends StatefulWidget {
   State<RootNav> createState() => _RootNavState();
 }
 
-class _RootNavState extends State<RootNav> {
+class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   List<String> enabled = ['我的'];
   int idx = 0;
   bool _navCollapsed = false; // 点按正文收起(去文字, 缩到 ~1/3 高, 点细条恢复)
@@ -9791,6 +9796,15 @@ class _RootNavState extends State<RootNav> {
         NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
     _wireLocalHooks(); // ★4.44.0 上下文注入 + 前端控制能力
     unawaited(_bootPeers()); // ★4.44.0 端网：接入 + 定时心跳（无后端时自动退化为直连模式）
+    // ★2026-11-02：设置自动同步（网页端 ⇄ 本机）。
+    //
+    //   此前 Cloud.syncAll() 只挂在「我的 → 系统与生态 → 与网页端同步设置」一个按钮上，
+    //   启动时不拉、回到前台也不拉 —— 用户在网页端改了东西，App 只要不手动点同步
+    //   就永远看不到。这才是「两端不同步」的真正原因（同步逻辑本身是好的：
+    //   合并写入 + updatedAt 判冲突 + 布局键互通，全都在 cloud.dart 里）。
+    WidgetsBinding.instance.addObserver(this);
+    Future.delayed(
+        const Duration(seconds: 6), () => _autoSyncSettings(silent: true));
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) Updater.check(context);
     });
@@ -10126,9 +10140,45 @@ class _RootNavState extends State<RootNav> {
     if (identical(RootNav.inst, this)) RootNav.inst = null;
     _fsTimer?.cancel();
     _updateTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _page.dispose();
     _navScroll.dispose();
     super.dispose();
+  }
+
+  /// 设置自动同步（网页端 ⇄ 本机）。
+  ///
+  /// [silent] 启动与回前台走这条路：不弹错误、只在真的拉下了东西时提示一句。
+  /// 方向判定 / 合并写入 / 冲突判据全在 Cloud.syncAll()（与网页端 settings-sync.js
+  /// 同一套规则），这里只负责「什么时候调」。
+  Future<void> _autoSyncSettings({bool silent = false}) async {
+    if (!Cloud.loggedIn) return;
+    try {
+      final r = await Cloud.syncAll();
+      if (!mounted) return;
+      final keys = (r['keys'] as int?) ?? 0;
+      if (r['result'] == 'pulled' && keys > 0) {
+        // 云端较新且已写入本地 prefs —— 界面要重读一次才看得见
+        setState(() {});
+        if (silent) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text('已同步网页端的 $keys 项设置')));
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 回到前台：用户可能在网页端刚改过设置 → 拉一次。
+    // 切到后台：本机可能刚改过设置 → 也走同一入口，方向由 syncAll 的时间戳判据决定，
+    //   不需要在这里区分「该推还是该拉」。
+    // 不需要节流 —— syncAll 是「读一行 + 比时间戳」，没变化就不落任何东西。
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.paused) {
+      unawaited(_autoSyncSettings(silent: true));
+    }
   }
 
   Future<void> _load() async {
@@ -10924,8 +10974,8 @@ void showModuleSettings(BuildContext c, String modKey) {
                           segments: [
                             ButtonSegment(
                                 value: 'scroll',
-                                label:
-                                    Text(tr('滚动'), style: TextStyle(fontSize: 10))),
+                                label: Text(tr('滚动'),
+                                    style: TextStyle(fontSize: 10))),
                             ButtonSegment(
                                 value: 'paged',
                                 label:
@@ -11134,16 +11184,14 @@ Future<int> importLocal(String kind) {
 /// 还是压缩包解不开。把原因摆出来，才知道下一步该做什么。
 SnackBar importSnack(int n, String unit) {
   final errs = LocalLib.lastErrors;
-  final String head = n > 0
-      ? trf('已导入 {n} {unit}', {'n': n, 'unit': tr(unit)})
-      : tr('没有导入成功');
+  final String head =
+      n > 0 ? trf('已导入 {n} {unit}', {'n': n, 'unit': tr(unit)}) : tr('没有导入成功');
   if (errs.isEmpty) return SnackBar(content: Text(head));
   final int extra = errs.length - 3;
   // ★2026-11-01：这三句以前是直接拼中文的（`'失败 $n 项：'`），切语言后仍是中文。
   //   拆成 trf 模板后，语序交给译文决定，不再靠中文语序拼串。
   final String failHead = trf('{n} 项导入失败：', {'n': errs.length});
-  final String more =
-      extra > 0 ? '\n${trf('…还有 {n} 项', {'n': extra})}' : '';
+  final String more = extra > 0 ? '\n${trf('…还有 {n} 项', {'n': extra})}' : '';
   return SnackBar(
     duration: const Duration(seconds: 6),
     content: Text('$head\n$failHead\n${errs.take(3).join('\n')}$more'),
@@ -11332,8 +11380,9 @@ class _At extends State<AccountTile> {
                 builder: (c2, setSt) {
                   void fail(String m) => setSt(() => tip = m);
                   return AlertDialog(
-                      title:
-                          Text(isLogin ? tr('登录 ThirdHub 账号') : tr('注册 ThirdHub 账号')),
+                      title: Text(isLogin
+                          ? tr('登录 ThirdHub 账号')
+                          : tr('注册 ThirdHub 账号')),
                       content:
                           Column(mainAxisSize: MainAxisSize.min, children: [
                         TextField(
@@ -12218,8 +12267,8 @@ class Updater {
       if (now - lastPush < 800) return;
       lastPush = now;
       final v = progress.value;
-      unawaited(Notify.progress(
-          notifId, title, v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : tr('连接中…'),
+      unawaited(Notify.progress(notifId, title,
+          v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : tr('连接中…'),
           value: (v * 100).round(), indeterminate: v <= 0));
     }
 
@@ -12641,9 +12690,8 @@ class _Ln extends State<LocalNovelsPage> {
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(
-          title: Text(selecting
-              ? trf('已选 {n} 本', {'n': sel.length})
-              : tr('本地小说')),
+          title:
+              Text(selecting ? trf('已选 {n} 本', {'n': sel.length}) : tr('本地小说')),
           actions: selecting
               ? [
                   TextButton(
@@ -14782,19 +14830,14 @@ class _Sy extends State<SystemPage> {
                       appBar: AppBar(title: const Text('下载与存储')),
                       body: const ToolsSection())))),
           const Divider(height: 1, indent: 56),
+          // ★2026-11-02 合并重复入口：这里原本是两行 —— 「连接资源库」和
+          //   「贤者模式（内容保护）」，两者 `onTap` 指向页面完全相同，只是文案不同。
+          //   同一个页面给两个入口，用户会以为买了两个功能。现在并为一行，
+          //   把「PIN 锁」的事写进副标题。
           ListTile(
               leading: const Icon(Icons.link, size: 20),
               title: const Text('连接资源库', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('手动输入地址 / 局域网自动发现',
-                  style: TextStyle(fontSize: 11)),
-              onTap: () =>
-                  Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
-          const Divider(height: 1, indent: 56),
-          ListTile(
-              leading: const Icon(Icons.shield_outlined, size: 20),
-              title:
-                  Text(tr('贤者模式（内容保护）'), style: const TextStyle(fontSize: 14)),
-              subtitle: const Text('PIN锁 · 在"连接资源库"页设置',
+              subtitle: const Text('手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）',
                   style: TextStyle(fontSize: 11)),
               onTap: () =>
                   Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),
@@ -15050,8 +15093,8 @@ class _CloudPageState extends State<CloudPage> {
                   child: Column(children: [
                 ListTile(
                     leading: const Icon(Icons.cloud_outlined, size: 20),
-                    title: Text(tr('云存储'),
-                        style: const TextStyle(fontSize: 14)),
+                    title:
+                        Text(tr('云存储'), style: const TextStyle(fontSize: 14)),
                     subtitle: Text(
                         trf('云配额 {used} / {total}', {
                           'used': StorageUsage.formatSize(_cloudBytes()),
@@ -15079,10 +15122,10 @@ class _CloudPageState extends State<CloudPage> {
                 ListTile(
                     leading: Icon(Icons.workspace_premium_outlined,
                         size: 20, color: Color(lv.colorValue)),
-                    title: Text(tr('会员等级'),
-                        style: const TextStyle(fontSize: 14)),
-                    subtitle: Text(levelLine,
-                        style: const TextStyle(fontSize: 11)),
+                    title:
+                        Text(tr('会员等级'), style: const TextStyle(fontSize: 14)),
+                    subtitle:
+                        Text(levelLine, style: const TextStyle(fontSize: 11)),
                     trailing: const Icon(Icons.chevron_right, size: 18),
                     onTap: () => _openLevel(levelLine)),
               ])),
@@ -15151,20 +15194,17 @@ class _CloudPageState extends State<CloudPage> {
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                                tr('只有账号数据计入云配额；会话与文件存在本机或自己的后端，不占配额'),
-                                style: const TextStyle(
-                                    fontSize: 11, height: 1.6)),
+                            Text(tr('只有账号数据计入云配额；会话与文件存在本机或自己的后端，不占配额'),
+                                style:
+                                    const TextStyle(fontSize: 11, height: 1.6)),
                             const SizedBox(height: 6),
-                            Text(
-                                tr('文件部分统计的是应用私有目录（含离线/导入/接收/日志）；系统相册与外部存储不在其中'),
-                                style: const TextStyle(
-                                    fontSize: 11, height: 1.6)),
+                            Text(tr('文件部分统计的是应用私有目录（含离线/导入/接收/日志）；系统相册与外部存储不在其中'),
+                                style:
+                                    const TextStyle(fontSize: 11, height: 1.6)),
                           ]))),
               const SizedBox(height: 20),
             ])));
   }
-
 }
 
 // ── 子页面: 关于(模块介绍 + 协议入口 + 致谢) ──
@@ -15216,7 +15256,8 @@ class AboutPage extends StatelessWidget {
                   c,
                   MaterialPageRoute(
                       builder: (_) => LegalDocPage(
-                          title: tr('隐私政策'), asset: 'assets/legal/privacy.md')))),
+                          title: tr('隐私政策'),
+                          asset: 'assets/legal/privacy.md')))),
           const Divider(height: 1, indent: 56),
           ListTile(
               leading: const Icon(Icons.description_outlined, size: 20),
@@ -15225,7 +15266,8 @@ class AboutPage extends StatelessWidget {
                   c,
                   MaterialPageRoute(
                       builder: (_) => LegalDocPage(
-                          title: tr('用户服务协议'), asset: 'assets/legal/terms.md')))),
+                          title: tr('用户服务协议'),
+                          asset: 'assets/legal/terms.md')))),
           const Divider(height: 1, indent: 56),
           ListTile(
               leading: const Icon(Icons.favorite_border, size: 20),
@@ -15727,8 +15769,7 @@ class _Ei extends State<EngineItemPage> {
                 OfflineUI.batchDownloadAllowed)
               IconButton(
                   icon: const Icon(Icons.playlist_add, size: 21),
-                  tooltip:
-                      trf('下载整部 {n} 话', {'n': chapters.length}),
+                  tooltip: trf('下载整部 {n} 话', {'n': chapters.length}),
                   onPressed: _downloadAllChapters),
           ]),
       body: loading
