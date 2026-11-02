@@ -9798,10 +9798,10 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     unawaited(_bootPeers()); // ★4.44.0 端网：接入 + 定时心跳（无后端时自动退化为直连模式）
     // ★2026-11-02：设置自动同步（网页端 ⇄ 本机）。
     //
-    //   此前 Cloud.syncAll() 只挂在「我的 → 系统与生态 → 与网页端同步设置」一个按钮上，
-    //   启动时不拉、回到前台也不拉 —— 用户在网页端改了东西，App 只要不手动点同步
+    //   此前 Cloud.syncAll() 只挂在「我的 → 系统与生态 → 与网页端同步设置」一个按钮上：
+    //   启动不拉、回到前台也不拉 —— 用户在网页端改了东西，App 只要不手动点同步
     //   就永远看不到。这才是「两端不同步」的真正原因（同步逻辑本身是好的：
-    //   合并写入 + updatedAt 判冲突 + 布局键互通，全都在 cloud.dart 里）。
+    //   合并写入 + updatedAt 判冲突 + 布局键互通，全在 cloud.dart 里）。
     WidgetsBinding.instance.addObserver(this);
     Future.delayed(
         const Duration(seconds: 6), () => _autoSyncSettings(silent: true));
@@ -10148,7 +10148,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
 
   /// 设置自动同步（网页端 ⇄ 本机）。
   ///
-  /// [silent] 启动与回前台走这条路：不弹错误、只在真的拉下了东西时提示一句。
+  /// [silent] 启动与前后台切换走这条路：不弹错误，只在真的拉下了东西时提示一句。
   /// 方向判定 / 合并写入 / 冲突判据全在 Cloud.syncAll()（与网页端 settings-sync.js
   /// 同一套规则），这里只负责「什么时候调」。
   Future<void> _autoSyncSettings({bool silent = false}) async {
@@ -10172,8 +10172,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 回到前台：用户可能在网页端刚改过设置 → 拉一次。
-    // 切到后台：本机可能刚改过设置 → 也走同一入口，方向由 syncAll 的时间戳判据决定，
-    //   不需要在这里区分「该推还是该拉」。
+    // 切到后台：本机可能刚改过设置 → 也走同一入口，方向由 syncAll 的时间戳判据决定。
     // 不需要节流 —— syncAll 是「读一行 + 比时间戳」，没变化就不落任何东西。
     if (state == AppLifecycleState.resumed ||
         state == AppLifecycleState.paused) {
@@ -14830,10 +14829,9 @@ class _Sy extends State<SystemPage> {
                       appBar: AppBar(title: const Text('下载与存储')),
                       body: const ToolsSection())))),
           const Divider(height: 1, indent: 56),
-          // ★2026-11-02 合并重复入口：这里原本是两行 —— 「连接资源库」和
-          //   「贤者模式（内容保护）」，两者 `onTap` 指向页面完全相同，只是文案不同。
-          //   同一个页面给两个入口，用户会以为买了两个功能。现在并为一行，
-          //   把「PIN 锁」的事写进副标题。
+          // ★2026-11-02 合并重复入口：这里原本是两行 —— 「连接资源库」与
+          //   「贤者模式（内容保护）」，两者 onTap 指向的页面完全相同，只是文案不同。
+          //   同一个页面给两个入口，用户会以为买了两个功能。现在并为一行。
           ListTile(
               leading: const Icon(Icons.link, size: 20),
               title: const Text('连接资源库', style: TextStyle(fontSize: 14)),
