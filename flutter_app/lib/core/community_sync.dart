@@ -7,8 +7,9 @@
 //   手机上一条也刷不出来。看起来"两边都有社区"，实际上是两个孤岛。
 //
 // 字段契约（照抄网页端 js/modules/community.js）：
-//   posts:    user_id / nickname / avatar / category / content / likes / created_at
-//   comments: post_id / user_id / avatar / nickname / content / created_at
+//   posts:    user_id / nickname / category / content / likes / created_at
+//   comments: post_id / user_id / nickname / content / created_at
+//   ★ 没有 avatar 列（网页端照旧带 avatar 发 → 每次 400，所以那两张表一直是空的）。
 // 映射函数在 `sync_contract.dart`（纯逻辑，有闸门），这里只负责收发。
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +21,7 @@ import 'sync_contract.dart';
 class CommunitySync {
   static bool get enabled => Cloud.loggedIn;
 
-  /// 发表时用的昵称/头像：与网页端一致（`me.nickname || me.email`）。
+  /// 发表时用的昵称：与网页端一致（`me.nickname || me.email`）。
   static String get myName {
     final Object? n = Cloud.profileData['nickname'];
     final String nick = n == null ? '' : '$n'.trim();
@@ -28,6 +29,12 @@ class CommunitySync {
     return Cloud.email.isEmpty ? 'TH 用户' : Cloud.email.split('@').first;
   }
 
+  /// ★ 头像是**故意不发**的：云端 `community_posts` / `community_comments`
+  /// 两张表**根本没有 avatar 列**（2026-11-03 用 OpenAPI 定义核实过）。
+  /// 多带一个不存在的列，PostgREST 直接 400 `column avatar does not exist`，
+  /// 而错误体是空的 —— 网页端 `community.js` 就是带着 avatar 发的，
+  /// 所以那张表至今 0 行（写一次失败一次，错误被 toast 吞了）。
+  /// 这里的注释就是防止下一个人"照着网页端补齐字段"再把坑踩一遍。
   static String get myAvatar => '${Cloud.profileData['avatar'] ?? ''}';
 
   /// 云端行 → App 的 [CommunityPost]。
@@ -67,7 +74,6 @@ class CommunitySync {
     return Cloud.rowUp('community_posts', <String, dynamic>{
       'user_id': Cloud.userId,
       'nickname': myName,
-      'avatar': myAvatar,
       'category': p.kind,
       'content': cloudContentOfPost(title: p.title, body: p.body, tags: p.tags),
       'likes': p.likes,
@@ -100,7 +106,6 @@ class CommunitySync {
       'post_id': postId,
       'user_id': Cloud.userId,
       'nickname': myName,
-      'avatar': myAvatar,
       'content': t,
     });
   }

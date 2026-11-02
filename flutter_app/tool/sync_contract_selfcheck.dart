@@ -242,6 +242,11 @@ void main() {
             syncSrc.contains("'th_reading_progress'"));
     ck('两张社区表在 community_sync 里都有字面量',
         csyncSrc.contains("'community_posts'") && csyncSrc.contains("'community_comments'"));
+    // ★ 2026-11-03 真机之前先撞上的坑：云端两张社区表**没有 avatar 列**，
+    //   多带一个不存在的键 → PostgREST 400（错误体还是空的）。
+    //   网页端就是这么写的，所以 community_posts 至今 0 行。
+    ck('社区写入不带 avatar（云端无此列，带了必 400）',
+        !csyncSrc.contains("'avatar':"));
     ck('云端删除走 tableDelete（不是只删本机）', cloudSrc.contains('static Future<bool> tableDelete('));
     ck('社区表走列级 rowUp/rowDown（不混进 syncTables 信封）',
         cloudSrc.contains('static const List<String> communityTables') &&
