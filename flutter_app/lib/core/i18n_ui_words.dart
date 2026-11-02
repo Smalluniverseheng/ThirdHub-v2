@@ -805,3 +805,120 @@ const Map<String, Map<String, String>> i18nUiWords3 =
         'تشمل أرقام الملفات مجلد التطبيق الخاص (دون اتصال / الاستيراد / المستلمة / السجلات)؛ ولا تشمل معرض النظام والتخزين الخارجي.',
   },
 };
+
+// ══════════════════════════════════════════════════════════════════════════
+// 第四批（2026-11-03）：社区云端化新增的界面文案（待办清单第 3 项）
+//
+// 为什么这些必须走 tr()：`tool/i18n_hardcoded_scan.dart` 是**只降不升**的
+// ratchet —— 新写的硬编码中文会让闸门红。而一旦包了 tr()，
+// `tool/i18n_selfcheck.dart` 就要求 6 语言齐全。两个闸门夹着，
+// 「新文案只写中文」这条路是走不通的，这是刻意的。
+// ══════════════════════════════════════════════════════════════════════════
+const Map<String, Map<String, String>> i18nUiWords4 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'When signed in, posts sync to the cloud community and show up on the web too',
+    '云端暂时没有内容（或读取失败）':
+        'Nothing in the cloud yet (or the request failed)',
+    '暂无评论': 'No comments yet',
+    '写评论…': 'Write a comment…',
+    '已发布到云端': 'Posted to the cloud',
+    '匿名': 'Anonymous',
+  },
+  'ja': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'ログインするとクラウドコミュニティに同期され、ウェブ版でも見えます',
+    '云端暂时没有内容（或读取失败）':
+        'クラウドにまだ内容がありません（または読み取りに失敗しました）',
+    '暂无评论': 'コメントはまだありません',
+    '写评论…': 'コメントを書く…',
+    '已发布到云端': 'クラウドに投稿しました',
+    '匿名': '匿名',
+  },
+  'fr': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'Une fois connecté, les publications sont synchronisées avec la communauté cloud et visibles sur le web',
+    '云端暂时没有内容（或读取失败）':
+        'Rien dans le cloud pour le moment (ou échec de lecture)',
+    '暂无评论': 'Aucun commentaire',
+    '写评论…': 'Écrire un commentaire…',
+    '已发布到云端': 'Publié dans le cloud',
+    '匿名': 'Anonyme',
+  },
+  'ru': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'После входа публикации синхронизируются с облачным сообществом и видны в веб-версии',
+    '云端暂时没有内容（或读取失败）':
+        'В облаке пока ничего нет (или не удалось прочитать)',
+    '暂无评论': 'Комментариев пока нет',
+    '写评论…': 'Написать комментарий…',
+    '已发布到云端': 'Опубликовано в облаке',
+    '匿名': 'Аноним',
+  },
+  'es': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'Al iniciar sesión, las publicaciones se sincronizan con la comunidad en la nube y se ven en la web',
+    '云端暂时没有内容（或读取失败）':
+        'Aún no hay nada en la nube (o falló la lectura)',
+    '暂无评论': 'Aún no hay comentarios',
+    '写评论…': 'Escribe un comentario…',
+    '已发布到云端': 'Publicado en la nube',
+    '匿名': 'Anónimo',
+  },
+  'ar': <String, String>{
+    '登录后会同步到云端社区，网页端也能看到':
+        'بعد تسجيل الدخول تُزامَن المنشورات مع مجتمع السحابة وتظهر في نسخة الويب',
+    '云端暂时没有内容（或读取失败）':
+        'لا يوجد محتوى في السحابة بعد (أو فشلت القراءة)',
+    '暂无评论': 'لا توجد تعليقات بعد',
+    '写评论…': 'اكتب تعليقاً…',
+    '已发布到云端': 'نُشر في السحابة',
+    '匿名': 'مجهول',
+  },
+};
+
+// 第四批补遗：本轮同步提示 / 合并入口副标题
+// （这两条是 4.81.15 的"两个入口合一"改出来的新文案，当时没补译文，
+//   `tool/i18n_hardcoded_scan.dart` 已把它俩记为新增 —— 这里一并清掉。）
+const Map<String, Map<String, String>> i18nUiWords5 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '已从云端同步 {n} 条阅读记录': 'Synced {n} reading records from the cloud',
+    '已同步网页端的 {n} 项设置': 'Synced {n} settings from the web',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        'Enter address manually / LAN auto-discovery · includes Sage mode (PIN lock)',
+  },
+  'ja': <String, String>{
+    '已从云端同步 {n} 条阅读记录': 'クラウドから読書記録 {n} 件を同期しました',
+    '已同步网页端的 {n} 项设置': 'ウェブ版の設定 {n} 件を同期しました',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        'アドレスを手動入力 / LAN 自動検出 · セージモード（PIN ロック）を含む',
+  },
+  'fr': <String, String>{
+    '已从云端同步 {n} 条阅读记录':
+        '{n} enregistrements de lecture synchronisés depuis le cloud',
+    '已同步网页端的 {n} 项设置': '{n} réglages synchronisés depuis le web',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        "Saisir l'adresse manuellement / découverte LAN automatique · inclut le mode Sage (verrou PIN)",
+  },
+  'ru': <String, String>{
+    '已从云端同步 {n} 条阅读记录': 'Синхронизировано {n} записей чтения из облака',
+    '已同步网页端的 {n} 项设置': 'Синхронизировано {n} настроек из веб-версии',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        'Ввести адрес вручную / автопоиск в локальной сети · включает режим Sage (PIN-код)',
+  },
+  'es': <String, String>{
+    '已从云端同步 {n} 条阅读记录':
+        '{n} registros de lectura sincronizados desde la nube',
+    '已同步网页端的 {n} 项设置': '{n} ajustes sincronizados desde la web',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        'Introducir la dirección manualmente / descubrimiento automático en LAN · incluye modo Sage (bloqueo PIN)',
+  },
+  'ar': <String, String>{
+    '已从云端同步 {n} 条阅读记录': 'تمت مزامنة {n} من سجلات القراءة من السحابة',
+    '已同步网页端的 {n} 项设置': 'تمت مزامنة {n} من الإعدادات من نسخة الويب',
+    '手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）':
+        'إدخال العنوان يدوياً / اكتشاف تلقائي في الشبكة المحلية · يشمل وضع Sage (قفل PIN)',
+  },
+};

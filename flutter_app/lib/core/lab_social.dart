@@ -19,6 +19,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lab_logic.dart';
 import 'i18n.dart';
+import 'community_sync.dart';
+import 'sync_contract.dart';
 
 /// 论坛里给人看的时间。
 ///
@@ -326,9 +328,15 @@ class _ChatState extends State<ChatPage> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// B. 社区 —— 规则/源/心得分享板(本地优先)
+// B. 社区 —— 规则/源/心得分享板（本机 + 云端双写）
 //
-// CommunityPost / mergePosts / kPostKinds 都在 lab_logic.dart(唯一实现)。
+// ★ 2026-11-03 核实出来的断层：本页的帖子一直存在 SharedPreferences 的
+//   `community_posts` 键里，而网页端读写的是 Supabase 的 `community_posts` **表**。
+//   **同名不同物** —— 手机上发的帖网页端看不到，网页端的热帖手机上刷不出来。
+//   现在：未登录 = 纯本机（原有行为不变）；登录 = 发帖双写、列表合并云端信息流、
+//   点赞/评论走云端（`community_comments`）。
+//
+// CommunityPost / mergePosts / kPostKinds 都在 lab_logic.dart（唯一实现）。
 // ═══════════════════════════════════════════════════════════════════════════
 
 class CommunityStore {
@@ -350,6 +358,9 @@ class CommunityStore {
     await (await SharedPreferences.getInstance())
       .setString(key, jsonEncode([for (final p in posts) p.toJson()]));
   }
+
+  /// 外部（云端合并之后）需要落盘时的唯一入口。
+  static Future<void> saveNow() => _save();
 
   static Future<void> add(CommunityPost p) async { posts.insert(0, p); await _save(); }
   static Future<void> update(CommunityPost p) async {
@@ -383,13 +394,64 @@ class CommunityPage extends StatefulWidget {
 
 class _CommunityState extends State<CommunityPage> {
   bool _ready = false;
+  bool _cloudBusy = false;
+  bool _cloudTried = false;
   String _q = '';
   String _kind = '全部';
   static const kinds = kPostKinds;
 
   @override void initState() {
     super.initState();
-    CommunityStore.load().then((_) { if (mounted) setState(() => _ready = true); });
+    CommunityStore.load().then((_) {
+      if (mounted) setState(() => _ready = true);
+      // 本机读完再拉云端：先把用户自己的东西显示出来，网络慢也不白屏
+      _refreshCloud();
+    });
+  }
+
+  /// 拉云端信息流并与本机合并。
+  ///
+  /// 合并要点（三个都必须有，少一个就会出现"越同步越乱"）：
+  /// ① 按 id / 标题去重 —— 发帖是本机先落地再上云，云端回来的是新 uuid，
+  ///    只认 id 会立刻多出一条一模一样的；
+  /// ② 同标题命中时**用云端那条替换本机那条**，否则本机草稿永远拿不到 uuid，
+  ///    也就点不开评论、点不了"云端"的赞；
+  /// ③ 点赞数以云端为准（多端点赞只有云端是准的）。
+  Future<void> _refreshCloud() async {
+    if (!CommunitySync.enabled) return;
+    if (_cloudBusy) return;
+    setState(() => _cloudBusy = true);
+    try {
+      final List<CommunityPost> feed = await CommunitySync.feed();
+      if (!mounted) return;
+      final List<CommunityPost> posts = CommunityStore.posts;
+      // ① 新条目
+      posts.addAll(mergePosts(posts, feed));
+      // ② 本机草稿升级成云端版本
+      for (int i = 0; i < posts.length; i++) {
+        final CommunityPost p = posts[i];
+        if (p.cloud) continue;
+        for (final CommunityPost f in feed) {
+          if (f.title.isNotEmpty && f.title == p.title) {
+            posts[i] = f;
+            break;
+          }
+        }
+      }
+      // ③ 点赞数刷新
+      for (final CommunityPost p in posts) {
+        if (!p.cloud) continue;
+        for (final CommunityPost f in feed) {
+          if (f.id == p.id) { p.likes = f.likes; break; }
+        }
+      }
+      posts.sort((CommunityPost a, CommunityPost b) => b.ts.compareTo(a.ts));
+      await CommunityStore.saveNow();
+      await CommunitySync.markPulled();
+      setState(() { _cloudTried = true; _cloudBusy = false; });
+    } catch (_) {
+      if (mounted) setState(() { _cloudTried = true; _cloudBusy = false; });
+    }
   }
 
   List<CommunityPost> get _shown => [
@@ -404,10 +466,22 @@ class _CommunityState extends State<CommunityPage> {
     // 顶层模块页直接嵌在 RootNav 的 PageView 里(外层已有 Scaffold), 这里不再自带 Scaffold
     return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
         Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('规则/源/心得 分享板', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          Row(children: [
+            const Expanded(child: Text('规则/源/心得 分享板', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+            if (_cloudBusy) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+            else if (CommunitySync.enabled)
+              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(), iconSize: 18,
+                tooltip: tr('刷新'), onPressed: _refreshCloud, icon: const Icon(Icons.refresh)),
+          ]),
           const SizedBox(height: 4),
-          Text('把你在别处看到的好规则、好源配置、踩坑经验存下来。存的是本机, 导出成 JSON 就能带走或分享给家人。',
+          Text(CommunitySync.enabled
+              ? tr('登录后会同步到云端社区，网页端也能看到')
+              : '把你在别处看到的好规则、好源配置、踩坑经验存下来。存的是本机, 导出成 JSON 就能带走或分享给家人。',
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.5)),
+          if (CommunitySync.enabled && _cloudTried && CommunityStore.posts.every((p) => !p.cloud))
+            Padding(padding: const EdgeInsets.only(top: 4),
+              child: Text(tr('云端暂时没有内容（或读取失败）'),
+                style: TextStyle(fontSize: 10, color: Colors.orange.shade700))),
           const SizedBox(height: 8),
           TextField(onChanged: (v) => setState(() => _q = v.trim()), style: const TextStyle(fontSize: 13),
             decoration: const InputDecoration(hintText: '搜索标题 / 正文 / 标签', isDense: true, prefixIcon: Icon(Icons.search, size: 18),
@@ -436,9 +510,16 @@ class _CommunityState extends State<CommunityPage> {
                 decoration: BoxDecoration(color: Theme.of(c).colorScheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6)),
                 child: Text(p.kind, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.primary))),
+              if (p.cloud) Padding(padding: const EdgeInsets.only(left: 5),
+                child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6)),
+                  child: Text(tr('云端'), style: TextStyle(fontSize: 10, color: Colors.teal.shade700)))),
               const SizedBox(width: 8),
               Expanded(child: Text(p.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
             ]),
+            if (p.cloud && p.author.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3),
+              child: Text(p.author, style: TextStyle(fontSize: 10, color: Colors.grey.shade600))),
             if (p.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6),
               child: SelectableText(p.body, maxLines: 6, style: const TextStyle(fontSize: 12, height: 1.5))),
             if (p.tags.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6),
@@ -447,14 +528,43 @@ class _CommunityState extends State<CommunityPage> {
               ])),
             const SizedBox(height: 4),
             Row(children: [
-              IconButton(onPressed: () => setState(() => CommunityStore.like(p.id)),
+              IconButton(
+                onPressed: () async {
+                  // 云端帖：点赞数只有云端那份是准的（多端都会点）
+                  if (p.cloud) {
+                    final int n = p.likes + 1;
+                    setState(() => p.likes = n);
+                    await CommunitySync.setLikes(p.id, n);
+                  } else {
+                    setState(() => CommunityStore.like(p.id));
+                  }
+                },
                 icon: const Icon(Icons.thumb_up_alt_outlined, size: 16), tooltip: '有用'),
               Text('${p.likes}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+              if (p.cloud) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: c,
+                    isScrollControlled: true,
+                    builder: (_) => _CommentsSheet(postId: p.id),
+                  ),
+                  icon: const Icon(Icons.mode_comment_outlined, size: 16), tooltip: tr('评论')),
+              ],
               const Spacer(),
               IconButton(onPressed: () { Clipboard.setData(ClipboardData(text: p.body)); _toast(c, '正文已复制'); },
                 icon: const Icon(Icons.copy, size: 16), tooltip: '复制正文'),
-              IconButton(onPressed: () => _edit(c, p), icon: const Icon(Icons.edit_outlined, size: 16)),
-              IconButton(onPressed: () async { await CommunityStore.remove(p.id); setState(() {}); },
+              // 云端帖不能在本机改（改了也推不上去，只会让两端内容分叉）
+              if (!p.cloud) IconButton(onPressed: () => _edit(c, p), icon: const Icon(Icons.edit_outlined, size: 16)),
+              IconButton(
+                onPressed: () async {
+                  if (p.cloud) {
+                    final bool ok = await CommunitySync.remove(p.id);
+                    if (!ok) { _toast(c, tr('失败')); return; }
+                  }
+                  await CommunityStore.remove(p.id);
+                  setState(() {});
+                },
                 icon: const Icon(Icons.delete_outline, size: 16)),
             ]),
           ]))),
@@ -494,9 +604,23 @@ class _CommunityState extends State<CommunityPage> {
     if (ok != true) return;
     if (title.isEmpty) { _toast(c, '标题不能为空'); return; }
     if (p == null) {
-      await CommunityStore.add(CommunityPost(
+      final post = CommunityPost(
         id: 'p-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
-        title: title, body: body, kind: kind, tags: tags, ts: DateTime.now().millisecondsSinceEpoch));
+        title: title, body: body, kind: kind, tags: tags, ts: DateTime.now().millisecondsSinceEpoch);
+      // 先落本机（离线也不能丢用户刚写的东西），再推云端
+      await CommunityStore.add(post);
+      setState(() {});
+      if (CommunitySync.enabled) {
+        final bool ok = await CommunitySync.publish(post);
+        if (ok) {
+          if (mounted) _toast(context, tr('已发布到云端'));
+          await _refreshCloud(); // 拉回来拿到云端 uuid，才能评论/点赞
+        } else if (mounted) {
+          // 不静默：用户以为"发出去了"，实际只在本人手机里
+          _toast(context, '${tr('失败')} · ${tr('云端')}');
+        }
+      }
+      return;
     } else {
       await CommunityStore.update(CommunityPost(id: p.id, title: title, body: body,
         kind: kind, tags: tags, ts: p.ts, likes: p.likes));
@@ -533,6 +657,120 @@ class _CommunityState extends State<CommunityPage> {
       _toast(c, n == 0 ? '没有新内容(全部已存在)' : '新增 $n 帖');
     } catch (e) { _toast(c, 'JSON 解析失败: $e'); }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B-2. 云端帖的评论区（`community_comments`）
+//
+// 为什么单独一个面板而不是塞进列表卡片：评论是**按帖加载**的（一屏 40 帖
+// 全带评论 = 40 次请求），只有用户真的点开某帖时才该发这一次。
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _CommentsSheet extends StatefulWidget {
+  final String postId;
+  const _CommentsSheet({required this.postId});
+  @override State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  List<Map<String, dynamic>> _rows = <Map<String, dynamic>>[];
+  bool _loading = true;
+  bool _sending = false;
+  final TextEditingController _ctl = TextEditingController();
+
+  @override void initState() { super.initState(); _load(); }
+  @override void dispose() { _ctl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    final List<Map<String, dynamic>> rows = await CommunitySync.comments(widget.postId);
+    if (!mounted) return;
+    setState(() { _rows = rows; _loading = false; });
+  }
+
+  Future<void> _send() async {
+    final String t = _ctl.text.trim();
+    if (t.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    final bool ok = await CommunitySync.addComment(widget.postId, t);
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (!ok) {
+      // 失败必须说出来：静默的话用户会以为评论发出去了
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('失败'))));
+      return;
+    }
+    _ctl.clear();
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext c) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+        child: SizedBox(
+          height: 440,
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
+              child: Row(children: [
+                Text(tr('评论'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => Navigator.pop(c)),
+              ]),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _rows.isEmpty
+                      ? Center(child: Text(tr('暂无评论'),
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600)))
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          itemCount: _rows.length,
+                          separatorBuilder: (_, __) => Divider(height: 14, color: Colors.grey.shade200),
+                          itemBuilder: (_, int i) {
+                            final Map<String, dynamic> r = _rows[i];
+                            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Row(children: [
+                                Text('${r['nickname'] ?? ''}'.isEmpty ? tr('匿名') : '${r['nickname']}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 6),
+                                Text(fmtWhen(tsOfIso('${r['created_at'] ?? ''}')),
+                                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                              ]),
+                              const SizedBox(height: 2),
+                              SelectableText('${r['content'] ?? ''}',
+                                  style: const TextStyle(fontSize: 12, height: 1.5)),
+                            ]);
+                          },
+                        ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
+                child: Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ctl,
+                      style: const TextStyle(fontSize: 13),
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _send(),
+                      decoration: InputDecoration(
+                          hintText: tr('写评论…'), isDense: true,
+                          border: const OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filled(onPressed: _send,
+                      icon: _sending
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.send, size: 18)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

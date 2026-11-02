@@ -221,6 +221,22 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/storage_usage_selfcheck.dart
 
+      # ★第 15 条 sync_contract（2026-11-03 加）—— 「社区/阅读数据同步」的接线闸门。
+      #
+      #   这条闸门要抓的病，是**编译、analyze、单测全都绿的那种坏**：
+      #   Cloud.shelfUp / progressUp / historyUp 都写好了、类型也对、逻辑也对，
+      #   但全项目 0 个调用点 —— 功能等于不存在，而云端 th_history 里躺着
+      #   24 行数据，App 一行都看不到。任何"检查函数本身"的断言都抓不到它。
+      #
+      #   所以它断言两件事：
+      #   ① 合并规则（墓碑 / 新旧比较 / audio→music / title↔name / 标签往返）；
+      #   ② **接线还在**：pushShelf/pushHistory/removeShelf/pullAll/pushProgress
+      #      与 CommunitySync.* 必须在真实页面文件里出现。删掉调用点 = 红。
+      #   实测 2026-11-03：PASS 56 / FAIL 0，exit 0。
+      - name: sync_contract（社区/阅读同步：id/字段名/墓碑合并/接线防死代码）
+        working-directory: flutter_app
+        run: dart run tool/sync_contract_selfcheck.dart
+
       - name: chat_proto（局域网聊天 LANCHAT/1：信封/去重排序/降级原因/端到端加密）
         working-directory: flutter_app
         run: dart run tool/chat_proto_selfcheck.dart

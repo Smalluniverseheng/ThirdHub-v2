@@ -26,6 +26,7 @@ import 'motion.dart';
 // ★2026-10-03：正文失败要「说清哪个源坏了 + 给换源出口」，这两件事分别用到
 //   既有 R-2 的源健康度统计与 i18n。**复用，不另造一套**。
 import 'i18n.dart';
+import 'read_sync.dart';
 import 'pro_reading.dart';
 
 // ── 背景预设(背景色, 默认字色) ──
@@ -412,6 +413,9 @@ class _NovelReaderState extends State<NovelReaderPage> {
       }
       final p = await SharedPreferences.getInstance();
       await p.setInt('progress_${widget.bookUrl}', idx);
+      // ★云端进度（2026-11-03）：th_reading_progress 此前零调用点 ——
+      //   网页端能"读至第 N 章"，App 这边永远是第 1 章。旁路推送，3 秒尾随合并。
+      unawaited(ReadSync.pushProgress(widget.sourceId, widget.bookUrl, idx));
       try { await widget.onProgress?.call(idx, chapter['name'] ?? ''); } catch (_) {}
       preload(idx + 1); preload(idx - 1);
     } catch (e) {

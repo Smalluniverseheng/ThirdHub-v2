@@ -453,7 +453,6 @@ core/lab_social.dart	导入分享内容
 core/lab_social.dart	导出完成
 core/lab_social.dart	开启
 core/lab_social.dart	我是 ${L.name}
-core/lab_social.dart	把你在别处看到的好规则、好源配置、踩坑经验存下来。存的是本机, 导出成 JSON 就能带走或分享给家人。
 core/lab_social.dart	把导出的 JSON 粘在这里
 core/lab_social.dart	按板块组织的长文讨论区(和「社区」的分工: 社区放短平快的规则与链接, 论坛放需要来回讨论的主题)。
 core/lab_social.dart	搜索标题 / 正文 / 标签
@@ -929,7 +928,6 @@ main.dart	${mod.name}设置
 main.dart	${tr(mod.name)} · 模块菜单
 main.dart	AI Key等敏感信息, AES加密存资源库
 main.dart	PIN 不正确
-main.dart	PIN锁 · 在"连接资源库"页设置
 main.dart	THP 直连 · 最新 ${ev.isEmpty ? 
 main.dart	THP 直连 · 最新 ${vv.isEmpty ? 
 main.dart	ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留
@@ -1057,7 +1055,6 @@ main.dart	恢复失败: $e
 main.dart	悬浮球
 main.dart	悬浮球自动吸附边缘
 main.dart	成功率${e[
-main.dart	手动输入地址 / 局域网自动发现
 main.dart	打开
 main.dart	扫码安装 / 分享给家人
 main.dart	扫码直接下载最新版 · 或保存分享图发到群里

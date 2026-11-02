@@ -57,6 +57,7 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/read_sync.dart';
 import 'core/storage_usage.dart';
 import 'core/remote_config.dart';
 import 'core/member_levels.dart';
@@ -974,6 +975,9 @@ class Book {
     l.insert(
         0, {...b.toJson(), '_at': DateTime.now().toString().substring(0, 16)});
     await p.setString('history_$kind', jsonEncode(l.take(50).toList()));
+    // ★ 云端 th_history（2026-11-03）：此前只写本机 —— 云端那张表里躺着
+    //   24 行 2026-10-24 的记录，App 一行都看不到。推送是旁路，不 await。
+    ReadSync.pushHistory(b.toJson(), kind);
   }
 
   static Future<List<Book>> history(String kind) async {
@@ -997,6 +1001,9 @@ class Book {
         await p.setString(
             'shelf_$kind', jsonEncode(l.map((e) => e.toJson()).toList()));
       }
+      // ★ 云端 th_bookshelf（2026-11-03）：加书架要能换手机看到。
+      //   旁路推送：网络慢/未登录都不影响"已加入书架"这个动作本身。
+      ReadSync.pushShelf(b.toJson(), kind);
     }
     // 后端下载: 通知资源库把这份资源收进去(多前端共享, 换设备不丢)
     if ((target == 'backend' || target == 'both') && Api.base.isNotEmpty) {
@@ -5892,6 +5899,9 @@ class _Sh extends State<ShelfPage> {
     items.removeWhere((x) => x.bookUrl == b.bookUrl);
     await p.setString('shelf_${widget.kind}',
         jsonEncode(items.map((e) => e.toJson()).toList()));
+    // ★ 必须**真的删云端**：只删本机的话，下次 pullAll 会把这本原样拉回来
+    //   （网页端 v3.29.6 修过同一个"幽灵复活"问题）。删失败会留墓碑+重试队列。
+    await ReadSync.removeShelf(b.sourceId, b.bookUrl);
     setState(() {});
   }
 
@@ -9805,6 +9815,10 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     Future.delayed(
         const Duration(seconds: 6), () => _autoSyncSettings(silent: true));
+    // ★2026-11-03：阅读数据（书架 / 历史 / 进度）是另外三张表，判据与设置不同，
+    //   各拉各的。放在 8 秒：比设置晚一点，避免启动瞬间三条网络并发抢带宽。
+    Future.delayed(
+        const Duration(seconds: 8), () => _autoSyncReading(silent: true));
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) Updater.check(context);
     });
@@ -10163,7 +10177,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
         if (silent) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               duration: const Duration(seconds: 3),
-              content: Text('已同步网页端的 $keys 项设置')));
+              content: Text(trf('已同步网页端的 {n} 项设置', {'n': keys}))));
         }
       }
     } catch (_) {}
@@ -10177,7 +10191,36 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed ||
         state == AppLifecycleState.paused) {
       unawaited(_autoSyncSettings(silent: true));
+      // 阅读数据同样要跟：网页端删了书、改了进度，App 回前台就该看见
+      unawaited(_autoSyncReading(silent: true));
+      if (state == AppLifecycleState.paused) {
+        // 切后台时把"最后一次翻到第几章"补发出去（翻页推送是 3 秒尾随合并，
+        // 用户可能刚翻完就按了 Home，那一章不补发就等于没记）
+        unawaited(ReadSync.flushAllProgress());
+      }
     }
+  }
+
+  /// 阅读数据自动同步（书架 / 历史 / 进度）。
+  ///
+  /// 只做「拉」：上行的触发点是用户动作（加书架 / 打开书 / 翻页），
+  /// 启动时不该把本机 50 条历史全推一遍 —— 那是纯浪费，而且会把云端
+  /// 更新的记录用本机旧时间戳盖掉。合并规则见 `sync_contract.dart`。
+  Future<void> _autoSyncReading({bool silent = false}) async {
+    if (!Cloud.loggedIn) return;
+    try {
+      final r = await ReadSync.pullAll();
+      if (!mounted) return;
+      final n = (r['local'] ?? 0) + (r['cloud'] ?? 0);
+      if (n > 0) {
+        setState(() {});
+        if (silent) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text(trf('已从云端同步 {n} 条阅读记录', {'n': n}))));
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -14835,7 +14878,7 @@ class _Sy extends State<SystemPage> {
           ListTile(
               leading: const Icon(Icons.link, size: 20),
               title: const Text('连接资源库', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）',
+              subtitle: Text(tr('手动输入地址 / 局域网自动发现 · 含贤者模式（PIN 锁）'),
                   style: TextStyle(fontSize: 11)),
               onTap: () =>
                   Navigator.push(c, smoothRoute(const ConnectLibraryPage()))),

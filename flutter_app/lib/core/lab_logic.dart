@@ -331,16 +331,38 @@ class CommunityPost {
   final List<String> tags;
   final int ts;
   int likes;
-  CommunityPost({required this.id, required this.title, required this.body,
-    required this.kind, required this.tags, required this.ts, this.likes = 0});
+
+  /// 是否来自云端信息流（`community_posts` 表）。
+  ///
+  /// ★ 这个标记不是装饰：本地分享板与云端信息流**是两套来源**，
+  ///   混在一个列表里如果分不出来，用户点了删除会以为删掉了别人的帖子、
+  ///   点赞也不知道点的是哪个。UI 上用它决定「删除/编辑」按钮给不给。
+  final bool cloud;
+
+  /// 云端帖子的作者昵称（本地帖为空）。
+  final String author;
+
+  CommunityPost({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.kind,
+    required this.tags,
+    required this.ts,
+    this.likes = 0,
+    this.cloud = false,
+    this.author = '',
+  });
   Map<String, dynamic> toJson() => {
-    'id': id, 'title': title, 'body': body, 'kind': kind, 'tags': tags, 'ts': ts, 'likes': likes,
-  };
+        'id': id, 'title': title, 'body': body, 'kind': kind, 'tags': tags, 'ts': ts, 'likes': likes,
+        if (cloud) 'cloud': true, if (author.isNotEmpty) 'author': author,
+      };
   factory CommunityPost.from(Map<String, dynamic> j) => CommunityPost(
     id: '${j['id'] ?? ''}', title: '${j['title'] ?? ''}', body: '${j['body'] ?? ''}',
     kind: '${j['kind'] ?? '心得'}',
     tags: [for (final e in (j['tags'] as List? ?? [])) '$e'],
-    ts: (j['ts'] as num?)?.toInt() ?? 0, likes: (j['likes'] as num?)?.toInt() ?? 0);
+    ts: (j['ts'] as num?)?.toInt() ?? 0, likes: (j['likes'] as num?)?.toInt() ?? 0,
+    cloud: j['cloud'] == true, author: '${j['author'] ?? ''}');
 }
 
 /// 导入合并: 同 id 或同标题已有则跳过(避免重复导入刷屏)

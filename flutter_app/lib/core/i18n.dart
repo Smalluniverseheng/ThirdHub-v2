@@ -400,6 +400,14 @@ class I18n extends ChangeNotifier {
     i18nUiWords3.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-03 第四批：社区云端化（清单第 3 项）。
+    i18nUiWords4.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
+    // 第四批补遗：同步提示 / 入口副标题（清掉 hardcoded 闸门记的两条新增）
+    i18nUiWords5.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

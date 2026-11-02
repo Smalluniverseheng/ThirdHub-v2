@@ -271,6 +271,77 @@ class Cloud {
     } catch (_) { return false; }
   }
 
+  /// 删掉本用户在 [table] 里的 [id] 行。
+  ///
+  /// ★ 这是「删除要真的删云端」的唯一出口：
+  ///   只删本机 → 下次 `pullAll()` 会把云端旧行**原样拉回来**（幽灵复活）。
+  ///   网页端 v3.29.6 修过同一个坑（`sync-service.js` 的 `delRow`）。
+  static Future<bool> tableDelete(String table, String id) async {
+    if (!loggedIn || !syncTables.contains(table) || id.isEmpty) return false;
+    try {
+      final r = await http.delete(
+          Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&id=eq.${Uri.encodeQueryComponent(id)}'),
+          headers: _authHeaders);
+      return r.statusCode >= 200 && r.statusCode < 300;
+    } catch (_) { return false; }
+  }
+
+  /// 社区表的可写白名单。
+  /// ★ 刻意**不并进 `syncTables`**：那 6 张是与网页端 `SYNC_TABLES` 逐字对齐的
+  ///   `{user_id, id, data}` 信封表；社区两张是**列级结构**（content/likes/...），
+  ///   信封格式写进去会被列约束拒掉。混在一起必然有人写错。
+  static const List<String> communityTables = <String>['community_posts', 'community_comments'];
+
+  /// 按**整行**写一张社区表（列级结构，不做 `{id,data}` 信封）。
+  static Future<bool> rowUp(String table, Map<String, dynamic> row) async {
+    if (!loggedIn || !communityTables.contains(table)) return false;
+    try {
+      final r = await http.post(Uri.parse('$base/rest/v1/$table'),
+          headers: {..._authHeaders, 'Prefer': 'return=minimal'},
+          body: jsonEncode(row));
+      return r.statusCode >= 200 && r.statusCode < 300;
+    } catch (_) { return false; }
+  }
+
+  /// 按行读一张社区表（[query] 是 PostgREST 的查询串，如 `select=*&order=created_at.desc`）。
+  static Future<List<Map<String, dynamic>>> rowDown(String table, {String query = 'select=*', int limit = 50}) async {
+    if (!loggedIn || !communityTables.contains(table)) return const <Map<String, dynamic>>[];
+    try {
+      final r = await http.get(
+          Uri.parse('$base/rest/v1/$table?$query&limit=$limit'), headers: _authHeaders);
+      if (r.statusCode == 200) {
+        return <Map<String, dynamic>>[
+          for (final e in jsonDecode(utf8.decode(r.bodyBytes)) as List)
+            Map<String, dynamic>.from(e as Map)
+        ];
+      }
+    } catch (_) {}
+    return const <Map<String, dynamic>>[];
+  }
+
+  /// 改一张社区表的一行（目前只有点赞数用得上）。
+  static Future<bool> rowPatch(String table, String id, Map<String, dynamic> patch) async {
+    if (!loggedIn || !communityTables.contains(table) || id.isEmpty) return false;
+    try {
+      final r = await http.patch(
+          Uri.parse('$base/rest/v1/$table?id=eq.${Uri.encodeQueryComponent(id)}'),
+          headers: {..._authHeaders, 'Prefer': 'return=minimal'},
+          body: jsonEncode(patch));
+      return r.statusCode >= 200 && r.statusCode < 300;
+    } catch (_) { return false; }
+  }
+
+  /// 删一张社区表的一行（仅本人可写，RLS 会拒绝别人的行）。
+  static Future<bool> rowDelete(String table, String id) async {
+    if (!loggedIn || !communityTables.contains(table) || id.isEmpty) return false;
+    try {
+      final r = await http.delete(
+          Uri.parse('$base/rest/v1/$table?id=eq.${Uri.encodeQueryComponent(id)}'),
+          headers: _authHeaders);
+      return r.statusCode >= 200 && r.statusCode < 300;
+    } catch (_) { return false; }
+  }
+
   /// 一张同步表的云端存量（行数 + 载荷字节数）。
   ///
   /// ★ [ok] 必须与"0 行"分开：此前只有 `tableDown()` 返回 `List`，
