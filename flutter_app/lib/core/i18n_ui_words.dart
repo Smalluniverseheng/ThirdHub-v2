@@ -1336,3 +1336,71 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '文件太大（超过 16MB）': 'الملف كبير جدًا (أكثر من 16 ميغابايت)',
   },
 };
+
+// 第六批：酒馆「消息操作」（4.81.25 新增）—— 长按气泡的菜单 + 编辑/删除确认框。
+//
+// 「编辑」「删除」「已复制」「取消」「保存」这些**已有**键不在这里重复：
+// 重复不会报错，但会让同一句话有六份译文各自漂移（改一处漏五处）。
+const Map<String, Map<String, String>> i18nUiWords7 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '复制': 'Copy',
+    '编辑消息': 'Edit message',
+    '消息内容': 'Message text',
+    '删除这条消息？': 'Delete this message?',
+    '删除后无法恢复。': 'This cannot be undone.',
+    '重新生成': 'Regenerate',
+    '先发一句话，才有内容可以重新生成':
+        'Send a message first — there is nothing to regenerate.',
+  },
+  'ja': <String, String>{
+    '复制': 'コピー',
+    '编辑消息': 'メッセージを編集',
+    '消息内容': 'メッセージ内容',
+    '删除这条消息？': 'このメッセージを削除しますか？',
+    '删除后无法恢复。': '削除すると元に戻せません。',
+    '重新生成': '再生成',
+    '先发一句话，才有内容可以重新生成':
+        '先にメッセージを送ってください。再生成できる内容がありません。',
+  },
+  'fr': <String, String>{
+    '复制': 'Copier',
+    '编辑消息': 'Modifier le message',
+    '消息内容': 'Contenu du message',
+    '删除这条消息？': 'Supprimer ce message ?',
+    '删除后无法恢复。': 'Cette action est irréversible.',
+    '重新生成': 'Régénérer',
+    '先发一句话，才有内容可以重新生成':
+        "Envoyez d'abord un message : il n'y a rien à régénérer.",
+  },
+  'ru': <String, String>{
+    '复制': 'Копировать',
+    '编辑消息': 'Изменить сообщение',
+    '消息内容': 'Текст сообщения',
+    '删除这条消息？': 'Удалить это сообщение?',
+    '删除后无法恢复。': 'Отменить это будет нельзя.',
+    '重新生成': 'Сгенерировать заново',
+    '先发一句话，才有内容可以重新生成':
+        'Сначала отправьте сообщение — генерировать заново нечего.',
+  },
+  'es': <String, String>{
+    '复制': 'Copiar',
+    '编辑消息': 'Editar mensaje',
+    '消息内容': 'Contenido del mensaje',
+    '删除这条消息？': '¿Eliminar este mensaje?',
+    '删除后无法恢复。': 'No se puede deshacer.',
+    '重新生成': 'Regenerar',
+    '先发一句话，才有内容可以重新生成':
+        'Envía un mensaje primero: no hay nada que regenerar.',
+  },
+  'ar': <String, String>{
+    '复制': 'نسخ',
+    '编辑消息': 'تعديل الرسالة',
+    '消息内容': 'نص الرسالة',
+    '删除这条消息？': 'حذف هذه الرسالة؟',
+    '删除后无法恢复。': 'لا يمكن التراجع عن الحذف.',
+    '重新生成': 'إعادة التوليد',
+    '先发一句话，才有内容可以重新生成':
+        'أرسل رسالة أولاً، فلا يوجد ما يمكن إعادة توليده.',
+  },
+};
