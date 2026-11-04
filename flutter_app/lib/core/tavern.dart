@@ -8,8 +8,14 @@
 //
 // 刻意没做的：
 //   · 角色分组 —— 角色少于 20 个时分组是负担，先用搜索
-//   · 从 PNG 图里**导入**卡 —— 4.81.23 只做了导出（写 tEXt 块），
-//     读回来还只能在编辑器里粘 JSON。见 `png_text.dart`（读函数已就位）。
+//   · 多分支存档（SillyTavern 的 swipe / 多会话）—— 先靠「重新生成」覆盖，
+//     真有人要再多存档再说
+//
+// 4.81.24 补上「从 PNG 导入」：tEXt 里的 `ccv3` / `chara` 两种写法都认，
+//   图片本身落进 `<文档>/tavern_avatars/` 当本地头像（见 `tavern_card_codec.dart`）。
+// 4.81.25 补上消息级操作：长按气泡 → 复制 / 编辑 / 删除 / 重新生成。
+//   同时把「上下文怎么裁」抽到 `tavern_context.dart`（纯 Dart）——
+//   「截断后首条必须是 user」这条以前只在真机上聊够轮数才触发，现在有 CI 断言。
 //
 // 4.81.21 修的三处（都是首版留下的真缺陷，单轮对话复现不了）：
 //   1. 「停止生成」以前只是不再刷新界面：后台那条流照旧收完，并把**完整回复**
@@ -30,7 +36,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,6 +46,7 @@ import 'design_tokens.dart';
 import 'i18n.dart';
 import 'png_text.dart';
 import 'tavern_card_codec.dart';
+import 'tavern_context.dart';
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
@@ -985,11 +992,22 @@ class _ChatState extends State<TavernChatPage> {
     _toBottom();
   }
 
-  Future<void> _send() async {
-    final text = _input.text.trim();
-    if (text.isEmpty || _sending || _chat == null) return;
-    final chat = _chat!;
-    // 先占位：`AiRegistry.lastModel()` 是异步的，期间再点一次会重复发一条
+  /// 把会话消息投影给纯 Dart 层。`tavern_context.dart` 刻意不 import 本文件 ——
+  /// 它一旦 import flutter，`dart run tool/tavern_context_selfcheck.dart` 就跑不起来。
+  List<TavernTurn> _turns(TavernChat chat) =>
+      <TavernTurn>[for (final m in chat.msgs) TavernTurn(m.role, m.text)];
+
+  /// 发消息与「重新生成」共用的执行体。
+  ///
+  /// [userText] 非空 = 追加一条用户消息再请求；为空 = 用现有上下文直接请求（重新生成）。
+  ///
+  /// 两件事必须在**第一个 await 之前**做完，否则会出现重复发送：
+  ///   · `_seq++` 立刻作废在途结果；
+  ///   · `_sending = true` 立刻置位 —— `AiRegistry.lastModel()` 是异步的，
+  ///     空档里再点一次会真的发两条（4.81.21 修过同一个形态，别再退回去）。
+  Future<void> _start({String? userText}) async {
+    final chat = _chat;
+    if (chat == null || _sending) return;
     final mySeq = ++_seq;
     setState(() => _sending = true);
     final (pid, model) = await AiRegistry.lastModel();
@@ -1002,30 +1020,35 @@ class _ChatState extends State<TavernChatPage> {
           content: Text(tr('还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型'))));
       return;
     }
-    if (mySeq != _seq) return; // 期间已被「停止」，或页面已销毁
-    _input.clear();
-    setState(() {
-      _streaming = '';
-      chat.msgs.add(TavernMsg('user', text));
-    });
-    await TavernStore.saveChat(chat);
-    _toBottom();
+    if (!mounted || mySeq != _seq) return; // 期间已被「停止」，或页面已销毁
 
-    // 只带最近 24 条，避免上下文无限膨胀把费用和延迟拉爆
-    final window = chat.msgs.length > 24
-        ? chat.msgs.sublist(chat.msgs.length - 24)
-        : chat.msgs;
-    // ★截断后首条可能是 assistant（第 24 条正好落在一问一答中间）。
-    //   Anthropic / Gemini 要求首条非 system 消息必须是 user，否则整轮 400 ——
-    //   症状是"聊到十几轮突然报错"，单轮对话永远复现不了。丢到首条 user 为止。
-    var from = 0;
-    while (from < window.length && window[from].role != 'user') {
-      from++;
+    if (userText != null) {
+      _input.clear();
+      chat.msgs.add(TavernMsg('user', userText));
+      setState(() => _streaming = '');
+      await TavernStore.saveChat(chat);
+      if (!mounted || mySeq != _seq) return;
+      _toBottom();
     }
-    final messages = <Map<String, String>>[
-      {'role': 'system', 'content': widget.char.buildSystemPrompt()},
-      for (final m in window.skip(from)) {'role': m.role, 'content': m.text},
-    ];
+
+    // 裁剪（最近 24 条 / 首条必须是 user）已收口到 TavernContext.build，
+    // 那里由 CI 自检逐条断言 —— 这段逻辑以前内联在 State 里，只有聊够轮数才会翻车。
+    final messages = TavernContext.build(
+      system: widget.char.buildSystemPrompt(),
+      turns: _turns(chat),
+    );
+    // 只剩 system = 没有任何用户输入。典型场景：新角色只有开场白就点了「重新生成」。
+    // 这种请求 OpenAI 报「messages 不能为空」、Anthropic 报「至少一条 user」，
+    // 报错文案长得像 Key 配错了，用户会去乱改设置。
+    if (messages.length <= 1) {
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(tr('先发一句话，才有内容可以重新生成'))));
+      return;
+    }
+
+    setState(() => _streaming = '');
+    _toBottom();
 
     try {
       final reply = await AiChat.chat(
@@ -1059,6 +1082,150 @@ class _ChatState extends State<TavernChatPage> {
         _toBottom();
       }
     }
+  }
+
+  Future<void> _send() async {
+    final text = _input.text.trim();
+    if (text.isEmpty) return;
+    await _start(userText: text);
+  }
+
+  /// 重新生成最后一条回复：先把尾部连续的 assistant 删掉，再用剩余上下文重发。
+  ///
+  /// 为什么必须**先删**：不删就把新回复追加在旧回复后面，上下文里会出现
+  /// 「两条 assistant 连着」，模型会顺着两条的口气续写，越生成越乱。
+  /// 尾部连续多条一起删的理由见 [TavernContext.regenerateCutoff]（停止过几次会堆出半截回复）。
+  Future<void> _regenerate() async {
+    final chat = _chat;
+    if (chat == null || _sending) return;
+    final cut = TavernContext.regenerateCutoff(_turns(chat));
+    if (cut < 0) return; // 没有可重做的回复（只有开场白 / 末条就是用户）
+    chat.msgs.removeRange(cut, chat.msgs.length);
+    setState(() => _streaming = '');
+    await TavernStore.saveChat(chat);
+    if (!mounted) return;
+    await _start();
+  }
+
+  /// 长按气泡弹出的消息操作。
+  ///
+  /// 为什么不用 SelectableText 自带的选择框：它把长按手势吃掉了（选区优先），
+  /// 外面再包一层 GestureDetector 也收不到 —— 两者抢的是同一个手势。
+  /// 取舍：把**整条复制**放进菜单（覆盖绝大多数场景），换来编辑 / 删除 / 重新生成有入口。
+  void _msgMenu(int i) {
+    final chat = _chat;
+    if (chat == null || _sending) return; // 生成中不弹：边改上下文边收流会串台
+    if (i < 0 || i >= chat.msgs.length) return;
+    final m = chat.msgs[i];
+    final canRegen = i == chat.msgs.length - 1 && m.role == 'assistant';
+    final errColor = Theme.of(context).colorScheme.error;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.copy_outlined, size: 20),
+            title: Text(tr('复制'), style: const TextStyle(fontSize: 14)),
+            onTap: () {
+              Navigator.pop(ctx);
+              Clipboard.setData(ClipboardData(text: m.text));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(tr('已复制'))));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined, size: 20),
+            title: Text(tr('编辑'), style: const TextStyle(fontSize: 14)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _editMsg(i);
+            },
+          ),
+          if (canRegen)
+            ListTile(
+              leading: const Icon(Icons.autorenew, size: 20),
+              title: Text(tr('重新生成'), style: const TextStyle(fontSize: 14)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _regenerate();
+              },
+            ),
+          ListTile(
+            leading: Icon(Icons.delete_outline, size: 20, color: errColor),
+            title: Text(tr('删除'),
+                style: TextStyle(fontSize: 14, color: errColor)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _deleteMsg(i);
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// 编辑单条消息的文本。改完**不重发** —— 只改历史，下次发消息时才带上。
+  Future<void> _editMsg(int i) async {
+    final chat = _chat;
+    if (chat == null || i < 0 || i >= chat.msgs.length) return;
+    final m = chat.msgs[i];
+    final ctl = TextEditingController(text: m.text);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('编辑消息'), style: const TextStyle(fontSize: 16)),
+        content: TextField(
+          controller: ctl,
+          minLines: 4,
+          maxLines: 12,
+          autofocus: true,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+              hintText: tr('消息内容'),
+              hintStyle: const TextStyle(fontSize: 11)),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('取消'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('保存'))),
+        ],
+      ),
+    );
+    final txt = ctl.text.trim();
+    ctl.dispose();
+    if (ok != true || txt.isEmpty) return;
+    if (!mounted) return;
+    // `TavernMsg.text` 是 final：换一个新对象而不是改字段（`at` 保留原时间戳）
+    chat.msgs[i] = TavernMsg(m.role, txt, at: m.at);
+    setState(() {});
+    await TavernStore.saveChat(chat);
+  }
+
+  Future<void> _deleteMsg(int i) async {
+    final chat = _chat;
+    if (chat == null || i < 0 || i >= chat.msgs.length) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('删除这条消息？'), style: const TextStyle(fontSize: 16)),
+        content: Text(tr('删除后无法恢复。'), style: const TextStyle(fontSize: 13)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('取消'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('删除'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    chat.msgs.removeAt(i);
+    setState(() {});
+    await TavernStore.saveChat(chat);
   }
 
   @override
@@ -1100,25 +1267,35 @@ class _ChatState extends State<TavernChatPage> {
                     final m = isStream ? null : msgs[i];
                     final isUser = m?.role == 'user';
                     final text = isStream ? _streaming : m!.text;
+                    // 长按出消息菜单（复制/编辑/删除/重新生成）。
+                    //
+                    // ★这里从 `SelectableText` 换成了 `Text`：SelectableText 自带的长按
+                    //   选区手势会把手势竞技场里的长按吃掉，外面包 GestureDetector 收不到，
+                    //   表现就是"长按没反应"。整条复制已在菜单里，代价是失去选区复制。
+                    //   流式气泡（isStream）不给长按 —— 它还没有真实消息可操作。
                     return Align(
                       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: Gap.sm),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(c).width * 0.78),
-                        decoration: BoxDecoration(
-                          color: isUser
-                              ? scheme.primary.withValues(alpha: 0.14)
-                              : Theme.of(c).cardColor,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(Radii.md),
-                            topRight: const Radius.circular(Radii.md),
-                            bottomLeft: Radius.circular(isUser ? Radii.md : 4),
-                            bottomRight: Radius.circular(isUser ? 4 : Radii.md),
+                      child: GestureDetector(
+                        onLongPress: isStream ? null : () => _msgMenu(i),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: Gap.sm),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          constraints: BoxConstraints(
+                              maxWidth: MediaQuery.sizeOf(c).width * 0.78),
+                          decoration: BoxDecoration(
+                            color: isUser
+                                ? scheme.primary.withValues(alpha: 0.14)
+                                : Theme.of(c).cardColor,
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(Radii.md),
+                              topRight: const Radius.circular(Radii.md),
+                              bottomLeft: Radius.circular(isUser ? Radii.md : 4),
+                              bottomRight: Radius.circular(isUser ? 4 : Radii.md),
+                            ),
                           ),
+                          child: Text(text,
+                              style: const TextStyle(fontSize: 13.5, height: 1.5)),
                         ),
-                        child: SelectableText(text, style: const TextStyle(fontSize: 13.5, height: 1.5)),
                       ),
                     );
                   },
