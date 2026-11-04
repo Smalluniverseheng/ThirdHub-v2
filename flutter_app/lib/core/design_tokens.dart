@@ -588,6 +588,99 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: Radii.lgAll),
     ),
+    // ── 2026-11-04 补齐「仍在用 Material 默认值」的组件 ──
+    //   这些组件此前没在主题里声明，于是永远长成 Material 默认样：
+    //   默认开关是紫/灰、默认滑块是 M3 紫、TabBar 下划线是默认色、弹出菜单是方角。
+    //   在带皮肤的 App 里它们就是「局部不像同一套设计」的破绽。
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
+          ? scheme.onPrimary
+          : scheme.onSurface.withValues(alpha: 0.55)),
+      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
+          ? skin.seed
+          : scheme.onSurface.withValues(alpha: dark ? 0.14 : 0.08)),
+      trackOutlineColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
+          ? Colors.transparent
+          : scheme.onSurface.withValues(alpha: 0.22)),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
+          ? skin.seed
+          : Colors.transparent),
+      checkColor: WidgetStateProperty.all(scheme.onPrimary),
+      side: BorderSide(color: scheme.onSurface.withValues(alpha: 0.28), width: 1.4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
+          ? skin.seed
+          : scheme.onSurface.withValues(alpha: 0.45)),
+    ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: skin.seed,
+      inactiveTrackColor: scheme.onSurface.withValues(alpha: dark ? 0.16 : 0.10),
+      thumbColor: skin.seed,
+      overlayColor: skin.seed.withValues(alpha: 0.12),
+      trackHeight: 4,
+      valueIndicatorColor: skin.seed,
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: skin.seed,
+      // 轨道颜色：不给就是默认的 primary 淡化，深色下几乎看不见
+      linearTrackColor: scheme.onSurface.withValues(alpha: dark ? 0.14 : 0.08),
+      circularTrackColor: scheme.onSurface.withValues(alpha: dark ? 0.14 : 0.08),
+    ),
+    tabBarTheme: TabBarThemeData(
+      labelColor: skin.seed,
+      unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.60),
+      labelStyle: Types.title.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+      unselectedLabelStyle: Types.title.copyWith(fontSize: 13),
+      dividerColor: scheme.onSurface.withValues(alpha: lineA),
+      indicatorSize: TabBarIndicatorSize.label,
+      indicator: UnderlineTabIndicator(
+        borderSide: BorderSide(color: skin.seed, width: 2.5),
+        insets: const EdgeInsets.symmetric(horizontal: 2),
+      ),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: surfaceTop,
+      surfaceTintColor: Colors.transparent,
+      elevation: 6,
+      shadowColor: skin.seed.withValues(alpha: 0.18),
+      shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
+      textStyle: Types.body.copyWith(fontSize: 13),
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: dark ? surfaceTop : const Color(0xF21F2124),
+        borderRadius: Radii.smAll,
+      ),
+      textStyle: Types.caption.copyWith(
+          color: dark ? scheme.onSurface : Colors.white, fontSize: 11),
+      waitDuration: const Duration(milliseconds: 500),
+    ),
+    // 滚动条纤细化：Material 默认滚动条又粗又没有颜色过渡，是"廉价感"的典型来源。
+    scrollbarTheme: ScrollbarThemeData(
+      thickness: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.hovered) ? 6 : 3),
+      radius: const Radius.circular(3),
+      thumbColor: WidgetStateProperty.resolveWith((s) => scheme.onSurface
+          .withValues(alpha: s.contains(WidgetState.hovered) ? 0.38 : 0.20)),
+    ),
+    // 分段按钮（导航形态切换那类控件）同样走圆角与主色，不然是默认方角。
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: SegmentedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: Radii.smAll),
+        selectedBackgroundColor: skin.seed.withValues(alpha: dark ? 0.28 : 0.14),
+        selectedForegroundColor: skin.seed,
+        textStyle: Types.caption.copyWith(fontSize: 11),
+      ),
+    ),
+    // 图标默认色：不声明时是 onSurface 全黑，和正文同色导致"哪里都是重点"。
+    iconTheme: IconThemeData(
+      size: 22,
+      color: scheme.onSurface.withValues(alpha: 0.82),
+    ),
     // 页面转场按特效档分派 —— 这就是"效果皮肤"与"颜色皮肤"的分水岭：
     //   机甲（neon） = 机械滑动（快启动 → 匀速推进 → 精准刹停，伺服感）
     //   漫画（comic）= 弹跳弹出（夸张过冲，像分镜砸进画面）
