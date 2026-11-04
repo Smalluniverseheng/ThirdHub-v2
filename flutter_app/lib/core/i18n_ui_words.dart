@@ -1404,3 +1404,46 @@ const Map<String, Map<String, String>> i18nUiWords7 =
         'أرسل رسالة أولاً، فلا يوجد ما يمكن إعادة توليده.',
   },
 };
+
+// 第七批（2026-11-05，4.81.26）：酒馆「.charx 导入」入口与两条失败提示。
+//   `.charx` / `card.json` 是格式里的固有名，各语言**不译** —— 翻掉用户会更困惑。
+const Map<String, Map<String, String>> i18nUiWords8 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '选择一个 .charx 角色卡': 'Choose a .charx character card',
+    '压缩包里含 card.json 与头像': 'The archive holds card.json and an avatar',
+    '这不是 .charx 角色卡': 'This is not a .charx character card',
+    '压缩包里没有 card.json': 'No card.json found in the archive',
+  },
+  'ja': <String, String>{
+    '选择一个 .charx 角色卡': '.charx キャラクターカードを選択',
+    '压缩包里含 card.json 与头像': 'アーカイブに card.json とアイコン画像が入っています',
+    '这不是 .charx 角色卡': '.charx キャラクターカードではありません',
+    '压缩包里没有 card.json': 'アーカイブに card.json がありません',
+  },
+  'fr': <String, String>{
+    '选择一个 .charx 角色卡': 'Choisir une carte de personnage .charx',
+    '压缩包里含 card.json 与头像':
+        "L'archive contient card.json et un avatar",
+    '这不是 .charx 角色卡': "Ce n'est pas une carte .charx",
+    '压缩包里没有 card.json': 'Aucun card.json dans l\'archive',
+  },
+  'ru': <String, String>{
+    '选择一个 .charx 角色卡': 'Выбрать карту персонажа .charx',
+    '压缩包里含 card.json 与头像': 'В архиве есть card.json и аватар',
+    '这不是 .charx 角色卡': 'Это не карта персонажа .charx',
+    '压缩包里没有 card.json': 'В архиве нет card.json',
+  },
+  'es': <String, String>{
+    '选择一个 .charx 角色卡': 'Elegir una tarjeta de personaje .charx',
+    '压缩包里含 card.json 与头像': 'El archivo contiene card.json y un avatar',
+    '这不是 .charx 角色卡': 'No es una tarjeta .charx',
+    '压缩包里没有 card.json': 'No hay card.json en el archivo',
+  },
+  'ar': <String, String>{
+    '选择一个 .charx 角色卡': 'اختيار بطاقة شخصية .charx',
+    '压缩包里含 card.json 与头像': 'الملف المضغوط يحتوي على card.json وصورة',
+    '这不是 .charx 角色卡': 'هذه ليست بطاقة .charx',
+    '压缩包里没有 card.json': 'لا يوجد card.json في الملف المضغوط',
+  },
+};
