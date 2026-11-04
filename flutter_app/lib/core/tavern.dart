@@ -28,6 +28,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
@@ -316,14 +317,32 @@ class TavernStore {
 
   /// 底图选择：能拿到 PNG 头像就用它（导出的卡看起来就是这个角色），
   /// 否则退回应用图标。**只有 PNG 能当外壳** —— JPEG / WebP 没有 tEXt 块。
-  static Future<Uint8List> _carrierPng(String avatarUrl) async {
-    final u = avatarUrl.trim();
+  static Future<Uint8List> _carrierPng(String avatar) async {
+    final u = avatar.trim();
     if (u.startsWith('http://') || u.startsWith('https://')) {
       final got = await _downloadPng(u);
+      if (got != null) return got;
+    } else if (u.isNotEmpty) {
+      // 从 PNG 卡导入的卡，头像是本地文件；再导出时要沿用它，
+      // 否则"导进来的图"会在下一次导出时被应用图标替掉。
+      final got = await _readLocalPng(u);
       if (got != null) return got;
     }
     final data = await rootBundle.load('assets/branding/logo.png');
     return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  /// 本地头像文件（导入 PNG 卡时存下来的那张）。同样只认 PNG、同样 8MB 上限。
+  static Future<Uint8List?> _readLocalPng(String path) async {
+    try {
+      final f = File(path);
+      if (!await f.exists()) return null;
+      if (await f.length() > 8 * 1024 * 1024) return null;
+      final b = await f.readAsBytes();
+      return isPng(b) ? b : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 取头像：8 秒超时 + 8MB 上限。
@@ -351,6 +370,40 @@ class TavernStore {
     } finally {
       cli?.close(force: true);
     }
+  }
+
+  // ── 导入（4.81.24）────────────────────────────────────────────────
+  //
+  // 导入是导出的逆运算，但**比导出更容易出错**：用户在文件管理器里随手点一张
+  // 图，那张图可能根本不是角色卡。所以这里每条失败路径都给一句能看懂的话，
+  // 而不是把 `FormatException: Unexpected character` 丢到界面上。
+
+  /// 头像落盘目录：`<文档目录>/tavern_avatars`。
+  ///
+  /// 为什么要存：PNG 卡里的图就是角色头像，不存下来的话卡片数据进来了、
+  /// 头像却永远是首字占位 —— 用户会以为"导入只导了一半"。
+  static Future<Directory> _avatarDir() async {
+    final d = Directory(
+        '${(await getApplicationDocumentsDirectory()).path}${Platform.pathSeparator}tavern_avatars');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
+
+  /// 从一张 PNG 角色卡导入：解 tEXt → 卡片 → 图存成本地头像。
+  /// 失败抛 [FormatException]，message 已是本地化文案，调用方直接显示。
+  static Future<TavernChar> importPng(Uint8List bytes) async {
+    if (!isPng(bytes)) throw FormatException(tr('这不是 PNG 图片'));
+    final raw = cardFromPng(bytes);
+    if (raw == null) throw FormatException(tr('这张图里没有角色卡数据'));
+    final card = TavernChar.tryImport(raw);
+    if (card == null) throw FormatException(tr('缺少角色名，或格式不认识'));
+    final d = await _avatarDir();
+    final f = File('${d.path}${Platform.pathSeparator}${card.id}.png');
+    await f.writeAsBytes(bytes, flush: true);
+    // 头像字段存**本地绝对路径**：`_Avatar` 与 `_carrierPng` 都认这个形式。
+    final got = TavernChar.fromJson({...card.toJson(), 'avatar': f.path});
+    await addChar(got);
+    return got;
   }
 }
 
@@ -391,6 +444,79 @@ class _TavernPageState extends State<TavernPage> {
           c.description.toLowerCase().contains(q) ||
           c.tags.any((t) => t.toLowerCase().contains(q));
     }).toList();
+  }
+
+  /// 导入入口。三条路都有各自的真实场景，不设"默认"：
+  ///   · PNG 卡 —— 社区分发的主流格式（图上就内嵌了数据）；
+  ///   · JSON 文件 —— 备份、别人发给你的 `.json`；
+  ///   · 粘文本 —— 从聊天窗口/网页里复制过来的一段。
+  /// 以前只留了"粘文本"一条，收到一张 PNG 卡的用户在界面上完全找不到入口。
+  Future<void> _importCard() async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (c2) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: Text(tr('选择 PNG 角色卡')),
+            subtitle: Text(tr('图里内嵌了卡片数据，选完直接导入')),
+            onTap: () => Navigator.pop(c2, 'png'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.data_object),
+            title: Text(tr('选择 JSON 文件')),
+            onTap: () => Navigator.pop(c2, 'json'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.content_paste),
+            title: Text(tr('粘贴 JSON 文本')),
+            onTap: () => Navigator.pop(c2, 'text'),
+          ),
+        ]),
+      ),
+    );
+    if (kind == null) return;
+    if (kind == 'text') {
+      await _importFromText();
+    } else {
+      await _importFromFile(pngOnly: kind == 'png');
+    }
+  }
+
+  Future<void> _importFromFile({required bool pngOnly}) async {
+    try {
+      final r = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: pngOnly ? <String>['png'] : <String>['json', 'txt'],
+        withData: true, // 安卓上 path 可能为空（内容 URI），要直接拿字节
+      );
+      if (r == null || r.files.isEmpty) return;
+      final f = r.files.first;
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
+      if (bytes == null) throw FormatException(tr('读不到文件内容'));
+      if (bytes.length > 16 * 1024 * 1024) throw FormatException(tr('文件太大（超过 16MB）'));
+      TavernChar card;
+      if (pngOnly || isPng(bytes)) {
+        card = await TavernStore.importPng(bytes);
+      } else {
+        // allowMalformed：有人导出的 JSON 带 BOM 或被截断，宁可让 JSON 解析去报错，
+        // 也不要在这里先抛一个"非法 UTF-8"，那句话对用户毫无信息量。
+        final raw = decodeCardJson(utf8.decode(bytes, allowMalformed: true));
+        final c2 = raw == null ? null : TavernChar.tryImport(raw);
+        if (c2 == null) throw FormatException(tr('缺少角色名，或格式不认识'));
+        card = await TavernStore.addChar(c2);
+      }
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(trf('已导入「{name}」', {'name': card.name}))));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(trf('导入失败：{e}',
+              {'e': e is FormatException ? e.message : e}))));
+    }
   }
 
   Future<void> _importFromText() async {
@@ -522,7 +648,7 @@ class _TavernPageState extends State<TavernPage> {
         actions: [
           IconButton(
             tooltip: tr('导入角色卡'),
-            onPressed: _importFromText,
+            onPressed: _importCard,
             icon: const Icon(Icons.file_download_outlined),
           ),
         ],
@@ -665,19 +791,30 @@ class _Avatar extends StatelessWidget {
     );
     if (url.isEmpty) return fallback;
     // SillyTavern 卡里的 avatar 常是 `Seraphina.png` 这种文件名（图在卡包 zip 里），
-    // 不是 URL。以前直接丢给 Image.network，每次重建都发一次注定失败的请求。
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return fallback;
-    }
+    // 不是 URL，也不是本机路径。以前直接丢给 Image.network，每次重建都发一次注定失败的请求。
+    final isUrl = url.startsWith('http://') || url.startsWith('https://');
+    // 从 PNG 卡导入的卡，头像存的是本机绝对路径（含路径分隔符）。
+    // 用"含分隔符"而不是"以 .png 结尾"来判：ST 的裸文件名恰好也是 .png 结尾，
+    // 按扩展名判会把它们当成路径去读，每次列表重建都抛一次文件不存在。
+    final isPath = !isUrl && (url.startsWith('/') || url.contains(Platform.pathSeparator));
+    if (!isUrl && !isPath) return fallback;
     return ClipRRect(
       borderRadius: BorderRadius.circular(size * 0.32),
-      child: Image.network(
-        url,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallback,
-      ),
+      child: isUrl
+          ? Image.network(
+              url,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            )
+          : Image.file(
+              File(url),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
     );
   }
 }
