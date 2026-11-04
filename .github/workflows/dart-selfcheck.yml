@@ -199,6 +199,19 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/changelog_selfcheck.dart
 
+      # ★tavern_export（2026-11-05 加，4.81.23）—— 角色卡导出：PNG tEXt 隐写 + V2 信封。
+      #
+      #   为什么进 CI：这条链路**失败是静默的**。
+      #     · `first_mes` 写成 `firstMessage` → 卡能导出、别人也能导入，只是开场白没了；
+      #     · PNG 块 CRC 错一个字节 → 图还能看，导入方报"这不是角色卡"；
+      #     · 文件名带 `/` → Windows 上写入静默失败，用户只看到"点了没反应"。
+      #   三种都躲得过肉眼看手机。自检用**位运算版 CRC32**（不用 lib 那张表）当独立基准，
+      #   并用仓库真实 PNG（它自带真实编码器的 CRC）校准；另做"挖掉新块后与原图逐字节相同"，
+      #   防止为了加数据把像素重编码了一遍。
+      - name: tavern_export（角色卡导出：PNG tEXt 隐写 + V2 信封 + 文件名安全化）
+        working-directory: flutter_app
+        run: dart run tool/tavern_export_selfcheck.dart
+
       - name: settings_bridge（设置 38 键两端一致）
         working-directory: flutter_app
         run: dart run tool/settings_bridge_selfcheck.dart
