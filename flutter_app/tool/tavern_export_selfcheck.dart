@@ -220,6 +220,51 @@ void main() {
       '${cardFileName('名' * 80, 'png').length}');
   ck('正常名字原样保留', cardFileName('Seraphina', 'png') == 'Seraphina.png');
 
+  print('\n== 8. 导入路径：从 PNG 取回卡片（4.81.24）==');
+  final got = cardFromPng(out);
+  ck('从自己导出的卡里读回卡片', got != null);
+  final gd = (got?['data'] ?? const <String, dynamic>{}) as Map<String, dynamic>;
+  ck('名字往返无损（中文 + 间隔号）', gd['name'] == fields['name'], '${gd['name']}');
+  ck('开场白往返无损', gd['first_mes'] == fields['firstMessage'], '${gd['first_mes']}');
+  ck('系统提示往返无损', gd['system_prompt'] == fields['systemPrompt']);
+  ck('描述里的换行往返无损', gd['description'] == fields['description']);
+  ck('标签往返、空白项仍被剔除',
+      gd['tags'] is List && (gd['tags'] as List).length == 2, '${gd['tags']}');
+
+  // 没有 chara 的普通图片：必须判成"不是角色卡"，而不是崩掉或读出一张空卡
+  final noCard = embedTextChunks(base, <String, String>{'Software': 'ThirdHub'});
+  ck('没有 chara 块的图返回 null', cardFromPng(noCard) == null);
+  ck('chara 是垃圾数据返回 null',
+      cardFromPng(embedTextChunks(base, <String, String>{'chara': '!!!not-base64!!!'})) ==
+          null);
+  ck('chara 是空串返回 null',
+      cardFromPng(embedTextChunks(base, <String, String>{'chara': '   '})) == null);
+  ck('非 PNG 字节返回 null（不抛异常）',
+      cardFromPng(Uint8List.fromList(utf8.encode('{"name":"x"}'))) == null);
+  ck('被截断的 PNG 返回 null（不抛异常）',
+      cardFromPng(Uint8List.sublistView(base, 0, 64)) == null);
+
+  // ccv3 与 chara 并存：按新规范优先。两张都写、内容不同的情况真实存在
+  //（工具链升级后重写卡时，旧 chara 往往没被清掉）。
+  final both = embedTextChunks(base, <String, String>{
+    'chara': cardV2Base64({...fields, 'name': 'chara 里的'}),
+    'ccv3': cardV2Base64({...fields, 'name': 'ccv3 里的'}),
+  });
+  ck('ccv3 与 chara 并存时取 ccv3',
+      ((cardFromPng(both)?['data'] ?? const <String, dynamic>{}) as Map)['name'] ==
+          'ccv3 里的',
+      '${cardFromPng(both)}');
+
+  // 少数工具把**原始 JSON** 直接塞进 tEXt（不 base64）。这种卡一定不含中文
+  // （tEXt 只收 Latin-1），但既然碰得到就不该判成"不是角色卡"。
+  final rawJson = embedTextChunks(base, <String, String>{'chara': '{"name":"Plain"}'});
+  ck('tEXt 里是原始 JSON 也能读', cardFromPng(rawJson)?['name'] == 'Plain',
+      '${cardFromPng(rawJson)}');
+
+  // 导入的是别人的卡：V2 信封 + 扁平格式都要能过 tryImport 那一关的字段名
+  ck('外部 V2 卡的 first_mes 能被认出来',
+      '${(cardFromPng(out)?['data'] as Map)['first_mes']}' == fields['firstMessage']);
+
   print('\n== 结果：$pass 通过 / $fail 失败 ==');
   if (fail > 0) {
     print('失败项：');
