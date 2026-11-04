@@ -103,6 +103,7 @@ import 'core/pro_system.dart';
 import 'core/pro_ai.dart';
 import 'core/pip.dart';
 import 'core/app_version.dart';
+import 'core/tavern.dart';
 import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
@@ -9400,6 +9401,8 @@ final Map<String, ModuleDef> kModules = {
   '聊天': ModuleDef('聊天', Icons.forum_outlined, () => (ChatHomePage())),
   '游戏': ModuleDef('游戏', Icons.sports_esports_outlined, () => (GamesPage())),
   '社区': ModuleDef('社区', Icons.groups_outlined, () => (CommunityPage())),
+  // 2026-11-04：网页端早有 js/modules/tavern.js，App 端一直缺 —— 补齐两端能力对齐。
+  '酒馆': ModuleDef('酒馆', Icons.theater_comedy_outlined, () => (TavernPage())),
   '论坛': ModuleDef('论坛', Icons.article_outlined, () => (ForumPage())),
   '直播': ModuleDef('直播', Icons.live_tv, () => (LivePage())),
   '浏览器': ModuleDef('浏览器', Icons.language, () => (BrowserPage())),
@@ -9551,7 +9554,7 @@ const Map<String, String> kModuleCats = {
   '小说': '内容', '漫画': '内容', '视频': '内容', '音乐': '内容', '直播': '内容',
   '播客': '内容', '有声书': '内容', '广播': '内容', '短剧': '内容', '壁纸': '内容', '资讯': '内容',
   '笔记': '生活', '待办': '生活', '录音机': '生活', '日历': '生活', '提醒中心': '生活', '日记': '生活',
-  '记账': '生活',
+  '记账': '生活', '酒馆': '生活',
   '剪贴板': '生活', '书签': '生活', '代码片段': '生活', 'Markdown': '生活', '健康记录': '生活',
   '通讯录备份': '生活', '短信备份': '生活', '天气与快递': '生活', '菜谱': '生活', '记忆卡': '生活',
   '课程表': '生活',
