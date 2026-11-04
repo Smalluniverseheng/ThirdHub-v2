@@ -10,6 +10,14 @@
 //   · 角色卡导出的 PNG 隐写（网页端有）—— App 端要接图像编码，另开一轮更稳
 //   · 角色分组 —— 角色少于 20 个时分组是负担，先用搜索
 //
+// 4.81.21 修的三处（都是首版留下的真缺陷，单轮对话复现不了）：
+//   1. 「停止生成」以前只是不再刷新界面：后台那条流照旧收完，并把**完整回复**
+//      写进对话。用户点了停止却看到整段答案冒出来，等于没停。
+//   2. 上下文截断到最近 24 条后，首条可能是 assistant。Anthropic / Gemini 要求
+//      「首条非 system 消息必须是 user」，聊到十几轮就往回 400 —— 表现为"聊久了突然报错"。
+//   3. 头像字段来自 SillyTavern 卡时常常是 `xxx.png` 这种**文件名**，
+//      `Image.network` 每次重建都发一次注定失败的请求。
+//
 // 存储：SharedPreferences（`tavern_chars` / `tavern_chats`）。
 //   不做云同步是**故意的**：角色卡里常含成人向设定，未经用户明确同意不该上云。
 //   后续若要同步，走 th_shared kind='tavern_char' 并单独给开关。
@@ -517,6 +525,11 @@ class _Avatar extends StatelessWidget {
       ),
     );
     if (url.isEmpty) return fallback;
+    // SillyTavern 卡里的 avatar 常是 `Seraphina.png` 这种文件名（图在卡包 zip 里），
+    // 不是 URL。以前直接丢给 Image.network，每次重建都发一次注定失败的请求。
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return fallback;
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(size * 0.32),
       child: Image.network(
@@ -635,7 +648,11 @@ class _ChatState extends State<TavernChatPage> {
   TavernChat? _chat;
   bool _sending = false;
   String _streaming = '';
-  bool _cancel = false;
+
+  /// 生成令牌：发送 / 停止 / 销毁时 +1，异步回调只认自己那一轮。
+  /// 用它替掉原来的 `_cancel` 布尔 —— 布尔挡不住「停完立刻再发」的串台：
+  /// 上一轮迟到的 delta 会写进新一轮的气泡里。
+  int _seq = 0;
 
   @override
   void initState() {
@@ -657,6 +674,7 @@ class _ChatState extends State<TavernChatPage> {
 
   @override
   void dispose() {
+    _seq++; // 让在途的流式回调全部失效，别往已销毁的 State 里写
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -664,6 +682,7 @@ class _ChatState extends State<TavernChatPage> {
 
   void _toBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_scroll.hasClients) {
         _scroll.animateTo(_scroll.position.maxScrollExtent,
             duration: Motion.durFast, curve: Curves.easeOut);
@@ -671,23 +690,45 @@ class _ChatState extends State<TavernChatPage> {
     });
   }
 
+  /// 用户点「停止生成」：立刻结束本轮 UI，并把已经收到的部分留成一条消息。
+  ///
+  /// 底层那条 HTTP 流掐不断（`AiChat.chat` 没有取消句柄），它会在后台跑完；
+  /// 那点 token 已经花出去了，所以不丢文本、只作废结果。
+  void _stop() {
+    final chat = _chat;
+    final partial = _streaming.trim();
+    if (chat != null && partial.isNotEmpty) {
+      chat.msgs.add(TavernMsg('assistant', partial));
+      TavernStore.saveChat(chat);
+    }
+    _seq++; // 在途回调（含 await 之后的收尾）全部作废
+    setState(() {
+      _sending = false;
+      _streaming = '';
+    });
+    _toBottom();
+  }
+
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending || _chat == null) return;
     final chat = _chat!;
+    // 先占位：`AiRegistry.lastModel()` 是异步的，期间再点一次会重复发一条
+    final mySeq = ++_seq;
+    setState(() => _sending = true);
     final (pid, model) = await AiRegistry.lastModel();
     final provider = AiRegistry.byId(pid);
     if (provider == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(tr('还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型'))));
-      }
+      if (!mounted || mySeq != _seq) return;
+      // 不清空输入框：用户还得拿它去配 Key
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tr('还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型'))));
       return;
     }
+    if (mySeq != _seq) return; // 期间已被「停止」，或页面已销毁
     _input.clear();
     setState(() {
-      _sending = true;
-      _cancel = false;
       _streaming = '';
       chat.msgs.add(TavernMsg('user', text));
     });
@@ -695,12 +736,19 @@ class _ChatState extends State<TavernChatPage> {
     _toBottom();
 
     // 只带最近 24 条，避免上下文无限膨胀把费用和延迟拉爆
-    final recent = chat.msgs.length > 24
+    final window = chat.msgs.length > 24
         ? chat.msgs.sublist(chat.msgs.length - 24)
         : chat.msgs;
+    // ★截断后首条可能是 assistant（第 24 条正好落在一问一答中间）。
+    //   Anthropic / Gemini 要求首条非 system 消息必须是 user，否则整轮 400 ——
+    //   症状是"聊到十几轮突然报错"，单轮对话永远复现不了。丢到首条 user 为止。
+    var from = 0;
+    while (from < window.length && window[from].role != 'user') {
+      from++;
+    }
     final messages = <Map<String, String>>[
       {'role': 'system', 'content': widget.char.buildSystemPrompt()},
-      for (final m in recent) {'role': m.role, 'content': m.text},
+      for (final m in window.skip(from)) {'role': m.role, 'content': m.text},
     ];
 
     try {
@@ -709,24 +757,25 @@ class _ChatState extends State<TavernChatPage> {
         model: model,
         messages: messages,
         onDelta: (d) {
-          if (_cancel) return;
+          if (mySeq != _seq) return;
           _streaming += d;
           if (mounted) setState(() {});
           _toBottom();
         },
       );
+      if (mySeq != _seq) return; // 已停止 → 丢弃迟到的完整回复（部分文本已在 _stop 留存）
       final finalText = reply.trim().isEmpty ? _streaming.trim() : reply.trim();
       if (finalText.isNotEmpty) {
         chat.msgs.add(TavernMsg('assistant', finalText));
         await TavernStore.saveChat(chat);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && mySeq == _seq) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(trf('生成失败：{e}', {'e': e}))));
       }
     } finally {
-      if (mounted) {
+      if (mounted && mySeq == _seq) {
         setState(() {
           _sending = false;
           _streaming = '';
@@ -823,7 +872,7 @@ class _ChatState extends State<TavernChatPage> {
               if (_sending)
                 IconButton.filledTonal(
                   tooltip: tr('停止生成'),
-                  onPressed: () => setState(() => _cancel = true),
+                  onPressed: _stop,
                   icon: const Icon(Icons.stop, size: 20),
                 )
               else
