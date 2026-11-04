@@ -212,6 +212,20 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/tavern_export_selfcheck.dart
 
+      # ★tavern_context（2026-11-05 加，4.81.25）—— 对话上下文裁剪 + 重新生成截点。
+      #
+      #   为什么进 CI：这里两个缺陷**都只在真机上聊够轮数才出现**，界面上零提示：
+      #     ① 上下文截到最近 24 条后首条可能是 assistant → Anthropic / Gemini 整轮 400，
+      #        症状是"聊到十几轮突然报错"，重开 App 又好了（会话短了）→ 极难复现；
+      #     ② 只有开场白时点「重新生成」→ 请求里只有 system → 服务端拒掉，
+      #        报错文案长得像 Key 配错了，用户会去乱改设置。
+      #   断言口径：窗口取的是**最近** N 条、首条非 system 必须是 user、
+      #   末尾连续多条半截回复要一起清、截点必须落在 1..len-1（0 会退化成"只有 system"）。
+      #   实测 2026-11-05：49 通过 / 0 失败；两次变异（去掉首条对齐 / 只删一条）分别报 8 / 16 条 FAIL。
+      - name: tavern_context（对话上下文：窗口/首条必为 user/重新生成截点）
+        working-directory: flutter_app
+        run: dart run tool/tavern_context_selfcheck.dart
+
       - name: settings_bridge（设置 38 键两端一致）
         working-directory: flutter_app
         run: dart run tool/settings_bridge_selfcheck.dart
