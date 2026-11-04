@@ -496,7 +496,10 @@ class _Avatar extends StatelessWidget {
         borderRadius: BorderRadius.circular(size * 0.32),
       ),
       child: Text(
-        name.isEmpty ? '?' : name.characters.first,
+        // 不用 `name.characters.first`：String.characters 需要额外 import
+        // 'package:characters/characters.dart'，而且角色名基本不会是 emoji 开头。
+        // 用 runes 取第一个码位，中文也不会切坏。
+        name.isEmpty ? '?' : String.fromCharCode(name.runes.first),
         style: TextStyle(fontSize: size * 0.42, color: seed, fontWeight: FontWeight.w600),
       ),
     );
