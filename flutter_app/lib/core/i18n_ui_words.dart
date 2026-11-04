@@ -990,6 +990,16 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'JSON text (easy to back up and edit by hand)',
     '已导出：{name}': 'Exported: {name}',
     '导出失败：{e}': 'Export failed: {e}',
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'Pick a PNG character card',
+    '图里内嵌了卡片数据，选完直接导入':
+        'The image carries the card data; it imports right after you pick it',
+    '选择 JSON 文件': 'Pick a JSON file',
+    '粘贴 JSON 文本': 'Paste JSON text',
+    '这不是 PNG 图片': 'This is not a PNG image',
+    '这张图里没有角色卡数据': 'No character data in this image',
+    '读不到文件内容': 'Could not read the file',
+    '文件太大（超过 16MB）': 'File is too large (over 16MB)',
   },
   'ja': <String, String>{
     '酒馆': '酒場',
@@ -1046,6 +1056,16 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'JSON テキスト（バックアップや手直し向け）',
     '已导出：{name}': '書き出しました：{name}',
     '导出失败：{e}': '書き出しに失敗しました：{e}',
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'PNG キャラクターカードを選ぶ',
+    '图里内嵌了卡片数据，选完直接导入':
+        '画像にカードデータが埋め込まれています。選ぶだけで読み込みます',
+    '选择 JSON 文件': 'JSON ファイルを選ぶ',
+    '粘贴 JSON 文本': 'JSON テキストを貼り付ける',
+    '这不是 PNG 图片': 'PNG 画像ではありません',
+    '这张图里没有角色卡数据': 'この画像にキャラクターデータがありません',
+    '读不到文件内容': 'ファイルの内容を読み取れません',
+    '文件太大（超过 16MB）': 'ファイルが大きすぎます（16MB 超）',
   },
   'fr': <String, String>{
     '酒馆': 'Taverne',
@@ -1103,6 +1123,16 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'Texte JSON (facile à sauvegarder et à retoucher)',
     '已导出：{name}': 'Exporté : {name}',
     '导出失败：{e}': "Échec de l'export : {e}",
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'Choisir une fiche PNG',
+    '图里内嵌了卡片数据，选完直接导入':
+        "L'image contient les données de la fiche ; l'import démarre dès la sélection",
+    '选择 JSON 文件': 'Choisir un fichier JSON',
+    '粘贴 JSON 文本': 'Coller un texte JSON',
+    '这不是 PNG 图片': "Ce n'est pas une image PNG",
+    '这张图里没有角色卡数据': 'Aucune donnée de personnage dans cette image',
+    '读不到文件内容': 'Impossible de lire le fichier',
+    '文件太大（超过 16MB）': 'Fichier trop volumineux (plus de 16 Mo)',
   },
   'ru': <String, String>{
     '酒馆': 'Таверна',
@@ -1160,6 +1190,16 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'Текст JSON (удобно для резервной копии и правок)',
     '已导出：{name}': 'Экспортировано: {name}',
     '导出失败：{e}': 'Ошибка экспорта: {e}',
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'Выбрать карточку PNG',
+    '图里内嵌了卡片数据，选完直接导入':
+        'Данные карточки встроены в изображение — импорт начнётся сразу после выбора',
+    '选择 JSON 文件': 'Выбрать файл JSON',
+    '粘贴 JSON 文本': 'Вставить текст JSON',
+    '这不是 PNG 图片': 'Это не изображение PNG',
+    '这张图里没有角色卡数据': 'В этом изображении нет данных персонажа',
+    '读不到文件内容': 'Не удалось прочитать файл',
+    '文件太大（超过 16MB）': 'Файл слишком большой (больше 16 МБ)',
   },
   'es': <String, String>{
     '酒馆': 'Taberna',
@@ -1217,6 +1257,16 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'Texto JSON (fácil de respaldar y retocar)',
     '已导出：{name}': 'Exportado: {name}',
     '导出失败：{e}': 'Error al exportar: {e}',
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'Elegir una ficha PNG',
+    '图里内嵌了卡片数据，选完直接导入':
+        'La imagen contiene los datos de la ficha; se importa al seleccionarla',
+    '选择 JSON 文件': 'Elegir un archivo JSON',
+    '粘贴 JSON 文本': 'Pegar texto JSON',
+    '这不是 PNG 图片': 'No es una imagen PNG',
+    '这张图里没有角色卡数据': 'Esta imagen no contiene datos de personaje',
+    '读不到文件内容': 'No se pudo leer el archivo',
+    '文件太大（超过 16MB）': 'El archivo es demasiado grande (más de 16 MB)',
   },
   'ar': <String, String>{
     '酒馆': 'الحانة',
@@ -1274,5 +1324,15 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     'JSON 文本（便于备份和手改）': 'نص JSON (لسهولة النسخ الاحتياطي والتعديل اليدوي)',
     '已导出：{name}': 'تم التصدير: {name}',
     '导出失败：{e}': 'فشل التصدير: {e}',
+    // ★4.81.24 从文件导入（PNG / JSON）
+    '选择 PNG 角色卡': 'اختيار بطاقة PNG',
+    '图里内嵌了卡片数据，选完直接导入':
+        'الصورة تحمل بيانات البطاقة، ويبدأ الاستيراد فور اختيارها',
+    '选择 JSON 文件': 'اختيار ملف JSON',
+    '粘贴 JSON 文本': 'لصق نص JSON',
+    '这不是 PNG 图片': 'هذه ليست صورة PNG',
+    '这张图里没有角色卡数据': 'لا توجد بيانات شخصية في هذه الصورة',
+    '读不到文件内容': 'تعذّرت قراءة الملف',
+    '文件太大（超过 16MB）': 'الملف كبير جدًا (أكثر من 16 ميغابايت)',
   },
 };
