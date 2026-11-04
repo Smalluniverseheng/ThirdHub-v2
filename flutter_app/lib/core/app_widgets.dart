@@ -28,23 +28,29 @@ class AppCard extends StatefulWidget {
     required this.child,
     this.onTap,
     this.onLongPress,
-    this.padding = const EdgeInsets.all(Gap.md),
-    this.radius = Radii.md,
+    this.padding,
+    this.radius,
     this.accent,
-    this.margin = const EdgeInsets.symmetric(vertical: 6),
+    this.margin,
     this.gradientTop,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final EdgeInsetsGeometry padding;
-  final double radius;
+
+  /// 不传 = 用当前皮肤套餐的卡片密度（`SkinPack.cardPad`）
+  final EdgeInsetsGeometry? padding;
+
+  /// 不传 = 用当前皮肤套餐的卡片圆角（`SkinPack.radiusMd`）
+  final double? radius;
   final Color? accent;
 
   /// 顶部渐变强调（用于"重点卡"，如进行中的任务）
   final Color? gradientTop;
-  final EdgeInsetsGeometry margin;
+
+  /// 不传 = 用当前皮肤套餐的卡片间距（`SkinPack.cardMargin`）
+  final EdgeInsetsGeometry? margin;
 
   @override
   State<AppCard> createState() => _AppCardState();
@@ -61,15 +67,30 @@ class _AppCardState extends State<AppCard> {
         ? Color.alphaBlend(Colors.white.withValues(alpha: 0.045),
             Theme.of(context).scaffoldBackgroundColor)
         : Colors.white;
+    // ★ 密度/圆角/阴影全部来自当前皮肤套餐 —— 页面不传就跟着皮肤走
+    final SkinPack pack = SkinTokens.of(context);
+    final EdgeInsetsGeometry pad = widget.padding ?? pack.cardPadding;
+    final EdgeInsetsGeometry margin = widget.margin ?? pack.cardMargin;
+    final double radius = widget.radius ?? pack.radiusMd;
+    // 描边跟着主题的卡片描边走（漫画 2px 墨线 / 机甲发光 / 其余 hairline）
+    final ShapeBorder? cardShape = Theme.of(context).cardTheme.shape;
+    final BorderSide? themeSide =
+        cardShape is RoundedRectangleBorder ? cardShape.side : null;
+    final BorderSide? side = widget.accent != null
+        ? BorderSide(color: widget.accent!.withValues(alpha: 0.35), width: 1)
+        : (themeSide != null && themeSide.style != BorderStyle.none
+            ? themeSide
+            : null);
 
     final Widget face = AnimatedContainer(
       duration: Motion.durFor(context, Motion.durEffect),
       curve: Motion.effect,
-      padding: widget.padding,
+      padding: pad,
       decoration: BoxDecoration(
         color: base,
-        borderRadius: BorderRadius.circular(widget.radius),
-        boxShadow: _down ? const [] : Elev.card(Colors.black),
+        borderRadius: BorderRadius.circular(radius),
+        // 阴影档随皮肤：素白/墨玉/水墨 = 无，漫画 = 硬投影，机甲 = 辉光
+        boxShadow: _down ? const [] : Elev.packShadow(pack.shadow, Colors.black),
         gradient: widget.gradientTop == null
             ? null
             : LinearGradient(
@@ -83,20 +104,17 @@ class _AppCardState extends State<AppCard> {
                 ],
                 stops: const [0.0, 0.6],
               ),
-        border: widget.accent == null
-            ? null
-            : Border.all(
-                color: widget.accent!.withValues(alpha: 0.35), width: 1),
+        border: side == null ? null : Border.fromBorderSide(side),
       ),
       child: widget.child,
     );
 
     if (widget.onTap == null && widget.onLongPress == null) {
-      return Padding(padding: widget.margin, child: face);
+      return Padding(padding: margin, child: face);
     }
 
     return Padding(
-      padding: widget.margin,
+      padding: margin,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _down = true),
         onTapCancel: () => setState(() => _down = false),
