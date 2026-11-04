@@ -216,6 +216,41 @@ class Elev {
           offset: const Offset(0, 8),
         ),
       ];
+
+  /// ★2026-11-05：按**皮肤套餐的阴影档**取投影 —— 卡片/构件统一走这里。
+  ///
+  ///   none  = 纯平面（素白、墨玉、水墨：靠描边分层，不要投影）
+  ///   flat  = 极薄一层
+  ///   soft  = 默认柔和（两层）
+  ///   float = 浮起（大模糊，玻璃）
+  ///   hard  = 硬投影（0 模糊 + 4px 偏移，漫画分镜框）
+  ///   glow  = 强调色辉光（机甲霓虹）
+  static List<BoxShadow> packShadow(SkinShadow s, Color seed) => switch (s) {
+        SkinShadow.none => const <BoxShadow>[],
+        SkinShadow.flat => [
+            BoxShadow(
+              color: seed.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        SkinShadow.soft => card(seed),
+        SkinShadow.float => floating(seed),
+        SkinShadow.hard => [
+            BoxShadow(
+              color: seed.withValues(alpha: 0.72),
+              blurRadius: 0,
+              offset: const Offset(4, 4),
+            ),
+          ],
+        SkinShadow.glow => [
+            BoxShadow(
+              color: seed.withValues(alpha: 0.42),
+              blurRadius: 18,
+              spreadRadius: -4,
+            ),
+          ],
+      };
 }
 
 /// 「皮肤」= 一套强调色 + 底色倾向 + 动效强度 + **特效档**。
@@ -265,6 +300,7 @@ class Skin {
     seed: Color(0xFF2F6BFF),
     lightBg: Color(0xFFF5F7FC),
     darkBg: Color(0xFF0D1017),
+    fx: SkinFx.calm,
   );
 
   /// ★2026-10-11 新增：简约黑白（tokens.json 里的 mono）
@@ -274,6 +310,7 @@ class Skin {
     seed: Color(0xFF111111),
     lightBg: Color(0xFFFFFFFF),
     darkBg: Color(0xFF0B0B0C),
+    fx: SkinFx.flat,
     vivid: false,
   );
 
@@ -283,6 +320,7 @@ class Skin {
     seed: Color(0xFF1F2937),
     lightBg: Color(0xFFF7F7F8),
     darkBg: Color(0xFF0A0A0B),
+    fx: SkinFx.crisp,
     vivid: false,
   );
 
@@ -292,6 +330,7 @@ class Skin {
     seed: Color(0xFF0E9F6E),
     lightBg: Color(0xFFF4FAF7),
     darkBg: Color(0xFF0B1512),
+    fx: SkinFx.calm,
   );
 
   static const Skin amber = Skin(
@@ -300,6 +339,7 @@ class Skin {
     seed: Color(0xFFD97706),
     lightBg: Color(0xFFFCF8F2),
     darkBg: Color(0xFF16110A),
+    fx: SkinFx.calm,
   );
 
   static const Skin violet = Skin(
@@ -308,6 +348,7 @@ class Skin {
     seed: Color(0xFF7C3AED),
     lightBg: Color(0xFFF8F6FD),
     darkBg: Color(0xFF120E1C),
+    fx: SkinFx.calm,
   );
 
   static const Skin rose = Skin(
@@ -316,6 +357,7 @@ class Skin {
     seed: Color(0xFFE11D6F),
     lightBg: Color(0xFFFDF5F8),
     darkBg: Color(0xFF180A11),
+    fx: SkinFx.calm,
   );
 
   /// ★2026-10-11 新增：水墨（fx=ink）
@@ -369,23 +411,235 @@ class Skin {
       all.firstWhere((s) => s.id == id, orElse: () => ocean);
 }
 
-/// 特效档 —— 决定圆角/边框/阴影/标题字形这一组"风格量"。
-/// 与 tokens.json 的 `fx` 取值一一对应。
+/// 特效档 —— 一套皮肤的「几何 / 质感 / 动效 / 密度」族名。
+/// 与 tokens.json 的 `fx` 取值一一对应，同时是 `packs` 表的键。
+///
+/// ★ 2026-11-05：以前 7 套皮肤挂 `none`（= 只换了 seed 色，圆角阴影密度全一样），
+///   现在每一套都必须挂一个真 pack —— `skin_parity_selfcheck` 里有一条
+///   「没有皮肤可以取 none」的断言，就是为了不让它退回去。
 enum SkinFx {
-  /// 无额外特效（绝大多数皮肤）
+  /// 兼容值：历史配置可能存着它。**现在没有任何皮肤使用它。**
   none,
 
-  /// 水墨：圆角收小、边框细、标题走衬线、去阴影只留线条
+  /// 静：标准圆角 + 柔和投影 + 弹簧转场（默认）
+  calm,
+
+  /// 素：小圆角、纯平面无投影、稀疏密度
+  flat,
+
+  /// 锐：更小圆角、hairline 描边、紧凑密度
+  crisp,
+
+  /// 墨：近直角、去阴影只留线条、衬线标题
   ink,
 
-  /// 机甲：卡片发光描边 + 强调色辉光 + 按钮直角化 + **机械滑动转场**（快进精准刹停）
+  /// 霓：直角 + 发光描边 + 机械滑动转场
   neon,
 
-  /// 玻璃：卡片半透明 + 模糊、按钮胶囊化、渐变底
+  /// 玻：大圆角 + 胶囊按钮 + 浮起投影
   glass,
 
-  /// 漫画：粗描边 + 硬阴影、**弹跳弹出转场**（夸张过冲，像分镜弹出）
+  /// 漫：墨线描边 + 硬投影 + 弹跳转场
   comic,
+}
+
+/// 投影档（pack.shadow）。App 端走 `CardTheme.elevation` + `shadowColor`，
+/// 网页端走 `--pack-shadow` 关键词映射到具体 box-shadow。
+enum SkinShadow {
+  none,
+  flat,
+  soft,
+  float,
+  hard,
+  glow,
+}
+
+/// 动效曲线族（pack.motion）。决定页面转场走哪条曲线。
+///
+/// ★ 这是「皮肤不只是换颜色」的第二个落点：机甲是机械滑动、漫画是弹跳弹出、
+///   素白是干脆快出、水墨是慢起缓收 —— 同样的页面切换，观感完全不同。
+enum SkinMotion {
+  spring,
+  swift,
+  smooth,
+  mech,
+  bounce,
+}
+
+/// 一套皮肤的**完整套餐** —— 圆角 / 描边 / 阴影 / 动效曲线 / 卡片密度。
+///
+/// 值必须与 `design/tokens.json` 的 `packs` 逐字段一致（闸门比对），
+/// 网页端 `css/theme.css` 的 `body[data-fx="<id>"]` 块是同一份数据的 CSS 表达。
+///
+/// ★ 收敛原则：页面**不许**自己写圆角/间距/曲线字面量。
+///   要么用 `Radii.*`（全局基础档），要么用 `SkinTokens.of(context)`（随皮肤变）。
+class SkinPack {
+  const SkinPack({
+    required this.id,
+    required this.radiusSm,
+    required this.radiusMd,
+    required this.radiusLg,
+    required this.btnRadius,
+    required this.cardPad,
+    required this.cardGap,
+    required this.rowPad,
+    required this.borderW,
+    required this.shadow,
+    required this.motion,
+    required this.ease,
+  });
+
+  /// 与 `SkinFx` 同名
+  final String id;
+
+  /// 小控件圆角（chip / 小按钮）
+  final double radiusSm;
+
+  /// 卡片圆角
+  final double radiusMd;
+
+  /// 弹层 / 大面圆角
+  final double radiusLg;
+
+  /// 按钮与输入框圆角（999 = 胶囊）
+  final double btnRadius;
+
+  /// 卡片内边距
+  final double cardPad;
+
+  /// 卡片之间垂直间距（密度的一半落在上下各一份）
+  final double cardGap;
+
+  /// 列表行额外垂直内边距（密度：越大越稀疏）
+  final double rowPad;
+
+  /// 卡片描边宽度
+  final double borderW;
+
+  final SkinShadow shadow;
+  final SkinMotion motion;
+
+  /// 网页端等价曲线（仅作跨端契约，Dart 侧实际走 [Motion] 的 Cubic）
+  final String ease;
+
+  /// 卡片圆角
+  BorderRadius get cardRadius => BorderRadius.circular(radiusMd);
+
+  /// 按钮 / 输入框圆角
+  BorderRadius get controlRadius => BorderRadius.circular(btnRadius);
+
+  /// 弹层圆角
+  BorderRadius get sheetRadius => BorderRadius.circular(radiusLg);
+
+  /// 卡片内边距
+  EdgeInsets get cardPadding => EdgeInsets.all(cardPad);
+
+  /// 卡片外边距（上下各半档密度 —— 相邻两张卡片之间正好一个 cardGap）
+  EdgeInsets get cardMargin => EdgeInsets.symmetric(vertical: cardGap / 2);
+
+  /// 映射到 Material 的 elevation（阴影强度）
+  double get elevation => switch (shadow) {
+        SkinShadow.none => 0,
+        SkinShadow.flat => 1,
+        SkinShadow.soft => 2,
+        SkinShadow.float => 8,
+        SkinShadow.glow => 6,
+        SkinShadow.hard => 0, // 硬投影靠粗描边立住，Material 表达不了偏移实影
+      };
+
+  // ── 七套套餐（顺序 = tokens.json packs 的键序去掉 none）──────────────
+  static const SkinPack calm = SkinPack(
+    id: 'calm', radiusSm: 10, radiusMd: 16, radiusLg: 24, btnRadius: 16,
+    cardPad: 16, cardGap: 12, rowPad: 4, borderW: 1,
+    shadow: SkinShadow.soft, motion: SkinMotion.spring,
+    ease: 'cubic-bezier(.38,1.21,.22,1)',
+  );
+
+  static const SkinPack flat = SkinPack(
+    id: 'flat', radiusSm: 6, radiusMd: 10, radiusLg: 16, btnRadius: 10,
+    cardPad: 20, cardGap: 18, rowPad: 8, borderW: 1,
+    shadow: SkinShadow.none, motion: SkinMotion.swift,
+    ease: 'cubic-bezier(.22,1,.36,1)',
+  );
+
+  static const SkinPack crisp = SkinPack(
+    id: 'crisp', radiusSm: 4, radiusMd: 6, radiusLg: 10, btnRadius: 6,
+    cardPad: 14, cardGap: 10, rowPad: 3, borderW: 1,
+    shadow: SkinShadow.none, motion: SkinMotion.swift,
+    ease: 'cubic-bezier(.22,1,.36,1)',
+  );
+
+  static const SkinPack ink = SkinPack(
+    id: 'ink', radiusSm: 3, radiusMd: 5, radiusLg: 8, btnRadius: 4,
+    cardPad: 18, cardGap: 14, rowPad: 6, borderW: 1,
+    shadow: SkinShadow.none, motion: SkinMotion.smooth,
+    ease: 'cubic-bezier(.25,.8,.25,1)',
+  );
+
+  static const SkinPack neon = SkinPack(
+    id: 'neon', radiusSm: 2, radiusMd: 4, radiusLg: 8, btnRadius: 4,
+    cardPad: 14, cardGap: 10, rowPad: 3, borderW: 1,
+    shadow: SkinShadow.glow, motion: SkinMotion.mech,
+    ease: 'cubic-bezier(.15,.85,.35,1)',
+  );
+
+  static const SkinPack glass = SkinPack(
+    id: 'glass', radiusSm: 12, radiusMd: 24, radiusLg: 30, btnRadius: 999,
+    cardPad: 20, cardGap: 16, rowPad: 6, borderW: 1,
+    shadow: SkinShadow.float, motion: SkinMotion.smooth,
+    ease: 'cubic-bezier(.25,.8,.25,1)',
+  );
+
+  static const SkinPack comic = SkinPack(
+    id: 'comic', radiusSm: 8, radiusMd: 10, radiusLg: 14, btnRadius: 10,
+    cardPad: 16, cardGap: 14, rowPad: 4, borderW: 2,
+    shadow: SkinShadow.hard, motion: SkinMotion.bounce,
+    ease: 'cubic-bezier(.34,1.56,.64,1)',
+  );
+
+  /// 全部套餐（顺序与 tokens.json 的 packs 键序一致）
+  static const List<SkinPack> all = [
+    calm, flat, crisp, ink, neon, glass, comic,
+  ];
+
+  /// 由特效档取套餐；未知/兼容值回落到 calm
+  static SkinPack of(SkinFx fx) {
+    for (final SkinPack p in all) {
+      if (p.id == fx.name) return p;
+    }
+    return calm;
+  }
+}
+
+/// 把当前皮肤的套餐暴露进 `Theme.of(context)`。
+///
+/// 页面要「随皮肤变的密度/圆角」时读它，**不要**自己写 16/12 这种字面量：
+///   `final pack = SkinTokens.of(context);`
+///   `padding: pack.cardPadding`
+class SkinTokens extends ThemeExtension<SkinTokens> {
+  const SkinTokens({required this.pack, required this.skin});
+
+  final SkinPack pack;
+  final Skin skin;
+
+  /// 取当前套餐（没有扩展时回落到 calm，保证永不 null）
+  static SkinPack of(BuildContext context) =>
+      Theme.of(context).extension<SkinTokens>()?.pack ?? SkinPack.calm;
+
+  /// 取当前皮肤（用于需要原始 seed/bg 的地方）
+  static Skin skinOf(BuildContext context) =>
+      Theme.of(context).extension<SkinTokens>()?.skin ?? Skin.ocean;
+
+  @override
+  SkinTokens copyWith({SkinPack? pack, Skin? skin}) =>
+      SkinTokens(pack: pack ?? this.pack, skin: skin ?? this.skin);
+
+  @override
+  SkinTokens lerp(ThemeExtension<SkinTokens>? other, double t) {
+    if (other is! SkinTokens) return this;
+    // 套餐是离散值，不做插值：过半直接换（皮肤切换是"跳变"，本来就该瞬切）
+    return t < 0.5 ? this : other;
+  }
 }
 
 /// 由皮肤 + 亮度构造完整 `ThemeData`。
@@ -397,24 +651,14 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
   final Color bg = dark ? skin.darkBg : skin.lightBg;
   final ColorScheme scheme = ColorScheme.fromSeed(seedColor: skin.seed, brightness: b);
 
-  // ── 特效档决定的"风格量"（圆角 / 卡片色 / 边框 / 阴影）──────────────
-  //   ★ 这里就是"换皮肤不只是换颜色"的落点：同一个底色配不同 fx，
-  //     圆角、描边、透明度、是否有阴影都不一样，观感是两套东西。
-  final SkinFx fx = skin.fx;
-  final BorderRadius cardRadius = switch (fx) {
-    SkinFx.ink => Radii.smAll,      // 水墨：小圆角，接近直角
-    SkinFx.neon => Radii.smAll,     // 机甲：直角化
-    SkinFx.glass => Radii.lgAll,    // 玻璃：大圆角
-    SkinFx.comic => Radii.mdAll,    // 漫画：中圆角 + 粗描边（分镜框感）
-    SkinFx.none => Radii.lgAll,
-  };
-  final BorderRadius btnRadius = switch (fx) {
-    SkinFx.ink => const BorderRadius.all(Radius.circular(4)),
-    SkinFx.neon => const BorderRadius.all(Radius.circular(6)),
-    SkinFx.glass => Radii.pillAll,  // 玻璃：胶囊
-    SkinFx.comic => const BorderRadius.all(Radius.circular(8)),
-    SkinFx.none => Radii.mdAll,
-  };
+  // ── 皮肤套餐决定的"风格量"（圆角 / 卡片色 / 边框 / 阴影 / 密度）──────
+  //   ★ 这里就是"换皮肤不只是换颜色"的落点：同一个底色配不同 pack，
+  //     圆角、描边、透明度、阴影、卡片密度都不一样，观感是两套东西。
+  //   ★ 2026-11-05：原来是 5 个 `switch (fx)`，加一档要改 5 处、漏一处就半新半旧。
+  //     现在全部收进 `SkinPack` 一张表 —— 加套餐只改 tokens.json + SkinPack.all。
+  final SkinPack pack = SkinPack.of(skin.fx);
+  final BorderRadius cardRadius = pack.cardRadius;
+  final BorderRadius btnRadius = pack.controlRadius;
   // 表面色带一点底色倾向：纯粹的统一底色才"高级"，
   // 页面里出现两种不同的灰是最显廉价的错误。
   final Color surface = bg;
@@ -433,33 +677,46 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
   final double lineA = dark ? 0.14 : 0.09;   // 分隔线
   final double edgeA = dark ? 0.20 : 0.10;   // 卡片描边
   Color surfaceCard = surfaceMid;
-  if (fx == SkinFx.glass) {
+  if (pack.id == 'glass') {
     // 玻璃：卡片更"浮"一点，靠模糊与描边拉开层次
     surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.11), bg)
                        : Color.alphaBlend(Colors.white.withValues(alpha: 0.55), bg);
   }
   // 机甲：卡片带一层极淡的强调色，配合霓虹描边
-  if (fx == SkinFx.neon) {
+  if (pack.id == 'neon') {
     surfaceCard = Color.alphaBlend(skin.seed.withValues(alpha: dark ? 0.05 : 0.035), surfaceCard);
   }
-  final BorderSide cardSide = switch (fx) {
-    SkinFx.neon => BorderSide(color: skin.seed.withValues(alpha: dark ? 0.45 : 0.30), width: 1),
-    SkinFx.ink => BorderSide(color: scheme.onSurface.withValues(alpha: dark ? 0.26 : 0.16), width: 1),
-    SkinFx.glass => BorderSide(color: Colors.white.withValues(alpha: dark ? 0.10 : 0.65), width: 1),
-    // 漫画：2px 粗描边（分镜框）——亮色用墨黑、暗色用纸白，黑白对比是漫画印刷的灵魂
-    SkinFx.comic => BorderSide(
+  // 素白：纯平面 —— 卡片与页底拉开一点点，靠描边而不是投影分层
+  if (pack.id == 'flat') {
+    surfaceCard = dark ? Color.alphaBlend(Colors.white.withValues(alpha: 0.035), bg) : Colors.white;
+  }
+  // ── 卡片描边：宽度来自 pack.borderW（漫画 = 2px 墨线），颜色按套餐分派 ──
+  //   分派只此一处，页面里不写 border 字面量。
+  final BorderSide cardSide = switch (pack.id) {
+    // 机甲：强调色描边，深色下更亮（霓虹感）
+    'neon' => BorderSide(
+        color: skin.seed.withValues(alpha: dark ? 0.45 : 0.30), width: pack.borderW),
+    // 玻璃：白描边（模拟玻璃边缘反光）
+    'glass' => BorderSide(
+        color: Colors.white.withValues(alpha: dark ? 0.10 : 0.65), width: pack.borderW),
+    // 漫画：2px 墨线 —— 亮色用墨黑、暗色用纸白，黑白对比是漫画印刷的灵魂
+    'comic' => BorderSide(
         color: dark
             ? Colors.white.withValues(alpha: 0.85)
             : scheme.onSurface.withValues(alpha: 0.88),
-        width: 2),
-    // 默认档原来是无描边 —— 深色下卡片和页底同色，等于没有卡片。给一圈极淡描边。
-    SkinFx.none => BorderSide(color: scheme.onSurface.withValues(alpha: edgeA), width: 1),
+        width: pack.borderW),
+    // 墨玉：描边深一档（hairline 更"锐"）
+    'crisp' => BorderSide(
+        color: scheme.onSurface.withValues(alpha: dark ? 0.30 : 0.20), width: pack.borderW),
+    // 其余：极淡描边（无描边时深色下卡片与页底同色，等于没有卡片）
+    _ => BorderSide(color: scheme.onSurface.withValues(alpha: edgeA), width: pack.borderW),
   };
   // 标题字形：水墨走衬线（有"书卷气"），其余沿用默认无衬线
-  final TextStyle h1 = fx == SkinFx.ink
+  final bool serif = skin.fx == SkinFx.ink;
+  final TextStyle h1 = serif
       ? Types.h1.copyWith(fontFamily: 'serif', letterSpacing: 0.5)
       : Types.h1;
-  final TextStyle h2 = fx == SkinFx.ink
+  final TextStyle h2 = serif
       ? Types.h2.copyWith(fontFamily: 'serif', letterSpacing: 0.4)
       : Types.h2;
 
@@ -495,15 +752,10 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     canvasColor: surface,
     splashFactory: InkSparkle.splashFactory, // 安卓原生级涟漪
     cardTheme: CardThemeData(
-      // 阴影靠 elevation 触发；水墨明确要"无阴影"，所以给 0；机甲/玻璃各一档。
-      elevation: switch (fx) {
-        SkinFx.ink => 0,
-        SkinFx.neon => 6,
-        SkinFx.glass => 2,
-        SkinFx.comic => 0, // 漫画靠粗描边立住，不用投影
-        SkinFx.none => 0,
-      },
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      // 阴影档由 pack.shadow 决定（none/flat/soft/float/hard/glow）
+      elevation: pack.elevation,
+      // ★ 卡片密度：上下各半档，相邻两张之间正好一个 cardGap
+      margin: pack.cardMargin,
       color: surfaceCard,
       shadowColor: skin.seed.withValues(alpha: 0.22),
       shape: RoundedRectangleBorder(
@@ -519,7 +771,11 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       surfaceTintColor: Colors.transparent,
       titleTextStyle: h2.copyWith(color: scheme.onSurface),
     ),
-    listTileTheme: const ListTileThemeData(minVerticalPadding: 4),
+    // 列表行密度：随皮肤变（素白/玻璃更松、机甲/墨玉更紧）
+    listTileTheme: ListTileThemeData(
+      minVerticalPadding: pack.rowPad,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: pack.rowPad / 2),
+    ),
     dividerTheme: DividerThemeData(
       color: scheme.onSurface.withValues(alpha: lineA),
       thickness: 1,
@@ -558,13 +814,14 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       ),
     ),
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(borderRadius: Radii.smAll),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(pack.radiusSm)),
       side: BorderSide.none,
       backgroundColor: surfaceCard,
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
+      shape: RoundedRectangleBorder(borderRadius: cardRadius),
       insetPadding: const EdgeInsets.all(16),
     ),
     // ★2026-10-31 修「浮窗半透明、和背后文字重叠」：
@@ -579,14 +836,14 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       modalBarrierColor: Colors.black.withValues(alpha: 0.55),
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(pack.radiusLg)),
         side: BorderSide(color: scheme.onSurface.withValues(alpha: dark ? 0.14 : 0.06), width: 1),
       ),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: surfaceTop,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: Radii.lgAll),
+      shape: RoundedRectangleBorder(borderRadius: pack.sheetRadius),
     ),
     // ── 2026-11-04 补齐「仍在用 Material 默认值」的组件 ──
     //   这些组件此前没在主题里声明，于是永远长成 Material 默认样：
@@ -647,7 +904,7 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       surfaceTintColor: Colors.transparent,
       elevation: 6,
       shadowColor: skin.seed.withValues(alpha: 0.18),
-      shape: RoundedRectangleBorder(borderRadius: Radii.mdAll),
+      shape: RoundedRectangleBorder(borderRadius: cardRadius),
       textStyle: Types.body.copyWith(fontSize: 13),
     ),
     tooltipTheme: TooltipThemeData(
@@ -670,7 +927,8 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     // 分段按钮（导航形态切换那类控件）同样走圆角与主色，不然是默认方角。
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: SegmentedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: Radii.smAll),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(pack.radiusSm)),
         selectedBackgroundColor: skin.seed.withValues(alpha: dark ? 0.28 : 0.14),
         selectedForegroundColor: skin.seed,
         textStyle: Types.caption.copyWith(fontSize: 11),
@@ -681,26 +939,95 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
       size: 22,
       color: scheme.onSurface.withValues(alpha: 0.82),
     ),
-    // 页面转场按特效档分派 —— 这就是"效果皮肤"与"颜色皮肤"的分水岭：
-    //   机甲（neon） = 机械滑动（快启动 → 匀速推进 → 精准刹停，伺服感）
-    //   漫画（comic）= 弹跳弹出（夸张过冲，像分镜砸进画面）
-    //   其余         = 弹簧滑动（M3 Expressive 默认，不改变既有观感）
+    // 页面转场按**套餐的动效族**分派 —— 这就是"效果皮肤"与"颜色皮肤"的分水岭：
+    //   机甲（mech）  = 机械滑动（快启动 → 匀速推进 → 精准刹停，伺服感）
+    //   漫画（bounce）= 弹跳弹出（夸张过冲，像分镜砸进画面）
+    //   素白/墨玉（swift）= 干脆快出，没有回弹（利落）
+    //   水墨/玻璃（smooth）= 慢起缓收
+    //   深海等（spring）= M3 Expressive 弹簧
     pageTransitionsTheme: PageTransitionsTheme(builders: {
-      TargetPlatform.android: _pageTransitionFor(fx),
-      TargetPlatform.iOS: _pageTransitionFor(fx),
+      TargetPlatform.android: _pageTransitionFor(pack.motion),
+      TargetPlatform.iOS: _pageTransitionFor(pack.motion),
     }),
+    // 把套餐挂进 Theme，页面用 SkinTokens.of(context) 读，不写死数值
+    extensions: <ThemeExtension<dynamic>>[
+      SkinTokens(pack: pack, skin: skin),
+    ],
   );
 }
 
-/// 按特效档选择页面转场（"效果皮肤"的唯一分派点）。
+/// 按动效族选择页面转场（"效果皮肤"的唯一分派点）。
 ///
-/// ★ 新增效果皮肤 = 在这里加一条分支 + 写一个 PageTransitionsBuilder 子类，
+/// ★ 新增动效族 = 在这里加一条分支 + 写一个 PageTransitionsBuilder 子类，
 ///   不要在页面里写 if (皮肤=='x') —— 分派只此一处，保证不漏页。
-PageTransitionsBuilder _pageTransitionFor(SkinFx fx) => switch (fx) {
-      SkinFx.neon => const _MechaPageTransition(),
-      SkinFx.comic => const _ComicPageTransition(),
-      _ => const _SpringPageTransition(),
+PageTransitionsBuilder _pageTransitionFor(SkinMotion m) => switch (m) {
+      SkinMotion.mech => const _MechaPageTransition(),
+      SkinMotion.bounce => const _ComicPageTransition(),
+      SkinMotion.swift => const _SwiftPageTransition(),
+      SkinMotion.smooth => const _SmoothPageTransition(),
+      SkinMotion.spring => const _SpringPageTransition(),
     };
+
+/// 干脆式转场：快速淡入 + 极小位移，**没有过冲**。
+/// 素白/墨玉用 —— 这两套要的是"利落"，回弹会显得轻浮。
+class _SmoothPageTransition extends PageTransitionsBuilder {
+  const _SmoothPageTransition();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (Motion.reduced(context)) return child;
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Motion.effect),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.018),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: const Cubic(0.25, 0.8, 0.25, 1),
+          reverseCurve: Curves.easeInCubic,
+        )),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// 快出式转场：无过冲、位移小、起手快（easeOut）—— "翻页即到"。
+class _SwiftPageTransition extends PageTransitionsBuilder {
+  const _SwiftPageTransition();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (Motion.reduced(context)) return child;
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.04, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: const Cubic(0.22, 1.0, 0.36, 1.0),
+        reverseCurve: Curves.easeInCubic,
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Motion.effect),
+        child: child,
+      ),
+    );
+  }
+}
 
 /// 弹簧式页面转场：新页**带轻微过冲**滑入 + 旧页淡出。
 ///
