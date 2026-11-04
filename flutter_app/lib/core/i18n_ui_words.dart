@@ -982,6 +982,14 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': 'Send',
     '说点什么…': 'Say something…',
     '生成失败：{e}': 'Generation failed: {e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'Export character card',
+    'PNG 角色卡（可直接导入酒馆）': 'PNG card (importable into Tavern directly)',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        'Image shell plus embedded data; when the card has no avatar the app icon is used as the base image',
+    'JSON 文本（便于备份和手改）': 'JSON text (easy to back up and edit by hand)',
+    '已导出：{name}': 'Exported: {name}',
+    '导出失败：{e}': 'Export failed: {e}',
   },
   'ja': <String, String>{
     '酒馆': '酒場',
@@ -1030,6 +1038,14 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': '送信',
     '说点什么…': '何か話して…',
     '生成失败：{e}': '生成に失敗しました：{e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'キャラクターカードを書き出す',
+    'PNG 角色卡（可直接导入酒馆）': 'PNG カード（酒場にそのまま読み込める）',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        '画像の入れ物＋埋め込みデータ。アイコン画像がない場合はアプリのアイコンを下地に使います',
+    'JSON 文本（便于备份和手改）': 'JSON テキスト（バックアップや手直し向け）',
+    '已导出：{name}': '書き出しました：{name}',
+    '导出失败：{e}': '書き出しに失敗しました：{e}',
   },
   'fr': <String, String>{
     '酒馆': 'Taverne',
@@ -1079,6 +1095,14 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': 'Envoyer',
     '说点什么…': 'Dites quelque chose…',
     '生成失败：{e}': 'Échec de la génération : {e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'Exporter la fiche de personnage',
+    'PNG 角色卡（可直接导入酒馆）': 'Fiche PNG (importable directement dans la Taverne)',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        "Image d'enveloppe + données intégrées ; sans avatar, l'icône de l'app sert de fond",
+    'JSON 文本（便于备份和手改）': 'Texte JSON (facile à sauvegarder et à retoucher)',
+    '已导出：{name}': 'Exporté : {name}',
+    '导出失败：{e}': "Échec de l'export : {e}",
   },
   'ru': <String, String>{
     '酒馆': 'Таверна',
@@ -1128,6 +1152,14 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': 'Отправить',
     '说点什么…': 'Скажите что-нибудь…',
     '生成失败：{e}': 'Ошибка генерации: {e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'Экспорт карточки персонажа',
+    'PNG 角色卡（可直接导入酒馆）': 'Карточка PNG (импортируется прямо в «Таверну»)',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        'Картинка-оболочка плюс встроенные данные; без аватара подложкой служит иконка приложения',
+    'JSON 文本（便于备份和手改）': 'Текст JSON (удобно для резервной копии и правок)',
+    '已导出：{name}': 'Экспортировано: {name}',
+    '导出失败：{e}': 'Ошибка экспорта: {e}',
   },
   'es': <String, String>{
     '酒馆': 'Taberna',
@@ -1177,6 +1209,14 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': 'Enviar',
     '说点什么…': 'Di algo…',
     '生成失败：{e}': 'Error al generar: {e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'Exportar ficha de personaje',
+    'PNG 角色卡（可直接导入酒馆）': 'Ficha PNG (se importa directamente en la Taberna)',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        'Imagen de soporte más datos incrustados; sin avatar se usa el icono de la app como fondo',
+    'JSON 文本（便于备份和手改）': 'Texto JSON (fácil de respaldar y retocar)',
+    '已导出：{name}': 'Exportado: {name}',
+    '导出失败：{e}': 'Error al exportar: {e}',
   },
   'ar': <String, String>{
     '酒馆': 'الحانة',
@@ -1226,5 +1266,13 @@ const Map<String, Map<String, String>> i18nUiWords6 =
     '发送': 'إرسال',
     '说点什么…': 'قل شيئًا…',
     '生成失败：{e}': 'فشل التوليد: {e}',
+    // ★4.81.23 角色卡导出
+    '导出角色卡': 'تصدير بطاقة الشخصية',
+    'PNG 角色卡（可直接导入酒馆）': 'بطاقة PNG (تُستورَد مباشرةً في الحانة)',
+    '图片外壳 + 内嵌数据；没头像时用应用图标当底图':
+        'صورة حاوية مع البيانات المدمجة؛ وعند غياب الصورة الرمزية تُستخدم أيقونة التطبيق خلفيةً',
+    'JSON 文本（便于备份和手改）': 'نص JSON (لسهولة النسخ الاحتياطي والتعديل اليدوي)',
+    '已导出：{name}': 'تم التصدير: {name}',
+    '导出失败：{e}': 'فشل التصدير: {e}',
   },
 };
