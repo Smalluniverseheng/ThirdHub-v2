@@ -22,6 +22,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai.dart';
 import 'design_tokens.dart';
+import 'i18n.dart';
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
@@ -70,7 +71,7 @@ class TavernChar {
 
   static TavernChar fromJson(Map<String, dynamic> j) => TavernChar(
         id: '${j['id'] ?? DateTime.now().microsecondsSinceEpoch}',
-        name: '${j['name'] ?? '未命名角色'}',
+        name: '${j['name'] ?? tr('未命名角色')}',
         description: '${j['description'] ?? ''}',
         firstMessage: '${j['firstMessage'] ?? ''}',
         systemPrompt: '${j['systemPrompt'] ?? ''}',
@@ -108,14 +109,19 @@ class TavernChar {
 
   /// 拼给模型看的 system 提示。用户填了 [systemPrompt] 就以它为准，
   /// 否则用「你是 X + 设定 + 扮演规则」的默认模板。
+  ///
+  /// ★模板走 trf/tr：提示词是**模型读的**，模型会用提示词的语言倾向作答 ——
+  ///   界面切到法语却给中文提示词，模型就更容易回中文，用户会以为是"翻译坏了"。
   String buildSystemPrompt() {
     if (systemPrompt.trim().isNotEmpty) return systemPrompt.trim();
-    final b = StringBuffer('你现在扮演「$name」。');
+    final b = StringBuffer(trf('你现在扮演「{name}」。', {'name': name}));
     if (description.trim().isNotEmpty) {
-      b.write('\n\n角色设定：\n${description.trim()}');
+      b.write('\n\n${trf('角色设定：\n{desc}', {'desc': description.trim()})}');
     }
-    b.write('\n\n要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，'
-        '不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。');
+    // ★这段必须写成**单个字面量**：`tr()` 的 key 就是它本身。写成相邻两个字面量
+    //   `'…' '…'` 时 Dart 在编译期拼接，而 `tool/i18n_selfcheck.dart` 的正则只抓
+    //   第一个字面量 → 它校验的是半句、运行时查的是整句 → 永远查不到译文。
+    b.write('\n\n${tr('要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。')}');
     return b.toString();
   }
 }
@@ -291,13 +297,13 @@ class _TavernPageState extends State<TavernPage> {
     final text = await showDialog<String>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('导入角色卡'),
+        title: Text(tr('导入角色卡')),
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text(
-              '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+            Text(
+              tr('把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。'),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
             const SizedBox(height: Gap.sm),
             TextField(
@@ -309,10 +315,10 @@ class _TavernPageState extends State<TavernPage> {
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
           FilledButton(
             onPressed: () => Navigator.pop(c, ctl.text),
-            child: const Text('导入'),
+            child: Text(tr('导入')),
           ),
         ],
       ),
@@ -321,17 +327,18 @@ class _TavernPageState extends State<TavernPage> {
     try {
       final raw = jsonDecode(text.trim());
       final card = TavernChar.tryImport(raw);
-      if (card == null) throw const FormatException('缺少角色名，或格式不认识');
+      if (card == null) throw FormatException(tr('缺少角色名，或格式不认识'));
       await TavernStore.addChar(card);
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('已导入「${card.name}」')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(trf('已导入「{name}」', {'name': card.name}))));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('导入失败：${e is FormatException ? e.message : e}')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(trf('导入失败：{e}',
+                {'e': e is FormatException ? e.message : e}))));
       }
     }
   }
@@ -367,10 +374,10 @@ class _TavernPageState extends State<TavernPage> {
     final list = _filtered;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('酒馆'),
+        title: Text(tr('酒馆')),
         actions: [
           IconButton(
-            tooltip: '导入角色卡',
+            tooltip: tr('导入角色卡'),
             onPressed: _importFromText,
             icon: const Icon(Icons.file_download_outlined),
           ),
@@ -379,7 +386,7 @@ class _TavernPageState extends State<TavernPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newChar,
         icon: const Icon(Icons.add),
-        label: const Text('新建角色'),
+        label: Text(tr('新建角色')),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -389,7 +396,7 @@ class _TavernPageState extends State<TavernPage> {
                 child: TextField(
                   onChanged: (v) => setState(() => _q = v),
                   decoration: InputDecoration(
-                    hintText: '搜角色名 / 设定 / 标签',
+                    hintText: tr('搜角色名 / 设定 / 标签'),
                     prefixIcon: const Icon(Icons.search, size: 20),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
@@ -414,10 +421,12 @@ class _TavernPageState extends State<TavernPage> {
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(Icons.theater_comedy_outlined, size: 44, color: Colors.grey.withValues(alpha: 0.5)),
           const SizedBox(height: Gap.md),
-          const Text('还没有角色', style: TextStyle(fontSize: 14)),
+          Text(tr('还没有角色'), style: const TextStyle(fontSize: 14)),
           const SizedBox(height: Gap.xs),
           Text(
-            _q.isEmpty ? '点右下角新建一个，或从右上角导入角色卡' : '没有匹配「$_q」的角色',
+            _q.isEmpty
+                ? tr('点右下角新建一个，或从右上角导入角色卡')
+                : trf('没有匹配「{q}」的角色', {'q': _q}),
             style: const TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
@@ -432,7 +441,7 @@ class _TavernPageState extends State<TavernPage> {
         leading: _Avatar(name: ch.name, url: ch.avatar),
         title: Text(ch.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         subtitle: Text(
-          ch.description.isEmpty ? '未填写设定' : ch.description.replaceAll('\n', ' '),
+          ch.description.isEmpty ? tr('未填写设定') : ch.description.replaceAll('\n', ' '),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 11.5),
@@ -446,17 +455,21 @@ class _TavernPageState extends State<TavernPage> {
               await TavernStore.clearChat(ch.id);
               if (mounted) {
                 ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('对话记录已清空')));
+                    .showSnackBar(SnackBar(content: Text(tr('对话记录已清空'))));
               }
             } else if (v == 'del') {
               final ok = await showDialog<bool>(
                 context: context,
                 builder: (c2) => AlertDialog(
-                  title: Text('删除「${ch.name}」？'),
-                  content: const Text('角色卡和它的对话记录都会删掉，不能恢复。'),
+                  title: Text(trf('删除「{name}」？', {'name': ch.name})),
+                  content: Text(tr('角色卡和它的对话记录都会删掉，不能恢复。')),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(c2, false), child: const Text('取消')),
-                    FilledButton(onPressed: () => Navigator.pop(c2, true), child: const Text('删除')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(c2, false),
+                        child: Text(tr('取消'))),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(c2, true),
+                        child: Text(tr('删除'))),
                   ],
                 ),
               );
@@ -466,10 +479,10 @@ class _TavernPageState extends State<TavernPage> {
               }
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('编辑角色')),
-            PopupMenuItem(value: 'clear', child: Text('清空对话')),
-            PopupMenuItem(value: 'del', child: Text('删除角色')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'edit', child: Text(tr('编辑角色'))),
+            PopupMenuItem(value: 'clear', child: Text(tr('清空对话'))),
+            PopupMenuItem(value: 'del', child: Text(tr('删除角色'))),
           ],
         ),
       ),
@@ -555,7 +568,7 @@ class _EditorState extends State<TavernCharEditorPage> {
     final n = _name.text.trim();
     if (n.isEmpty) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('名字必填')));
+          .showSnackBar(SnackBar(content: Text(tr('名字必填'))));
       return;
     }
     widget.char
@@ -572,17 +585,20 @@ class _EditorState extends State<TavernCharEditorPage> {
   Widget build(BuildContext c) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isNew ? '新建角色' : '编辑角色'),
-        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+        title: Text(widget.isNew ? tr('新建角色') : tr('编辑角色')),
+        actions: [TextButton(onPressed: _save, child: Text(tr('保存')))],
       ),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
-        _field('名字', _name, '必填'),
-        _field('角色设定', _desc, '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像',
+        _field(tr('名字'), _name, tr('必填')),
+        _field(tr('角色设定'), _desc,
+            tr('人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像'),
             maxLines: 8),
-        _field('开场白', _first, '角色说的第一句话（留空则从空对话开始）', maxLines: 3),
-        _field('系统提示（可选）', _sys,
-            '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准', maxLines: 4),
-        _field('头像地址（可选）', _avatar, '图片 URL；留空用名字首字', maxLines: 1),
+        _field(tr('开场白'), _first, tr('角色说的第一句话（留空则从空对话开始）'),
+            maxLines: 3),
+        _field(tr('系统提示（可选）'), _sys,
+            tr('留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准'),
+            maxLines: 4),
+        _field(tr('头像地址（可选）'), _avatar, tr('图片 URL；留空用名字首字'), maxLines: 1),
         const SizedBox(height: Gap.md),
       ]),
     );
@@ -663,9 +679,8 @@ class _ChatState extends State<TavernChatPage> {
     final provider = AiRegistry.byId(pid);
     if (provider == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('还没配置 AI。请到「我的 → API 密钥库」填一个 Key，'
-                '再到 AI 模块选好模型')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(tr('还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型'))));
       }
       return;
     }
@@ -708,7 +723,7 @@ class _ChatState extends State<TavernChatPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('生成失败：$e')));
+            .showSnackBar(SnackBar(content: Text(trf('生成失败：{e}', {'e': e}))));
       }
     } finally {
       if (mounted) {
@@ -738,7 +753,7 @@ class _ChatState extends State<TavernChatPage> {
         ]),
         actions: [
           IconButton(
-            tooltip: '清空对话',
+            tooltip: tr('清空对话'),
             onPressed: () async {
               await TavernStore.clearChat(widget.char.id);
               await _init();
@@ -797,7 +812,7 @@ class _ChatState extends State<TavernChatPage> {
                   textInputAction: TextInputAction.newline,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: '说点什么…',
+                    hintText: tr('说点什么…'),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     border: OutlineInputBorder(borderRadius: Radii.lgAll),
@@ -807,13 +822,13 @@ class _ChatState extends State<TavernChatPage> {
               const SizedBox(width: Gap.sm),
               if (_sending)
                 IconButton.filledTonal(
-                  tooltip: '停止生成',
+                  tooltip: tr('停止生成'),
                   onPressed: () => setState(() => _cancel = true),
                   icon: const Icon(Icons.stop, size: 20),
                 )
               else
                 IconButton.filled(
-                  tooltip: '发送',
+                  tooltip: tr('发送'),
                   onPressed: _send,
                   icon: const Icon(Icons.arrow_upward, size: 20),
                 ),

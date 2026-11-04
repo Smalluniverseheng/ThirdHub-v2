@@ -922,3 +922,309 @@ const Map<String, Map<String, String>> i18nUiWords5 =
         'إدخال العنوان يدوياً / اكتشاف تلقائي في الشبكة المحلية · يشمل وضع Sage (قفل PIN)',
   },
 };
+
+// 第五批：酒馆模块（4.81.19 新增）的整体本地化。
+//
+// 为什么必须补：该模块上线时文案全是硬编码中文，`tool/i18n_hardcoded_scan.dart`
+// 记了 23 条新增（棘轮闸门当时是红的）。这里把文案与译文一次补齐，
+// 把水位退回基线以内。
+//
+// ★两条模板（`角色设定：\n{desc}` / `要求：…`）是**给模型读的 system 提示**：
+//   界面切法语却发中文提示词，模型更容易用中文作答，用户会以为"翻译坏了"。
+const Map<String, Map<String, String>> i18nUiWords6 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '酒馆': 'Tavern',
+    '未命名角色': 'Unnamed character',
+    '你现在扮演「{name}」。': 'You are now playing "{name}".',
+    '角色设定：\n{desc}': 'Character setting:\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        'Rules: always speak as this character — same identity, tone and stance. Never break character or mention being an AI or model. Reply in the first person, keep the length natural, and do not add narration to every line.',
+    '导入角色卡': 'Import character card',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'Paste the character card JSON. Both SillyTavern V2 (with a data field) and flat formats are supported.',
+    '缺少角色名，或格式不认识':
+        'Missing character name, or unrecognized format',
+    '已导入「{name}」': 'Imported "{name}"',
+    '导入失败：{e}': 'Import failed: {e}',
+    '新建角色': 'New character',
+    '编辑角色': 'Edit character',
+    '删除角色': 'Delete character',
+    '搜角色名 / 设定 / 标签': 'Search name / setting / tags',
+    '还没有角色': 'No characters yet',
+    '点右下角新建一个，或从右上角导入角色卡':
+        'Tap the button at the bottom right to create one, or import a card from the top right',
+    '没有匹配「{q}」的角色': 'No characters match "{q}"',
+    '未填写设定': 'No description',
+    '对话记录已清空': 'Chat history cleared',
+    '清空对话': 'Clear chat',
+    '删除「{name}」？': 'Delete "{name}"?',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'The card and its chat history will be deleted permanently.',
+    '名字必填': 'Name is required',
+    '名字': 'Name',
+    '必填': 'Required',
+    '角色设定': 'Character setting',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        'Personality, appearance, tone of voice, your relationship… the more specific, the better the roleplay.',
+    '开场白': 'First message',
+    '角色说的第一句话（留空则从空对话开始）':
+        "The character's first line (leave empty to start with an empty chat)",
+    '系统提示（可选）': 'System prompt (optional)',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        'Leave empty to auto-build "you are X + the setting above + roleplay rules". If filled, your text is used as-is.',
+    '头像地址（可选）': 'Avatar URL (optional)',
+    '图片 URL；留空用名字首字':
+        'Image URL; leave empty to use the first letter of the name',
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        'AI is not configured yet. Add a key in "Me → API keys", then pick a model in the AI module.',
+    '停止生成': 'Stop generating',
+    '发送': 'Send',
+    '说点什么…': 'Say something…',
+    '生成失败：{e}': 'Generation failed: {e}',
+  },
+  'ja': <String, String>{
+    '酒馆': '酒場',
+    '未命名角色': '名称未設定のキャラ',
+    '你现在扮演「{name}」。': 'あなたは今「{name}」を演じています。',
+    '角色设定：\n{desc}': 'キャラ設定：\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        'ルール：常にこのキャラクターの身分・口調・立場で話し、役から降りないこと。自分が AI やモデルだと口にしないこと。一人称で、長さは自然に、毎文に情景描写を付けないこと。',
+    '导入角色卡': 'キャラクターカードを読み込む',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'キャラクターカードの JSON を貼り付けてください。SillyTavern V2（data フィールドあり）とフラット形式に対応しています。',
+    '缺少角色名，或格式不认识': '名前がないか、形式を認識できません',
+    '已导入「{name}」': '「{name}」を読み込みました',
+    '导入失败：{e}': '読み込みに失敗しました：{e}',
+    '新建角色': 'キャラを作成',
+    '编辑角色': 'キャラを編集',
+    '删除角色': 'キャラを削除',
+    '搜角色名 / 设定 / 标签': '名前 / 設定 / タグで検索',
+    '还没有角色': 'まだキャラがいません',
+    '点右下角新建一个，或从右上角导入角色卡':
+        '右下のボタンで作成するか、右上からカードを読み込んでください',
+    '没有匹配「{q}」的角色': '「{q}」に一致するキャラがいません',
+    '未填写设定': '設定が未入力',
+    '对话记录已清空': '会話履歴を消去しました',
+    '清空对话': '会話を消去',
+    '删除「{name}」？': '「{name}」を削除しますか？',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'カードとその会話履歴も削除され、元に戻せません。',
+    '名字必填': '名前は必須です',
+    '名字': '名前',
+    '必填': '必須',
+    '角色设定': 'キャラ設定',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        '性格・外見・口調・あなたとの関係…具体的に書くほど、演技がそれらしくなります。',
+    '开场白': '冒頭のセリフ',
+    '角色说的第一句话（留空则从空对话开始）':
+        'キャラが最初に言うセリフ（空欄なら空の会話から始まります）',
+    '系统提示（可选）': 'システムプロンプト（任意）',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        '空欄なら「あなたは X + 上記の設定 + 演技ルール」で自動生成します。入力した場合はそちらを使います。',
+    '头像地址（可选）': 'アイコン URL（任意）',
+    '图片 URL；留空用名字首字': '画像 URL。空欄なら名前の頭文字を使います',
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        'AI が未設定です。「マイ → API キー」でキーを入力し、AI モジュールでモデルを選んでください。',
+    '停止生成': '生成を停止',
+    '发送': '送信',
+    '说点什么…': '何か話して…',
+    '生成失败：{e}': '生成に失敗しました：{e}',
+  },
+  'fr': <String, String>{
+    '酒馆': 'Taverne',
+    '未命名角色': 'Personnage sans nom',
+    '你现在扮演「{name}」。': 'Vous incarnez désormais « {name} ».',
+    '角色设定：\n{desc}': 'Description du personnage :\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        "Règles : parle toujours en tant que ce personnage — même identité, même ton, même position. Ne sors jamais du rôle et ne mentionne pas être une IA ou un modèle. Réponds à la première personne, avec une longueur naturelle, sans ajouter de narration à chaque phrase.",
+    '导入角色卡': 'Importer une fiche de personnage',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'Collez le JSON de la fiche. Les formats SillyTavern V2 (avec champ data) et plat sont pris en charge.',
+    '缺少角色名，或格式不认识': 'Nom manquant ou format non reconnu',
+    '已导入「{name}」': '« {name} » importé',
+    '导入失败：{e}': "Échec de l'import : {e}",
+    '新建角色': 'Nouveau personnage',
+    '编辑角色': 'Modifier le personnage',
+    '删除角色': 'Supprimer le personnage',
+    '搜角色名 / 设定 / 标签': 'Rechercher nom / description / tags',
+    '还没有角色': 'Aucun personnage pour le moment',
+    '点右下角新建一个，或从右上角导入角色卡':
+        'Touchez le bouton en bas à droite pour en créer un, ou importez une fiche en haut à droite',
+    '没有匹配「{q}」的角色': 'Aucun personnage ne correspond à « {q} »',
+    '未填写设定': 'Description vide',
+    '对话记录已清空': 'Historique de conversation effacé',
+    '清空对话': 'Effacer la conversation',
+    '删除「{name}」？': 'Supprimer « {name} » ?',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'La fiche et son historique seront supprimés définitivement.',
+    '名字必填': 'Le nom est obligatoire',
+    '名字': 'Nom',
+    '必填': 'Obligatoire',
+    '角色设定': 'Description du personnage',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        "Personnalité, apparence, façon de parler, votre relation… plus c'est précis, meilleure est l'interprétation.",
+    '开场白': 'Premier message',
+    '角色说的第一句话（留空则从空对话开始）':
+        'La première réplique du personnage (laisser vide pour démarrer une conversation vide)',
+    '系统提示（可选）': 'Prompt système (facultatif)',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        'Laisser vide pour construire automatiquement « tu es X + la description + les règles de jeu ». Si rempli, votre texte est utilisé tel quel.',
+    '头像地址（可选）': "URL de l'avatar (facultatif)",
+    '图片 URL；留空用名字首字':
+        "URL de l'image ; laisser vide pour utiliser l'initiale du nom",
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        "L'IA n'est pas configurée. Ajoutez une clé dans « Moi → Clés API », puis choisissez un modèle dans le module IA.",
+    '停止生成': 'Arrêter la génération',
+    '发送': 'Envoyer',
+    '说点什么…': 'Dites quelque chose…',
+    '生成失败：{e}': 'Échec de la génération : {e}',
+  },
+  'ru': <String, String>{
+    '酒馆': 'Таверна',
+    '未命名角色': 'Персонаж без имени',
+    '你现在扮演「{name}」。': 'Теперь вы играете роль «{name}».',
+    '角色设定：\n{desc}': 'Описание персонажа:\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        'Правила: всегда говори от лица этого персонажа — та же личность, тон и позиция. Не выходи из роли и не упоминай, что ты ИИ или модель. Отвечай от первого лица, естественной длины, не добавляй описание действий в каждую реплику.',
+    '导入角色卡': 'Импорт карточки персонажа',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'Вставьте JSON карточки персонажа. Поддерживаются SillyTavern V2 (с полем data) и плоский формат.',
+    '缺少角色名，或格式不认识': 'Нет имени персонажа или формат не распознан',
+    '已导入「{name}」': 'Импортировано «{name}»',
+    '导入失败：{e}': 'Ошибка импорта: {e}',
+    '新建角色': 'Новый персонаж',
+    '编辑角色': 'Изменить персонажа',
+    '删除角色': 'Удалить персонажа',
+    '搜角色名 / 设定 / 标签': 'Поиск по имени / описанию / тегам',
+    '还没有角色': 'Персонажей пока нет',
+    '点右下角新建一个，或从右上角导入角色卡':
+        'Нажмите кнопку справа внизу, чтобы создать, или импортируйте карточку справа вверху',
+    '没有匹配「{q}」的角色': 'Нет персонажей по запросу «{q}»',
+    '未填写设定': 'Описание не заполнено',
+    '对话记录已清空': 'История переписки очищена',
+    '清空对话': 'Очистить переписку',
+    '删除「{name}」？': 'Удалить «{name}»?',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'Карточка и история переписки будут удалены безвозвратно.',
+    '名字必填': 'Имя обязательно',
+    '名字': 'Имя',
+    '必填': 'Обязательно',
+    '角色设定': 'Описание персонажа',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        'Характер, внешность, манера речи, ваши отношения… чем конкретнее, тем убедительнее игра.',
+    '开场白': 'Первая реплика',
+    '角色说的第一句话（留空则从空对话开始）':
+        'Первая фраза персонажа (оставьте пустым, чтобы начать с пустого диалога)',
+    '系统提示（可选）': 'Системный промпт (необязательно)',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        'Оставьте пустым — будет собрано автоматически: «ты X + описание выше + правила игры». Если заполнено, используется ваш текст.',
+    '头像地址（可选）': 'URL аватара (необязательно)',
+    '图片 URL；留空用名字首字':
+        'URL изображения; оставьте пустым — возьмётся первая буква имени',
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        'ИИ не настроен. Добавьте ключ в «Я → Ключи API», затем выберите модель в модуле ИИ.',
+    '停止生成': 'Остановить генерацию',
+    '发送': 'Отправить',
+    '说点什么…': 'Скажите что-нибудь…',
+    '生成失败：{e}': 'Ошибка генерации: {e}',
+  },
+  'es': <String, String>{
+    '酒馆': 'Taberna',
+    '未命名角色': 'Personaje sin nombre',
+    '你现在扮演「{name}」。': 'Ahora interpretas a «{name}».',
+    '角色设定：\n{desc}': 'Descripción del personaje:\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        'Reglas: habla siempre como este personaje — misma identidad, tono y postura. Nunca salgas del papel ni menciones que eres una IA o un modelo. Responde en primera persona, con una longitud natural, sin añadir narración en cada frase.',
+    '导入角色卡': 'Importar ficha de personaje',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'Pega el JSON de la ficha. Se admiten SillyTavern V2 (con campo data) y el formato plano.',
+    '缺少角色名，或格式不认识': 'Falta el nombre o el formato no se reconoce',
+    '已导入「{name}」': '«{name}» importado',
+    '导入失败：{e}': 'Error al importar: {e}',
+    '新建角色': 'Nuevo personaje',
+    '编辑角色': 'Editar personaje',
+    '删除角色': 'Eliminar personaje',
+    '搜角色名 / 设定 / 标签': 'Buscar nombre / ajustes / etiquetas',
+    '还没有角色': 'Aún no hay personajes',
+    '点右下角新建一个，或从右上角导入角色卡':
+        'Toca el botón de abajo a la derecha para crear uno, o importa una ficha arriba a la derecha',
+    '没有匹配「{q}」的角色': 'Ningún personaje coincide con «{q}»',
+    '未填写设定': 'Sin descripción',
+    '对话记录已清空': 'Historial de conversación borrado',
+    '清空对话': 'Borrar conversación',
+    '删除「{name}」？': '¿Eliminar «{name}»?',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'La ficha y su historial se eliminarán de forma permanente.',
+    '名字必填': 'El nombre es obligatorio',
+    '名字': 'Nombre',
+    '必填': 'Obligatorio',
+    '角色设定': 'Descripción del personaje',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        'Personalidad, aspecto, forma de hablar, vuestra relación… cuanto más concreto, mejor la interpretación.',
+    '开场白': 'Primer mensaje',
+    '角色说的第一句话（留空则从空对话开始）':
+        'La primera frase del personaje (déjalo vacío para empezar con una conversación vacía)',
+    '系统提示（可选）': 'Indicación de sistema (opcional)',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        'Déjalo vacío para generarlo automáticamente: «eres X + la descripción + reglas de interpretación». Si lo rellenas, se usa tu texto.',
+    '头像地址（可选）': 'URL del avatar (opcional)',
+    '图片 URL；留空用名字首字':
+        'URL de la imagen; déjalo vacío para usar la inicial del nombre',
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        'La IA no está configurada. Añade una clave en «Yo → Claves API» y elige un modelo en el módulo IA.',
+    '停止生成': 'Detener la generación',
+    '发送': 'Enviar',
+    '说点什么…': 'Di algo…',
+    '生成失败：{e}': 'Error al generar: {e}',
+  },
+  'ar': <String, String>{
+    '酒馆': 'الحانة',
+    '未命名角色': 'شخصية بلا اسم',
+    '你现在扮演「{name}」。': 'أنت الآن تؤدي دور «{name}».',
+    '角色设定：\n{desc}': 'وصف الشخصية:\n{desc}',
+    '要求：始终以这个角色的身份、语气、立场说话，不要跳出角色，不要提及自己是 AI 或模型。回复用第一人称，长度自然，不要每句都加旁白动作。':
+        'القواعد: تحدّث دائمًا بصفتك هذه الشخصية — الهوية والنبرة والموقف نفسه. لا تخرج عن الدور ولا تذكر أنك ذكاء اصطناعي أو نموذج. أجب بضمير المتكلم وبطول طبيعي، دون إضافة سرد في كل جملة.',
+    '导入角色卡': 'استيراد بطاقة شخصية',
+    '把角色卡 JSON 粘进来。支持 SillyTavern V2（含 data 字段）和扁平格式。':
+        'الصق JSON الخاص ببطاقة الشخصية. يدعم صيغة SillyTavern V2 (مع حقل data) والصيغة المسطحة.',
+    '缺少角色名，或格式不认识': 'اسم الشخصية مفقود أو الصيغة غير معروفة',
+    '已导入「{name}」': 'تم استيراد «{name}»',
+    '导入失败：{e}': 'فشل الاستيراد: {e}',
+    '新建角色': 'شخصية جديدة',
+    '编辑角色': 'تعديل الشخصية',
+    '删除角色': 'حذف الشخصية',
+    '搜角色名 / 设定 / 标签': 'ابحث بالاسم / الوصف / الوسوم',
+    '还没有角色': 'لا توجد شخصيات بعد',
+    '点右下角新建一个，或从右上角导入角色卡':
+        'اضغط الزر أسفل اليمين للإنشاء، أو استورد بطاقة من أعلى اليمين',
+    '没有匹配「{q}」的角色': 'لا توجد شخصيات تطابق «{q}»',
+    '未填写设定': 'لا يوجد وصف',
+    '对话记录已清空': 'تم مسح سجل المحادثة',
+    '清空对话': 'مسح المحادثة',
+    '删除「{name}」？': 'حذف «{name}»؟',
+    '角色卡和它的对话记录都会删掉，不能恢复。':
+        'ستُحذف البطاقة وسجل المحادثة نهائيًا.',
+    '名字必填': 'الاسم مطلوب',
+    '名字': 'الاسم',
+    '必填': 'مطلوب',
+    '角色设定': 'وصف الشخصية',
+    '人设、外表、性格、说话方式、和你的关系…写得越具体，演得越像':
+        'الشخصية والمظهر ونبرة الكلام وعلاقتك بها… كلما كان الوصف أدق، كان الأداء أفضل.',
+    '开场白': 'الرسالة الأولى',
+    '角色说的第一句话（留空则从空对话开始）':
+        'أول جملة تقولها الشخصية (اتركه فارغًا لبدء محادثة فارغة)',
+    '系统提示（可选）': 'موجّه النظام (اختياري)',
+    '留空则自动用「你是 X + 上面的设定 + 扮演规则」。填了就以你写的为准':
+        'اتركه فارغًا ليُبنى تلقائيًا: «أنت X + الوصف أعلاه + قواعد الأداء». إن كتبت شيئًا فسيُستخدم نصّك.',
+    '头像地址（可选）': 'رابط الصورة الرمزية (اختياري)',
+    '图片 URL；留空用名字首字':
+        'رابط الصورة؛ اتركه فارغًا لاستخدام أول حرف من الاسم',
+    '还没配置 AI。请到「我的 → API 密钥库」填一个 Key，再到 AI 模块选好模型':
+        'لم يتم إعداد الذكاء الاصطناعي. أضف مفتاحًا في «أنا → مفاتيح API» ثم اختر نموذجًا في وحدة AI.',
+    '停止生成': 'إيقاف التوليد',
+    '发送': 'إرسال',
+    '说点什么…': 'قل شيئًا…',
+    '生成失败：{e}': 'فشل التوليد: {e}',
+  },
+};

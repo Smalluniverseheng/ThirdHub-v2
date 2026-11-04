@@ -408,6 +408,11 @@ class I18n extends ChangeNotifier {
     i18nUiWords5.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-05 第五批：酒馆模块（4.81.19 新增）整体本地化。
+    //   该模块上线时 39 条文案全是硬编码中文，棘轮闸门当时是红的 —— 已全部补齐。
+    i18nUiWords6.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
