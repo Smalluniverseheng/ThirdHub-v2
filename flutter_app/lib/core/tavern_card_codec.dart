@@ -15,6 +15,9 @@
 // 没有系统提示"的空卡 —— 所以自检里对这两个键名有专门断言。
 
 import 'dart:convert';
+import 'dart:typed_data';
+
+import 'png_text.dart';
 
 /// 版本号：卡里 `character_version` 与 `extensions.thirdhub_*` 统一从这里取，
 /// 别在两个文件里各写一遍。
@@ -82,6 +85,44 @@ Map<String, dynamic>? decodeCardBase64(String b64) {
   } catch (_) {
     return null;
   }
+}
+
+/// 纯 JSON 文本 → 卡片对象。手粘的文本、`.json` 文件都走这里。
+///
+/// 与 [decodeCardBase64] 分开是为了两条路都能**各自给出准确的失败原因**：
+/// "base64 解不开"和"JSON 有语法错"对用户是两件事，混在一个 try 里就说不清了。
+Map<String, dynamic>? decodeCardJson(String text) {
+  final t = text.trim();
+  if (t.isEmpty) return null;
+  try {
+    final obj = jsonDecode(t);
+    return obj is Map<String, dynamic> ? obj : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 从一张 PNG 里取回卡片（导入路径的入口，对称于 [cardV2Base64] 的写出）。
+///
+/// 关键字按 `ccv3` → `chara` 的顺序试：
+///   · `ccv3` 是 V3 规范的关键字，内容依然是 base64(JSON)，字段与 V2 同源，
+///     交给 `TavernChar.tryImport` 能读出大部分（新字段读不到，但不至于整张卡丢掉）；
+///   · 同一张图里两张都写且内容不同极少见，按新规范优先是更安全的默认。
+///
+/// 还有一个真实存在的变体：某些工具把**原始 JSON** 直接塞进 tEXt（不做 base64）。
+/// tEXt 只收 Latin-1，所以这种卡一定不含中文；但既然碰得到，就不该判成"不是角色卡"。
+/// 两种都试，都失败才返回 null。
+Map<String, dynamic>? cardFromPng(Uint8List png) {
+  final chunks = readTextChunks(png);
+  for (final k in const <String>['ccv3', 'chara']) {
+    final raw = chunks[k];
+    if (raw == null) continue;
+    final t = raw.trim();
+    if (t.isEmpty) continue;
+    final card = decodeCardJson(t) ?? decodeCardBase64(t);
+    if (card != null) return card;
+  }
+  return null;
 }
 
 /// 导出文件名：角色名 → 安全文件名。
