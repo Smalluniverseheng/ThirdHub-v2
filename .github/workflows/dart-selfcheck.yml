@@ -226,6 +226,13 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/tavern_context_selfcheck.dart
 
+      # .charx（zip 角色卡）导入链路。自检**自己造 zip**（store + deflate 各一份）
+      # 再断言解出来的字节，所以格式写错就会红 —— 手边没有真实样本也能守住。
+      # 实测 2026-11-05：27 通过 / 0 失败；变异（去掉 ZLibDecoder 的 raw:true）→ 9 条 FAIL。
+      - name: charx（zip 角色卡：解包 / card.json 定位 / 头像挑选）
+        working-directory: flutter_app
+        run: dart run tool/charx_selfcheck.dart
+
       - name: settings_bridge（设置 38 键两端一致）
         working-directory: flutter_app
         run: dart run tool/settings_bridge_selfcheck.dart
