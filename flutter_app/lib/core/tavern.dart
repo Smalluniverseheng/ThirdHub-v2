@@ -6,9 +6,10 @@
 //   这里按 App 的既有结构重写，**不追求与网页端逐行对应**，只保证能力等价：
 //   角色卡增删改、导入 SillyTavern V2 角色卡、与角色对话（流式）、会话留存。
 //
-// 刻意没做的（避免半成品）：
-//   · 角色卡导出的 PNG 隐写（网页端有）—— App 端要接图像编码，另开一轮更稳
+// 刻意没做的：
 //   · 角色分组 —— 角色少于 20 个时分组是负担，先用搜索
+//   · 从 PNG 图里**导入**卡 —— 4.81.23 只做了导出（写 tEXt 块），
+//     读回来还只能在编辑器里粘 JSON。见 `png_text.dart`（读函数已就位）。
 //
 // 4.81.21 修的三处（都是首版留下的真缺陷，单轮对话复现不了）：
 //   1. 「停止生成」以前只是不再刷新界面：后台那条流照旧收完，并把**完整回复**
@@ -24,13 +25,20 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'png_text.dart';
+import 'tavern_card_codec.dart';
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
@@ -259,6 +267,91 @@ class TavernStore {
     m.remove(charId);
     await _saveChats(m);
   }
+
+  // ── 导出（4.81.23）────────────────────────────────────────────────
+  //
+  // 为什么导出要做两路：
+  //   · **PNG**：外壳是一张图，卡的数据在 PNG 的 tEXt 块里（关键字 `chara`）。
+  //     这是社区的分发格式 —— 别人（SillyTavern 网页端、其他 App）拖进去就能用。
+  //   · **JSON**：纯文本，便于备份、比对、手改，也方便粘到别处。
+  //   只做其中一种都会让另一半用法落空，所以两条都出。
+
+  /// 导出目录：`<应用文档目录>/tavern_export`。
+  ///
+  /// 刻意不用缓存目录 —— 系统会清缓存，"导出完过两天文件就没了"是最难解释的失败。
+  static Future<Directory> exportDir() async {
+    final d = Directory(
+        '${(await getApplicationDocumentsDirectory()).path}${Platform.pathSeparator}tavern_export');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
+
+  static Map<String, Object?> _fieldsOf(TavernChar c) => <String, Object?>{
+        'id': c.id,
+        'name': c.name,
+        'description': c.description,
+        'firstMessage': c.firstMessage,
+        'systemPrompt': c.systemPrompt,
+        'avatar': c.avatar,
+        'tags': c.tags,
+      };
+
+  static Future<File> exportJson(TavernChar c) async {
+    final d = await exportDir();
+    final f = File('${d.path}${Platform.pathSeparator}${cardFileName(c.name, 'json')}');
+    await f.writeAsString(cardV2Json(_fieldsOf(c)), flush: true);
+    return f;
+  }
+
+  static Future<File> exportPng(TavernChar c) async {
+    final carrier = await _carrierPng(c.avatar);
+    final out = embedTextChunks(carrier, <String, String>{
+      'chara': cardV2Base64(_fieldsOf(c)),
+    });
+    final d = await exportDir();
+    final f = File('${d.path}${Platform.pathSeparator}${cardFileName(c.name, 'png')}');
+    await f.writeAsBytes(out, flush: true);
+    return f;
+  }
+
+  /// 底图选择：能拿到 PNG 头像就用它（导出的卡看起来就是这个角色），
+  /// 否则退回应用图标。**只有 PNG 能当外壳** —— JPEG / WebP 没有 tEXt 块。
+  static Future<Uint8List> _carrierPng(String avatarUrl) async {
+    final u = avatarUrl.trim();
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      final got = await _downloadPng(u);
+      if (got != null) return got;
+    }
+    final data = await rootBundle.load('assets/branding/logo.png');
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  /// 取头像：8 秒超时 + 8MB 上限。
+  ///
+  /// 放行自签证书（局域网里常见，与 tts_presets 同款做法）：这里只用来取一张图，
+  /// 不参与任何鉴权，放宽不会放大风险。
+  static Future<Uint8List?> _downloadPng(String url) async {
+    HttpClient? cli;
+    try {
+      cli = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+      cli.badCertificateCallback = (_, __, ___) => true;
+      final res = await (await cli.getUrl(Uri.parse(url)))
+          .close()
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final b = BytesBuilder(copy: false);
+      await for (final part in res) {
+        b.add(part);
+        if (b.length > 8 * 1024 * 1024) return null;
+      }
+      final bytes = b.toBytes();
+      return isPng(bytes) ? bytes : null;
+    } catch (_) {
+      return null; // 头像拿不到不该让"导出"整个失败，退回应用图标
+    } finally {
+      cli?.close(force: true);
+    }
+  }
 }
 
 // ─────────────────────────── 页面 ───────────────────────────
@@ -377,6 +470,49 @@ class _TavernPageState extends State<TavernPage> {
     if (saved != null) await _load();
   }
 
+  /// 导出：先让用户挑格式（两种各有用途，默认哪个都不合适），
+  /// 落盘后再调系统分享 —— 分享面板里既能存到「文件」，也能直接发微信。
+  Future<void> _export(TavernChar ch) async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (c2) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: Text(tr('PNG 角色卡（可直接导入酒馆）')),
+            subtitle: Text(tr('图片外壳 + 内嵌数据；没头像时用应用图标当底图')),
+            onTap: () => Navigator.pop(c2, 'png'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.data_object),
+            title: Text(tr('JSON 文本（便于备份和手改）')),
+            onTap: () => Navigator.pop(c2, 'json'),
+          ),
+        ]),
+      ),
+    );
+    if (kind == null) return;
+    try {
+      final f = kind == 'png'
+          ? await TavernStore.exportPng(ch)
+          : await TavernStore.exportJson(ch);
+      if (!mounted) return;
+      final name = f.path.split(Platform.pathSeparator).last;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(trf('已导出：{name}', {'name': name}))));
+      try {
+        await Share.shareXFiles(<XFile>[XFile(f.path)], text: ch.name);
+      } catch (_) {
+        // 分享面板起不来（部分定制 ROM 会这样）不影响导出本身 —— 文件已经在
+        // tavern_export 目录里，上面的提示已经把文件名告诉用户了。
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(trf('导出失败：{e}', {'e': e}))));
+    }
+  }
+
   @override
   Widget build(BuildContext c) {
     final list = _filtered;
@@ -459,6 +595,8 @@ class _TavernPageState extends State<TavernPage> {
           onSelected: (v) async {
             if (v == 'edit') {
               await _edit(ch);
+            } else if (v == 'export') {
+              await _export(ch);
             } else if (v == 'clear') {
               await TavernStore.clearChat(ch.id);
               if (mounted) {
@@ -489,6 +627,7 @@ class _TavernPageState extends State<TavernPage> {
           },
           itemBuilder: (_) => [
             PopupMenuItem(value: 'edit', child: Text(tr('编辑角色'))),
+            PopupMenuItem(value: 'export', child: Text(tr('导出角色卡'))),
             PopupMenuItem(value: 'clear', child: Text(tr('清空对话'))),
             PopupMenuItem(value: 'del', child: Text(tr('删除角色'))),
           ],
