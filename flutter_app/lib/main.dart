@@ -1301,7 +1301,7 @@ class ConsentPage extends StatelessWidget {
             style: const TextStyle(
                 color: accent,
                 fontWeight: FontWeight.w600,
-                fontSize: 13.5,
+                fontSize: 13,
                 height: 1.6)));
     return Scaffold(
         backgroundColor: const Color(0xFFF6F7FB),
@@ -1362,7 +1362,7 @@ class ConsentPage extends StatelessWidget {
                                             const Text(
                                                 '欢迎使用 ThirdHub！请您仔细阅读并同意 ',
                                                 style: TextStyle(
-                                                    fontSize: 13.5,
+                                                    fontSize: 13,
                                                     height: 1.6)),
                                             link(
                                                 '《用户服务协议》',
@@ -1370,7 +1370,7 @@ class ConsentPage extends StatelessWidget {
                                                 tr('用户服务协议')),
                                             const Text(' 与 ',
                                                 style: TextStyle(
-                                                    fontSize: 13.5,
+                                                    fontSize: 13,
                                                     height: 1.6)),
                                             link(
                                                 '《隐私政策》',
@@ -1378,7 +1378,7 @@ class ConsentPage extends StatelessWidget {
                                                 tr('隐私政策')),
                                             const Text('。',
                                                 style: TextStyle(
-                                                    fontSize: 13.5,
+                                                    fontSize: 13,
                                                     height: 1.6)),
                                           ]),
                                       const SizedBox(height: 10),
@@ -1386,7 +1386,7 @@ class ConsentPage extends StatelessWidget {
                                           'ThirdHub 是纯播放器：不收集、不上传您的任何个人信息；AI 密钥等敏感数据仅加密保存在本机。资料库是用户自制的协议插件，与本软件相互独立。',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
-                                              fontSize: 12.5,
+                                              fontSize: 12,
                                               height: 1.7,
                                               color: Color(0xFF6B7280))),
                                       const SizedBox(height: 24),
@@ -2675,11 +2675,11 @@ class _Pf extends State<ProfilePage> {
           leading: Icon(icon, size: 21),
           title: Text(title,
               style:
-                  const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             if (value.isNotEmpty)
               Text(value,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.grey)),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(width: 2),
             const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
           ]),
@@ -2833,7 +2833,7 @@ class _Pf extends State<ProfilePage> {
           Center(
               child: Text(
                   'ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6',
-                  style: const TextStyle(fontSize: 10.5, color: Colors.grey))),
+                  style: const TextStyle(fontSize: 10, color: Colors.grey))),
         ]);
   }
 }
@@ -2883,7 +2883,7 @@ class _Nsp extends State<NotificationSettingsPage> {
                     _ann = v;
                     _set('notify_ann', v);
                   },
-                  title: const Text('公告通知', style: TextStyle(fontSize: 14.5)),
+                  title: const Text('公告通知', style: TextStyle(fontSize: 14)),
                   subtitle:
                       const Text('版本公告与活动', style: TextStyle(fontSize: 11))),
               const Divider(height: 1, indent: 52),
@@ -2894,7 +2894,7 @@ class _Nsp extends State<NotificationSettingsPage> {
                     _work = v;
                     _set('notify_work', v);
                   },
-                  title: const Text('作业完成提醒', style: TextStyle(fontSize: 14.5)),
+                  title: const Text('作业完成提醒', style: TextStyle(fontSize: 14)),
                   subtitle: const Text('Work 作业完成/待确认时提醒',
                       style: TextStyle(fontSize: 11))),
               const Divider(height: 1, indent: 52),
@@ -2905,7 +2905,7 @@ class _Nsp extends State<NotificationSettingsPage> {
                     _update = v;
                     _set('notify_update', v);
                   },
-                  title: const Text('追更提醒', style: TextStyle(fontSize: 14.5)),
+                  title: const Text('追更提醒', style: TextStyle(fontSize: 14)),
                   subtitle:
                       const Text('书架有新章节时提醒', style: TextStyle(fontSize: 11))),
             ])),
@@ -2923,7 +2923,7 @@ class HelpPage extends StatelessWidget {
           leading: Icon(icon, size: 21),
           title: Text(title,
               style:
-                  const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
           trailing:
               const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
           onTap: onTap);
@@ -2979,7 +2979,7 @@ class HelpPage extends StatelessWidget {
                           TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   subtitle: Text(
                       '确认手机与后端在同一局域网; 后端已启动且指纹已确认; 资料库靠局域网广播自动发现, 无需配置',
-                      style: TextStyle(fontSize: 11.5))),
+                      style: TextStyle(fontSize: 11))),
               Divider(height: 1, indent: 16),
               ListTile(
                   dense: true,
@@ -2987,7 +2987,7 @@ class HelpPage extends StatelessWidget {
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   subtitle: Text('用户数据全部存你自己的资源库; 云端只存账号、头像、设置与公钥',
-                      style: TextStyle(fontSize: 11.5))),
+                      style: TextStyle(fontSize: 11))),
               Divider(height: 1, indent: 16),
               ListTile(
                   dense: true,
@@ -2995,7 +2995,7 @@ class HelpPage extends StatelessWidget {
                       style:
                           TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   subtitle: Text('ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的资料库提供',
-                      style: TextStyle(fontSize: 11.5))),
+                      style: TextStyle(fontSize: 11))),
             ])),
       ]));
 }
@@ -3078,7 +3078,7 @@ class _Psub extends State<ProfileSubPage> {
                 title: const Text('会员等级'),
                 content: SingleChildScrollView(
                     child: Text(sb.toString(),
-                        style: const TextStyle(fontSize: 12.5, height: 1.7))),
+                        style: const TextStyle(fontSize: 12, height: 1.7))),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(d),
@@ -3295,7 +3295,7 @@ class _Psub extends State<ProfileSubPage> {
                             ? lv.name
                             : (lv.name.isEmpty ? tr('游客') : lv.name),
                         style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                             color: lvColor)),
                   ]));
@@ -8667,14 +8667,14 @@ class _Vd extends State<VideoDetailPage> {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                       color: Colors.grey,
-                                      fontSize: 12.5,
+                                      fontSize: 12,
                                       height: 1.6)),
                               const SizedBox(height: 4),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Text(_introExpanded ? tr('收起') : tr('展开全部'),
                                     style: const TextStyle(
                                         color: Colors.blueAccent,
-                                        fontSize: 11.5)),
+                                        fontSize: 11)),
                                 Icon(
                                     _introExpanded
                                         ? Icons.keyboard_arrow_up
@@ -8701,7 +8701,7 @@ class _Vd extends State<VideoDetailPage> {
                         const SizedBox(width: 6),
                         Text('共 ${episodes.length} 集',
                             style: const TextStyle(
-                                fontSize: 11.5, color: Colors.grey)),
+                                fontSize: 11, color: Colors.grey)),
                       ]),
                     ),
                   ),
@@ -10860,7 +10860,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
                                   overflow: TextOverflow.ellipsis,
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                      fontSize: 10.5,
+                                      fontSize: 10,
                                       color: fg,
                                       fontWeight: on
                                           ? FontWeight.w700
@@ -11476,7 +11476,7 @@ class _At extends State<AccountTile> {
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Text(tip!,
                                   style: const TextStyle(
-                                      fontSize: 11.5,
+                                      fontSize: 11,
                                       color: Colors.redAccent))),
                         const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
                             style: TextStyle(fontSize: 11, color: Colors.grey)),
@@ -14289,7 +14289,7 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
       Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Text(_subtitleText(doc, isAdmin, cur),
-              style: TextStyle(fontSize: 10.5, color: p.sub))),
+              style: TextStyle(fontSize: 10, color: p.sub))),
 
       if (_loading)
         const Padding(
@@ -14308,7 +14308,7 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
                   style: const TextStyle(fontSize: 12, color: Colors.orange)),
               const SizedBox(height: 6),
               const Text('下拉此页即可重试；更新记录不随安装包下发，需要联网获取。',
-                  style: TextStyle(fontSize: 10.5, color: Colors.grey)),
+                  style: TextStyle(fontSize: 10, color: Colors.grey)),
             ]))
       else ...[
         for (final ClogEntry e in doc.entries) _entryTile(e, cur),
@@ -14384,7 +14384,7 @@ class _ChangelogPanelState extends State<ChangelogPanel> {
                       Expanded(
                           child: Text(it,
                               style: const TextStyle(
-                                  fontSize: 11.5, height: 1.5))),
+                                  fontSize: 11, height: 1.5))),
                     ])),
           if (canDown)
             Align(
@@ -15053,10 +15053,10 @@ class _CloudPageState extends State<CloudPage> {
             failed
                 ? tr('读取失败')
                 : trf('{n} {unit}', {'n': '$count', 'unit': tr(unit)}),
-            style: const TextStyle(fontSize: 10.5)),
+            style: const TextStyle(fontSize: 10)),
         trailing: Text(failed ? '—' : StorageUsage.formatSize(bytes),
             style:
-                const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       );
 
   Future<void> _openLevel(String subtitle) async {
@@ -15079,7 +15079,7 @@ class _CloudPageState extends State<CloudPage> {
                 title: const Text('会员等级'),
                 content: SingleChildScrollView(
                     child: Text(sb.toString(),
-                        style: const TextStyle(fontSize: 12.5, height: 1.7))),
+                        style: const TextStyle(fontSize: 12, height: 1.7))),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(d),
@@ -15187,12 +15187,12 @@ class _CloudPageState extends State<CloudPage> {
                         alignment: Alignment.centerLeft,
                         child: Text(tr('按类别列出存了什么、各占多少'),
                             style: const TextStyle(
-                                fontSize: 10.5, color: Colors.grey)))),
+                                fontSize: 10, color: Colors.grey)))),
                 if (u == null)
                   ListTile(
                       dense: true,
                       title: Text(tr('统计中…'),
-                          style: const TextStyle(fontSize: 12.5)))
+                          style: const TextStyle(fontSize: 12)))
                 else
                   for (final UsageGroup g in u.groups) ...[
                     _groupHeader(g.title, g.bytes),
@@ -15205,7 +15205,7 @@ class _CloudPageState extends State<CloudPage> {
                     ListTile(
                         dense: true,
                         title: Text(tr('统计中…'),
-                            style: const TextStyle(fontSize: 12.5)))
+                            style: const TextStyle(fontSize: 12)))
                   else ...[
                     for (final CloudTableStat s in _cloud!)
                       _rowTile(s.label, '条', s.rows, s.bytes, failed: !s.ok),
@@ -15218,7 +15218,7 @@ class _CloudPageState extends State<CloudPage> {
                                     ? tr('尚未同步')
                                     : '${tr('上次同步')} · ${_fmtTime(_syncedAt)}',
                                 style: const TextStyle(
-                                    fontSize: 10.5, color: Colors.grey)))),
+                                    fontSize: 10, color: Colors.grey)))),
                   ],
                 ] else
                   ListTile(
@@ -15935,7 +15935,7 @@ class _Ei extends State<EngineItemPage> {
                                               const EdgeInsets.only(top: 3),
                                           child: Text(metaLine,
                                               style: const TextStyle(
-                                                  fontSize: 10.5,
+                                                  fontSize: 10,
                                                   color: Colors.grey))),
                                     // ★2026-10-16 引擎自由字段（extra）—— 不同模块有不同信息，
                                     //   前端原样列出：以后新引擎塞什么新字段都不必改前端。
@@ -15955,7 +15955,7 @@ class _Ei extends State<EngineItemPage> {
                                                             ? '收起详情'
                                                             : '更多详情 (${extraPairs.length})',
                                                         style: const TextStyle(
-                                                            fontSize: 10.5,
+                                                            fontSize: 10,
                                                             color: Colors
                                                                 .blueAccent)),
                                                     Icon(
@@ -15979,7 +15979,7 @@ class _Ei extends State<EngineItemPage> {
                                                   for (final e in extraPairs)
                                                     Text('${e.key}：${e.value}',
                                                         style: const TextStyle(
-                                                            fontSize: 10.5,
+                                                            fontSize: 10,
                                                             color: Colors.grey,
                                                             height: 1.5)),
                                                 ])),
@@ -16973,7 +16973,7 @@ class _ModulePanelState extends State<_ModulePanel> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 10,
                       fontWeight: on ? FontWeight.w700 : FontWeight.w400,
                       color: on ? scheme.primary : null)),
               Text('$n',
@@ -17072,7 +17072,7 @@ class _ModulePanelState extends State<_ModulePanel> {
                             ? '长按某格可拖动排序 · 共 ${order.length} 个'
                             : '$_rail · ${list.length} 个模块 · 点右上角 ⊕ 加入导航',
                         style:
-                            const TextStyle(fontSize: 10.5, color: Colors.grey),
+                            const TextStyle(fontSize: 10, color: Colors.grey),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis)),
                 IconButton(
