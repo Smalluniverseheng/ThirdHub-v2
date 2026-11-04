@@ -413,6 +413,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords6.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-05 第六批：酒馆「消息操作」（4.81.25）—— 长按菜单 + 编辑/删除确认框。
+    i18nUiWords7.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
