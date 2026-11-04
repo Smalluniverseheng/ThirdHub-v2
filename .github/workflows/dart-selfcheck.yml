@@ -156,6 +156,21 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/nav_swipe_selfcheck.dart
 
+      # ★第 N 条 skin_parity（2026-11-05 加）—— 皮肤「不只是换颜色」的守门人。
+      #
+      #   为什么要把这条搬进 CI：皮肤套餐（圆角/描边/阴影/动效/密度）以前只在本机跑，
+      #   谁都可以改 tokens.json 加一套只换 seed 的皮肤而 CI 全绿 —— 用户在设置里
+      #   换一圈，只觉得"变了个颜色"。这条断言：
+      #     ① 没有任何皮肤可以取 fx=none（每套都必须挂真套餐）；
+      #     ② 套餐的圆角/内距/间距跨度、投影档数、动效族数必须够（观感真的拉得开）；
+      #     ③ tokens.json ↔ design_tokens.dart 的 SkinPack 逐字段一致。
+      #
+      #   `--no-web`：网页端源码不在本仓（私有仓），CI 只能比两端里的这一端。
+      #   本机跑（带 TH_WEB_ROOT）才是三方全量比对 —— 见 tool/skin_parity_selfcheck.dart 文件头。
+      - name: skin_parity（皮肤套餐：圆角/描边/阴影/动效/密度 逐字段一致）
+        working-directory: flutter_app
+        run: dart run tool/skin_parity_selfcheck.dart --no-web
+
       - name: local_tools
         working-directory: flutter_app
         run: dart run tool/local_tools_selfcheck.dart
