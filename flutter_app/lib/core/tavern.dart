@@ -47,6 +47,7 @@ import 'i18n.dart';
 import 'png_text.dart';
 import 'tavern_card_codec.dart';
 import 'tavern_context.dart';
+import 'zip_reader.dart';
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
@@ -412,6 +413,32 @@ class TavernStore {
     await addChar(got);
     return got;
   }
+
+  /// 从 `.charx`（zip 卡）导入：包内 `card.json` + 可选头像图。
+  ///
+  /// 与 [importPng] 的差别只在"图从哪来"：PNG 卡的外壳就是头像，
+  /// `.charx` 的头像在压缩包里 —— 取出后同样落进 `tavern_avatars/`。
+  /// 没有图也照常导入（卡片数据才是主体），只是头像留空。
+  /// 失败抛 [FormatException]，message 已是本地化文案。
+  static Future<TavernChar> importCharx(Uint8List bytes) async {
+    if (!isZip(bytes)) throw FormatException(tr('这不是 .charx 角色卡'));
+    final r = cardFromCharx(bytes);
+    if (r == null) throw FormatException(tr('压缩包里没有 card.json'));
+    final card = TavernChar.tryImport(r.card);
+    if (card == null) throw FormatException(tr('缺少角色名，或格式不认识'));
+    var mapped = card.toJson();
+    final img = r.avatar;
+    if (img != null && img.isNotEmpty) {
+      final d = await _avatarDir();
+      final ext = (r.avatarExt == null || r.avatarExt!.isEmpty) ? 'png' : r.avatarExt;
+      final f = File('${d.path}${Platform.pathSeparator}${card.id}.$ext');
+      await f.writeAsBytes(img, flush: true);
+      mapped = {...mapped, 'avatar': f.path};
+    }
+    final got = TavernChar.fromJson(mapped);
+    await addChar(got);
+    return got;
+  }
 }
 
 // ─────────────────────────── 页面 ───────────────────────────
@@ -470,6 +497,12 @@ class _TavernPageState extends State<TavernPage> {
             onTap: () => Navigator.pop(c2, 'png'),
           ),
           ListTile(
+            leading: const Icon(Icons.folder_zip_outlined),
+            title: Text(tr('选择一个 .charx 角色卡')),
+            subtitle: Text(tr('压缩包里含 card.json 与头像')),
+            onTap: () => Navigator.pop(c2, 'charx'),
+          ),
+          ListTile(
             leading: const Icon(Icons.data_object),
             title: Text(tr('选择 JSON 文件')),
             onTap: () => Navigator.pop(c2, 'json'),
@@ -486,15 +519,20 @@ class _TavernPageState extends State<TavernPage> {
     if (kind == 'text') {
       await _importFromText();
     } else {
-      await _importFromFile(pngOnly: kind == 'png');
+      await _importFromFile(kind: kind);
     }
   }
 
-  Future<void> _importFromFile({required bool pngOnly}) async {
+  Future<void> _importFromFile({required String kind}) async {
     try {
+      final exts = kind == 'png'
+          ? <String>['png']
+          : kind == 'charx'
+              ? <String>['charx', 'zip']
+              : <String>['json', 'txt'];
       final r = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: pngOnly ? <String>['png'] : <String>['json', 'txt'],
+        allowedExtensions: exts,
         withData: true, // 安卓上 path 可能为空（内容 URI），要直接拿字节
       );
       if (r == null || r.files.isEmpty) return;
@@ -504,8 +542,10 @@ class _TavernPageState extends State<TavernPage> {
       if (bytes == null) throw FormatException(tr('读不到文件内容'));
       if (bytes.length > 16 * 1024 * 1024) throw FormatException(tr('文件太大（超过 16MB）'));
       TavernChar card;
-      if (pngOnly || isPng(bytes)) {
+      if (kind == 'png' || isPng(bytes)) {
         card = await TavernStore.importPng(bytes);
+      } else if (kind == 'charx' || isZip(bytes)) {
+        card = await TavernStore.importCharx(bytes);
       } else {
         // allowMalformed：有人导出的 JSON 带 BOM 或被截断，宁可让 JSON 解析去报错，
         // 也不要在这里先抛一个"非法 UTF-8"，那句话对用户毫无信息量。
