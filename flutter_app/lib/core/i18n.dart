@@ -417,6 +417,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords7.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-05 第七批：酒馆「.charx 导入」（4.81.26）。
+    i18nUiWords8.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
