@@ -91,6 +91,40 @@ class SkinRec {
   String toString() => id;
 }
 
+/// 数字归一：16.0 与 16 必须比成同一个（否则"同一个值比出不同"的假红）。
+String numSig(double v) =>
+    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+
+/// 曲线字符串归一：去掉空白再比（CSS 里可能写 `cubic-bezier(.38, 1.21, ...)`）
+String easeSig(String s) => s.replaceAll(' ', '');
+
+/// 一套皮肤套餐（pack）—— 圆角 / 描边 / 阴影 / 动效曲线 / 卡片密度。
+///
+/// ★ 2026-11-05 新增。为什么要把它纳入闸门：
+///   在此之前"皮肤"只比 seed / 底色 / fx 名 —— 于是 7 套皮肤挂着 `none`、
+///   圆角阴影密度全都一样，闸门照样全绿。**只比名字的闸门，拦不住"只换了颜色"。**
+class PackRec {
+  PackRec(this.id, this.radiusSm, this.radiusMd, this.radiusLg,
+      this.btnRadius, this.cardPad, this.cardGap, this.rowPad, this.borderW,
+      this.shadow, this.ease, [this.motion = '']);
+  final String id;
+  final double radiusSm, radiusMd, radiusLg, btnRadius;
+  final double cardPad, cardGap, rowPad, borderW;
+  final String shadow, ease;
+
+  /// 动效族名（spring/swift/smooth/mech/bounce）。CSS 侧没有这个键（用 ease 表达），
+  /// 所以只在 tokens.json ↔ design_tokens.dart 之间比。
+  final String motion;
+
+  /// 8 个几何/密度值的签名（逐端比对用）
+  String get geometry => <double>[
+        radiusSm, radiusMd, radiusLg, btnRadius, cardPad, cardGap, rowPad, borderW
+      ].map(numSig).join(',');
+
+  @override
+  String toString() => id;
+}
+
 List<String> repoFileCandidates(String rel) {
   // 以本脚本位置为锚：flutter_app/tool/ → 仓库根
   final String scriptDir =
@@ -149,6 +183,19 @@ void main(List<String> args) {
         in ((tok['accentAliases'] as Map<String, dynamic>).entries))
       if (!e.key.startsWith('_')) e.key: e.value as String,
   };
+  // ── tokens.json 的 packs（皮肤套餐）──
+  final Map<String, PackRec> tokPacks = <String, PackRec>{};
+  final Map<String, dynamic> tokPackMap =
+      (tok['packs'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+  for (final MapEntry<String, dynamic> e in tokPackMap.entries) {
+    if (e.key.startsWith('_')) continue;
+    final Map<String, dynamic> m = e.value as Map<String, dynamic>;
+    double d(String k) => (m[k] as num).toDouble();
+    tokPacks[e.key] = PackRec(
+        e.key, d('radiusSm'), d('radiusMd'), d('radiusLg'), d('btnRadius'),
+        d('cardPad'), d('cardGap'), d('rowPad'), d('borderW'),
+        m['shadow'] as String, m['ease'] as String, m['motion'] as String);
+  }
 
   // ══ 2. 解析 App 端 design_tokens.dart ══
   final RegExp constRe =
@@ -193,6 +240,30 @@ void main(List<String> args) {
     if (m != null) dartFxValues.add(m.group(1)!);
   }
 
+  // ── App 端 SkinPack 常量 ──
+  final Map<String, PackRec> dartPacks = <String, PackRec>{};
+  final RegExp packRe =
+      RegExp(r'static const SkinPack (\w+) = SkinPack\(([\s\S]*?)\);');
+  for (final RegExpMatch m in packRe.allMatches(dartSrc)) {
+    final String body = m.group(2)!;
+    String pick(String pat) => RegExp(pat).firstMatch(body)?.group(1) ?? '';
+    double num_(String k) => double.tryParse(pick('$k:\\s*(-?[0-9.]+)')) ?? -1;
+    dartPacks[m.group(1)!] = PackRec(
+      pick(r"id:\s*'([^']+)'"),
+      num_('radiusSm'),
+      num_('radiusMd'),
+      num_('radiusLg'),
+      num_('btnRadius'),
+      num_('cardPad'),
+      num_('cardGap'),
+      num_('rowPad'),
+      num_('borderW'),
+      pick(r'shadow:\s*SkinShadow\.(\w+)'),
+      pick(r"ease:\s*'([^']+)'"),
+      pick(r'motion:\s*SkinMotion\.(\w+)'),
+    );
+  }
+
   // ══ 3. 解析网页端 skins.js ══
   List<SkinRec> webSkins = <SkinRec>[];
   Map<String, String> webAlias = <String, String>{};
@@ -230,6 +301,7 @@ void main(List<String> args) {
   // ══ 4. 解析网页端 theme.css ══
   Map<String, SkinRec> cssSkins = <String, SkinRec>{};
   Set<String> cssFxBlocks = <String>{};
+  final Map<String, PackRec> cssPacks = <String, PackRec>{};
   if (themeCssSrc != null) {
     String cssVar(String block, String name) =>
         RegExp('--$name:(#[0-9A-Fa-f]{6})').firstMatch(block)?.group(1) ?? '';
@@ -264,6 +336,32 @@ void main(List<String> args) {
     for (final RegExpMatch m
         in RegExp(r'body\[data-fx="(\w+)"\]').allMatches(themeCssSrc)) {
       cssFxBlocks.add(m.group(1)!);
+    }
+    // ── CSS 里的套餐数值（body[data-fx="x"] { --radius-md:16px; … }）──
+    //   ★ 只认「紧跟 { 的纯变量块」，带后代选择器的规则（body[data-fx=x] .card）
+    //     不会被 `\{` 匹配到，所以不会混淆。
+    for (final RegExpMatch m in RegExp(r'body\[data-fx="(\w+)"\]\s*\{([^}]*)\}')
+        .allMatches(themeCssSrc)) {
+      final String id = m.group(1)!;
+      if (id == 'none') continue;
+      final String body = m.group(2)!;
+      double d(String k) => double.tryParse(
+              RegExp('--$k:\\s*([0-9.]+)').firstMatch(body)?.group(1) ?? '') ??
+          -1;
+      cssPacks[id] = PackRec(
+        id,
+        d('radius-sm'),
+        d('radius-md'),
+        d('radius-lg'),
+        d('radius-btn'),
+        d('card-pad'),
+        d('card-gap'),
+        d('row-pad'),
+        d('border-w'),
+        RegExp(r'--pack-shadow:\s*([a-z]+)').firstMatch(body)?.group(1) ?? '',
+        (RegExp(r'--ease-brand:\s*([^;]+);').firstMatch(body)?.group(1) ?? '')
+            .trim(),
+      );
     }
   }
 
@@ -368,6 +466,70 @@ void main(List<String> args) {
         tokSkins
             .where((s) => s.fx != 'none')
             .every((s) => cssFxBlocks.contains(s.fx)));
+  }
+
+  // ══ 5. 皮肤套餐（pack）—— 「皮肤不只是换 seed 色」的硬断言 ══
+  //   ★ 为什么把这一段写成断言而不是注释：
+  //     2026-11-05 之前 7 套皮肤挂着 fx=none，圆角/阴影/密度全套一样，
+  //     旧闸门只比"fx 名字"，全绿 —— 用户在设置里换了一圈，只觉得"变了个颜色"。
+  //     所以这里不是"检查新字段有没有写"，而是**检查差异是否真的存在**。
+  print('== 5. 皮肤套餐 packs（几何 / 阴影 / 动效 / 密度）==');
+  ck('tokens.json 套餐数 = 7（calm/flat/crisp/ink/neon/glass/comic）',
+      tokPacks.length == 7);
+  ck('★ 没有皮肤取 fx=none（每套都必须是真主题）',
+      tokSkins.every((s) => s.fx != 'none'));
+  ck('皮肤引用的 fx 都在 packs 表里',
+      tokSkins.every((s) => tokPacks.containsKey(s.fx)));
+  ck('每个套餐至少被一套皮肤使用（不许留下死套餐）',
+      tokPacks.keys.every((k) => tokSkins.any((s) => s.fx == k)));
+
+  // 差异度：至少 3 套"一眼看出不是同一套"，用可量化的跨度来判
+  double span(List<double> v) =>
+      v.reduce((a, b) => a > b ? a : b) - v.reduce((a, b) => a < b ? a : b);
+  final List<PackRec> pv = tokPacks.values.toList();
+  final int shadowKinds = pv.map((p) => p.shadow).toSet().length;
+  ck('套餐的卡片圆角跨度 ≥ 12（实际 ${numSig(span(pv.map((p) => p.radiusMd).toList()))}）',
+      span(pv.map((p) => p.radiusMd).toList()) >= 12);
+  ck('套餐的卡片内距跨度 ≥ 5（实际 ${numSig(span(pv.map((p) => p.cardPad).toList()))}）',
+      span(pv.map((p) => p.cardPad).toList()) >= 5);
+  ck('套餐的卡片间距跨度 ≥ 6（实际 ${numSig(span(pv.map((p) => p.cardGap).toList()))}）',
+      span(pv.map((p) => p.cardGap).toList()) >= 6);
+  ck('投影档 ≥ 4 种（实际 $shadowKinds）', shadowKinds >= 4);
+  ck('动效族 ≥ 4 种（实际 ${pv.map((p) => p.motion).toSet().length}）',
+      pv.map((p) => p.motion).toSet().length >= 4);
+
+  print('== 6. 套餐 App 端一致（design_tokens.dart 的 SkinPack）==');
+  ck('App 端 SkinPack 常量数 = 7', dartPacks.length == 7);
+  for (final PackRec t in pv) {
+    final PackRec? d = dartPacks[t.id];
+    if (d == null) {
+      ck('App 端缺套餐 ${t.id}', false);
+      continue;
+    }
+    ck('[${t.id}] 几何+密度 App=${d.geometry} = tokens=${t.geometry}',
+        d.geometry == t.geometry);
+    ck('[${t.id}] 投影档 App=${d.shadow} = tokens=${t.shadow}',
+        d.shadow == t.shadow);
+    ck('[${t.id}] 动效曲线 App=${d.ease} = tokens=${t.ease}',
+        easeSig(d.ease) == easeSig(t.ease));
+  }
+
+  if (themeCssSrc != null) {
+    print('== 7. 套餐 网页端一致（css/theme.css 的 body[data-fx]）==');
+    ck('网页端套餐块数 = 7', cssPacks.length == 7);
+    for (final PackRec t in pv) {
+      final PackRec? c = cssPacks[t.id];
+      if (c == null) {
+        ck('theme.css 缺套餐块 data-fx="${t.id}"', false);
+        continue;
+      }
+      ck('[${t.id}] 几何+密度 css=${c.geometry} = tokens=${t.geometry}',
+          c.geometry == t.geometry);
+      ck('[${t.id}] 投影档 css=${c.shadow} = tokens=${t.shadow}',
+          c.shadow == t.shadow);
+      ck('[${t.id}] 动效曲线 css=${c.ease} = tokens=${t.ease}',
+          easeSig(c.ease) == easeSig(t.ease));
+    }
   }
 
   print('皮肤跨端一致性：$pass 通过 / $fail 失败');
