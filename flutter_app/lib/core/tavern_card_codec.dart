@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'png_text.dart';
+import 'zip_reader.dart';
 
 /// 版本号：卡里 `character_version` 与 `extensions.thirdhub_*` 统一从这里取，
 /// 别在两个文件里各写一遍。
@@ -125,8 +126,68 @@ Map<String, dynamic>? cardFromPng(Uint8List png) {
   return null;
 }
 
-/// 导出文件名：角色名 → 安全文件名。
+// ─────────────────────── .charx（zip 卡）───────────────────────
+
+/// `.charx` 解出来的东西：卡片 + 头像字节 + 头像扩展名。
 ///
+/// 为什么不直接返回卡片：`.charx` 把头像**放在压缩包里**（不像 PNG 卡那样
+/// 图就是文件本身），不把它落盘的话，导进来的角色永远只有首字占位。
+class CharxCard {
+  CharxCard(this.card, this.avatar, this.avatarExt);
+  final Map<String, dynamic> card;
+  final Uint8List? avatar;
+  final String? avatarExt;
+}
+
+/// 从 `.charx`（zip）里取卡片。
+///
+/// 结构上只认两样东西：
+///   · `card.json` —— 卡片本体，位置按「根目录优先、层级最浅」挑；
+///   · 一张图片 —— 当头像。
+///
+/// 头像不走 `data.assets` 的索引表（Risu 用自己的 `ccdefault:` 约定，各家实现
+/// 还不一致，照抄容易读错位）：改成「根目录优先 → 体积最大」的启发式。
+/// 一张角色卡里放多张图的极少，误选也只是头像不对，卡片数据不会丢。
+///
+/// 解不开、没有 `card.json`、或 `card.json` 不是 JSON 对象 → 返回 null，
+/// 调用方据此提示"这不是 .charx 角色卡"。
+CharxCard? cardFromCharx(Uint8List zip) {
+  final files = unzip(zip);
+  if (files == null) return null;
+
+  final cardName = pickEntryName(
+      files, (n) => n.toLowerCase().split('/').last == 'card.json');
+  if (cardName == null) return null;
+  final card = decodeCardJson(utf8.decode(files[cardName]!, allowMalformed: true));
+  if (card == null) return null;
+
+  // 头像候选：常见图片扩展名，且不是 card.json 自己。
+  const exts = <String>['png', 'jpg', 'jpeg', 'webp'];
+  bool isImg(String n) {
+    final lower = n.toLowerCase();
+    final dot = lower.lastIndexOf('.');
+    if (dot < 0) return false;
+    return exts.contains(lower.substring(dot + 1));
+  }
+
+  final names = files.keys.where((n) => n != cardName && isImg(n)).toList();
+  names.sort((a, b) {
+    final da = '/'.allMatches(a).length, db = '/'.allMatches(b).length;
+    if (da != db) return da - db; // 根目录优先
+    final sa = files[a]!.length, sb = files[b]!.length;
+    if (sa != sb) return sb - sa; // 同层取大的
+    return a.compareTo(b);
+  });
+
+  if (names.isEmpty) return CharxCard(card, null, null);
+  final avatarName = names.first;
+  final ext = avatarName
+      .substring(avatarName.toLowerCase().lastIndexOf('.') + 1)
+      .toLowerCase();
+  return CharxCard(card, files[avatarName], ext);
+}
+
+/// 导出文件名：角色名 → 安全文件名。
 /// 名字里的 `/ \ : * ? " < > |` 和换行会让写入失败（Windows 上是**静默**失败，
 /// 表现为"点了导出没反应"）。这里统一换成下划线，压缩空白，并限长 40 字
 /// （安卓文件系统的单段上限是 255 **字节**，中文按 3 字节算，40 字足够安全）。
