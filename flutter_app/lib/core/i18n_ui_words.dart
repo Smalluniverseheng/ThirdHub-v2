@@ -1749,31 +1749,31 @@ const Map<String, Map<String, String>> i18nUiWords10 =
   'en': <String, String>{
     '应用与服务': 'Apps & services',
     '获取': 'Get',
-    '资料库引擎': 'Library engines',
+    '资料库': 'Libraries',
   },
   'ja': <String, String>{
     '应用与服务': 'アプリとサービス',
     '获取': '入手',
-    '资料库引擎': 'ライブラリエンジン',
+    '资料库': 'ライブラリ',
   },
   'fr': <String, String>{
     '应用与服务': 'Applications et services',
     '获取': 'Obtenir',
-    '资料库引擎': 'Moteurs de bibliothèque',
+    '资料库': 'Bibliothèques',
   },
   'ru': <String, String>{
     '应用与服务': 'Приложения и сервисы',
     '获取': 'Получить',
-    '资料库引擎': 'Движки библиотеки',
+    '资料库': 'Библиотеки',
   },
   'es': <String, String>{
     '应用与服务': 'Aplicaciones y servicios',
     '获取': 'Obtener',
-    '资料库引擎': 'Motores de biblioteca',
+    '资料库': 'Bibliotecas',
   },
   'ar': <String, String>{
     '应用与服务': 'التطبيقات والخدمات',
     '获取': 'الحصول',
-    '资料库引擎': 'محرّكات المكتبة',
+    '资料库': 'المكتبات',
   },
 };
