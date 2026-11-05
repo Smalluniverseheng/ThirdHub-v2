@@ -425,6 +425,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords9.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-06 第十批：应用商店视图（4.81.29）—— 分区标题与「获取」按钮。
+    i18nUiWords10.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
