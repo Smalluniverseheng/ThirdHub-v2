@@ -11937,7 +11937,7 @@ class _Dct extends State<DownloadCenterTile> {
       // ★ 4.7.2（iOS）：引擎安装/装载入口一律不开放（allowEngineInstall）。
       //   引擎包在 iOS 上既装不了也不该"引导安装"——判定收口在 core/apple_gate.dart。
       if (granted && currentGate().allowEngineInstall) ...[
-        _StoreSection(title: tr('资料库引擎')),
+        _StoreSection(title: tr('资料库')),
         // ★2026-10-31 四引擎清单（engines.json）：逐条显示真实版本与体积，
         //   点进去下载（走分段续传 + sha256 校验）。
         //   4.81.29：改成卡片网格，副标题带版本/体积，一眼看出该不该更新。
