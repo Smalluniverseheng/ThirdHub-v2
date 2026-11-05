@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'design_tokens.dart';
+import 'i18n.dart';
 
 /// 推荐条目。字段刻意保持最小：服务端只给必要信息，点击用 url 交给外层处理
 /// （书 → 引擎搜索，影/音 → 播放器），避免 App 与具体内容源耦合。
@@ -85,13 +86,18 @@ class LicenseState {
   bool get expired =>
       expiresAt > 0 && DateTime.now().millisecondsSinceEpoch > expiresAt;
 
+  /// ★2026-11-06（4.81.28）：这段文案直接显示在设置页，必须走 tr()/trf()。
+  ///   4.81.27 首版写死中文 → 切到英/日/法/俄/西/阿，设置页仍满屏中文。
   String get expiresText {
-    if (!activated) return '未激活';
-    if (expiresAt <= 0) return '长期有效';
+    if (!activated) return tr('未激活');
+    if (expiresAt <= 0) return tr('长期有效');
     final d = DateTime.fromMillisecondsSinceEpoch(expiresAt);
     final left = d.difference(DateTime.now()).inDays;
     final date = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    return left >= 0 ? '$date 到期（剩 $left 天）' : '$date 已过期';
+    if (left >= 0) {
+      return trf('{date} 到期（剩 {n} 天）', {'date': date, 'n': left});
+    }
+    return trf('{date} 已过期', {'date': date});
   }
 }
 
@@ -179,15 +185,18 @@ class RecommendService {
   static Future<String?> activate(String base, String code) async {
     await setBase(base);
     final c = code.trim();
-    if (c.isEmpty) return '请填写激活码';
-    if (_state.base.isEmpty) return '请填写服务地址';
+    if (c.isEmpty) return tr('请填写激活码');
+    if (_state.base.isEmpty) return tr('请填写服务地址');
     final r = await _req('/v1/activate', 'POST', {'code': c});
-    if (r.status == -1) return '连不上服务，请检查地址或网络';
-    if (r.status == 401) return '激活码无效或已过期';
-    if (r.status != 200) return '激活失败（HTTP ${r.status}）';
+    if (r.status == -1) return tr('连不上服务，请检查地址或网络');
+    if (r.status == 401) return tr('激活码无效或已过期');
+    if (r.status != 200) {
+      return trf('激活失败（HTTP {code}）', {'code': r.status});
+    }
     final j = r.json;
-    if (j is! Map) return '服务返回格式不对';
-    if (j['ok'] != true) return '${j['message'] ?? '激活码无效'}';
+    if (j is! Map) return tr('服务返回格式不对');
+    // 服务端回传的 message 是**服务方自定义文案**，原样显示；缺失才用本地兜底。
+    if (j['ok'] != true) return '${j['message'] ?? tr('激活码无效')}';
     final exp = (j['expiresAt'] as num?)?.toInt() ?? 0;
     final quota = (j['quota'] as num?)?.toInt() ?? 0;
     await _save(c, exp, quota);
@@ -214,7 +223,7 @@ class RecommendService {
   /// 服务是否可达（用于设置页的「测试连接」）。
   static Future<String?> ping() async {
     final r = await _req('/v1/health', 'GET', null);
-    if (r.status == -1) return '连不上';
+    if (r.status == -1) return tr('连不上');
     if (r.status != 200) return 'HTTP ${r.status}';
     return null;
   }
@@ -234,11 +243,13 @@ class RecommendPage extends StatefulWidget {
 
 class _RecommendPageState extends State<RecommendPage>
     with SingleTickerProviderStateMixin {
-  static const _tabs = [
-    ('书城推荐', 'book'),
-    ('音乐推荐', 'music'),
-    ('影视推荐', 'video'),
-  ];
+  /// ★2026-11-06（4.81.28）：不能是 `const` —— 要按当前语言取词。
+  ///   一个 getter 换 3 次 Map 查找，代价可忽略，换来「切语言立即生效」。
+  List<(String, String)> get _tabs => [
+        (tr('书城推荐'), 'book'),
+        (tr('音乐推荐'), 'music'),
+        (tr('影视推荐'), 'video'),
+      ];
 
   late TabController _tc;
   LicenseState _lic = const LicenseState();
@@ -284,10 +295,10 @@ class _RecommendPageState extends State<RecommendPage>
   Widget build(BuildContext c) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('推荐'),
+        title: Text(tr('推荐')),
         actions: [
           IconButton(
-            tooltip: '服务设置',
+            tooltip: tr('服务设置'),
             onPressed: _openSettings,
             icon: const Icon(Icons.tune, size: 20),
           ),
@@ -327,24 +338,23 @@ class _RecommendPageState extends State<RecommendPage>
                 size: 30, color: scheme.primary),
           ),
           const SizedBox(height: Gap.md),
-          const Text('推荐服务未开通',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(tr('推荐服务未开通'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: Gap.sm),
-          const Text(
-            '本应用出厂不内置任何内容源与推荐。\n书城 / 音乐 / 影视的推荐由服务方提供，'
-            '需要激活码才能开通。',
+          Text(
+            tr('本应用出厂不内置任何内容源与推荐。\n书城 / 音乐 / 影视的推荐由服务方提供，需要激活码才能开通。'),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, height: 1.6, color: Colors.grey),
+            style: const TextStyle(fontSize: 13, height: 1.6, color: Colors.grey),
           ),
           const SizedBox(height: Gap.lg),
           FilledButton.icon(
             onPressed: _openSettings,
             icon: const Icon(Icons.key_outlined, size: 18),
-            label: const Text('填写激活码'),
+            label: Text(tr('填写激活码')),
           ),
           if (_lic.base.isNotEmpty) ...[
             const SizedBox(height: Gap.sm),
-            Text('当前服务：${_lic.base}',
+            Text(trf('当前服务：{base}', {'base': _lic.base}),
                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ]),
@@ -368,7 +378,7 @@ class _RecommendPageState extends State<RecommendPage>
             const SizedBox(height: Gap.md),
             OutlinedButton(
               onPressed: () => _load(type, force: true),
-              child: const Text('重试'),
+              child: Text(tr('重试')),
             ),
           ]),
         ),
@@ -383,9 +393,9 @@ class _RecommendPageState extends State<RecommendPage>
         onRefresh: () => _load(type, force: true),
         child: ListView(children: [
           SizedBox(height: MediaQuery.sizeOf(context).height * 0.28),
-          const Center(
-              child: Text('服务端暂时没有推荐内容',
-                  style: TextStyle(fontSize: 13, color: Colors.grey))),
+          Center(
+              child: Text(tr('服务端暂时没有推荐内容'),
+                  style: const TextStyle(fontSize: 13, color: Colors.grey))),
         ]),
       );
     }
@@ -406,10 +416,10 @@ class _RecommendPageState extends State<RecommendPage>
   }
 
   String _errText(String e) => switch (e) {
-        'not-activated' => '服务未开通',
-        'expired' => '激活码已过期，请重新填写',
-        'offline' => '连不上服务。\n检查网络，或到「服务设置」确认地址',
-        _ => '加载失败：$e',
+        'not-activated' => tr('服务未开通'),
+        'expired' => tr('激活码已过期，请重新填写'),
+        'offline' => tr('连不上服务。\n检查网络，或到「服务设置」确认地址'),
+        _ => trf('加载失败：{e}', {'e': e}),
       };
 
   Widget _card(RecommendItem it) {
@@ -421,7 +431,8 @@ class _RecommendPageState extends State<RecommendPage>
         // 这里只给个提示，真正的跳转由宿主模块接（模块间不互相 import）。
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             duration: const Duration(seconds: 2),
-            content: Text('「${it.title}」→ ${it.url}')));
+            content:
+                Text(trf('「{title}」→ {url}', {'title': it.title, 'url': it.url}))));
       },
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
@@ -492,6 +503,10 @@ class _SettingsState extends State<RecommendSettingsPage> {
   late final TextEditingController _code;
   LicenseState _lic = const LicenseState();
   bool _busy = false;
+
+  /// ★2026-11-06：成功/失败**不能靠比较提示文案**判断 —— 文案本地化后
+  ///   中英日法都不一样，比较永远为假（颜色会一直是红的）。用一个 bool 记账。
+  bool _ok = false;
   String? _msg;
 
   @override
@@ -525,12 +540,13 @@ class _SettingsState extends State<RecommendSettingsPage> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _msg = err ?? '激活成功';
+      _ok = err == null;
+      _msg = err ?? tr('激活成功');
       _lic = RecommendService.state;
     });
     if (err == null) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('激活成功')));
+          .showSnackBar(SnackBar(content: Text(tr('激活成功'))));
     }
   }
 
@@ -544,34 +560,36 @@ class _SettingsState extends State<RecommendSettingsPage> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _msg = err == null ? '服务可达' : '连接失败：$err';
+      _ok = err == null;
+      _msg = err == null ? tr('服务可达') : trf('连接失败：{e}', {'e': err});
     });
   }
 
   @override
   Widget build(BuildContext c) {
     return Scaffold(
-      appBar: AppBar(title: const Text('推荐服务设置')),
+      appBar: AppBar(title: Text(tr('推荐服务设置'))),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
-        const Text('服务地址', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(tr('服务地址'),
+            style: const TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 6),
         TextField(
           controller: _base,
           style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(
-            hintText: 'https://你的服务地址（例如 NAS 上的域名）',
-            hintStyle: TextStyle(fontSize: 11),
+          decoration: InputDecoration(
+            hintText: tr('https://你的服务地址（例如 NAS 上的域名）'),
+            hintStyle: const TextStyle(fontSize: 11),
           ),
         ),
         const SizedBox(height: Gap.md),
-        const Text('激活码', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(tr('激活码'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 6),
         TextField(
           controller: _code,
           style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(
-            hintText: '由服务方提供',
-            hintStyle: TextStyle(fontSize: 11),
+          decoration: InputDecoration(
+            hintText: tr('由服务方提供'),
+            hintStyle: const TextStyle(fontSize: 11),
           ),
         ),
         const SizedBox(height: Gap.md),
@@ -579,14 +597,14 @@ class _SettingsState extends State<RecommendSettingsPage> {
           Expanded(
             child: OutlinedButton(
               onPressed: _busy ? null : _doPing,
-              child: const Text('测试连接'),
+              child: Text(tr('测试连接')),
             ),
           ),
           const SizedBox(width: Gap.sm),
           Expanded(
             child: FilledButton(
               onPressed: _busy ? null : _doActivate,
-              child: Text(_busy ? '处理中…' : '激活'),
+              child: Text(_busy ? tr('处理中…') : tr('激活')),
             ),
           ),
         ]),
@@ -595,9 +613,7 @@ class _SettingsState extends State<RecommendSettingsPage> {
           Text(_msg!,
               style: TextStyle(
                   fontSize: 12,
-                  color: _msg == '激活成功' || _msg == '服务可达'
-                      ? Colors.green
-                      : Colors.redAccent)),
+                  color: _ok ? Colors.green : Colors.redAccent)),
         ],
         const SizedBox(height: Gap.lg),
         Container(
@@ -607,12 +623,12 @@ class _SettingsState extends State<RecommendSettingsPage> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('状态：${_lic.expiresText}',
+            Text(trf('状态：{s}', {'s': _lic.expiresText}),
                 style: const TextStyle(fontSize: 12)),
             if (_lic.quota > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('额度：${_lic.quota}',
+                child: Text(trf('额度：{n}', {'n': _lic.quota}),
                     style: const TextStyle(fontSize: 12)),
               ),
             if (_lic.activated) ...[
@@ -624,19 +640,19 @@ class _SettingsState extends State<RecommendSettingsPage> {
                   setState(() {
                     _lic = RecommendService.state;
                     _code.text = '';
-                    _msg = '已清除激活信息';
+                    _ok = true;
+                    _msg = tr('已清除激活信息');
                   });
                 },
-                child: const Text('清除激活信息'),
+                child: Text(tr('清除激活信息')),
               ),
             ],
           ]),
         ),
         const SizedBox(height: Gap.md),
-        const Text(
-          '说明：本应用不内置任何内容源。推荐内容由服务方统一维护，'
-          '激活码用于识别额度与有效期。服务地址与激活码只存在本机。',
-          style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.6),
+        Text(
+          tr('说明：本应用不内置任何内容源。推荐内容由服务方统一维护，激活码用于识别额度与有效期。服务地址与激活码只存在本机。'),
+          style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.6),
         ),
       ]),
     );
@@ -646,7 +662,7 @@ class _SettingsState extends State<RecommendSettingsPage> {
 /// 横向推荐带 —— 嵌在**已有模块的首页**里用（当前挂在搜索页顶部），
 /// 不占一个独立模块位。未激活时只占一行，说清为什么没有内容 + 给个入口。
 class RecommendStrip extends StatefulWidget {
-  const RecommendStrip({super.key, this.type = 'book', this.title = '书城推荐'});
+  const RecommendStrip({super.key, this.type = 'book', this.title = ''});
   final String type;
   final String title;
   @override
@@ -705,9 +721,9 @@ class _StripState extends State<RecommendStrip> {
                   size: 16,
                   color: Theme.of(c).colorScheme.onSurface.withValues(alpha: 0.45)),
               const SizedBox(width: 8),
-              const Expanded(
-                child: Text('推荐服务未开通 · 填激活码后显示',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Expanded(
+                child: Text(tr('推荐服务未开通 · 填激活码后显示'),
+                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ),
               const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
             ]),
@@ -723,7 +739,7 @@ class _StripState extends State<RecommendStrip> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
-        child: Text(widget.title,
+        child: Text(widget.title.isEmpty ? tr('书城推荐') : widget.title,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
       ),
       SizedBox(
