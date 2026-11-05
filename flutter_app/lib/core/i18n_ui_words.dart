@@ -1777,3 +1777,281 @@ const Map<String, Map<String, String>> i18nUiWords10 =
     '资料库': 'المكتبات',
   },
 };
+
+// ── 第十一批（4.81.30）：「DSH 遥控」配置页（清单第 6 项）──────────────────
+//   手机连电脑上的 DSH 网关（`dsh-remote-plugin`，默认 8787）。
+//   30 键 × 6 语言：入口标题 / 四步引导 / 两个输入框 / 两个按钮 /
+//   八个失败原因 / 内嵌页兜底文案。
+//   ★ 八个失败原因的**中文原文就是 `DshErr.text()` 的返回值** ——
+//     规则层不写 tr()，由 UI 侧 `tr(DshErr.text(code))` 查这张表。
+//     改这里的 key 必须同步改 `lib/core/dsh_remote.dart` 的 DshErr。
+const Map<String, Map<String, String>> i18nUiWords11 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    'DSH 遥控': 'DSH Remote',
+    '怎么用': 'How it works',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'On the computer, open DSH and go to More → Phone connection',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        'Copy the connection string shown there, then tap Paste from clipboard below',
+    '点「测试连接」，显示已连接就成了':
+        'Tap Test connection; once it shows Connected, you are set',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        'Tap Open console and you can drive the computer from this phone',
+    '电脑地址': 'Computer address',
+    '配对令牌': 'Pairing token',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        'e.g. 192.168.1.5 or http://192.168.1.5:8787',
+    '从剪贴板填入': 'Paste from clipboard',
+    '已填入': 'Filled in',
+    '剪贴板里没有能用的地址': 'No usable address in the clipboard',
+    '测试连接': 'Test connection',
+    '已连接': 'Connected',
+    '打开控制台': 'Open console',
+    '管理控制台': 'Admin console',
+    '令牌只存在这台手机，不上云':
+        'The token is kept on this phone only and is never synced',
+    '请先填电脑地址': 'Enter the computer address first',
+    '请填配对令牌': 'Enter the pairing token',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'Invalid address, e.g. http://192.168.1.5:8787',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'Cannot reach the computer: same Wi-Fi, DSH running, right address and port',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'That address answers but is not the DSH Remote gateway (wrong port?)',
+    '令牌不对，或已在电脑上被重置':
+        'Token is wrong or was reset on the computer',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        'No reply in time: check sleep mode or the firewall',
+    '没成功，原因不明': 'Failed for an unknown reason',
+    '重新加载': 'Reload',
+    '用浏览器打开': 'Open in browser',
+    '正在打开…': 'Opening…',
+    '页面打不开': 'Page will not open',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'Make sure the phone and the computer share one Wi-Fi and DSH is running',
+  },
+  'ja': <String, String>{
+    'DSH 遥控': 'DSH リモート',
+    '怎么用': '使い方',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'パソコンで DSH を開き「その他 → スマホ接続」へ',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        '表示された接続文字列をコピーし、下の「クリップボードから貼り付け」を押します',
+    '点「测试连接」，显示已连接就成了':
+        '「接続テスト」を押し「接続済み」と出れば完了です',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        '「コンソールを開く」を押すと、スマホからパソコンを操作できます',
+    '电脑地址': 'パソコンのアドレス',
+    '配对令牌': 'ペアリングトークン',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        '例：192.168.1.5 または http://192.168.1.5:8787',
+    '从剪贴板填入': 'クリップボードから貼り付け',
+    '已填入': '入力しました',
+    '剪贴板里没有能用的地址': 'クリップボードに使えるアドレスがありません',
+    '测试连接': '接続テスト',
+    '已连接': '接続済み',
+    '打开控制台': 'コンソールを開く',
+    '管理控制台': '管理コンソール',
+    '令牌只存在这台手机，不上云':
+        'トークンはこの端末にだけ保存され、クラウドには送りません',
+    '请先填电脑地址': '先にパソコンのアドレスを入力してください',
+    '请填配对令牌': 'ペアリングトークンを入力してください',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'アドレスの形式が違います（例：http://192.168.1.5:8787）',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'パソコンに接続できません。同じ Wi-Fi か、DSH が起動しているか、アドレスとポートを確認してください',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'このアドレスは応答しますが DSH リモートのゲートウェイではありません（ポートの誤り？）',
+    '令牌不对，或已在电脑上被重置':
+        'トークンが違うか、パソコン側でリセットされています',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        '応答がありません。スリープやファイアウォールを確認してください',
+    '没成功，原因不明': '失敗しました（原因不明）',
+    '重新加载': '再読み込み',
+    '用浏览器打开': 'ブラウザで開く',
+    '正在打开…': '開いています…',
+    '页面打不开': 'ページを開けません',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'スマホとパソコンが同じ Wi-Fi にあり、DSH が起動しているか確認してください',
+  },
+  'fr': <String, String>{
+    'DSH 遥控': 'DSH à distance',
+    '怎么用': 'Mode d\'emploi',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'Sur l\'ordinateur, ouvrez DSH puis « Plus → Connexion téléphone »',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        'Copiez la chaîne de connexion affichée, puis touchez « Coller depuis le presse-papiers »',
+    '点「测试连接」，显示已连接就成了':
+        'Touchez « Tester la connexion » ; si « Connecté » s\'affiche, c\'est bon',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        'Touchez « Ouvrir la console » pour piloter l\'ordinateur depuis ce téléphone',
+    '电脑地址': 'Adresse de l\'ordinateur',
+    '配对令牌': 'Jeton d\'appairage',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        'ex. 192.168.1.5 ou http://192.168.1.5:8787',
+    '从剪贴板填入': 'Coller depuis le presse-papiers',
+    '已填入': 'Rempli',
+    '剪贴板里没有能用的地址':
+        'Aucune adresse utilisable dans le presse-papiers',
+    '测试连接': 'Tester la connexion',
+    '已连接': 'Connecté',
+    '打开控制台': 'Ouvrir la console',
+    '管理控制台': 'Console d\'administration',
+    '令牌只存在这台手机，不上云':
+        'Le jeton reste sur ce téléphone, jamais synchronisé',
+    '请先填电脑地址': 'Indiquez d\'abord l\'adresse de l\'ordinateur',
+    '请填配对令牌': 'Indiquez le jeton d\'appairage',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'Adresse incorrecte, ex. http://192.168.1.5:8787',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'Ordinateur injoignable : même Wi-Fi, DSH lancé, adresse et port corrects',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'Cette adresse répond mais ce n\'est pas la passerelle DSH Remote (mauvais port ?)',
+    '令牌不对，或已在电脑上被重置':
+        'Jeton erroné ou réinitialisé sur l\'ordinateur',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        'Pas de réponse : vérifiez la veille ou le pare-feu',
+    '没成功，原因不明': 'Échec, cause inconnue',
+    '重新加载': 'Recharger',
+    '用浏览器打开': 'Ouvrir dans le navigateur',
+    '正在打开…': 'Ouverture…',
+    '页面打不开': 'La page ne s\'ouvre pas',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'Vérifiez que le téléphone et l\'ordinateur partagent le même Wi-Fi et que DSH tourne',
+  },
+  'ru': <String, String>{
+    'DSH 遥控': 'DSH удалённо',
+    '怎么用': 'Как это работает',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'На компьютере откройте DSH и перейдите в «Ещё → Подключение телефона»',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        'Скопируйте строку подключения на той странице и нажмите «Вставить из буфера»',
+    '点「测试连接」，显示已连接就成了':
+        'Нажмите «Проверить подключение»; если появилось «Подключено» — готово',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        'Нажмите «Открыть консоль» — и управляйте компьютером с телефона',
+    '电脑地址': 'Адрес компьютера',
+    '配对令牌': 'Токен сопряжения',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        'напр. 192.168.1.5 или http://192.168.1.5:8787',
+    '从剪贴板填入': 'Вставить из буфера',
+    '已填入': 'Заполнено',
+    '剪贴板里没有能用的地址':
+        'В буфере обмена нет подходящего адреса',
+    '测试连接': 'Проверить подключение',
+    '已连接': 'Подключено',
+    '打开控制台': 'Открыть консоль',
+    '管理控制台': 'Консоль администратора',
+    '令牌只存在这台手机，不上云':
+        'Токен хранится только на этом телефоне и не уходит в облако',
+    '请先填电脑地址': 'Сначала укажите адрес компьютера',
+    '请填配对令牌': 'Укажите токен сопряжения',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'Неверный адрес, напр. http://192.168.1.5:8787',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'Компьютер недоступен: та же сеть Wi-Fi, DSH запущен, адрес и порт верные',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'Адрес отвечает, но это не шлюз DSH Remote (неверный порт?)',
+    '令牌不对，或已在电脑上被重置':
+        'Токен неверен или сброшен на компьютере',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        'Нет ответа: проверьте спящий режим и брандмауэр',
+    '没成功，原因不明': 'Не удалось, причина неизвестна',
+    '重新加载': 'Обновить',
+    '用浏览器打开': 'Открыть в браузере',
+    '正在打开…': 'Открытие…',
+    '页面打不开': 'Страница не открывается',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'Убедитесь, что телефон и компьютер в одной сети Wi-Fi и DSH запущен',
+  },
+  'es': <String, String>{
+    'DSH 遥控': 'DSH remoto',
+    '怎么用': 'Cómo se usa',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'En el ordenador, abre DSH y ve a «Más → Conexión del teléfono»',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        'Copia la cadena de conexión que aparece y pulsa «Pegar del portapapeles»',
+    '点「测试连接」，显示已连接就成了':
+        'Pulsa «Probar conexión»; si muestra Conectado, ya está',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        'Pulsa «Abrir consola» y podrás manejar el ordenador desde el teléfono',
+    '电脑地址': 'Dirección del ordenador',
+    '配对令牌': 'Token de emparejamiento',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        'p. ej. 192.168.1.5 o http://192.168.1.5:8787',
+    '从剪贴板填入': 'Pegar del portapapeles',
+    '已填入': 'Rellenado',
+    '剪贴板里没有能用的地址':
+        'No hay una dirección utilizable en el portapapeles',
+    '测试连接': 'Probar conexión',
+    '已连接': 'Conectado',
+    '打开控制台': 'Abrir consola',
+    '管理控制台': 'Consola de administración',
+    '令牌只存在这台手机，不上云':
+        'El token se queda en este teléfono y no se sincroniza',
+    '请先填电脑地址': 'Primero escribe la dirección del ordenador',
+    '请填配对令牌': 'Escribe el token de emparejamiento',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'Dirección incorrecta, p. ej. http://192.168.1.5:8787',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'No se llega al ordenador: mismo Wi-Fi, DSH abierto, dirección y puerto correctos',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'Esa dirección responde pero no es la pasarela de DSH Remote (¿puerto erróneo?)',
+    '令牌不对，或已在电脑上被重置':
+        'El token es incorrecto o se restableció en el ordenador',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        'Sin respuesta: revisa la suspensión o el cortafuegos',
+    '没成功，原因不明': 'Falló por una razón desconocida',
+    '重新加载': 'Recargar',
+    '用浏览器打开': 'Abrir en el navegador',
+    '正在打开…': 'Abriendo…',
+    '页面打不开': 'La página no abre',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'Comprueba que el teléfono y el ordenador comparten Wi-Fi y que DSH sigue abierto',
+  },
+  'ar': <String, String>{
+    'DSH 遥控': 'DSH عن بُعد',
+    '怎么用': 'طريقة الاستخدام',
+    '电脑上打开 DSH，进「更多 → 手机连接」':
+        'على الكمبيوتر، افتح DSH واذهب إلى «المزيد ← اتصال الهاتف»',
+    '把页面上那条连接串复制下来，点下面的「从剪贴板填入」':
+        'انسخ سلسلة الاتصال الظاهرة ثم اضغط «لصق من الحافظة»',
+    '点「测试连接」，显示已连接就成了':
+        'اضغط «اختبار الاتصال»؛ وإذا ظهر «متصل» فقد انتهيت',
+    '点「打开控制台」，之后就能用手机操作电脑':
+        'اضغط «فتح لوحة التحكم» لتتحكم بالكمبيوتر من الهاتف',
+    '电脑地址': 'عنوان الكمبيوتر',
+    '配对令牌': 'رمز الاقتران',
+    '例：192.168.1.5 或 http://192.168.1.5:8787':
+        'مثال: 192.168.1.5 أو http://192.168.1.5:8787',
+    '从剪贴板填入': 'لصق من الحافظة',
+    '已填入': 'تم الملء',
+    '剪贴板里没有能用的地址': 'لا يوجد عنوان صالح في الحافظة',
+    '测试连接': 'اختبار الاتصال',
+    '已连接': 'متصل',
+    '打开控制台': 'فتح لوحة التحكم',
+    '管理控制台': 'لوحة تحكم الإدارة',
+    '令牌只存在这台手机，不上云':
+        'يبقى الرمز على هذا الهاتف فقط ولا يُزامَن',
+    '请先填电脑地址': 'أدخل عنوان الكمبيوتر أولاً',
+    '请填配对令牌': 'أدخل رمز الاقتران',
+    '地址格式不对，例：http://192.168.1.5:8787':
+        'العنوان غير صحيح، مثال: http://192.168.1.5:8787',
+    '连不上电脑：确认同一 Wi-Fi、电脑端 DSH 开着、地址端口对':
+        'تعذّر الوصول إلى الكمبيوتر: نفس شبكة Wi-Fi، وDSH يعمل، والعنوان والمنفذ صحيحان',
+    '这个地址通了，但不是 DSH 遥控网关（端口可能填错）':
+        'هذا العنوان يستجيب لكنه ليس بوابة DSH Remote (منفذ خاطئ؟)',
+    '令牌不对，或已在电脑上被重置':
+        'الرمز غير صحيح أو أُعيد ضبطه على الكمبيوتر',
+    '等太久没回应，检查电脑是否睡眠 / 防火墙':
+        'لا استجابة: تحقق من وضع السكون أو جدار الحماية',
+    '没成功，原因不明': 'فشل لسبب غير معروف',
+    '重新加载': 'إعادة التحميل',
+    '用浏览器打开': 'فتح في المتصفح',
+    '正在打开…': 'جارٍ الفتح…',
+    '页面打不开': 'تعذّر فتح الصفحة',
+    '确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关':
+        'تأكد أن الهاتف والكمبيوتر على شبكة Wi-Fi واحدة وأن DSH ما زال يعمل',
+  },
+};

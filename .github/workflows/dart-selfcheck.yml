@@ -329,6 +329,19 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/engine_autopull_selfcheck.dart
 
+      # 第 N 条 dsh_remote（2026-11-06 加）—— 清单第 6 项「DSH 遥控」的守门人。
+      #
+      #   这一页只有两条通路（测试连接 / 打开控制台），出错时用户没有任何线索：
+      #   地址归一写错 → 一直转圈；URL 拼错 → 打开 404。两者都**不会让 analyze 变红**。
+      #   所以把地址归一 / 粘贴串拆分 / URL 编码 / 令牌掩码钉成断言，
+      #   并断言「入口真的挂在『我的』里」「页面真的调了 probe」 —— 删掉调用点即红。
+      #   另外它单独检查 8 条失败原因的 6 语言译文：这 8 句是
+      #   `tr(DshErr.text(code))` 动态取 key，i18n_selfcheck 的正则看不见，漏翻它不会报。
+      #   实测 2026-11-06 本机：PASS 59 / FAIL 0，exit 0。
+      - name: dsh_remote（DSH 遥控：地址归一 / 粘贴串拆分 / 六语言文案 / 入口接线）
+        working-directory: flutter_app
+        run: dart run tool/dsh_remote_selfcheck.dart
+
       # 第 N 条 branding（2026-10-10 加）—— 前后端与网页端「内容来源类」用词必须清零。
       #
       #   为什么必须进 CI —— 用户明令：**不允许出现「引擎 / 换源 / 书源」这类会触发

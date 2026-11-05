@@ -39,6 +39,7 @@ import 'core/manual_book.dart';
 import 'core/module_shell.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
+import 'core/dsh_remote_page.dart';
 import 'core/recents.dart';
 import 'core/read_stats.dart';
 import 'core/mini_modules2.dart';
@@ -2759,6 +2760,12 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.dns_outlined, '后端管理',
                 value: Api.base.isEmpty ? '未连接' : '已连接',
                 page: const BackendAdminPage()),
+            _sep(),
+            // ★4.81.30：DSH 遥控 —— 用手机操作电脑上的 DSH（清单第 6 项）。
+            //   与「后端管理」并列：两者都在回答"我这台手机现在连着哪台电脑"。
+            //   地址/令牌可一次粘贴整条连接串自动拆开；令牌只存本机、不进日志。
+            entry(Icons.desktop_windows_outlined, tr('DSH 遥控'),
+                page: const DshRemotePage()),
             _sep(),
             // ★2026-10-12：云端「管理后台」（站长管理：用户 / 订单 / 定价；
             //   admin.html 自带登录，App 内浏览器页打开，不跳出应用）。

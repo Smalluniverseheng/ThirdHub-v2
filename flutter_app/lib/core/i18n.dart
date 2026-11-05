@@ -429,6 +429,13 @@ class I18n extends ChangeNotifier {
     i18nUiWords10.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+
+    // ★2026-11-06 第十一批：「DSH 遥控」配置页（4.81.30，清单第 6 项）。
+    //   入口在「我的 → DSH 遥控」；失败原因的中文原文由 DshErr.text() 提供，
+    //   UI 侧 tr() 查这张表 —— 改 key 必须同步 lib/core/dsh_remote.dart。
+    i18nUiWords11.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
