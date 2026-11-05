@@ -197,11 +197,11 @@ class RecommendService {
   /// 拉推荐。返回 (items, error)。
   static Future<({List<RecommendItem> items, String? error})> fetch(
       String type, {int limit = 24}) async {
-    if (!_state.activated) return (items: const [], error: 'not-activated');
+    if (!_state.activated) return (items: const <RecommendItem>[], error: 'not-activated');
     final r = await _req('/v1/recommend?type=$type&limit=$limit', 'GET', null);
-    if (r.status == 401) return (items: const [], error: 'expired');
-    if (r.status == -1) return (items: const [], error: 'offline');
-    if (r.status != 200) return (items: const [], error: 'HTTP ${r.status}');
+    if (r.status == 401) return (items: const <RecommendItem>[], error: 'expired');
+    if (r.status == -1) return (items: const <RecommendItem>[], error: 'offline');
+    if (r.status != 200) return (items: const <RecommendItem>[], error: 'HTTP ${r.status}');
     final j = r.json;
     final list = (j is Map ? j['items'] : null) as List?;
     final items = (list ?? const [])
