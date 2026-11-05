@@ -1741,3 +1741,39 @@ const Map<String, Map<String, String>> i18nUiWords9 =
     '额度：{n}': 'الحصة: {n}',
   },
 };
+
+// ★2026-11-06 第十批：下载中心改成「应用商店」卡片网格（4.81.29）——
+//   两个分区标题 + 卡片上的「获取」胶囊。正文（名称/简介）全部沿用原有文案。
+const Map<String, Map<String, String>> i18nUiWords10 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '应用与服务': 'Apps & services',
+    '获取': 'Get',
+    '资料库引擎': 'Library engines',
+  },
+  'ja': <String, String>{
+    '应用与服务': 'アプリとサービス',
+    '获取': '入手',
+    '资料库引擎': 'ライブラリエンジン',
+  },
+  'fr': <String, String>{
+    '应用与服务': 'Applications et services',
+    '获取': 'Obtenir',
+    '资料库引擎': 'Moteurs de bibliothèque',
+  },
+  'ru': <String, String>{
+    '应用与服务': 'Приложения и сервисы',
+    '获取': 'Получить',
+    '资料库引擎': 'Движки библиотеки',
+  },
+  'es': <String, String>{
+    '应用与服务': 'Aplicaciones y servicios',
+    '获取': 'Obtener',
+    '资料库引擎': 'Motores de biblioteca',
+  },
+  'ar': <String, String>{
+    '应用与服务': 'التطبيقات والخدمات',
+    '获取': 'الحصول',
+    '资料库引擎': 'محرّكات المكتبة',
+  },
+};
