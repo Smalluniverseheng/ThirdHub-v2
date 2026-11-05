@@ -5155,11 +5155,13 @@ class _Home extends State<SearchSection> {
                   4 => 'music',
                   _ => 'book',
                 },
+                // ★2026-11-06（4.81.28）：标题也是界面文案，走 tr() ——
+                //   4.81.27 写死中文，切语言后推荐带标题仍是中文。
                 title: switch (typeFilter) {
-                  2 => '漫画推荐',
-                  3 => '影视推荐',
-                  4 => '音乐推荐',
-                  _ => '书城推荐',
+                  2 => tr('漫画推荐'),
+                  3 => tr('影视推荐'),
+                  4 => tr('音乐推荐'),
+                  _ => tr('书城推荐'),
                 })),
         Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
