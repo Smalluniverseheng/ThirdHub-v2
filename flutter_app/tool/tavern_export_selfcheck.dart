@@ -265,6 +265,136 @@ void main() {
   ck('外部 V2 卡的 first_mes 能被认出来',
       '${(cardFromPng(out)?['data'] as Map)['first_mes']}' == fields['firstMessage']);
 
+  print('\n== 9. 未建模字段保真（4.81.32：以前这些字段导入即丢、导出写成空）==');
+  // 一张"别人写的"卡：世界书、第二开场白、示例对话、创作者扩展全都有。
+  final foreign = <String, dynamic>{
+    'spec': 'chara_card_v2',
+    'spec_version': '2.0',
+    'data': <String, dynamic>{
+      'name': '外来的角色',
+      'description': '设定正文',
+      'first_mes': '第一句开场白',
+      'system_prompt': '',
+      'personality': '冷淡、话少',
+      'scenario': '深夜的电车',
+      'mes_example': '<START>\n{{char}}: …',
+      'creator_notes': '作者留言',
+      'post_history_instructions': '保持口吻',
+      'alternate_greetings': <String>['备选开场白 A', '备选开场白 B'],
+      'character_book': <String, dynamic>{
+        'name': '世界观',
+        'entries': <dynamic>[
+          <String, dynamic>{'keys': ['店'], 'content': '那家店只在雨天开门'},
+        ],
+      },
+      'tags': <String>['剧情'],
+      'avatar': 'none',
+      'character_version': '2.3',
+      'creator': '某位路人',
+      'extensions': <String, dynamic>{
+        'depth_prompt': <String, dynamic>{'depth': 4},
+      },
+      'x_future_field': <String, dynamic>{'a': 1},
+    },
+  };
+  final ex = carriedData(foreign);
+  ck('personality 被带走', ex['personality'] == '冷淡、话少');
+  ck('scenario 被带走', ex['scenario'] == '深夜的电车');
+  ck('mes_example 被带走（含换行）', '${ex['mes_example']}'.contains('<START>'));
+  ck('creator_notes 被带走', ex['creator_notes'] == '作者留言');
+  ck('post_history_instructions 被带走',
+      ex['post_history_instructions'] == '保持口吻');
+  ck('alternate_greetings 整段带走且顺序不变',
+      ex['alternate_greetings'] is List &&
+          (ex['alternate_greetings'] as List).length == 2 &&
+          (ex['alternate_greetings'] as List)[1] == '备选开场白 B');
+  ck('character_book（世界书）被带走',
+      ((ex['character_book'] as Map?) ?? const {})['name'] == '世界观');
+  ck('character_version 被带走', ex['character_version'] == '2.3');
+  ck('未知字段也带走（规范以后加字段不会丢）', ex['x_future_field'] is Map);
+  ck('已建模的键不搬（否则旧值会盖掉新手改的内容）',
+      !ex.containsKey('name') &&
+          !ex.containsKey('description') &&
+          !ex.containsKey('first_mes') &&
+          !ex.containsKey('system_prompt') &&
+          !ex.containsKey('tags') &&
+          // SillyTavern 的 avatar 常是 'none' 这种占位，搬过来会把本地头像顶掉
+          !ex.containsKey('avatar'));
+  ck('不可 JSON 化的值不搬（否则保存进 SharedPreferences 时就炸）',
+      !carriedData(<String, dynamic>{
+        'data': <String, dynamic>{'name': 'x', 'weird': DateTime.now()}
+      }).containsKey('weird'));
+
+  // 导入 → 导出：写回的卡必须还带这些东西
+  final reout = cardV2(<String, Object?>{
+    'id': '42',
+    'name': '外来的角色',
+    'description': '设定正文（本机改过）',
+    'firstMessage': '第一句开场白',
+    'systemPrompt': '',
+    'avatar': '',
+    'tags': <String>['剧情'],
+    'extras': ex,
+  });
+  final rd = reout['data'] as Map<String, dynamic>;
+  ck('导出后 personality 仍在', rd['personality'] == '冷淡、话少');
+  ck('导出后示例对话仍在', '${rd['mes_example']}'.contains('<START>'));
+  ck('导出后第二开场白仍在（不是空数组）',
+      rd['alternate_greetings'] is List &&
+          (rd['alternate_greetings'] as List).length == 2);
+  ck('导出后世界书仍在（不被 null 覆盖）',
+      ((rd['character_book'] as Map?) ?? const {})['name'] == '世界观');
+  ck('本机改动优先于旧值', rd['description'] == '设定正文（本机改过）');
+  ck('character_version 沿用来卡的值', rd['character_version'] == '2.3');
+  ck('creator 保留原作者（不被改写成 ThirdHub）', rd['creator'] == '某位路人');
+  ck('extensions 合并且原扩展在',
+      ((rd['extensions'] as Map)['depth_prompt'] as Map?)?['depth'] == 4);
+  ck('extensions 合并且本机 id 写进去',
+      (rd['extensions'] as Map)['thirdhub_id'] == '42');
+  var encOk = true;
+  try {
+    jsonEncode(reout);
+  } catch (_) {
+    encOk = false;
+  }
+  ck('整张卡能 JSON 编码（不会在落盘/塞 tEXt 时抛错）', encOk);
+
+  // 两跳：导出成 PNG → 再读回来，内容还在（这条才是真实链路的证明）
+  final hop = cardFromPng(embedTextChunks(
+      base, <String, String>{'chara': cardV2Base64(<String, Object?>{
+    'id': '42',
+    'name': '外来的角色',
+    'description': '设定正文',
+    'firstMessage': '第一句开场白',
+    'avatar': '',
+    'extras': ex,
+  })}));
+  final hopEx = carriedData(hop);
+  ck('PNG 卡往返：第二开场白仍在',
+      (hopEx['alternate_greetings'] as List?)?.length == 2);
+  ck('PNG 卡往返：世界书仍在',
+      ((hopEx['character_book'] as Map?) ?? const {})['name'] == '世界观');
+  ck('PNG 卡往返：性格设定仍在', hopEx['personality'] == '冷淡、话少');
+
+  // 扁平旧格式：只挑认识的内容字段，绝不搬聊天记录
+  final flatEx = carriedData(<String, dynamic>{
+    'name': '扁平卡',
+    'description': 'd',
+    'first_mes': 'f',
+    'personality': 'p',
+    'mes_example': 'm',
+    'chat': <dynamic>[
+      <String, dynamic>{'is_user': true, 'mes': '很长的聊天记录'}
+    ],
+    'talkativeness': '0.5',
+    'fav': false,
+  });
+  ck('扁平卡：personality / mes_example 被带走',
+      flatEx['personality'] == 'p' && flatEx['mes_example'] == 'm');
+  ck('扁平卡：聊天记录不带走', !flatEx.containsKey('chat'));
+  ck('扁平卡：运行时状态不带走',
+      !flatEx.containsKey('talkativeness') && !flatEx.containsKey('fav'));
+
   print('\n== 结果：$pass 通过 / $fail 失败 ==');
   if (fail > 0) {
     print('失败项：');

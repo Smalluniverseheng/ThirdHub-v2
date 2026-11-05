@@ -62,6 +62,7 @@ class TavernChar {
     this.systemPrompt = '',
     this.avatar = '',
     this.tags = const [],
+    this.extras = const {},
     this.createdAt = 0,
   });
 
@@ -81,6 +82,17 @@ class TavernChar {
   String avatar;
 
   List<String> tags;
+
+  /// 导入时原样留存的**未建模字段**：`personality` / `scenario` / `mes_example` /
+  /// `creator_notes` / `alternate_greetings` / `character_book`（世界书）/
+  /// `extensions` 以及规范以后可能新增的键。
+  ///
+  /// 为什么要留：4.81.31 之前这些字段在导入时被丢掉、导出时写成空值 ——
+  /// 别人的卡在我们这儿过一遍，第二开场白、示例对话、世界书就永久没了，
+  /// 而且**全程没有任何报错**。留着不动，我们才只是"搬运"，不是"毁数据"。
+  /// 收口逻辑在 `tavern_card_codec.dart` 的 `carriedData()` / `cardV2()`。
+  Map<String, dynamic> extras;
+
   final int createdAt;
 
   Map<String, dynamic> toJson() => {
@@ -91,6 +103,7 @@ class TavernChar {
         'systemPrompt': systemPrompt,
         'avatar': avatar,
         'tags': tags,
+        'extras': extras,
         'createdAt': createdAt,
       };
 
@@ -102,6 +115,11 @@ class TavernChar {
         systemPrompt: '${j['systemPrompt'] ?? ''}',
         avatar: '${j['avatar'] ?? ''}',
         tags: (j['tags'] as List?)?.map((e) => '$e').toList() ?? const [],
+        extras: j['extras'] is Map
+            ? <String, dynamic>{
+                for (final e in (j['extras'] as Map).entries) '${e.key}': e.value
+              }
+            : const <String, dynamic>{},
         createdAt: (j['createdAt'] as num?)?.toInt() ?? 0,
       );
 
@@ -127,6 +145,9 @@ class TavernChar {
     if ('${m['name']}'.trim().isEmpty) return null;
     return TavernChar.fromJson({
       ...m,
+      // 未建模字段原样带走（世界书/第二开场白/示例对话/别人的扩展…），
+      // 导出时由 `cardV2` 写回 —— 导入导出才算真的无损。
+      'extras': carriedData(raw),
       'id': DateTime.now().microsecondsSinceEpoch.toString(),
       'createdAt': DateTime.now().millisecondsSinceEpoch,
     });
@@ -303,6 +324,8 @@ class TavernStore {
         'systemPrompt': c.systemPrompt,
         'avatar': c.avatar,
         'tags': c.tags,
+        // 导入时留存的未建模字段：三种导出格式（PNG/JSON/charx）都靠这一处带出去。
+        'extras': c.extras,
       };
 
   static Future<File> exportJson(TavernChar c) async {

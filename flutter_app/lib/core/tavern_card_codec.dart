@@ -26,10 +26,92 @@ import 'zip_writer.dart';
 const String kCardSpec = 'chara_card_v2';
 const String kCardSpecVersion = '2.0';
 
+/// 扁平旧格式里**值得带走**的字段。
+///
+/// 只白名单、不做"除已建模以外全带走"：扁平卡的根层除了内容字段，还混着
+/// `chat`（整段聊天记录）、`talkativeness`、`fav` 这类运行时状态，全量搬会把
+/// "导出角色卡"变成"导出聊天记录"，包体和隐私都不该这么走。
+///
+/// V2/V3 信封则相反 —— 那里的 `data` 就是卡片内容的全部，按"未建模即带走"
+/// 处理，将来规范加了新字段（V3 的 `assets`、`nickname` 都是这么来的）也不会丢。
+const List<String> kCarriedKeys = <String>[
+  'personality',
+  'scenario',
+  'mes_example',
+  'creator_notes',
+  'post_history_instructions',
+  'alternate_greetings',
+  'character_book',
+  'extensions',
+  'nickname',
+  'creator_notes_multilingual',
+  'group_only_greetings',
+  'assets',
+];
+
+/// 我们已经建模、会由用户输入或本机状态决定的键 —— 不作为"外来字段"搬运，
+/// 否则旧值会把手改后的内容盖回去。
+const Set<String> _modeledKeys = <String>{
+  'name',
+  'description',
+  'first_mes',
+  'firstMessage',
+  'first_message',
+  'system_prompt',
+  'systemPrompt',
+  'tags',
+  'avatar',
+};
+
+/// 值能不能安全走一趟 JSON（不能的话留在内存里只会在 `jsonEncode` 时炸）。
+bool _jsonSafe(Object? v) {
+  if (v == null || v is String || v is num || v is bool) return true;
+  if (v is List) return v.every(_jsonSafe);
+  if (v is Map) {
+    return v.keys.every((k) => k is String) && v.values.every(_jsonSafe);
+  }
+  return false;
+}
+
+/// 从外来卡里取出「我们没有建模」的字段（导入时留存、导出时原样写回）。
+///
+/// 这是 4.81.32 补的一条**数据保真**链路。此前的问题很隐蔽：
+/// 导入别人的卡 → 只存了名字/设定/开场白/系统提示/标签 → 再导出时
+/// `personality` / `scenario` / `mes_example` / `creator_notes` /
+/// `alternate_greetings` / `character_book` 全被**写成空值**。
+/// 卡片能导入、能导出、能再导入，看不出任何报错 —— 只是内容悄悄少了一半。
+/// 对写卡的人来说这是毁数据，比报错严重得多。
+///
+/// 返回的 Map 直接进 `TavernChar.extras`，由 [cardV2] 写回 `data`。
+Map<String, dynamic> carriedData(Object? raw) {
+  final out = <String, dynamic>{};
+  if (raw is! Map) return out;
+
+  final data = raw['data'];
+  if (data is Map) {
+    for (final e in data.entries) {
+      final k = '${e.key}';
+      if (_modeledKeys.contains(k)) continue;
+      if (!_jsonSafe(e.value)) continue;
+      out[k] = e.value;
+    }
+    return out;
+  }
+
+  for (final k in kCarriedKeys) {
+    if (raw.containsKey(k) && _jsonSafe(raw[k])) out[k] = raw[k];
+  }
+  return out;
+}
+
 /// 拼 V2 信封。
 ///
 /// [f] 用我们内部的字段名（`firstMessage` / `systemPrompt` / `avatar`），
 /// 输出时才翻译成 V2 的下划线写法 —— 只在这一处做映射。
+///
+/// 顺序很关键：**先铺 [carriedData] 搬来的未建模字段 → 再用自己的字段覆盖 →
+/// 最后补默认值**。倒过来的话，导入时留下的旧 `description` 会把手改的内容盖回去，
+/// 表现为"编辑完角色，设定又变回原样了"。
 Map<String, dynamic> cardV2(Map<String, Object?> f) {
   String s(String k) => '${f[k] ?? ''}'.trim();
   final rawTags = f['tags'];
@@ -38,31 +120,52 @@ Map<String, dynamic> cardV2(Map<String, Object?> f) {
       : <String>[];
   final id = s('id');
 
+  final carried = f['extras'];
+  final data = <String, dynamic>{
+    if (carried is Map)
+      for (final e in carried.entries)
+        if (e.key is String && _jsonSafe(e.value)) e.key as String: e.value,
+  };
+
+  final ver = s('characterVersion');
+  final carriedVer = '${data['character_version'] ?? ''}'.trim();
+  data.addAll(<String, dynamic>{
+    'name': s('name'),
+    'description': s('description'),
+    'first_mes': s('firstMessage'),
+    'system_prompt': s('systemPrompt'),
+    'tags': tags,
+    'character_version': ver.isNotEmpty ? ver : (carriedVer.isEmpty ? '1.0' : carriedVer),
+  });
+
+  // 这四个我们暂时没有独立输入框：卡里带过就沿用，没带过也要写全 ——
+  // 读取方普遍按 V2 全字段反序列化，缺键在部分实现里会直接判成"不是 V2 卡"。
+  data.putIfAbsent('creator', () => 'ThirdHub');
+  for (final k in const <String>[
+    'personality',
+    'scenario',
+    'mes_example',
+    'creator_notes',
+    'post_history_instructions',
+  ]) {
+    data.putIfAbsent(k, () => '');
+  }
+  data.putIfAbsent('alternate_greetings', () => <String>[]);
+  data.putIfAbsent('character_book', () => null);
+
+  final oldExt = data['extensions'];
+  data['extensions'] = <String, dynamic>{
+    if (oldExt is Map)
+      for (final e in oldExt.entries)
+        if (e.key is String) e.key as String: e.value,
+    if (id.isNotEmpty) 'thirdhub_id': id,
+    'thirdhub_avatar': s('avatar'),
+  };
+
   return <String, dynamic>{
     'spec': kCardSpec,
     'spec_version': kCardSpecVersion,
-    'data': <String, dynamic>{
-      'name': s('name'),
-      'description': s('description'),
-      // 这四个我们暂时没有独立输入框，但仍要写全：读取方普遍按 V2 全字段反序列化，
-      // 缺键在部分实现里会直接判成"不是 V2 卡"。
-      'personality': '',
-      'scenario': '',
-      'mes_example': '',
-      'creator_notes': '',
-      'first_mes': s('firstMessage'),
-      'system_prompt': s('systemPrompt'),
-      'post_history_instructions': '',
-      'alternate_greetings': <String>[],
-      'character_book': null,
-      'tags': tags,
-      'creator': 'ThirdHub',
-      'character_version': s('characterVersion').isEmpty ? '1.0' : s('characterVersion'),
-      'extensions': <String, dynamic>{
-        if (id.isNotEmpty) 'thirdhub_id': id,
-        'thirdhub_avatar': s('avatar'),
-      },
-    },
+    'data': data,
   };
 }
 
