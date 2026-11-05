@@ -11929,88 +11929,161 @@ class _Dct extends State<DownloadCenterTile> {
                         : '未登录 · 登录「第三方聚合」账号后, 后端设备绑定与数据自动云端同步',
                     style: const TextStyle(fontSize: 10, color: Colors.grey))),
           ])),
-      for (final p in items)
-        ListTile(
-            dense: true,
-            leading: Icon(p.$4, size: 20),
-            title: Text(p.$1, style: const TextStyle(fontSize: 13)),
-            subtitle: Text(p.$2, style: const TextStyle(fontSize: 10)),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => Navigator.push(
-                c,
-                MaterialPageRoute(
-                    builder: (_) => ProductDetailPage(
-                        name: p.$1,
-                        sub: p.$2,
-                        url: p.$3,
-                        icon: p.$4,
-                        desc: p.$5)))),
+      // ★4.81.29：列表 → 应用商店卡片网格（用户 2026-11-05 要求"像应用商店"）。
+      //   只换渲染层：条目仍来自 products 记录与 engines.json，跳转仍是 ProductDetailPage，
+      //   下载/续传/sha 校验全部沿用原链路。
+      _StoreSection(title: tr('应用与服务')),
+      _StoreGrid(entries: items),
       // ★ 4.7.2（iOS）：引擎安装/装载入口一律不开放（allowEngineInstall）。
       //   引擎包在 iOS 上既装不了也不该"引导安装"——判定收口在 core/apple_gate.dart。
       if (granted && currentGate().allowEngineInstall) ...[
+        _StoreSection(title: tr('资料库引擎')),
         // ★2026-10-31 四引擎清单（engines.json）：逐条显示真实版本与体积，
-        //   点进去下载（走分段续传 + sha256 校验）。此前这里只有两条写死文案，
-        //   发版后 App 里永远看不到「漫画引擎 1.10.11 已发布」。
-        for (final e in _engines)
-          ListTile(
-              dense: true,
-              leading: Icon(_engineIcon('${e['id']}'), size: 20),
-              title: Text('${e['name'] ?? e['id']}',
-                  style: const TextStyle(fontSize: 13)),
-              subtitle: Text(_engineSub(e),
-                  style: const TextStyle(fontSize: 10),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-              trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) => ProductDetailPage(
-                          name:
-                              '${e['name'] ?? e['id']} v${e['version'] ?? ''}',
-                          sub: '资料库 · THP 协议直连',
-                          url: '${e['url'] ?? ''}',
-                          icon: _engineIcon('${e['id']}'),
-                          desc: '${e['note'] ?? ''}')))),
+        //   点进去下载（走分段续传 + sha256 校验）。
+        //   4.81.29：改成卡片网格，副标题带版本/体积，一眼看出该不该更新。
+        if (_engines.isNotEmpty)
+          _StoreGrid(entries: [
+            for (final e in _engines)
+              (
+                '${e['name'] ?? e['id']}',
+                _engineSub(e),
+                '${e['url'] ?? ''}',
+                _engineIcon('${e['id']}'),
+                '${e['note'] ?? ''}',
+              )
+          ]),
         // 清单拉不到（离线/被墙）时退回旧的两个单清单条目，别让管理员看到空白
-        if (_engines.isEmpty) ...[
-          ListTile(
-              dense: true,
-              leading: const Icon(Icons.menu_book, size: 20),
-              title: const Text('开源阅读资料库', style: TextStyle(fontSize: 13)),
-              subtitle: Text('THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}',
-                  style: const TextStyle(fontSize: 10)),
-              trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) => ProductDetailPage(
-                          name: '开源阅读资料库${ev.isEmpty ? '' : ' v$ev'}',
-                          sub: 'Legado 本地资料库(THP 直连)',
-                          url: engineUrl,
-                          icon: Icons.menu_book,
-                          desc:
-                              '兼容"开源阅读"格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。')))),
-          ListTile(
-              dense: true,
-              leading: const Icon(Icons.photo_library, size: 20),
-              title: const Text('venera 漫画资料库', style: TextStyle(fontSize: 13)),
-              subtitle: Text('THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}',
-                  style: const TextStyle(fontSize: 10)),
-              trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) => ProductDetailPage(
-                          name: 'venera 漫画资料库${vv.isEmpty ? '' : ' v$vv'}',
-                          sub: 'venera JS 漫画源资料库(THP 直连)',
-                          url: veneraUrl,
-                          icon: Icons.photo_library,
-                          desc:
-                              '兼容 venera JS 格式的独立资料库。支持来源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。')))),
-        ],
+        if (_engines.isEmpty)
+          _StoreGrid(entries: [
+            (
+              '开源阅读资料库',
+              'THP 直连 · 最新 ${ev.isEmpty ? '读取中…' : 'v$ev'}',
+              engineUrl,
+              Icons.menu_book,
+              '兼容"开源阅读"格式的本地资料库。匿名无鉴权, THP 协议局域网直连, 前端发现后即可搜书看书。',
+            ),
+            (
+              'venera 漫画资料库',
+              'THP 直连 · 最新 ${vv.isEmpty ? '读取中…' : 'v$vv'}',
+              veneraUrl,
+              Icons.photo_library,
+              '兼容 venera JS 格式的独立资料库。支持来源 URL/代码导入、搜索聚合、探索发现页。THP 协议直连。',
+            ),
+          ]),
       ],
     ]);
+  }
+}
+
+// ═══ 应用商店视图（2026-11-06 / 4.81.29）═══
+//
+// 用户 2026-11-05 晚间追加需求："下载中心要像应用商店"。
+// 旧实现是一长串 ListTile（一行字 + 箭头），看不出图标、版本、体积，也不像商店。
+// 这里只换**渲染层**：条目数据（标题/副标题/地址/图标/简介）与跳转完全沿用原来的
+// `products` 记录与 `ProductDetailPage`，不新增数据源、不改下载链路。
+//
+// 两条硬约束（都是踩过的坑）：
+//   · 卡片宽度按 LayoutBuilder 实测宽度算，绝不用固定 dp —— 窄屏 + 大字号会溢出；
+//   · 文案一律走 tr()，新增键在 i18nUiWords10 补齐 6 语言（棘轮闸门会红）。
+class _StoreSection extends StatelessWidget {
+  final String title;
+  const _StoreSection({required this.title});
+  @override
+  Widget build(BuildContext c) => Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+      child: Text(title,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)));
+}
+
+/// 卡片网格：窄屏 2 列、宽屏 3 列。宽度由约束算出，任何时候都不会横向溢出。
+class _StoreGrid extends StatelessWidget {
+  final List<(String, String, String, IconData, String)> entries;
+  const _StoreGrid({required this.entries});
+  @override
+  Widget build(BuildContext c) {
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(builder: (c2, box) {
+      final cols = box.maxWidth >= 560 ? 3 : 2;
+      const gap = 8.0;
+      final w = (box.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(spacing: gap, runSpacing: gap, children: [
+        for (final e in entries) SizedBox(width: w, child: _StoreCard(entry: e))
+      ]);
+    });
+  }
+}
+
+/// 单张商店卡片：图标 + 名称 + 版本/体积 + 一句简介 + 「获取」胶囊。
+class _StoreCard extends StatelessWidget {
+  final (String, String, String, IconData, String) entry;
+  const _StoreCard({required this.entry});
+  @override
+  Widget build(BuildContext c) {
+    final p = entry;
+    final scheme = Theme.of(c).colorScheme;
+    return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.push(
+            c,
+            MaterialPageRoute(
+                builder: (_) => ProductDetailPage(
+                    name: p.$1, sub: p.$2, url: p.$3, icon: p.$4, desc: p.$5))),
+        child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.6))),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Icon(p.$4, size: 20, color: scheme.primary)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(p.$1,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(p.$2,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 10, height: 1.3, color: Colors.grey)),
+                    ])),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                    child: Text(p.$5.split('\n').first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.grey))),
+                Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999)),
+                    child: Text(tr('获取'),
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.primary)))
+              ])
+            ])));
   }
 }
 
