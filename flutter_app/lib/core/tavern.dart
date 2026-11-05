@@ -346,20 +346,64 @@ class TavernStore {
     return f;
   }
 
-  /// 导出 `.charx`（zip 角色卡）：`card.json` + 头像原图，Risu 系酒馆直接能读。
+  /// 导出 `.charx`（zip 角色卡）：`card.json` + 头像原图 + 内嵌素材，Risu 系酒馆直接能读。
   ///
   /// 与 [exportPng] 的分工：PNG 卡是"一张图走天下"，谁都认得，但图被换掉
   /// 数据就没了；`.charx` 把卡片与头像**分开装**，改图不影响数据，也是
   /// 别家酒馆交换卡片的原生格式。两条都留着，让用户按去处挑。
+  ///
+  /// 素材（`assets/…`）只有 `.charx` 带得走 —— PNG/JSON 都是单文件格式，
+  /// 塞不进一堆图。所以带素材的卡要完整搬走，必须导 `.charx`。
   static Future<File> exportCharx(TavernChar c) async {
     // 这里刻意**不**兜底应用图标：没有头像就不写图（见 charxZip 的说明）。
     final avatar = await _avatarRaw(c.avatar);
+    final assets = await _charAssets(c.id);
     final out = charxZip(_fieldsOf(c),
-        avatar: avatar?.bytes, avatarExt: avatar?.ext);
+        avatar: avatar?.bytes,
+        avatarExt: avatar?.ext,
+        assets: assets);
     final d = await exportDir();
     final f = File('${d.path}${Platform.pathSeparator}${cardFileName(c.name, 'charx')}');
     await f.writeAsBytes(out, flush: true);
     return f;
+  }
+
+  /// 素材落盘目录：`<文档目录>/tavern_assets/<角色 id>/`。
+  ///
+  /// 目录结构**镜像** `.charx` 包内路径（所以里面直接就是 `assets/…`），
+  /// 导出时按相对路径原样写回 —— 卡里的 `embeded://assets/…` 才指得到。
+  static Future<Directory> _assetDir(String charId) async {
+    final d = Directory(
+        '${(await getApplicationDocumentsDirectory()).path}${Platform.pathSeparator}tavern_assets'
+        '${Platform.pathSeparator}$charId');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
+
+  /// 把某个角色的素材读回来（导出前调用），键 = 包内相对路径。
+  ///
+  /// 读盘时同样过容量闸门：目录里的东西可能是上一次导入留下的，
+  /// 也可能是我们自己写坏的 —— 导出这一步不该因为一个超大文件就整包失败。
+  static Future<Map<String, List<int>>> _charAssets(String charId) async {
+    final out = <String, List<int>>{};
+    try {
+      final root = await _assetDir(charId);
+      var total = 0;
+      await for (final e in root.list(recursive: true, followLinks: false)) {
+        if (e is! File) continue;
+        final rel = e.path
+            .substring(root.path.length + 1)
+            .replaceAll(Platform.pathSeparator, '/');
+        final len = await e.length();
+        if (len == 0 || len > kMaxAssetFile) continue;
+        if (out.length >= kMaxAssetCount || total + len > kMaxAssetTotal) break;
+        total += len;
+        out[rel] = await e.readAsBytes();
+      }
+    } catch (_) {
+      // 读不到素材不该让"导出"整个失败：卡片数据才是主体。
+    }
+    return out;
   }
 
   /// 头像原字节 + 扩展名（`.charx` 用）。
@@ -513,6 +557,21 @@ class TavernStore {
       final f = File('${d.path}${Platform.pathSeparator}${card.id}.$ext');
       await f.writeAsBytes(img, flush: true);
       mapped = {...mapped, 'avatar': f.path};
+    }
+    // 内嵌素材（V3 的 `assets/…`）落盘 —— 不落的话，卡片 JSON 里的
+    // `embeded://assets/…` 就是一堆指不到任何文件的 uri，导出去全是裂图。
+    // 路径已由 `cardAssetsOf` 规范化（`..`、盘符一律丢弃），这里不会再越界。
+    // 素材写失败不该让整张卡导不进来，所以单独 try。
+    if (r.assets.isNotEmpty) {
+      try {
+        final dir = await _assetDir(card.id);
+        for (final e in r.assets.entries) {
+          final f = File('${dir.path}${Platform.pathSeparator}'
+              '${e.key.replaceAll('/', Platform.pathSeparator)}');
+          await f.parent.create(recursive: true);
+          await f.writeAsBytes(e.value, flush: true);
+        }
+      } catch (_) {}
     }
     final got = TavernChar.fromJson(mapped);
     await addChar(got);

@@ -280,6 +280,107 @@ void main() {
   ok(_u16At(pack, cdStart + 8) == 0x800, '中央目录置了 UTF-8 文件名标志位');
   ok(_u16At(pack, 6) == 0x800, '本地头置了 UTF-8 文件名标志位（+6：签名 4 + 版本 2）');
 
+  // ═══════════ 内嵌素材（4.81.33）：`assets/` 保真 ═══════════
+  //
+  // V3 卡把立绘/背景/表情放在包内 `assets/`，卡片 JSON 里只写
+  // `embeded://assets/…` 这样的 uri。此前我们只搬字段不搬图 —— 导回去是一张
+  // "指向空目录的卡"：字段说有素材，实际一个文件也没有，对方全是裂图。
+  // 这一节把「路径规范化」「双向搬运」「容量闸门」各自钉住。
+
+  // ── 14.1 路径规范化（zip-slip 防线）──
+  ok(safeEntryPath('assets/icon/main.png') == 'assets/icon/main.png',
+      '普通素材路径原样保留');
+  ok(safeEntryPath('/assets/a.png') == 'assets/a.png', '去掉前导斜杠');
+  ok(safeEntryPath('./assets/a.png') == 'assets/a.png', '去掉 ./ 前缀');
+  ok(safeEntryPath('assets\\icon\\a.png') == 'assets/icon/a.png', '反斜杠统一成正斜杠');
+  ok(safeEntryPath('../../evil.png') == null, '拒绝纯路径穿越');
+  ok(safeEntryPath('assets/../../evil.png') == null, '拒绝夹在中间的路径穿越');
+  ok(safeEntryPath('C:/Windows/x.png') == null, '拒绝盘符（Windows 上会被当绝对路径）');
+  ok(safeEntryPath('') == null && safeEntryPath('   ') == null, '空名返回 null');
+
+  // ── 14.2 导入侧：收素材，坏条目与超大条目被挡在外面 ──
+  final withAssets = makeZip(<String, List<int>>{
+    'card.json': utf8.encode(cardJson),
+    'assets/icon/main.png': <int>[1, 2, 3, 4],
+    'assets/bg/room.jpg': <int>[9, 8, 7],
+    'assets/empty.png': <int>[],
+    'assets/huge.bin': Uint8List(kMaxAssetFile + 1),
+    '../../evil.png': <int>[6, 6, 6],
+    'readme.txt': utf8.encode('别人的说明'),
+  });
+  final wa = cardFromCharx(withAssets);
+  ok(wa != null, '带素材的 charx 仍能取到卡');
+  ok(wa?.assets.length == 2, '只收 assets/ 下的有效素材（2 个）');
+  ok(wa?.assets.containsKey('assets/icon/main.png') == true, '素材在包内的路径就是键');
+  ok(_bytesEqual(wa?.assets['assets/icon/main.png'], <int>[1, 2, 3, 4]),
+      '素材字节逐字节一致');
+  ok(!(wa?.assets.keys.any((k) => k.contains('..')) ?? true), '路径穿越条目没被收进来');
+  ok(wa?.assets.containsKey('readme.txt') != true, '非 assets/ 的文件不当素材');
+  ok(wa?.assets.containsKey('assets/empty.png') != true, '0 字节素材跳过');
+  ok(wa?.assets.containsKey('assets/huge.bin') != true, '超过单文件上限的素材跳过');
+
+  // ── 14.3 导出侧：素材跟着写进包，路径不改 ──
+  final assetPack = charxZip(fields, assets: <String, List<int>>{
+    'assets/icon/main.png': <int>[1, 2, 3, 4],
+    'assets/bg/room.jpg': <int>[9, 8, 7],
+  });
+  final ap = unzip(assetPack);
+  ok(ap?.containsKey('card.json') == true, '带素材的包仍有 card.json');
+  ok(ap?.containsKey('assets/icon/main.png') == true, '素材路径在包内原样保留');
+  ok(_bytesEqual(ap?['assets/bg/room.jpg'], <int>[9, 8, 7]), '包内素材字节一致');
+  ok(ap?.length == 3, '无头像时三条目（card + 两个素材）');
+
+  // ── 14.4 往返：导出 → 再导入，素材还在且字节不变 ──
+  final artBack = cardFromCharx(assetPack);
+  ok(artBack?.assets.length == 2, '往返后素材数量一致');
+  ok(_bytesEqual(artBack?.assets['assets/icon/main.png'], <int>[1, 2, 3, 4]),
+      '往返后素材字节一致');
+  ok(
+      _bytesEqual(
+          assetPack,
+          charxZip(fields, assets: <String, List<int>>{
+            'assets/bg/room.jpg': <int>[9, 8, 7],
+            'assets/icon/main.png': <int>[1, 2, 3, 4],
+          })),
+      '素材传入顺序不影响输出字节（按路径排序）');
+
+  // ── 14.5 头像与素材重复时只写一份 ──
+  final dp = unzip(charxZip(fields,
+      avatar: Uint8List.fromList(<int>[1, 2, 3, 4]),
+      avatarExt: 'png',
+      assets: <String, List<int>>{
+        'assets/icon/main.png': <int>[1, 2, 3, 4]
+      }));
+  ok(dp?.containsKey('avatar.png') != true, '头像与素材字节相同 → 不另写 avatar.png');
+  ok(dp?.containsKey('assets/icon/main.png') == true, '去重后素材仍在原位');
+  final keepBoth = unzip(charxZip(fields,
+      avatar: fakePng,
+      avatarExt: 'png',
+      assets: <String, List<int>>{
+        'assets/icon/main.png': <int>[1, 2, 3, 4]
+      }));
+  ok(keepBoth?.containsKey('avatar.png') == true && keepBoth?.length == 3,
+      '头像与素材不同 → 两份都写');
+
+  // ── 14.6 导出侧同样挡路径穿越 ──
+  final evil = unzip(charxZip(fields, assets: <String, List<int>>{
+    '../../evil.png': <int>[1],
+    'assets/../x.png': <int>[2],
+    'assets/ok.png': <int>[3],
+  }));
+  ok(evil?.containsKey('assets/ok.png') == true, '合法素材照常写入');
+  ok(evil?.length == 2, '非法路径的素材被丢弃（只剩 card.json + 合法素材）');
+  ok(!(evil?.keys.any((k) => k.contains('..')) ?? true), '包内没有 ../ 条目');
+
+  // ── 14.7 条目数闸门 ──
+  final many = <String, List<int>>{
+    for (var i = 0; i < kMaxAssetCount + 5; i++)
+      'assets/i$i.png': <int>[i & 0xFF],
+  };
+  final mp = unzip(charxZip(fields, assets: many));
+  ok(mp?.length == kMaxAssetCount + 1,
+      '素材条目数封顶（$kMaxAssetCount 个 + card.json）');
+
   // ── 13. 新增文案六语言齐备（防止只补中文）──
   const uiKeys = <String>[
     'CHARX 压缩包（含头像）',
