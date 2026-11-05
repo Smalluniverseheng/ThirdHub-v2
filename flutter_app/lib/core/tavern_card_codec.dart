@@ -19,6 +19,7 @@ import 'dart:typed_data';
 
 import 'png_text.dart';
 import 'zip_reader.dart';
+import 'zip_writer.dart';
 
 /// 版本号：卡里 `character_version` 与 `extensions.thirdhub_*` 统一从这里取，
 /// 别在两个文件里各写一遍。
@@ -185,6 +186,34 @@ CharxCard? cardFromCharx(Uint8List zip) {
       .substring(avatarName.toLowerCase().lastIndexOf('.') + 1)
       .toLowerCase();
   return CharxCard(card, files[avatarName], ext);
+}
+
+/// 拼一个 `.charx`（zip 角色卡）—— 导入的逆运算，也是本文件里唯一"写"的方向。
+///
+/// 包内结构（与 [cardFromCharx] 的读法对称，也是 Risu 系的通行结构）：
+///   · `card.json` —— V2 信封全文，**必须放根目录**（读取方普遍按根名找）；
+///   · `avatar.<ext>` —— 头像原图。
+///
+/// 为什么头像可以缺：PNG 卡**必须**有外壳图（数据藏在图里），所以导出 PNG 时
+/// 拿不到头像只能用应用图标兜底；`.charx` 不是 —— 没有头像时就真的不该写图，
+/// 塞一张 logo 会让对方以为那就是角色长相。缺图时 [cardFromCharx] 返回
+/// `avatar == null`，导入端会退回首字占位，这条链路本来就是通的。
+///
+/// 扩展名只放行 `png/jpg/jpeg/webp`，其余一律按 `png` 写 —— 拼错的扩展名会让
+/// 对方的图片加载器直接放弃（不是"解码失败"，是"根本不尝试"）。
+Uint8List charxZip(
+  Map<String, Object?> f, {
+  Uint8List? avatar,
+  String? avatarExt,
+}) {
+  const allowed = <String>{'png', 'jpg', 'jpeg', 'webp'};
+  var ext = '${avatarExt ?? ''}'.trim().toLowerCase();
+  if (!allowed.contains(ext)) ext = 'png';
+
+  return zipStore(<String, List<int>>{
+    'card.json': utf8.encode(cardV2Json(f)),
+    if (avatar != null && avatar.isNotEmpty) 'avatar.$ext': avatar,
+  });
 }
 
 /// 导出文件名：角色名 → 安全文件名。

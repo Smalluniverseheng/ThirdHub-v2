@@ -323,19 +323,75 @@ class TavernStore {
     return f;
   }
 
-  /// 底图选择：能拿到 PNG 头像就用它（导出的卡看起来就是这个角色），
-  /// 否则退回应用图标。**只有 PNG 能当外壳** —— JPEG / WebP 没有 tEXt 块。
-  static Future<Uint8List> _carrierPng(String avatar) async {
+  /// 导出 `.charx`（zip 角色卡）：`card.json` + 头像原图，Risu 系酒馆直接能读。
+  ///
+  /// 与 [exportPng] 的分工：PNG 卡是"一张图走天下"，谁都认得，但图被换掉
+  /// 数据就没了；`.charx` 把卡片与头像**分开装**，改图不影响数据，也是
+  /// 别家酒馆交换卡片的原生格式。两条都留着，让用户按去处挑。
+  static Future<File> exportCharx(TavernChar c) async {
+    // 这里刻意**不**兜底应用图标：没有头像就不写图（见 charxZip 的说明）。
+    final avatar = await _avatarRaw(c.avatar);
+    final out = charxZip(_fieldsOf(c),
+        avatar: avatar?.bytes, avatarExt: avatar?.ext);
+    final d = await exportDir();
+    final f = File('${d.path}${Platform.pathSeparator}${cardFileName(c.name, 'charx')}');
+    await f.writeAsBytes(out, flush: true);
+    return f;
+  }
+
+  /// 头像原字节 + 扩展名（`.charx` 用）。
+  ///
+  /// 和 [_avatarPng] 的区别只有一点、但很关键：**[_avatarPng] 只认 PNG**
+  /// （PNG 卡的 tEXt 块要求外壳是 PNG），而 `.charx` 里放原图就行。
+  /// 从 `.charx` 导入的卡，头像可能是 jpg/webp —— 若这里也按 PNG 过滤，
+  /// 用户把卡导出去再导回来，头像就没了（"round-trip 掉东西"最难解释）。
+  ///
+  /// 非图片扩展名不写进包：包内是图片位，塞个 txt 只会让对方的加载器报错。
+  static Future<({Uint8List bytes, String ext})?> _avatarRaw(String avatar) async {
     final u = avatar.trim();
     if (u.startsWith('http://') || u.startsWith('https://')) {
       final got = await _downloadPng(u);
-      if (got != null) return got;
-    } else if (u.isNotEmpty) {
+      return got == null ? null : (bytes: got, ext: 'png');
+    }
+    if (u.isEmpty) return null;
+    try {
+      final f = File(u);
+      if (!await f.exists()) return null;
+      if (await f.length() > 8 * 1024 * 1024) return null;
+      final b = await f.readAsBytes();
+      final dot = u.lastIndexOf('.');
+      if (dot < 0) return null;
+      final ext = u.substring(dot + 1).toLowerCase();
+      const images = <String>{'png', 'jpg', 'jpeg', 'webp'};
+      if (!images.contains(ext)) return null;
+      return (bytes: b, ext: ext);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 头像字节：拿得到就返回，拿不到返回 null（不兜底）。
+  ///
+  /// 抽出来的原因：PNG 导出需要"兜底成应用图标"，`.charx` 导出需要"没有就是没有"，
+  /// 两条路的分叉点只在最后一步 —— 下载 / 读本地这段逻辑不该写两遍。
+  static Future<Uint8List?> _avatarPng(String avatar) async {
+    final u = avatar.trim();
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      return _downloadPng(u);
+    }
+    if (u.isNotEmpty) {
       // 从 PNG 卡导入的卡，头像是本地文件；再导出时要沿用它，
       // 否则"导进来的图"会在下一次导出时被应用图标替掉。
-      final got = await _readLocalPng(u);
-      if (got != null) return got;
+      return _readLocalPng(u);
     }
+    return null;
+  }
+
+  /// 底图选择：能拿到 PNG 头像就用它（导出的卡看起来就是这个角色），
+  /// 否则退回应用图标。**只有 PNG 能当外壳** —— JPEG / WebP 没有 tEXt 块。
+  static Future<Uint8List> _carrierPng(String avatar) async {
+    final got = await _avatarPng(avatar);
+    if (got != null) return got;
     final data = await rootBundle.load('assets/branding/logo.png');
     return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
   }
@@ -643,7 +699,7 @@ class _TavernPageState extends State<TavernPage> {
     if (saved != null) await _load();
   }
 
-  /// 导出：先让用户挑格式（两种各有用途，默认哪个都不合适），
+  /// 导出：先让用户挑格式（三种各有用途，默认哪个都不合适），
   /// 落盘后再调系统分享 —— 分享面板里既能存到「文件」，也能直接发微信。
   Future<void> _export(TavernChar ch) async {
     final kind = await showModalBottomSheet<String>(
@@ -657,6 +713,12 @@ class _TavernPageState extends State<TavernPage> {
             onTap: () => Navigator.pop(c2, 'png'),
           ),
           ListTile(
+            leading: const Icon(Icons.folder_zip_outlined),
+            title: Text(tr('CHARX 压缩包（含头像）')),
+            subtitle: Text(tr('卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读')),
+            onTap: () => Navigator.pop(c2, 'charx'),
+          ),
+          ListTile(
             leading: const Icon(Icons.data_object),
             title: Text(tr('JSON 文本（便于备份和手改）')),
             onTap: () => Navigator.pop(c2, 'json'),
@@ -666,9 +728,11 @@ class _TavernPageState extends State<TavernPage> {
     );
     if (kind == null) return;
     try {
-      final f = kind == 'png'
-          ? await TavernStore.exportPng(ch)
-          : await TavernStore.exportJson(ch);
+      final f = switch (kind) {
+        'png' => await TavernStore.exportPng(ch),
+        'charx' => await TavernStore.exportCharx(ch),
+        _ => await TavernStore.exportJson(ch),
+      };
       if (!mounted) return;
       final name = f.path.split(Platform.pathSeparator).last;
       ScaffoldMessenger.of(context)

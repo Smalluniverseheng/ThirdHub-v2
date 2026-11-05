@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:io' show ZLibEncoder, exitCode;
 import 'dart:typed_data';
 
+import 'package:thirdhub_app/core/i18n_ui_words.dart';
 import 'package:thirdhub_app/core/tavern_card_codec.dart';
 import 'package:thirdhub_app/core/zip_reader.dart';
 
@@ -203,6 +204,108 @@ void main() {
   ok(u != null, '大写 CARD.JSON 也认');
   ok(u?.avatarExt == 'jpg', '扩展名统一转小写');
 
+  // ═══════════ 导出方向（4.81.31）：charxZip ═══════════
+  //
+  // 读的方向已经钉住，写的方向要用**往返**来钉：自己写的包，用自己的读器读回来，
+  // 字段与头像字节必须一模一样。再加一层结构断言（EOCD 偏移/大小/条目数），
+  // 因为"能读回来"可能只是读写两边犯同一个错，结构断言能把这种自洽错误顶出来。
+
+  final fields = <String, Object?>{
+    'id': 'abc123',
+    'name': '测试角色',
+    'description': '一句话简介',
+    'firstMessage': '你好',
+    'systemPrompt': '你是助手',
+    'avatar': '',
+    'tags': <String>['测试'],
+  };
+
+  final pack = charxZip(fields, avatar: fakePng, avatarExt: 'png');
+  ok(isZip(pack), 'charxZip 写出的字节是合法 zip');
+  final pf = unzip(pack);
+  ok(pf != null && pf.length == 2, '导出的包恰好 2 个条目（card.json + 头像）');
+  ok(pf?.containsKey('card.json') == true, 'card.json 在包根目录');
+  ok(pf?.containsKey('avatar.png') == true, '头像命名为 avatar.png');
+  ok(_bytesEqual(pf?['avatar.png'], fakePng), '包内头像字节逐字节一致');
+
+  final back = cardFromCharx(pack);
+  ok(back != null, '自己写的包能被 cardFromCharx 读回（往返不失败）');
+  final bd = back?.card['data'];
+  ok(back?.card['spec'] == 'chara_card_v2', '包内是 V2 信封（spec 键正确）');
+  ok(bd is Map && bd['name'] == '测试角色', '往返后 name 一致（中文 UTF-8 无损）');
+  ok(bd is Map && bd['first_mes'] == '你好', '往返后 first_mes 一致（V2 下划线键）');
+  ok(bd is Map && bd['system_prompt'] == '你是助手', '往返后 system_prompt 一致');
+  ok(back?.avatarExt == 'png', '往返后头像扩展名为 png');
+  ok(_bytesEqual(back?.avatar, fakePng), '往返后头像字节一致');
+
+  final pack2 = charxZip(fields, avatar: fakePng, avatarExt: 'png');
+  ok(_bytesEqual(pack, pack2), '同样输入写出逐字节相同的包（时间戳固定，可比对）');
+
+  ok(unzip(charxZip(fields))?.length == 1, '无头像时只有 card.json 一个条目');
+  ok(cardFromCharx(charxZip(fields))?.avatar == null, '无头像的包读回来 avatar 为 null');
+  ok(unzip(charxZip(fields, avatar: Uint8List(0)))?.length == 1,
+      '空头像字节不写条目（不产生 0 字节图）');
+  ok(
+      unzip(charxZip(fields, avatar: fakePng, avatarExt: 'JPG'))
+              ?.containsKey('avatar.jpg') ==
+          true,
+      '扩展名统一转小写');
+  ok(
+      unzip(charxZip(fields, avatar: fakePng, avatarExt: 'exe'))
+              ?.containsKey('avatar.png') ==
+          true,
+      '非法扩展名回落 png（不让对方加载器卡住）');
+
+  // ── 12. 包结构：EOCD 的两个字段没写反 ──
+  var eo = -1;
+  for (var i = pack.length - 22; i >= 0; i--) {
+    if (_u32At(pack, i) == 0x06054B50) {
+      eo = i;
+      break;
+    }
+  }
+  ok(eo > 0, 'EOCD 签名存在');
+  var cdStart = -1;
+  for (var i = 0; i < eo; i++) {
+    if (_u32At(pack, i) == 0x02014B50) {
+      cdStart = i;
+      break;
+    }
+  }
+  ok(cdStart > 0, '中央目录签名存在');
+  ok(_u32At(pack, eo + 16) == cdStart, 'EOCD 的「中央目录偏移」( +16 ) 指向真实位置');
+  ok(_u32At(pack, eo + 12) == eo - cdStart, 'EOCD 的「中央目录大小」( +12 ) 等于实际字节数');
+  ok(_u16At(pack, eo + 10) == 2, 'EOCD 记录的总条目数为 2');
+  ok(_u32At(pack, cdStart + 42) == 0, '第一个中央目录条目指向本地头偏移 0');
+  ok(_u16At(pack, cdStart + 8) == 0x800, '中央目录置了 UTF-8 文件名标志位');
+  ok(_u16At(pack, 6) == 0x800, '本地头置了 UTF-8 文件名标志位（+6：签名 4 + 版本 2）');
+
+  // ── 13. 新增文案六语言齐备（防止只补中文）──
+  const uiKeys = <String>[
+    'CHARX 压缩包（含头像）',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读',
+  ];
+  for (final lang in <String>['en', 'ja', 'fr', 'ru', 'es', 'ar']) {
+    final words = i18nUiWords12[lang];
+    for (final k in uiKeys) {
+      ok((words?[k] ?? '').trim().isNotEmpty, '[$lang] 第十二批译文缺失：$k');
+    }
+  }
+
   print('\n$pass 通过 / $fail 失败');
   if (fail > 0) exitCode = 1;
 }
+
+bool _bytesEqual(List<int>? a, List<int>? b) {
+  if (a == null || b == null) return false;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+int _u16At(List<int> b, int o) => b[o] | (b[o + 1] << 8);
+
+int _u32At(List<int> b, int o) =>
+    b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);

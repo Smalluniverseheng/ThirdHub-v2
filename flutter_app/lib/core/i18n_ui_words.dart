@@ -2055,3 +2055,41 @@ const Map<String, Map<String, String>> i18nUiWords11 =
         'تأكد أن الهاتف والكمبيوتر على شبكة Wi-Fi واحدة وأن DSH ما زال يعمل',
   },
 };
+
+// ── 第十二批（4.81.31）：角色卡导出的第三种格式「.charx 压缩包」────────────
+//   4.81.26 起能**导入** .charx，这版补上**导出**，于是导入/导出四条路对称：
+//   PNG 卡 ↔ JSON ↔ .charx。两项：菜单标题 + 一行说明（说清它和 PNG 的差别，
+//   否则用户不知道什么时候该选它）。
+const Map<String, Map<String, String>> i18nUiWords12 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    'CHARX 压缩包（含头像）': 'CHARX package (with avatar)',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'Card and avatar are stored '
+        'separately, so swapping the image keeps the data; Risu-style taverns read it directly',
+  },
+  'ja': <String, String>{
+    'CHARX 压缩包（含头像）': 'CHARX パッケージ（アバター付き）',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'カードとアバターを別々に収録。'
+        '画像を差し替えてもデータは無傷で、Risu 系の tavern でもそのまま読めます',
+  },
+  'fr': <String, String>{
+    'CHARX 压缩包（含头像）': 'Paquet CHARX (avec avatar)',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'Carte et avatar sont séparés : '
+        'changer l\'image ne touche pas aux données ; les taverns de type Risu le lisent directement',
+  },
+  'ru': <String, String>{
+    'CHARX 压缩包（含头像）': 'Пакет CHARX (с аватаром)',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'Карточка и аватар лежат отдельно: '
+        'замена картинки не затрагивает данные; клиенты tavern типа Risu читают его напрямую',
+  },
+  'es': <String, String>{
+    'CHARX 压缩包（含头像）': 'Paquete CHARX (con avatar)',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'Carta y avatar van por separado: '
+        'cambiar la imagen no afecta a los datos; los tavern de tipo Risu lo leen directamente',
+  },
+  'ar': <String, String>{
+    'CHARX 压缩包（含头像）': 'حزمة CHARX (مع الصورة الرمزية)',
+    '卡片与头像分开装，改图不影响数据；Risu 系酒馆直接能读': 'البطاقة والصورة الرمزية محفوظتان '
+        'بشكل منفصل: تغيير الصورة لا يمس البيانات، وتقرأه تطبيقات tavern من نوع Risu مباشرة',
+  },
+};

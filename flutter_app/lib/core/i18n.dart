@@ -436,6 +436,11 @@ class I18n extends ChangeNotifier {
     i18nUiWords11.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+
+    // ★2026-11-06 第十二批：角色卡导出「.charx 压缩包」（4.81.31）。
+    i18nUiWords12.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
