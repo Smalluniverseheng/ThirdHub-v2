@@ -421,6 +421,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords8.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-06 第九批：推荐服务（4.81.27 新增）整体本地化。
+    i18nUiWords9.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
