@@ -111,12 +111,41 @@ class ModuleDrawerHostState extends State<ModuleDrawerHost>
   }
 
   @override
+  /// 给内容区包一层左右滑动 → 切模块内子板块。
+  ///
+  /// 三条约束（都是为了不打架）：
+  /// ① 只在 `onTab` 存在时挂（没 tab 概念的模块完全不受影响）；
+  /// ② 只在抽屉收起时响应（`_p > 0` 时手势归抽屉）；
+  /// ③ 只认「快速横甩」（|vx| ≥ 300），慢拖不切 —— 否则用户左右翻横向卡片列表时会误切。
+  ///    子级横向 ListView 会先吃掉手势，天然不冲突。
+  Widget _swipeable(Widget child) {
+    final onTab = widget.onTab;
+    if (onTab == null) return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: (d) {
+        if (_p > 0) return;
+        final vx = d.velocity.pixelsPerSecond.dx;
+        if (vx.abs() < 300) return;
+        final next = vx < 0 ? widget.currentTab + 1 : widget.currentTab - 1;
+        if (next < 0 || next == widget.currentTab) return;
+        Haptic.light();
+        onTab(next); // 上界由调用方守（它知道有几个板块）
+      },
+      child: child,
+    );
+  }
+
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final w = _w();
     final accent = widget.accent ?? cs.primary;
     return Stack(children: [
-      widget.child,
+      // 2026-11-05：模块**内**左右滑动切子板块。
+      // 注意边界：这里切的是模块自己的子板块（书/漫画/视频…），
+      // 不是切模块 —— 模块间横滑在 4.52.0 已按用户硬性要求永久禁用，
+      // 所以本手势只在调用方提供了 onTab 时才挂上，且只在抽屉收起时生效。
+      _swipeable(widget.child),
       // 边缘手势层（只在左边缘 36px 内响应，避免与横向滚动/翻页冲突）
       Positioned(
         left: 0, top: 0, bottom: 0, width: 36,
