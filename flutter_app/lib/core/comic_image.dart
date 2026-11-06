@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+
+import 'i18n.dart';
 import 'package:flutter/semantics.dart';
 
 /// 漫画页图组件 —— 移植自 Venera（venera-app/venera，MIT）。
@@ -317,7 +319,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
                   });
                   _resolveImage();
                 },
-                child: const Text('重试', style: TextStyle(fontSize: 12)),
+                child: Text(tr('重试'), style: const TextStyle(fontSize: 12)),
               ),
               const SizedBox(height: 12),
             ],
