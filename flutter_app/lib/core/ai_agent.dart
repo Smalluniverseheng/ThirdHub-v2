@@ -380,6 +380,18 @@ class AiContext {
           'local_list_modules 列可用模块 · local_goto_module 切换模块 · local_setting 读写 App 设置 · '
           'file_write/file_read/file_list 本地文件 · clipboard_read/clipboard_write 剪贴板 · share_text 系统分享 · tts_speak 语音朗读 · open_url 打开链接。'
           '只有 run_python 与 web_search 需要后端/网络；它们不可用时请改用上面的本地能力完成任务。'
+          // ★2026-11-07：用户报「让 AI 去搜的时候，AI 也不会打开对应的地方」。
+          //   根因是这个 prompt 只列了 local_* 那批小工具，**完全没提 open_item /
+          //   search_and_open**，模型就算在 schema 里看到它们，也不会主动用来"跳转"。
+          //   于是它把结果列成文字让用户自己点 —— 用户看到的就是"AI 没打开"。
+          //   ★ 必须写在**这一段里**（不能新起一段）：systemStack 的段数被
+          //   tool/agent_selfcheck.dart 锁死（无注入时恰好 1 段）。
+          '【要打开就真的打开，别只列清单】用户说「打开 / 播放 / 看 / 读某本书、某部漫画、某个视频、某首歌」时，'
+          '不要只把搜索结果写成文字让用户自己点。按这两步做：'
+          '① engine_search(type, query) 拿到条目 id（type 取 novel/comic/video/music）；'
+          '② open_item(type, id, title) 真的打开它 —— App 会切到对应模块并跳转详情页。'
+          '目标唯一、用户懒得挑时，直接用 search_and_open(type, query)（等于搜索 + 打开第一条）。'
+          '要让用户换模块也走 goto_module，不要只说"你可以去 xx 模块看看"。'
     });
     final base = AiInstruct.build();
     if (base.isNotEmpty) out.add({'role': 'system', 'content': base});
