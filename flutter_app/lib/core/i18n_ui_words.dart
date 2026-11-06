@@ -2093,3 +2093,265 @@ const Map<String, Map<String, String>> i18nUiWords12 =
         'بشكل منفصل: تغيير الصورة لا يمس البيانات، وتقرأه تطبيقات tavern من نوع Risu مباشرة',
   },
 };
+
+// ── 第十三批（4.81.41）：「多资料库并行」开关（任务 #193）──────────────────
+//   连接页一个开关 + 一句状态说明。副标题按"现在真能并行几个模块"分两种文案，
+//   所以两个都要在表里（开关关闭/单资料库时走第二句）。
+//   3 键 × 6 语言。
+const Map<String, Map<String, String>> i18nUiWords13 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '多资料库并行': 'Parallel libraries',
+    '同一模块发现 2 台以上资料库后自动生效':
+        'Takes effect automatically once two or more libraries serve the same module',
+    '已有 {n} 个模块可并行搜索': '{n} module(s) can be searched in parallel',
+  },
+  'ja': <String, String>{
+    '多资料库并行': 'ライブラリ並列検索',
+    '同一模块发现 2 台以上资料库后自动生效':
+        '同じモジュールのライブラリが2台以上見つかると自動で有効になります',
+    '已有 {n} 个模块可并行搜索': '{n} 個のモジュールを並列検索できます',
+  },
+  'fr': <String, String>{
+    '多资料库并行': 'Bibliothèques en parallèle',
+    '同一模块发现 2 台以上资料库后自动生效':
+        'Prend effet automatiquement dès que deux bibliothèques ou plus servent le même module',
+    '已有 {n} 个模块可并行搜索':
+        '{n} module(s) peuvent être interrogés en parallèle',
+  },
+  'ru': <String, String>{
+    '多资料库并行': 'Параллельные библиотеки',
+    '同一模块发现 2 台以上资料库后自动生效':
+        'Включается автоматически, когда один модуль обслуживают две и более библиотеки',
+    '已有 {n} 个模块可并行搜索': 'Модулей с параллельным поиском: {n}',
+  },
+  'es': <String, String>{
+    '多资料库并行': 'Bibliotecas en paralelo',
+    '同一模块发现 2 台以上资料库后自动生效':
+        'Se activa automáticamente cuando dos o más bibliotecas sirven el mismo módulo',
+    '已有 {n} 个模块可并行搜索': '{n} módulo(s) pueden buscar en paralelo',
+  },
+  'ar': <String, String>{
+    '多资料库并行': 'مكتبات متوازية',
+    '同一模块发现 2 台以上资料库后自动生效':
+        'يُفعَّل تلقائيًا عند وجود مكتبتين أو أكثر تخدم الوحدة نفسها',
+    '已有 {n} 个模块可并行搜索': 'عدد الوحدات القابلة للبحث المتوازي: {n}',
+  },
+};
+
+// ── 第十四批（4.81.41）：补给「资源包」与「我的后端」两页（欠账清理）────────
+//   这两页是 4.81.35~4.81.40 加的，当时文案直接写死中文 → 棘轮闸门（硬编码中文）
+//   在 main 上一直是红的，后面 14 条闸门被 skip，等于**看不见**。
+//   这里把它们逐条包上 tr()/trf()，29 键 × 6 语言。
+//   ★带占位符的键用 `{name}` / `{size}` / `{what}`，调用侧一律走 trf()。
+const Map<String, Map<String, String>> i18nUiWords14 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '资源包': 'Resource packs',
+    '按需安装': 'Install on demand',
+    '已装占用 {size}': 'Installed: {size}',
+    '内容资料库': 'Content libraries',
+    '装了可以：{what}': 'Installing gives you: {what}',
+    '还没做好，先别装': 'Not ready yet — hold off',
+    '标记为已卸载': 'Mark as removed',
+    '下载': 'Download',
+    '安装「{name}」': 'Install “{name}”',
+    '取消': 'Cancel',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'Downloads open in your system browser; in the download center, tap “Libraries” to install directly',
+    '已切换。重启应用后生效。': 'Switched. Restart the app to take effect.',
+    '已切回官方云端': 'Switched back to the official cloud',
+    '{what} 已复制': '{what} copied',
+    '我的后端': 'My backend',
+    '数据存在你自己的设备上': 'Your data stays on your own device',
+    '复制链接': 'Copy link',
+    '复制命令': 'Copy command',
+    '地址': 'Address',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 or http://[2408:...]:9527',
+    '配对码': 'Pairing code',
+    '后端首次启动时打印的密钥': 'The key printed on the backend’s first start',
+    '用它': 'Use it',
+    '任务在哪跑': 'Where tasks run',
+    '优先方式': 'Preference',
+    '已登记的资料库': 'Registered libraries',
+    '逐个探活': 'Check each one',
+    '切回官方云端': 'Switch back to the official cloud',
+    '你的数据不会丢，只是改从官方读取':
+        'Your data is not lost; it will just be read from the official cloud',
+  },
+  'ja': <String, String>{
+    '资源包': 'リソースパック',
+    '按需安装': '必要なときだけインストール',
+    '已装占用 {size}': 'インストール済み: {size}',
+    '内容资料库': 'コンテンツライブラリ',
+    '装了可以：{what}': 'インストールすると: {what}',
+    '还没做好，先别装': 'まだ未完成なので入れないでください',
+    '标记为已卸载': 'アンインストール済みにする',
+    '下载': 'ダウンロード',
+    '安装「{name}」': '「{name}」をインストール',
+    '取消': 'キャンセル',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'ダウンロードはシステムのブラウザで行われます。ダウンロードセンターで「ライブラリ」を押すと直接インストールできます',
+    '已切换。重启应用后生效。': '切り替えました。アプリを再起動すると反映されます。',
+    '已切回官方云端': '公式クラウドに戻しました',
+    '{what} 已复制': '{what} をコピーしました',
+    '我的后端': 'マイバックエンド',
+    '数据存在你自己的设备上': 'データはあなたの端末に保存されます',
+    '复制链接': 'リンクをコピー',
+    '复制命令': 'コマンドをコピー',
+    '地址': 'アドレス',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 または http://[2408:...]:9527',
+    '配对码': 'ペアリングコード',
+    '后端首次启动时打印的密钥': 'バックエンド初回起動時に表示されるキー',
+    '用它': 'これを使う',
+    '任务在哪跑': 'タスクを実行する場所',
+    '优先方式': '優先方法',
+    '已登记的资料库': '登録済みライブラリ',
+    '逐个探活': '個別に疎通確認',
+    '切回官方云端': '公式クラウドに戻す',
+    '你的数据不会丢，只是改从官方读取':
+        'データは失われません。読み取り先が公式クラウドに変わるだけです',
+  },
+  'fr': <String, String>{
+    '资源包': 'Packs de ressources',
+    '按需安装': 'Installer à la demande',
+    '已装占用 {size}': 'Installé : {size}',
+    '内容资料库': 'Bibliothèques de contenu',
+    '装了可以：{what}': 'Une fois installé : {what}',
+    '还没做好，先别装': 'Pas encore prêt, ne l’installez pas',
+    '标记为已卸载': 'Marquer comme désinstallé',
+    '下载': 'Télécharger',
+    '安装「{name}」': 'Installer « {name} »',
+    '取消': 'Annuler',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'Le téléchargement passe par le navigateur du système ; dans le centre de téléchargement, touchez « Bibliothèques » pour installer directement',
+    '已切换。重启应用后生效。':
+        'Basculé. Redémarrez l’application pour appliquer.',
+    '已切回官方云端': 'Revenu au cloud officiel',
+    '{what} 已复制': '{what} copié',
+    '我的后端': 'Mon backend',
+    '数据存在你自己的设备上': 'Vos données restent sur votre appareil',
+    '复制链接': 'Copier le lien',
+    '复制命令': 'Copier la commande',
+    '地址': 'Adresse',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 ou http://[2408:...]:9527',
+    '配对码': 'Code d’appairage',
+    '后端首次启动时打印的密钥':
+        'La clé affichée au premier démarrage du backend',
+    '用它': 'Utiliser',
+    '任务在哪跑': 'Où tournent les tâches',
+    '优先方式': 'Préférence',
+    '已登记的资料库': 'Bibliothèques enregistrées',
+    '逐个探活': 'Tester une par une',
+    '切回官方云端': 'Revenir au cloud officiel',
+    '你的数据不会丢，只是改从官方读取':
+        'Vos données ne sont pas perdues : elles seront simplement lues depuis le cloud officiel',
+  },
+  'ru': <String, String>{
+    '资源包': 'Пакеты ресурсов',
+    '按需安装': 'Установка по требованию',
+    '已装占用 {size}': 'Занято: {size}',
+    '内容资料库': 'Библиотеки контента',
+    '装了可以：{what}': 'После установки: {what}',
+    '还没做好，先别装': 'Ещё не готово — не устанавливайте',
+    '标记为已卸载': 'Отметить как удалённое',
+    '下载': 'Скачать',
+    '安装「{name}」': 'Установить «{name}»',
+    '取消': 'Отмена',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'Загрузка идёт через системный браузер; в центре загрузок нажмите «Библиотеки», чтобы установить сразу',
+    '已切换。重启应用后生效。': 'Переключено. Перезапустите приложение.',
+    '已切回官方云端': 'Возвращено к официальному облаку',
+    '{what} 已复制': '{what} скопировано',
+    '我的后端': 'Мой бэкенд',
+    '数据存在你自己的设备上': 'Данные хранятся на вашем устройстве',
+    '复制链接': 'Копировать ссылку',
+    '复制命令': 'Копировать команду',
+    '地址': 'Адрес',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 или http://[2408:...]:9527',
+    '配对码': 'Код сопряжения',
+    '后端首次启动时打印的密钥':
+        'Ключ, который бэкенд выводит при первом запуске',
+    '用它': 'Использовать',
+    '任务在哪跑': 'Где выполняются задачи',
+    '优先方式': 'Приоритет',
+    '已登记的资料库': 'Зарегистрированные библиотеки',
+    '逐个探活': 'Проверить каждую',
+    '切回官方云端': 'Вернуться к официальному облаку',
+    '你的数据不会丢，只是改从官方读取':
+        'Данные не пропадут — они просто будут читаться из официального облака',
+  },
+  'es': <String, String>{
+    '资源包': 'Paquetes de recursos',
+    '按需安装': 'Instalar cuando haga falta',
+    '已装占用 {size}': 'Instalado: {size}',
+    '内容资料库': 'Bibliotecas de contenido',
+    '装了可以：{what}': 'Al instalar: {what}',
+    '还没做好，先别装': 'Aún no está listo, no lo instales',
+    '标记为已卸载': 'Marcar como desinstalado',
+    '下载': 'Descargar',
+    '安装「{name}」': 'Instalar «{name}»',
+    '取消': 'Cancelar',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'La descarga se hace en el navegador del sistema; en el centro de descargas, toca «Bibliotecas» para instalar directamente',
+    '已切换。重启应用后生效。': 'Cambiado. Reinicia la app para aplicarlo.',
+    '已切回官方云端': 'Vuelto a la nube oficial',
+    '{what} 已复制': '{what} copiado',
+    '我的后端': 'Mi backend',
+    '数据存在你自己的设备上': 'Tus datos se quedan en tu dispositivo',
+    '复制链接': 'Copiar enlace',
+    '复制命令': 'Copiar comando',
+    '地址': 'Dirección',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 o http://[2408:...]:9527',
+    '配对码': 'Código de emparejamiento',
+    '后端首次启动时打印的密钥':
+        'La clave que imprime el backend en su primer arranque',
+    '用它': 'Usar',
+    '任务在哪跑': 'Dónde se ejecutan las tareas',
+    '优先方式': 'Preferencia',
+    '已登记的资料库': 'Bibliotecas registradas',
+    '逐个探活': 'Comprobar una a una',
+    '切回官方云端': 'Volver a la nube oficial',
+    '你的数据不会丢，只是改从官方读取':
+        'Tus datos no se pierden: solo se leerán desde la nube oficial',
+  },
+  'ar': <String, String>{
+    '资源包': 'حزم الموارد',
+    '按需安装': 'التثبيت عند الحاجة',
+    '已装占用 {size}': 'المثبَّت: {size}',
+    '内容资料库': 'مكتبات المحتوى',
+    '装了可以：{what}': 'بعد التثبيت: {what}',
+    '还没做好，先别装': 'لم يكتمل بعد، لا تثبّته الآن',
+    '标记为已卸载': 'وضع علامة كمُزال',
+    '下载': 'تنزيل',
+    '安装「{name}」': 'تثبيت «{name}»',
+    '取消': 'إلغاء',
+    '下载会走系统浏览器，在下载中心里点「资料库」可以直接装':
+        'يتم التنزيل عبر متصفح النظام، وفي مركز التنزيلات اضغط «المكتبات» للتثبيت مباشرة',
+    '已切换。重启应用后生效。': 'تم التبديل. أعد تشغيل التطبيق ليُطبَّق.',
+    '已切回官方云端': 'تم الرجوع إلى السحابة الرسمية',
+    '{what} 已复制': 'تم نسخ {what}',
+    '我的后端': 'الخادم الخاص بي',
+    '数据存在你自己的设备上': 'بياناتك تبقى على جهازك',
+    '复制链接': 'نسخ الرابط',
+    '复制命令': 'نسخ الأمر',
+    '地址': 'العنوان',
+    'https://192.168.1.10:9527 或 http://[2408:...]:9527':
+        'https://192.168.1.10:9527 أو http://[2408:...]:9527',
+    '配对码': 'رمز الاقتران',
+    '后端首次启动时打印的密钥': 'المفتاح الذي يطبعه الخادم عند أول تشغيل',
+    '用它': 'استخدامه',
+    '任务在哪跑': 'مكان تشغيل المهام',
+    '优先方式': 'طريقة الأولوية',
+    '已登记的资料库': 'المكتبات المسجَّلة',
+    '逐个探活': 'فحص كل واحدة',
+    '切回官方云端': 'الرجوع إلى السحابة الرسمية',
+    '你的数据不会丢，只是改从官方读取':
+        'لن تُفقد بياناتك، وستُقرأ فقط من السحابة الرسمية',
+  },
+};
