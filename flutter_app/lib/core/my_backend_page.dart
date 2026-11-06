@@ -361,7 +361,11 @@ class _MyBackendPageState extends State<MyBackendPage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(tr('任务在哪跑'),
+            // 这里刻意用中文字面量而不是 tr()：该 Text 落在常量上下文里，
+            // 而 tr() 是方法调用 —— CI 的 Flutter 版本滚动后会报
+            // "Method invocation is not a constant expression"（4.81.41 构建失败的原因）。
+            // 这块是设置面板的标题，不参与语言切换也无伤大雅。
+            child: Text('任务在哪跑',
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.w600)),
           ),
