@@ -171,6 +171,18 @@ class _Ed extends State<EngineDirectPage> {
     EngineStatus.idle => '未连接资料库',
   };
 
+  /// 并行开关的副标题：能并行就报台数，不能就说明"什么时候才会生效"。
+  /// 逻辑层只认「>1 台同模块」才算并行，所以这里按模块数一遍。
+  String _fanoutHint() {
+    var n = 0;
+    for (final m in const ['novel', 'comic', 'music', 'video']) {
+      if (EngineDirect.fanoutCount(m) > 1) n++;
+    }
+    return n > 0
+        ? trf('已有 {n} 个模块可并行搜索', {'n': n})
+        : tr('同一模块发现 2 台以上资料库后自动生效');
+  }
+
   @override Widget build(BuildContext c) =>
     ValueListenableBuilder<EngineState>(
       valueListenable: EngineDirect.state,
@@ -238,6 +250,27 @@ class _Ed extends State<EngineDirectPage> {
               icon: const Icon(Icons.health_and_safety_outlined, size: 16),
               label: const Text('一键自检', style: TextStyle(fontSize: 12)))),
           ]),
+          const SizedBox(height: 10),
+          // ── 多资料库并行（#193）──
+          //   为什么要有这个开关：并行是"同一模块同时问多台"，会成倍增加一次搜索的
+          //   资料库负载。绝大多数人只有一台资料库（此时开关等于无效），但一旦局域网里
+          //   装了第二台同类型资料库，用户必须能自己决定要不要一起搜。
+          //   副标题把"现在真的能并行几个模块"写出来 —— 否则用户只会看到一个看不懂的开关。
+          Card(
+            child: SwitchListTile(
+              value: EngineDirect.fanoutEnabled,
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              onChanged: (v) async {
+                await EngineDirect.setFanout(v);
+                if (mounted) setState(() {});
+              },
+              title: Text(tr('多资料库并行'),
+                  style: const TextStyle(fontSize: 13)),
+              subtitle: Text(_fanoutHint(),
+                  style: const TextStyle(fontSize: 11, height: 1.4)),
+            ),
+          ),
           const SizedBox(height: 10),
           Row(children: [ const Text('发现的资料库（广播 + 主动扫描）', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const Spacer(),
@@ -611,45 +644,53 @@ class _Edv extends State<EngineDiscoverView> {
     );
   }
 
-  // ── ③ 标签：胶囊 ──
+  // ── ③ 标签：单行横滑胶囊 ──
+  // ★2026-10-31 压缩（用户：「标签太占位置了」）：原 Wrap 平铺全部分类，
+  //   包子漫画 26 个标签占 5 行、半屏没了。改横向单行滚动 —— 高度恒定一行，
+  //   分类多时不膨胀，选中项点击后自动滚到可见位置。
   Widget _tagWrap(BuildContext c, ColorScheme cs, List<Map<String, dynamic>> tags) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
-      child: Wrap(
-        spacing: 7,
-        runSpacing: 6,
-        children: [
-          for (final t in tags)
-            GestureDetector(
+    return SizedBox(
+      height: 34,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
+        itemCount: tags.length,
+        itemBuilder: (_, i) {
+          final t = tags[i];
+          final on = selTag == '${t['url']}';
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
               onTap: () {
                 setState(() => selTag = '${t['url'] ?? ''}');
                 _explore(reset: true);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
                 decoration: BoxDecoration(
-                  color: selTag == '${t['url']}'
+                  color: on
                       ? cs.primary
                       : cs.surfaceContainerHighest.withValues(alpha: 0.42),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     width: 1,
-                    color: selTag == '${t['url']}'
+                    color: on
                         ? cs.primary
                         : cs.outlineVariant.withValues(alpha: 0.35),
                   ),
                 ),
                 child: Text('${t['name'] ?? ''}',
                     style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: selTag == '${t['url']}' ? FontWeight.w700 : FontWeight.w500,
-                        color: selTag == '${t['url']}'
+                        fontSize: 11.5,
+                        fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                        color: on
                             ? cs.onPrimary
                             : cs.onSurface.withValues(alpha: 0.78))),
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }
