@@ -193,8 +193,14 @@ void main() {
     // 3 = L6928 + L6941（阅读页直读 Api.img(images[i])）+ L14513（EngineComicReader._img()
     // 的统一入口，传 images[i]）。2026-10-11 修复：_img() 曾传本地别名 p，
     // 识别不到被误判；改成完整表达式后计数 2 → 3。
-    ck('main.dart 阅读器正文图数量符合预期（3）', readerLike == 3,
+    ck('main.dart 阅读器正文图数量符合预期（2）', readerLike == 2,
         'reader=$readerLike');
+    // 第三处阅读器正文图在 2026-11-07 改用移植自 Venera 的 ComicImage
+    // （原因：AspectRatio(3/4) 硬猜占位高度，条漫被裁掉下半截）。
+    // 它内部走 NetworkImage —— 闸门要盯着这里，别让人拿它去加载封面。
+    final comicLike = countOf(mainSrc, 'NetworkImage(images[');
+    ck('main.dart 的 ComicImage 正文图用的是 images[（1 处）', comicLike == 1,
+        'count=$comicLike');
     // 失败时直接给出**行号 + 紧跟的源码**，省掉"再grep一遍找是哪处"的往返。
     if (bad > 0) {
       for (final m in RegExp(r'Image\.network\(').allMatches(mainSrc)) {
