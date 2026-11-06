@@ -98,7 +98,7 @@ class Extensions {
     ),
     AppExt(
       id: 'engine-novel',
-      name: '小说引擎',
+      name: '小说资料库',
       desc: '本地搜书、解析站点、离线缓存',
       kind: ExtKind.engine,
       sizeBytes: 26214400,
@@ -108,7 +108,7 @@ class Extensions {
     ),
     AppExt(
       id: 'engine-comic',
-      name: '漫画引擎',
+      name: '漫画资料库',
       desc: '漫画站点解析、图片直连、批量下载',
       kind: ExtKind.engine,
       sizeBytes: 46875000,
@@ -118,7 +118,7 @@ class Extensions {
     ),
     AppExt(
       id: 'engine-video',
-      name: '影视引擎',
+      name: '影视资料库',
       desc: '影视站点聚合、播放地址解析',
       kind: ExtKind.engine,
       sizeBytes: 33340000,
@@ -128,7 +128,7 @@ class Extensions {
     ),
     AppExt(
       id: 'engine-music',
-      name: '音乐引擎',
+      name: '音乐资料库',
       desc: '音乐搜索与播放',
       kind: ExtKind.engine,
       sizeBytes: 28940000,
