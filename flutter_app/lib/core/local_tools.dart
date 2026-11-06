@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'tts.dart';
 import 'tts_presets.dart';
 import 'ai.dart';
@@ -512,6 +513,97 @@ class LocalTools {
       if (!r.ok) return '调用失败：${r.error}';
       final s = r.result is String ? r.result : jsonEncode(r.result);
       return '已通过${r.via == PeerVia.hub ? "后端转发" : "直连"}调用「${t.name}」的 $tool，结果：$s';
+    }),
+    // ══ 2026-11-06 新增：给 AI 的「整机自知」工具 ══
+    LocalTool('app_state', '一句话了解当前状态：在哪个模块、有多少书/角色卡/笔记、引擎连没连。回答用户「我现在有什么」这类问题时先调它',
+        _obj({}), (_) async {
+      final p = await SharedPreferences.getInstance();
+      final mods = await LocalHooks.listModules?.call() ?? <String>[];
+      final shelf = p.getStringList('shelf') ?? const <String>[];
+      final chars = p.getString('tavern_chars') ?? '';
+      final eng = LocalHooks.engineStatus == null ? '未知' : await LocalHooks.engineStatus!();
+      final engOne = eng.split('\n').firstWhere((l) => l.startsWith('当前连接'), orElse: () => eng.split('\n').first);
+      return '模块: ${mods.join("、")}\n'
+          '书架条目: ${shelf.length}\n'
+          '角色卡: ${chars.isEmpty ? 0 : (chars.split("\"id\"").length - 1)}\n'
+          '$engOne';
+    }),
+    LocalTool('shelf_list', '列出书架里的条目（书名/ID）。用户问「我书架里有什么」时用它',
+        _obj({'limit': '最多返回几条，默认 30'}), (a) async {
+      final p = await SharedPreferences.getInstance();
+      final list = p.getStringList('shelf') ?? const <String>[];
+      if (list.isEmpty) return '书架是空的。';
+      final n = int.tryParse('${a['limit'] ?? ''}') ?? 30;
+      final buf = StringBuffer('书架 ${list.length} 条:\n');
+      for (var i = 0; i < list.length && i < n; i++) {
+        buf.writeln('- ${list[i]}');
+      }
+      if (list.length > n) buf.writeln('…还有 ${list.length - n} 条');
+      return buf.toString();
+    }),
+    LocalTool('tavern_list', '列出酒馆里的角色卡（名字 + 一句话设定）。用户想聊某个角色时先调它拿名字',
+        _obj({}), (_) async {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString('tavern_chars') ?? '';
+      if (raw.isEmpty) return '还没有角色卡。可以去「酒馆」新建或导入。';
+      try {
+        final list = jsonDecode(raw);
+        if (list is! List || list.isEmpty) return '还没有角色卡。';
+        final buf = StringBuffer('角色卡 ${list.length} 张:\n');
+        for (final e in list) {
+          if (e is! Map) continue;
+          final d = '${e['description'] ?? ''}'.replaceAll('\n', ' ');
+          buf.writeln('- ${e['name'] ?? '?'}${d.isEmpty ? '' : ': ${d.length > 40 ? d.substring(0, 40) : d}…'}');
+        }
+        return buf.toString();
+      } catch (_) { return '角色卡数据读不出来（可能损坏）。'; }
+    }),
+    LocalTool('tavern_card', '读某个角色的完整设定（人设/开场白）。要和角色扮演时先读它，别凭空编',
+        _obj({'name': '角色名字'}, ['name']), (a) async {
+      final want = '${a['name'] ?? ''}'.trim();
+      if (want.isEmpty) return '要给角色名。';
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString('tavern_chars') ?? '';
+      if (raw.isEmpty) return '还没有角色卡。';
+      try {
+        final list = jsonDecode(raw);
+        for (final e in (list as List)) {
+          if (e is! Map) continue;
+          if ('${e['name'] ?? ''}' != want) continue;
+          return '角色: ${e['name']}\n设定:\n${e['description'] ?? '(空)'}\n\n开场白:\n${e['firstMessage'] ?? '(空)'}';
+        }
+        return '没找到叫「$want」的角色卡。';
+      } catch (_) { return '角色卡数据读不出来。'; }
+    }),
+    LocalTool('recent_history', '最近的阅读/观看/收听记录。用户问「我上次看到哪了」时用它',
+        _obj({'limit': '最多几条，默认 10'}), (a) async {
+      final f = LocalHooks.recentHistory;
+      if (f == null) return '当前环境不支持读取历史。';
+      final n = int.tryParse('${a['limit'] ?? ''}') ?? 10;
+      return await f(n);
+    }),
+    LocalTool('capabilities', '列出这台设备上所有模块和 AI 能调用的全部工具名。不知道自己能干什么时调它',
+        _obj({}), (_) async {
+      final mods = await LocalHooks.listModules?.call() ?? <String>[];
+      final names = LocalTools.all.map((e) => e.name).toList()..sort();
+      return '可用模块(${mods.length}): ${mods.join("、")}\n\n'
+          '可调用工具(${names.length}): ${names.join(", ")}';
+    }),
+    LocalTool('search_and_open', '搜索并直接打开第一条结果（一步完成「找书并打开」）。适合用户说「打开《某书》」而不想自己挑',
+        _obj({'query': '关键词', 'type': '类型: novel/comic/music/video，默认 novel'}, ['query']), (a) async {
+      final q = '${a['query'] ?? ''}'.trim();
+      final t = ('${a['type'] ?? 'novel'}').trim();
+      final search = LocalHooks.engineSearch;
+      final open = LocalHooks.openItem;
+      if (search == null || open == null) return '当前环境不支持搜索/打开。';
+      final found = await search(t, q, 3);
+      if (found.contains('没搜到') || found.contains('未连接')) return found;
+      // 从结果里抓第一行的 id=
+      final m = RegExp(r'id=(\S+)').firstMatch(found);
+      final title = RegExp(r'- ([^/|\n]+)').firstMatch(found)?.group(1)?.trim() ?? q;
+      if (m == null) return '搜到了但拿不到 id，结果:\n$found';
+      final r = await open(t, m.group(1)!, title);
+      return '$r\n\n（依据搜索结果:\n$found）';
     }),
   ];
 
