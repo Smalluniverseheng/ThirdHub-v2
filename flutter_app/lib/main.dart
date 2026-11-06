@@ -16705,9 +16705,11 @@ class _Ecr extends State<EngineComicReader> {
     // ComicImage 的做法是解码后记住真实像素宽高（静态缓存），
     // 高度 = 宽度 × 真实高 / 真实宽，从第一帧起就是准的；
     // 同一张图翻回来时缓存已存在，连解码都不用等。
-    // ★不要写成三元：两支是不同具体子类（FileImage / NetworkImage），
-    //   三元的 LUB 会退化成 Object，与 ComicImage.image 的形参对不上 → CI 编译失败。
-    //   分开赋值时每次都有上下文类型 ImageProvider<Object>，子类型关系成立。
+    // ★ 必须用 if/else 分别赋值，不能写三元表达式。
+    //   `local ? FileImage(...) : NetworkImage(...)` 会被 Dart 推断成 Object
+    //   （FileImage 是 ImageProvider<FileImage>、NetworkImage 是 ImageProvider<NetworkImage>，
+    //   两者的 LUB 推不出 ImageProvider<Object>），赋给形参直接编译失败。
+    //   这是 4.81.41/42 连续两次构建失败的同一个原因，别再写成三元。
     final ImageProvider<Object> provider;
     if (local) {
       provider = FileImage(File(p.replaceFirst('file://', '')));
