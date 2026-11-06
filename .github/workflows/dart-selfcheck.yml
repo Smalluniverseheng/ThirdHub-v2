@@ -329,6 +329,21 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/engine_autopull_selfcheck.dart
 
+      # 第 N 条 engine_fanout（2026-11-07 加）—— 「多资料库并行」的守门人（任务 #193）。
+      #
+      #   并行搜索最难的不是"同时发请求"，而是**合并**：多台资料库各自返回一页，
+      #   交集怎么判重、顺序怎么稳、一台挂掉要不要拖垮整轮。这三点写错都不会
+      #   让 analyze 变红，也不会报错 —— 表现只是"同一本书出现两次"
+      #   "列表每次刷新顺序都不一样"，用户只会觉得"这软件有点怪"。
+      #   所以这里把规则层（engine_fanout.dart）的全部判断钉成断言，并额外
+      #   grep 接线点（searchPage 真的调了合并、真的用了 Future.wait 并发、
+      #   _get 支持指定目标资料库且并行失败不换地址）—— 删掉调用点即红。
+      #   实测 2026-11-07 本机：PASS 114 / FAIL 0，exit 0；
+      #   变异测试：去掉「有 m: 标签时端口不得翻盘」→ 1 条转红。
+      - name: engine_fanout（多资料库并行：挑目标 / 标题作者去重 / 合并顺序 + 接线）
+        working-directory: flutter_app
+        run: dart run tool/engine_fanout_selfcheck.dart
+
       # 第 N 条 dsh_remote（2026-11-06 加）—— 清单第 6 项「DSH 遥控」的守门人。
       #
       #   这一页只有两条通路（测试连接 / 打开控制台），出错时用户没有任何线索：
