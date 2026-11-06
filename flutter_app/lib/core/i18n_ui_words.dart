@@ -2355,3 +2355,87 @@ const Map<String, Map<String, String>> i18nUiWords14 =
         'لن تُفقد بياناتك، وستُقرأ فقط من السحابة الرسمية',
   },
 };
+
+/// ★2026-11-07 第十五批：「厂商公开数据源」清单页（4.81.43，全盘升级 #208）。
+///   移动端面向大众 / 准备上架苹果，这一页只列官方公开、免费开放的接口。
+const Map<String, Map<String, String>> i18nUiWords15 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '公开数据源': 'Public data sources',
+    '厂商官方开放接口': 'Official public APIs',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        'Only official, publicly available APIs with a free tier are listed. You apply for and enter your own keys. Third-party content sources are not on mobile; they live in the desktop admin console.',
+    '无需密钥': 'No key needed',
+    '需要密钥': 'Key required',
+    '填写密钥': 'Enter key',
+    '官方文档': 'API docs',
+    '官网': 'Website',
+    '共 {n} 项': '{n} available',
+    '公开接口清单': 'Official API catalog',
+  },
+  'ja': <String, String>{
+    '公开数据源': '公開データソース',
+    '厂商官方开放接口': '公式公開 API',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        '公式が公開し無料枠のある API のみを掲載しています。キーはご自身で取得・入力してください。サードパーティのコンテンツソースはモバイルにはなく、デスクトップの管理画面にあります。',
+    '无需密钥': 'キー不要',
+    '需要密钥': 'キー必要',
+    '填写密钥': 'キーを入力',
+    '官方文档': 'API ドキュメント',
+    '官网': '公式サイト',
+    '共 {n} 项': '{n} 件',
+    '公开接口清单': '公式 API 一覧',
+  },
+  'fr': <String, String>{
+    '公开数据源': 'Sources de donnees publiques',
+    '厂商官方开放接口': 'API publiques officielles',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        'Seules les API officielles et publiques avec une offre gratuite sont listees. Vous demandez et saisissez vos propres cles. Les sources de contenu tiers ne sont pas sur mobile : elles se trouvent dans la console d administration sur ordinateur.',
+    '无需密钥': 'Sans cle',
+    '需要密钥': 'Cle requise',
+    '填写密钥': 'Saisir la cle',
+    '官方文档': 'Documentation API',
+    '官网': 'Site officiel',
+    '共 {n} 项': '{n} disponibles',
+    '公开接口清单': 'Catalogue des API officielles',
+  },
+  'ru': <String, String>{
+    '公开数据源': 'Открытые источники данных',
+    '厂商官方开放接口': 'Официальные публичные API',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        'Здесь только официальные публичные API с бесплатным лимитом. Ключи вы получаете и вводите сами. Сторонние источники контента недоступны на мобильном: они в консоли администратора на компьютере.',
+    '无需密钥': 'Без ключа',
+    '需要密钥': 'Нужен ключ',
+    '填写密钥': 'Ввести ключ',
+    '官方文档': 'Документация API',
+    '官网': 'Официальный сайт',
+    '共 {n} 项': 'Доступно: {n}',
+    '公开接口清单': 'Каталог официальных API',
+  },
+  'es': <String, String>{
+    '公开数据源': 'Fuentes de datos publicas',
+    '厂商官方开放接口': 'API publicas oficiales',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        'Solo se listan API oficiales y publicas con nivel gratuito. Usted solicita e introduce sus propias claves. Las fuentes de contenido de terceros no estan en el movil: estan en la consola de administracion del escritorio.',
+    '无需密钥': 'Sin clave',
+    '需要密钥': 'Requiere clave',
+    '填写密钥': 'Introducir clave',
+    '官方文档': 'Documentacion API',
+    '官网': 'Sitio oficial',
+    '共 {n} 项': '{n} disponibles',
+    '公开接口清单': 'Catalogo de API oficiales',
+  },
+  'ar': <String, String>{
+    '公开数据源': 'مصادر البيانات العامة',
+    '厂商官方开放接口': 'واجهات رسمية عامة',
+    '只列厂商官方公开、免费开放的接口；密钥由你自己申请填写。第三方内容源不在移动端，它们在桌面端管理后台。':
+        'تُعرض هنا فقط الواجهات الرسمية العامة ذات المستوى المجاني. تحصل على مفاتيحك وتُدخلها بنفسك. مصادر المحتوى الخارجية غير موجودة على الهاتف، بل في لوحة الإدارة على سطح المكتب.',
+    '无需密钥': 'بدون مفتاح',
+    '需要密钥': 'يتطلب مفتاحا',
+    '填写密钥': 'إدخال المفتاح',
+    '官方文档': 'توثيق الواجهة',
+    '官网': 'الموقع الرسمي',
+    '共 {n} 项': '{n} متاحة',
+    '公开接口清单': 'كتالوج الواجهات الرسمية',
+  },
+};
