@@ -87,6 +87,9 @@ import 'core/sensor_page.dart';
 import 'core/browser_page.dart';
 import 'core/notify.dart';
 import 'core/engine_direct.dart';
+import 'core/search_type_filter.dart';
+import 'core/public_data_sources.dart';
+import 'core/public_sources_page.dart';
 import 'core/engine_direct_page.dart';
 import 'core/module_drawer.dart';
 import 'core/gallery_page.dart';
@@ -2768,6 +2771,12 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.key_outlined, 'API 密钥库',
                 value: '一处填写 · 多模块共用', page: const ApiKeysPage()),
             _sep(),
+            // ★4.81.43（全盘升级 #208）：移动端只列厂商官方公开、免费开放的数据源。
+            //   第三方内容源归桌面端管理后台，不下发到移动端 / 公开网页端。
+            entry(Icons.public_outlined, tr('公开数据源'),
+                value: tr('公开接口清单'),
+                page: const PublicSourcesPage()),
+            _sep(),
             // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
             // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
             // 2026-11-06：按需安装的资源包（本机 AI 运行时 / 各引擎）。
@@ -4303,8 +4312,21 @@ class _Home extends State<SearchSection> {
   int typeFilter = currentGate().allowThirdPartyVideoSources ? 0 : 1;
 
   /// 当前平台可选的类型下标。iOS 无「全部」（聚合必含视频）也无「视频」。
-  List<int> get _typeIdx =>
-      currentGate().allowThirdPartyVideoSources ? [0, 1, 2, 3, 4] : [1, 2, 4];
+  /// ★4.81.43（#195）：资料库直连时再按它**真正能提供的模块**过滤 ——
+  ///   只连一台漫画资料库就不显示小说/视频/音乐，避免点了拿到空页还不知道为什么。
+  ///   规则层在 core/search_type_filter.dart（纯 Dart，有独立自检）。
+  List<int> get _typeIdx => visibleTypeIndexes(
+        platform: currentGate().allowThirdPartyVideoSources
+            ? const [0, 1, 2, 3, 4]
+            : const [1, 2, 4],
+        engineConnected: EngineDirect.connected,
+        caps: EngineDirect.caps,
+        routeModules: EngineDirect.moduleRoutes.keys.toList(),
+      );
+
+  /// 连接变化后旧选中项可能已被过滤掉 —— 所有读取点都走这个 getter，
+  /// 避免「一个 chip 都没选中、搜索框却还按旧类型发请求」。
+  int get _effectiveType => resolveTypeFilter(typeFilter, _typeIdx);
   List<String> history = [];
   // ★2026-09-19 逐类上屏 + 客户端分页（引擎一次已返回全部结果，首屏不必一次画上千条）
   static const _pageSize = 40;
@@ -4409,7 +4431,10 @@ class _Home extends State<SearchSection> {
   }
 
   void _onConn() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // ★连接/发现变化后把选中类型收敛到资料库真正能提供的类型。
+    final t = _effectiveType;
+    setState(() => typeFilter = t);
   }
 
   /// 触底：先把**已经拿到本地**的条目多画一屏（零网络、零风险），
@@ -4779,11 +4804,13 @@ class _Home extends State<SearchSection> {
   Future<void> go() async {
     final q = ctrl.text.trim();
     if (q.isEmpty) return;
-    // 防御归一：iOS 上就算别处把 typeFilter 拨成了 0(全部)/3(视频)也收回来
+    // ★#195：搜索前先收敛选中类型。用局部 tf 而不再写回 typeFilter，
+    //   避免一次搜索把用户在界面上选的状态悄悄改掉。
+    var tf = _effectiveType;
+    // 防御归一：iOS 上就算别处把类型拨成了 0(全部)/3(视频)也收回来
     //（「全部」聚合必含视频、等于第三方影视采集入口，§5.3 收口）。
-    if (!currentGate().allowThirdPartyVideoSources &&
-        (typeFilter == 0 || typeFilter == 3)) {
-      typeFilter = 1;
+    if (!currentGate().allowThirdPartyVideoSources && (tf == 0 || tf == 3)) {
+      tf = 1;
     }
     _record(q);
     final mySeq = ++_seq;
@@ -4805,7 +4832,7 @@ class _Home extends State<SearchSection> {
       _pullErrStreak = 0;
       _autoPull = false; // 新一轮先停掉上一轮的续拉
       _engQuery = q;
-      _engType = typeFilter == 0 ? 'all' : typeKeys[typeFilter];
+      _engType = tf == 0 ? 'all' : typeKeys[tf];
     });
     try {
       if (EngineDirect.connected) {
@@ -4848,9 +4875,9 @@ class _Home extends State<SearchSection> {
           unawaited(_pumpShown()); // 首屏逐帧铺开
           if (p.wantMore) unawaited(_autoPullLoop(mySeq));
         } else {
-          final types = typeFilter == 0
-              ? const ['novel', 'comic', 'video', 'music']
-              : [typeKeys[typeFilter]];
+          // ★#195：老资料库逐类并发时只问它真能提供的模块，
+          //   不再向漫画资料库白发三条音乐/视频/小说请求。
+          final types = tf == 0 ? allSearchModules(_typeIdx) : [typeKeys[tf]];
           await Future.wait(types.map((t) async {
             try {
               final rs = await EngineDirect.search(t, q);
@@ -4876,7 +4903,7 @@ class _Home extends State<SearchSection> {
       } else if (Api.base.isNotEmpty) {
         // ★代次守卫：用户点了「停止」(_seq++) 或又发起了新搜索，旧响应直接丢弃 ——
         //   否则停止后结果还会自己冒出来。
-        if (typeFilter == 0) {
+        if (tf == 0) {
           final r = await Api.get('/v1/search/all?q=${Uri.encodeComponent(q)}');
           if (!mounted || mySeq != _seq) return;
           setState(() {
@@ -4885,7 +4912,7 @@ class _Home extends State<SearchSection> {
         } else {
           // 单类型: 走统一路由, 后端按能力分发到对应引擎集合
           final r = await Api.get(
-              '/v1/search?type=${typeKeys[typeFilter]}&q=${Uri.encodeComponent(q)}');
+              '/v1/search?type=${typeKeys[tf]}&q=${Uri.encodeComponent(q)}');
           if (!mounted || mySeq != _seq) return;
           setState(() {
             agg = {'single': r['data'], 'q': q};
@@ -4931,7 +4958,8 @@ class _Home extends State<SearchSection> {
   String _typeLabel(String t) =>
       const {'novel': '小说', 'comic': '漫画', 'video': '视频', 'music': '音乐'}[t] ??
       t;
-  int get _typeTotal => typeFilter == 0 ? 4 : 1;
+  int get _typeTotal =>
+      _effectiveType == 0 ? allSearchModules(_typeIdx).length : 1;
 
   /// 资源库聚合结果里的总条目数。
   /// 形状对齐 `server/routes-search.js`：
@@ -4966,9 +4994,9 @@ class _Home extends State<SearchSection> {
   List<_AggRow> _aggRows() {
     if (_aggCache == null ||
         !identical(_aggCacheSrc, agg) ||
-        _aggCacheType != typeFilter) {
+        _aggCacheType != _effectiveType) {
       _aggCacheSrc = agg;
-      _aggCacheType = typeFilter;
+      _aggCacheType = _effectiveType;
       _aggCache = _buildAggRows();
     }
     return _aggCache!;
@@ -4997,7 +5025,7 @@ class _Home extends State<SearchSection> {
         addGroup(
             '${g['source'] ?? g['sourceId'] ?? ''}',
             ((g['items'] ?? g['books']) as List?) ?? const [],
-            typeFilter,
+            _effectiveType,
             '${g['sourceId'] ?? ''}',
             g['latency'] as int?);
       }
@@ -5152,10 +5180,10 @@ class _Home extends State<SearchSection> {
                           textInputAction: TextInputAction.search,
                           onSubmitted: (_) => go(),
                           decoration: InputDecoration(
-                              hintText: typeFilter == 0
+                              hintText: _effectiveType == 0
                                   ? tr('一次搜索: 书/漫画/视频/音乐')
                                   : tr('搜索{{n}}').replaceAll(
-                                      '{{n}}', typeNames[typeFilter]),
+                                      '{{n}}', typeNames[_effectiveType]),
                               prefixIcon: const Icon(Icons.search),
                               isDense: true,
                               filled: false,
@@ -5180,14 +5208,14 @@ class _Home extends State<SearchSection> {
         Padding(
             padding: EdgeInsets.zero,
             child: RecommendStrip(
-                type: switch (typeFilter) {
+                type: switch (_effectiveType) {
                   3 => 'video',
                   4 => 'music',
                   _ => 'book',
                 },
                 // ★2026-11-06（4.81.28）：标题也是界面文案，走 tr() ——
                 //   4.81.27 写死中文，切语言后推荐带标题仍是中文。
-                title: switch (typeFilter) {
+                title: switch (_effectiveType) {
                   2 => tr('漫画推荐'),
                   3 => tr('影视推荐'),
                   4 => tr('音乐推荐'),
@@ -5203,7 +5231,7 @@ class _Home extends State<SearchSection> {
                     ChoiceChip(
                         label: Text(typeNames[i],
                             style: const TextStyle(fontSize: 12)),
-                        selected: typeFilter == i,
+                        selected: _effectiveType == i,
                         onSelected: (_) {
                           setState(() => typeFilter = i);
                           if (ctrl.text.trim().isNotEmpty) go();
