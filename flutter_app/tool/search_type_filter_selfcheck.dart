@@ -114,10 +114,21 @@ void main() {
   ok(rule.contains('if (mods.isEmpty)'), '规则层保留「判不出能力不过滤」');
 
   print('== 7. 版本号 ==');
+  // ★ 2026-11-07：原来把版本号写死在断言里，每次 bump 都要手改这个自检，
+  //   漏改就红、改了又只是换个数字（形状检查，防不住真的不一致）。
+  //   改成从 app_version.dart 解析出真实值，再断言 pubspec 与它逐字一致，
+  //   以及 versionCode 只增不减（下限取自 4.81.43 的 50714）。
   final ver = File('lib/core/app_version.dart').readAsStringSync();
-  ok(ver.contains("kAppVersion = '4.81.43'"), 'kAppVersion 已 bump 到 4.81.43');
-  ok(ver.contains('kAppCode = 50714'), 'kAppCode 只增不减 → 50714');
-  ok(File('pubspec.yaml').readAsStringSync().contains('version: 4.81.43+50714'),
+  final vM = RegExp(r"kAppVersion\s*=\s*'([^']+)'").firstMatch(ver);
+  final cM = RegExp(r'kAppCode\s*=\s*(\d+)').firstMatch(ver);
+  ok(vM != null && RegExp(r'^\d+\.\d+\.\d+$').hasMatch(vM!.group(1)!),
+      'kAppVersion 是合法三段版本号');
+  ok(cM != null, 'kAppCode 存在');
+  final String? appVer = vM?.group(1);
+  final int? appCode = cM != null ? int.tryParse(cM.group(1)!) : null;
+  ok(appCode != null && appCode! >= 50714, 'kAppCode 只增不减（>= 50714）');
+  ok(appVer != null && appCode != null &&
+      File('pubspec.yaml').readAsStringSync().contains('version: $appVer+$appCode'),
       'pubspec 与 Dart 常量一致');
 
   print('\n$pass 通过 / $fail 失败');

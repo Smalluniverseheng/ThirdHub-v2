@@ -8,6 +8,7 @@ import 'settings_bridge.dart';
 import 'module_registry.dart';
 import 'app_log.dart';
 import 'member_levels.dart';
+import 'device_sync_contract.dart' as dsc;
 
 class Cloud {
   static const String base = 'https://onhmosehcwyrqgxadjvb.supabase.co';
@@ -312,8 +313,19 @@ class Cloud {
   /// ② 用着自己的后端（数据存在他自己的设备上，与官方等级无关）
   static bool canSyncTable(String table) {
     if (!syncTables.contains(table)) return false;
-    if (_contentTables.contains(table)) return isMember || selfHosted;
-    return true;
+    final bool local = _contentTables.contains(table)
+        ? (isMember || selfHosted)
+        : true;
+    // 全盘升级 #202：权限判定与「三端统一同步契约」逐键对齐。
+    // 两处字典若有人只改了一边，取更严格者为准 —— 宁可漏同步，也不能因本地
+    // 漏改而把内容表误放给免费用户。loggedIn 由调用方在外层判定，这里只判表。
+    final bool unified = dsc.canSyncTable(
+      table: table,
+      loggedIn: true,
+      isMember: isMember,
+      selfHosted: selfHosted,
+    );
+    return local && unified;
   }
 
   /// 通用：按表写一行（载荷与网页端 syncPush 同构）

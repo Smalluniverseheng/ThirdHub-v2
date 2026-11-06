@@ -114,6 +114,10 @@ on:
       - 'docs/AGENT-PROTOCOL.md'
       - 'docs/TTS-PROTOCOL.md'
       - 'server/agent-profiles.json'
+      - 'server/index.js'
+      - 'server/neon.js'
+      - 'server/device_sync_contract.js'
+      - 'contracts/**'
       - '.github/workflows/dart-selfcheck.yml'
   workflow_dispatch:
 
@@ -356,6 +360,22 @@ jobs:
       - name: dsh_remote（DSH 遥控：地址归一 / 粘贴串拆分 / 六语言文案 / 入口接线）
         working-directory: flutter_app
         run: dart run tool/dsh_remote_selfcheck.dart
+
+      # 第 N 条 device_sync_contract（2026-11-07 加，全盘升级 #202）—— 三端统一同步契约。
+      #
+      #   为什么必须进 CI：6 张同步表此前在 App cloud.dart、网页端 supabase.js、
+      #   桌面端 neon.js 各手抄一份，谁加一张表另外两端都不知道；这种漂移在
+      #   analyze / 编译 / 单测里全绿，只在用户换设备时表现为「书架少一半」。
+      #   本闸门把 contracts/unified_sync_v1.json 与移动端 Dart、桌面端 Node、
+      #   网页端字典逐键比对，并断言三端**真的引用**了契约（不是只写了一半）。
+      #
+      #   --no-web：网页端是独立私有仓，CI 里不在本树（TH_WEB_ROOT 未配）。
+      #   与 skin_parity 同一惯例：跳过网页端比对但**照样逐键断言本仓内三份字典**，
+      #   不因路径没配就变成假绿；本机带 --web=<根> 才做三方全量比对。
+      #   排在 branding 之前：banner 类闸门一红后面全 skip，这条更早报出契约漂移。
+      - name: device_sync_contract（三端统一同步契约：字典逐键一致 + 接线 + 行为）
+        working-directory: flutter_app
+        run: dart run tool/device_sync_contract_selfcheck.dart --no-web
 
       # 第 N 条 branding（2026-10-10 加）—— 前后端与网页端「内容来源类」用词必须清零。
       #

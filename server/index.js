@@ -471,6 +471,10 @@ const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
+// 全盘升级 #202：三端统一账号绑定与设备互通同步契约。
+// 唯一真源 contracts/unified_sync_v1.json；服务端表白名单与表级权限以它为准，
+// 不靠前端隐藏按钮（合规分层要求服务端真校验）。
+const syncContract = require('./device_sync_contract.js');
 // 注：peerHub 已上移到 ~242 行（peerHub.init 之前），此处不再重复 require —— 见该处注释。
 // 存储进程状态(原在文件尾, 上移供 adminCtx 引用)
 const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
@@ -632,6 +636,47 @@ async function handle(req, res, body) {
     return send(405, { ok: false, error: { code: 'method_not_allowed', message: '仅 GET/PUT/POST' } });
   }
 
+  // ── 全盘升级 #202：三端统一同步契约（只读）──
+  // 一个账号绑定后，移动端 / 网页端 / 桌面端都可拉同一份字典核对自己有没有漂移。
+  // 只读、不含任何内容源与用户数据，返回的是规则本身。
+  if (p === '/v1/sync/contract' && req.method === 'GET') {
+    return send(200, {
+      ok: true,
+      schema: syncContract.SCHEMA,
+      version: syncContract.VERSION,
+      account: 'one_account_all_ends',
+      tables: syncContract.SYNC_TABLES.map((t) => ({
+        table: t,
+        alias: syncContract.TABLE_ALIASES[t],
+        canSyncSelfHosted: syncContract.canSyncTable({
+          table: t, loggedIn: true, isMember: false, selfHosted: true,
+        }),
+      })),
+      // 短名 -> 规范表名：三端拿去逐键核对自己那张 TBL_MAP 有没有漂移。
+      // canonicalTableOf 在这里真被调用，不是只导出没人用的死代码。
+      shortToTable: Object.fromEntries(
+        syncContract.SYNC_TABLES.map((t) => [
+          syncContract.TABLE_ALIASES[t],
+          syncContract.canonicalTableOf(syncContract.TABLE_ALIASES[t]),
+        ])
+      ),
+      device: {
+        table: syncContract.DEVICE_TABLE,
+        kinds: syncContract.DEVICE_KINDS,
+        priority: syncContract.DEVICE_PRIORITY,
+        capabilities: syncContract.DEVICE_CAPABILITIES,
+        required_fields: syncContract.DEVICE_REQUIRED_FIELDS,
+      },
+      conflict: {
+        strategy: syncContract.CONFLICT_STRATEGY,
+        tie_break: syncContract.TIE_BREAK,
+        delete: syncContract.DELETE_RULE,
+      },
+      channels: syncContract.SYNC_CHANNELS,
+      transports: syncContract.SYNC_TRANSPORTS,
+    });
+  }
+
   // ── 业务数据统一入口（Neon）──
   //
   // 分工（2026-10-24 定死）：
@@ -661,6 +706,16 @@ async function handle(req, res, body) {
     if (!neon.tableOk(tbl)) {
       return send(400, { ok: false, error: { code: 'bad_table', message: '不支持的表：' + tbl, allowed: [...neon.DATA_TABLES] } });
     }
+    // 全盘升级 #202：并列核一次三端统一契约白名单。两边字典逐键一致由
+    // flutter_app/tool/device_sync_contract_selfcheck.dart 断言；只改了一边时
+    // 这里会先拒绝，避免后端悄悄放行一张契约里没有的表。
+    if (!syncContract.isBackendTableAllowed(tbl)) {
+      return send(400, { ok: false, error: { code: 'contract_table_mismatch', message: '表不在三端统一契约内：' + tbl } });
+    }
+    // 桌面端 / NAS 本身即自托管宿主，上面的 X-TH-Token 已校验登录态，
+    // 因此 6 张同步表全部放行（契约 canSyncTable 在只读端点里给出逐表结论，
+    // 供三端核对自己有没有漂移）。这里不再叠一层恒真的 if ——
+    // 那种分支永远走不到，是假闸门。契约里若移除某张表，上面的白名单会同步收紧。
 
     if (req.method === 'GET') {
       if (rowId || u.searchParams.get('id')) {

@@ -51,6 +51,22 @@ const exemptFiles = <String>[
   'changelog_logic.dart',
 ];
 
+/// 数据字面量豁免：只放行「识别用清单」的声明块，不是整文件豁免。
+///
+/// ★ 2026-11-07 加（全盘升级 #208 引入的 public_data_sources.dart 触发的真红）：
+///   kMobileBannedTerms 是**移动端准入黑名单**，字面量只参与 contains() 判定、
+///   从不显示给用户。它必须保留这些旧词，否则 isMobilePublicSourceAllowed()
+///   会放行本该拦掉的第三方内容源 —— public_sources_selfcheck.dart 明确断言过。
+///   这与 changelog_logic.dart 的整文件豁免不同：那个文件全是识别数据；
+///   这个文件还含面向用户的清单项，整文件放过会让真正的界面文案漏网。
+///   所以精确到「从声明行到闭合 ]; 之间的块」，块外一切照常检查。
+/// 键 = 文件名，值 = 声明块起始行的唯一前缀。
+const dataLiteralBlocks = <String, List<String>>{
+  'public_data_sources.dart': <String>[
+    'const List<String> kMobileBannedTerms',
+  ],
+};
+
 String stripLineComment(String line) {
   for (var i = 0; i < line.length - 1; i++) {
     if (line[i] == '/' && line[i + 1] == '/') {
@@ -118,22 +134,33 @@ void main(List<String> args) {
     final fileName = f.uri.pathSegments.last;
     final fileExempt = exemptFiles.contains(fileName);
     final isDict = i18nDictFiles.contains(fileName);
+    final blockStarts = dataLiteralBlocks[fileName] ?? const <String>[];
+    var inDataBlock = false;
     final lines = f.readAsLinesSync();
     for (var n = 0; n < lines.length; n++) {
       final code = stripLineComment(lines[n]);
       if (code.trim().isEmpty) continue;
+      // 声明块起点：这一行本身不含字符串字面量，从这里开始豁免。
+      if (!inDataBlock && blockStarts.any((String s) => code.contains(s))) {
+        inDataBlock = true;
+      }
       final lits = isDict ? i18nValueLiterals(code) : literals(code);
       for (final lit in lits) {
         if (lit.isEmpty) continue;
         final hitWord = banned.firstWhere((w) => lit.contains(w), orElse: () => '');
         if (hitWord.isEmpty) continue;
         final rec = '${f.path}:${n + 1}  [$hitWord]  "$lit"';
-        if (fileExempt || isExempt(lit)) {
+        if (fileExempt || inDataBlock || isExempt(lit)) {
           skipped.add(rec);
         } else {
           hits.add(rec);
         }
       }
+      // 声明块必须闭合：少了 ]; 会让文件后半段被整段豁免，等于闸门假绿。
+      if (inDataBlock && code.trim() == '];') inDataBlock = false;
+    }
+    if (inDataBlock) {
+      hits.add('${f.path}: 数据字面量声明块未闭合（缺 ];）——豁免规则失效，必须修');
     }
   }
   stdout.writeln('扫描 .dart 文件 $scanned 个');

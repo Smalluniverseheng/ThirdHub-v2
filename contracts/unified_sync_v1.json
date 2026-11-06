@@ -1,0 +1,52 @@
+{
+  "schema": "thirdhub.unified_sync/1",
+  "version": "1.0.0",
+  "account": {
+    "binding": "one_account_all_ends",
+    "identity_key": "user_id",
+    "self_hosted_header": "X-TH-Account",
+    "pair_header": "X-TH-Token",
+    "ends": ["mobile", "web", "exe", "nas"]
+  },
+  "sync_tables": [
+    "th_bookshelf",
+    "th_reading_progress",
+    "th_history",
+    "th_favorites",
+    "th_settings",
+    "th_user_devices"
+  ],
+  "table_aliases": {
+    "th_bookshelf": "bookshelf",
+    "th_reading_progress": "progress",
+    "th_history": "history",
+    "th_favorites": "favorites",
+    "th_settings": "settings",
+    "th_user_devices": "devices"
+  },
+  "backend_extra_tables": ["shared"],
+  "session_table": "th_chats",
+  "device_table": "th_user_devices",
+  "discovery_table": "th_devices",
+  "pair_table": "th_device_pairs",
+  "device": {
+    "required_fields": ["device_id", "name", "kind", "capabilities", "last_seen", "user_id"],
+    "kinds": ["mobile", "web", "exe", "nas"],
+    "priority": { "nas": 40, "exe": 30, "web": 20, "mobile": 10 },
+    "capabilities": ["sync", "direct", "relay", "notify"]
+  },
+  "conflict": {
+    "strategy": "updated_at_lww",
+    "tie_break": "device_priority_then_device_id",
+    "delete": "tombstone",
+    "tombstone_key": "<table>:<rowId>"
+  },
+  "channels": ["official_cloud", "device_direct"],
+  "transports": ["lan", "ipv6", "p2p", "relay"],
+  "permission": {
+    "settings_tables": ["th_settings", "th_user_devices"],
+    "content_tables": ["th_bookshelf", "th_reading_progress", "th_history", "th_favorites"],
+    "content_requires": "member_or_self_hosted",
+    "session_requires": "logged_in"
+  }
+}

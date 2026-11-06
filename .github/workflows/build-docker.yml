@@ -55,15 +55,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test the image (HTTPS-only /v1/meta)
+      # ★ 2026-11-07 修「镜像构建绿 ≠ 容器能启动」的假绿：
+      #   原写法循环里 curl 失败不计数，最后一行还带 `|| true` ——
+      #   哪怕 index.js 因缺 ./neon 直接 MODULE_NOT_FOUND 崩掉，本 step 照样 success。
+      #   现在必须真的拿到 /v1/meta 的 200 才算过，失败时打印容器日志再 exit 1。
+      - name: Smoke test the image (HTTPS-only /v1/meta，容器起不来必须红)
         run: |
-          docker run -d --name th-smoke -p 19527:9527 \
-            ${{ steps.img.outputs.name }}:${{ steps.ver.outputs.v }}
+          set -u
+          IMAGE='${{ steps.img.outputs.name }}:${{ steps.ver.outputs.v }}'
+          docker rm -f th-smoke >/dev/null 2>&1 || true
+          docker run -d --name th-smoke -p 19527:9527 "$IMAGE"
+          ok=0
           for i in $(seq 1 20); do
             if curl -sk --max-time 3 https://127.0.0.1:19527/v1/meta | grep -q '"object"'; then
-              echo "OK /v1/meta 200"; break
+              ok=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' th-smoke 2>/dev/null || echo false)" != "true" ]; then
+              echo "容器已退出，提前结束等待"; break
             fi
             sleep 2
           done
+          echo "---- /v1/meta 响应 ----"
           curl -sk --max-time 5 https://127.0.0.1:19527/v1/meta | head -c 300 || true
-          docker rm -f th-smoke || true
+          if [ "$ok" -ne 1 ]; then
+            echo "---- 容器日志（失败诊断）----"
+            docker logs th-smoke 2>&1 | tail -60 || true
+            echo "FAIL 冒烟未通过：容器没能在 40 秒内提供 /v1/meta"
+            docker rm -f th-smoke >/dev/null 2>&1 || true
+            exit 1
+          fi
+          echo "OK /v1/meta 200，容器确实起来了"
+          docker rm -f th-smoke >/dev/null 2>&1 || true
