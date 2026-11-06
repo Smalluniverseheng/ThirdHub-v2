@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
 
 /// 漫画页图组件 —— 移植自 Venera（venera-app/venera，MIT）。
 ///
