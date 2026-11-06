@@ -13,6 +13,10 @@ import 'package:flutter/material.dart';
 import 'design_tokens.dart';
 import 'extensions.dart';
 
+// 转发出去：调用方只 import 本页面就能同时拿到 Extensions 清单，
+// 否则像 main.dart 那样在入口里写 `Extensions.catalog` 会报 "getter 未定义"。
+export 'extensions.dart';
+
 class ExtensionsPage extends StatefulWidget {
   const ExtensionsPage({super.key});
   @override
