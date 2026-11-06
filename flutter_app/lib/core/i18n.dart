@@ -441,6 +441,17 @@ class I18n extends ChangeNotifier {
     i18nUiWords12.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+
+    // ★2026-11-07 第十三批：「多资料库并行」开关（4.81.41，任务 #193）。
+    i18nUiWords13.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
+
+    // ★2026-11-07 第十四批：补「资源包」「我的后端」两页的欠账（4.81.41）。
+    //   这两页 4.81.35~40 加进来时文案写死中文，main 上的棘轮闸门因此一直红。
+    i18nUiWords14.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
