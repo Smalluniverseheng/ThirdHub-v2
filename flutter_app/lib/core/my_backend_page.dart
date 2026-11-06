@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'design_tokens.dart';
+import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
 class SelfHostedLinks {
@@ -275,8 +276,37 @@ class _MyBackendPageState extends State<MyBackendPage> {
                     color: _ok ? Colors.green : Colors.redAccent)),
           ),
 
-        // ── 第三步：状态 ──
-        _step('3', '现在用哪个'),
+        // ── 任务在哪跑（本机 / 远端）──
+        //
+        // 用户需求：产品要能本机跑，也要能在 NAS/电脑上跑；把后台删掉，
+        // 任务在远端继续，再打开时结果同步回来；还可以选「优先本机 / 优先远端」。
+        //
+        // 这里只做「选谁」这一层 —— 会话续接本身靠 Host 侧的 session + events(since)，
+        // 那个能力在 agent_dsh_client 里已经有了，不需要在这里重造。
+        _step('3', '任务在哪跑'),
+        _card(c, [
+          ListTile(
+            leading: const Icon(Icons.tune, size: 20),
+            title: const Text('优先方式', style: TextStyle(fontSize: 14)),
+            subtitle: Text(_preferText(), style: const TextStyle(fontSize: 11)),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _pickPrefer,
+          ),
+          const Divider(height: 1, indent: 52),
+          ListTile(
+            leading: const Icon(Icons.hub_outlined, size: 20),
+            title: const Text('已登记的引擎', style: TextStyle(fontSize: 14)),
+            subtitle: Text(_hostText(), style: const TextStyle(fontSize: 11)),
+            trailing: IconButton(
+              tooltip: '逐个探活',
+              icon: const Icon(Icons.refresh, size: 18),
+              onPressed: _refreshHosts,
+            ),
+          ),
+        ]),
+
+        // ── 第四步：状态 ──
+        _step('4', '现在用哪个'),
         _card(c, [
           _row(
             _selfHosted ? Icons.check_circle : Icons.cloud_outlined,
@@ -307,6 +337,67 @@ class _MyBackendPageState extends State<MyBackendPage> {
         ),
       ]),
     );
+  }
+
+  String _preferText() => switch (DshHosts.prefer) {
+        DshPrefer.localFirst => '优先本机，连不上再用远端',
+        DshPrefer.remoteFirst => '优先远端（电脑/NAS），连不上再用本机',
+        DshPrefer.localOnly => '只用本机',
+        DshPrefer.remoteOnly => '只用远端，不在手机上跑',
+      };
+
+  String _hostText() {
+    final hs = DshHosts.hosts;
+    if (hs.isEmpty) return '还没登记。远端引擎可在「DSH 遥控」里配对，本机引擎待后续版本支持';
+    final a = DshHosts.active;
+    return '共 ${hs.length} 个 · 当前: ${a?.name ?? '都连不上'}';
+  }
+
+  Future<void> _pickPrefer() async {
+    final v = await showModalBottomSheet<DshPrefer>(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('任务在哪跑',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          ),
+          for (final e in DshPrefer.values)
+            ListTile(
+              leading: Icon(
+                  e == DshHosts.prefer
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  size: 20),
+              title: Text(
+                  switch (e) {
+                    DshPrefer.localFirst => '优先本机',
+                    DshPrefer.remoteFirst => '优先远端（电脑/NAS）',
+                    DshPrefer.localOnly => '只用本机',
+                    DshPrefer.remoteOnly => '只用远端',
+                  },
+                  style: const TextStyle(fontSize: 14)),
+              onTap: () => Navigator.pop(c, e),
+            ),
+        ]),
+      ),
+    );
+    if (v == null) return;
+    await DshHosts.setPrefer(v);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _refreshHosts() async {
+    setState(() => _busy = true);
+    final hit = await DshHosts.pick();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _msg = hit == null ? '所有引擎都连不上' : '已连上: ${hit.name}';
+      _ok = hit != null;
+    });
   }
 
   Widget _step(String n, String title) => Padding(
