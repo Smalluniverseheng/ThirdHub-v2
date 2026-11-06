@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'design_tokens.dart';
+import 'i18n.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -136,7 +137,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
       _ok = true;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已切换。重启应用后生效。')));
+        SnackBar(content: Text(tr('已切换。重启应用后生效。'))));
   }
 
   Future<void> _backToOfficial() async {
@@ -146,7 +147,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
     if (!mounted) return;
     setState(() {
       _selfHosted = false;
-      _msg = '已切回官方云端';
+      _msg = tr('已切回官方云端');
     });
   }
 
@@ -154,7 +155,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
     Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('$what 已复制')));
+          .showSnackBar(SnackBar(content: Text(trf('{what} 已复制', {'what': what}))));
     }
   }
 
@@ -162,7 +163,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
   Widget build(BuildContext c) {
     final scheme = Theme.of(c).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('我的后端')),
+      appBar: AppBar(title: Text(tr('我的后端'))),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
         // ── 说明 ──
         Container(
@@ -175,7 +176,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
             Row(children: [
               Icon(Icons.shield_outlined, size: 18, color: scheme.primary),
               const SizedBox(width: 8),
-              const Text('数据存在你自己的设备上',
+              Text(tr('数据存在你自己的设备上'),
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             ]),
             const SizedBox(height: Gap.sm),
@@ -198,7 +199,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
             '下载压缩包 → 解压 → 双击 ThirdHubBackend.exe',
             trailing: TextButton(
               onPressed: () => _copy(SelfHostedLinks.backendZip, '下载地址'),
-              child: const Text('复制链接'),
+              child: Text(tr('复制链接')),
             ),
           ),
           const Divider(height: 1, indent: 52),
@@ -209,7 +210,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
             trailing: TextButton(
               onPressed: () =>
                   _copy(SelfHostedLinks.dockerCmd, '命令'),
-              child: const Text('复制命令'),
+              child: Text(tr('复制命令')),
             ),
           ),
           const Divider(height: 1, indent: 52),
@@ -229,9 +230,9 @@ class _MyBackendPageState extends State<MyBackendPage> {
               TextField(
                 controller: _addr,
                 style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: '地址',
-                  hintText: 'https://192.168.1.10:9527 或 http://[2408:...]:9527',
+                decoration: InputDecoration(
+                  labelText: tr('地址'),
+                  hintText: tr('https://192.168.1.10:9527 或 http://[2408:...]:9527'),
                   hintStyle: TextStyle(fontSize: 11),
                 ),
               ),
@@ -239,9 +240,9 @@ class _MyBackendPageState extends State<MyBackendPage> {
               TextField(
                 controller: _code,
                 style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: '配对码',
-                  hintText: '后端首次启动时打印的密钥',
+                decoration: InputDecoration(
+                  labelText: tr('配对码'),
+                  hintText: tr('后端首次启动时打印的密钥'),
                   hintStyle: TextStyle(fontSize: 11),
                 ),
               ),
@@ -260,7 +261,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
               Expanded(
                 child: FilledButton(
                   onPressed: _busy ? null : _useThisBackend,
-                  child: const Text('用它'),
+                  child: Text(tr('用它')),
                 ),
               ),
             ]),
@@ -283,11 +284,11 @@ class _MyBackendPageState extends State<MyBackendPage> {
         //
         // 这里只做「选谁」这一层 —— 会话续接本身靠 Host 侧的 session + events(since)，
         // 那个能力在 agent_dsh_client 里已经有了，不需要在这里重造。
-        _step('3', '任务在哪跑'),
+        _step('3', tr('任务在哪跑')),
         _card(c, [
           ListTile(
             leading: const Icon(Icons.tune, size: 20),
-            title: const Text('优先方式', style: TextStyle(fontSize: 14)),
+            title: Text(tr('优先方式'), style: const TextStyle(fontSize: 14)),
             subtitle: Text(_preferText(), style: const TextStyle(fontSize: 11)),
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: _pickPrefer,
@@ -295,10 +296,10 @@ class _MyBackendPageState extends State<MyBackendPage> {
           const Divider(height: 1, indent: 52),
           ListTile(
             leading: const Icon(Icons.hub_outlined, size: 20),
-            title: const Text('已登记的引擎', style: TextStyle(fontSize: 14)),
+            title: Text(tr('已登记的资料库'), style: const TextStyle(fontSize: 14)),
             subtitle: Text(_hostText(), style: const TextStyle(fontSize: 11)),
             trailing: IconButton(
-              tooltip: '逐个探活',
+              tooltip: tr('逐个探活'),
               icon: const Icon(Icons.refresh, size: 18),
               onPressed: _refreshHosts,
             ),
@@ -319,8 +320,8 @@ class _MyBackendPageState extends State<MyBackendPage> {
             const Divider(height: 1, indent: 52),
             ListTile(
               leading: const Icon(Icons.undo, size: 20),
-              title: const Text('切回官方云端', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('你的数据不会丢，只是改从官方读取',
+              title: Text(tr('切回官方云端'), style: const TextStyle(fontSize: 14)),
+              subtitle: Text(tr('你的数据不会丢，只是改从官方读取'),
                   style: TextStyle(fontSize: 11)),
               onTap: _backToOfficial,
             ),
@@ -348,7 +349,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
 
   String _hostText() {
     final hs = DshHosts.hosts;
-    if (hs.isEmpty) return '还没登记。远端引擎可在「DSH 遥控」里配对，本机引擎待后续版本支持';
+    if (hs.isEmpty) return '还没登记。远端资料库可在「DSH 遥控」里配对，本机资料库待后续版本支持';
     final a = DshHosts.active;
     return '共 ${hs.length} 个 · 当前: ${a?.name ?? '都连不上'}';
   }
@@ -360,7 +361,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('任务在哪跑',
+            child: Text(tr('任务在哪跑'),
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),
           for (final e in DshPrefer.values)
@@ -395,7 +396,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _msg = hit == null ? '所有引擎都连不上' : '已连上: ${hit.name}';
+      _msg = hit == null ? '所有资料库都连不上' : '已连上: ${hit.name}';
       _ok = hit != null;
     });
   }
