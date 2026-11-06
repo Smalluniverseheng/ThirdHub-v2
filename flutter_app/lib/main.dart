@@ -107,6 +107,7 @@ import 'core/app_version.dart';
 import 'core/tavern.dart';
 import 'core/recommend.dart';
 import 'core/my_backend_page.dart';
+import 'core/extensions_page.dart';
 import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
@@ -2768,6 +2769,12 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
             // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
+            // 2026-11-06：按需安装的资源包（本机 AI 运行时 / 各引擎）。
+            // 软件本体 32MB 就能看漫画，重资源放这里让用户自己决定装不装。
+            entry(Icons.inventory_2_outlined, '资源包',
+                value: '${Extensions.catalog.where((e) => e.available).length} 个可装',
+                page: const ExtensionsPage()),
+            _sep(),
             entry(Icons.storage_outlined, '我的后端',
                 value: Cloud.selfHosted ? '用自己的设备' : '官方云端',
                 page: const MyBackendPage()),
