@@ -359,10 +359,11 @@ class _MyBackendPageState extends State<MyBackendPage> {
       context: context,
       builder: (c) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Text(tr('任务在哪跑'),
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600)),
           ),
           for (final e in DshPrefer.values)
             ListTile(
