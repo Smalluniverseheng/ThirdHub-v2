@@ -296,10 +296,23 @@ class Cloud {
     return t.isAfter(DateTime.now());
   }
 
+  /// 是否使用**自己的后端**（会员自建的 EXE / NAS 容器）。
+  ///
+  /// 由启动流程写入（读 prefs 的 `base` 判断是否等于官方 Supabase 地址）。
+  /// 这里不在 getter 里读 prefs，因为 `canSyncTable` 是同步调用，而 prefs 要 await。
+  ///
+  /// 为什么它要参与判定：会员买了「数据存在自己设备」的权利，
+  /// 他的内容同步走的是自建后端那条路，不该被官方云端的等级规则再卡一道。
+  static bool selfHosted = false;
+
   /// 某个表在当前等级下能否同步。
+  ///
+  /// 两条放行条件（满足其一即可）：
+  /// ① 付费会员（官方云端给全量同步）
+  /// ② 用着自己的后端（数据存在他自己的设备上，与官方等级无关）
   static bool canSyncTable(String table) {
     if (!syncTables.contains(table)) return false;
-    if (_contentTables.contains(table)) return isMember;
+    if (_contentTables.contains(table)) return isMember || selfHosted;
     return true;
   }
 
