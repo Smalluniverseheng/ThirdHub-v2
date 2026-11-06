@@ -106,6 +106,7 @@ import 'core/pip.dart';
 import 'core/app_version.dart';
 import 'core/tavern.dart';
 import 'core/recommend.dart';
+import 'core/my_backend_page.dart';
 import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
@@ -328,6 +329,14 @@ Future<void> main() async {
   // ★告诉开屏「加载完成」→ 它开始 5 秒倒计时；等它结束（或用户点跳过）再进主界面。
   bootDone.value = true;
   await splashDone.future;
+
+  // 2026-11-06：判定「数据存在自己的设备上」还是「存在官方云端」。
+  //   自建后端（会员自己的 EXE / NAS）地址长这样：http://192.168.x.x:9527、
+  //   http://[2408:...]:9527、https://nas.xxx.com —— 都不是 supabase.co 域名。
+  //   这个判断决定内容表（书架/进度/收藏/历史）要不要受会员等级限制：
+  //   用自己的后端不该受限，因为数据根本不经过官方服务器。
+  final _selfBase = prefs.getString('base') ?? '';
+  Cloud.selfHosted = _selfBase.isNotEmpty && !_selfBase.contains('supabase.co');
 
   runApp(ThApp(
       ready: (prefs.getString('base') ?? '').isNotEmpty,
@@ -2756,6 +2765,12 @@ class _Pf extends State<ProfilePage> {
             // 「在 AI 里填过的小米 Key，语音自动带上」这件事就落在这里。
             entry(Icons.key_outlined, 'API 密钥库',
                 value: '一处填写 · 多模块共用', page: const ApiKeysPage()),
+            _sep(),
+            // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
+            // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
+            entry(Icons.storage_outlined, '我的后端',
+                value: Cloud.selfHosted ? '用自己的设备' : '官方云端',
+                page: const MyBackendPage()),
             _sep(),
             entry(Icons.dns_outlined, '后端管理',
                 value: Api.base.isEmpty ? '未连接' : '已连接',
