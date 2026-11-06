@@ -452,6 +452,11 @@ class I18n extends ChangeNotifier {
     i18nUiWords14.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+
+    // ★2026-11-07 第十五批：「厂商公开数据源」清单页（4.81.43，全盘升级 #208）。
+    i18nUiWords15.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
