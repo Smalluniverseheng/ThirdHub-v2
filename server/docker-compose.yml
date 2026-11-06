@@ -12,7 +12,7 @@
 services:
   thirdhub-backend:
     build: .
-    image: thirdhub-backend:0.8.7
+    image: thirdhub-backend:0.8.8
     container_name: thirdhub-backend
     restart: unless-stopped
 
