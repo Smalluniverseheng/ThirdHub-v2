@@ -31,6 +31,7 @@ import 'package:path_provider/path_provider.dart';
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
 import 'core/comic_image.dart';
+import 'core/comic_reader_rules.dart';
 import 'core/haptic.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
@@ -16752,6 +16753,27 @@ class _Ecr extends State<EngineComicReader> {
     );
   }
 
+  /// Venera 的点击分区判页（gesture.dart:201-271）接到翻页模式。
+  /// 屏幕左 / 右各 30% 翻上一页 / 下一页，翻到头自动切上一话 / 下一话；
+  /// 中间 40% 留给工具栏（当前没有工具栏，保持不动，避免误翻页）。
+  /// 与底部「上一话 / 下一话」按钮共用 _go，不另写一套章节跳转。
+  void _onReaderTap(Offset pos, Size size, int i) {
+    final hit = ComicTapHit.at(pos.dx, pos.dy, size.width, size.height);
+    final action = tapActionOf(ComicReadMode.galleryLeftToRight, hit);
+    if (action == ComicTapAction.toggleUi) return;
+    final target = action == ComicTapAction.next ? i + 1 : i - 1;
+    if (target >= 0 && target < images.length) {
+      pc.animateToPage(target,
+          duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      return;
+    }
+    if (action == ComicTapAction.next && idx < widget.chapters.length - 1) {
+      _go(idx + 1);
+    } else if (action == ComicTapAction.prev && idx > 0) {
+      _go(idx - 1);
+    }
+  }
+
   @override
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(
@@ -16785,8 +16807,12 @@ class _Ecr extends State<EngineComicReader> {
                   ? PageView.builder(
                       controller: pc,
                       itemCount: images.length,
-                      itemBuilder: (_, i) =>
-                          InteractiveViewer(child: Center(child: _img(i))))
+                      itemBuilder: (_, i) => GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTapUp: (d) => _onReaderTap(
+                              d.globalPosition, MediaQuery.sizeOf(c), i),
+                          child: InteractiveViewer(
+                              child: Center(child: _img(i)))))
                   : ListView.builder(
                       itemCount: images.length + 1,
                       itemBuilder: (_, i) {

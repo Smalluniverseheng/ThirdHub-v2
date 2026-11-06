@@ -377,6 +377,14 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/device_sync_contract_selfcheck.dart --no-web
 
+      # 第 N 条 comic_reader_rules（2026-11-07 加）—— Venera 阅读器运行逻辑移植。
+      #   整套界面因 GPL-3.0 与依赖边界只在桌面端 / 自托管侧分发，移动端只接
+      #   可独立编译的规则层；这条闸门把上游常量、判页行为、接线与合规一起钉死。
+      #   排在 branding 之前：banner 类闸门一红，后面的步骤会被整批 skip。
+      - name: comic_reader_rules（Venera 阅读器规则：常量 / 判页 / 追更 / 接线 / 合规）
+        working-directory: flutter_app
+        run: dart run tool/comic_reader_rules_selfcheck.dart
+
       # 第 N 条 branding（2026-10-10 加）—— 前后端与网页端「内容来源类」用词必须清零。
       #
       #   为什么必须进 CI —— 用户明令：**不允许出现「引擎 / 换源 / 书源」这类会触发
