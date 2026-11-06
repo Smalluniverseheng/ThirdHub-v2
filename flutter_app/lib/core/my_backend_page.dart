@@ -361,8 +361,9 @@ class _MyBackendPageState extends State<MyBackendPage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            // 这里可以用 tr()：外层 Padding 已去掉 const，Text 不在常量上下文里。
-            // （4.81.41 那次编译失败正是"const 父节点 + tr()"造成的，去掉 const 即可。）
+            // ★2026-11-07：这里此前写死中文，被 i18n_hardcoded 棘轮闸门记了一笔。
+            //   实际只有 style 是 const、Text 本身不是，tr() 完全可用 ——
+            //   4.81.41 那次 const 报错发生在别的常量上下文，不能靠"一律写死中文"躲。
             child: Text(tr('任务在哪跑'),
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.w600)),
