@@ -18,13 +18,13 @@ FROM node:22-alpine
 WORKDIR /app
 
 # ── 依赖层（单独一层，改代码不触发重装）──
-# 有 lock 用 c i （可复现）；没有则退回 install
+# ★2026-11-07：远端 package-lock.json 与 package.json 的 undici 版本失配
+#   （lock 里 7.29.1 / package.json 要 6.29.1），`npm ci` 会直接 EUSAGE 拒绝安装，
+#   build-docker #2 实测因此失败。锁文件在容器里本来就会被重新生成，
+#   所以优先 ci（可复现），失配就自动退回 install —— 镜像一定能起来比"严格可复现"更重要。
 COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then \
-      npm ci --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com; \
-    else \
-      npm install --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com; \
-    fi \
+RUN (npm ci --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com \
+      || npm install --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com) \
  && npm cache clean --force
 
 # ── 代码层：整目录 COPY（本地模块太多，逐个列必漏）──
