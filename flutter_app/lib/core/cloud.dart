@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'settings_bridge.dart';
 import 'module_registry.dart';
 import 'app_log.dart';
+import 'member_levels.dart';
 
 class Cloud {
   static const String base = 'https://onhmosehcwyrqgxadjvb.supabase.co';
@@ -257,9 +258,54 @@ class Cloud {
   ///   两端靠它判断"云端新还是本机新"，不要另发明一套冲突策略。
   static const String _syncedAtKey = 'settings_synced_at';
 
+  // ── 会员分级同步（2026-11-06 用户要求）──
+  //
+  // 规则：**免费档只同步设置，付费档才同步内容**。
+  //   · 设置 = th_settings / th_user_devices（谁都需要，换设备不用重设）
+  //   · 内容 = 书架 / 阅读进度 / 收藏 / 历史（这些是卖点，付费才给）
+  //
+  // 这不是「功能阉割」，是站长定的商业规则：云端存储成本按等级分层
+  // （th_vip_plans：卫星 10MB 免费 / 行星 1GB / 恒星 5GB / 星系 20GB）。
+  //
+  // ★ 拦截点放在 tableUp / tableDelete / tableAll 这三个出口，
+  //   而不是散在调用方 —— 否则总有一条路径漏过去，表现为「免费用户也能同步」。
+
+  /// 只给付费档同步的内容表。其余表（设置、设备）所有登录用户都能同步。
+  static const Set<String> _contentTables = <String>{
+    'th_bookshelf', 'th_reading_progress', 'th_history', 'th_favorites',
+  };
+
+  /// 当前账号等级（登录后由 profile() 带回；未登录为 guest）。
+  static String get memberLevel => '${profileData['level'] ?? 'guest'}';
+
+  /// 是否为**有效期内**的付费会员。
+  ///
+  /// 等级判定用 `kMemberLevels` 的 `paid` 字段 —— 单一真相源。那张表与网页端
+  /// `js/auth.js` 的 `LEVELS` 有逐字自检闸门（`tool/member_levels_selfcheck.dart`），
+  /// 所以在这里另写一份 id 清单迟早会和网页端不一致。
+  ///
+  /// `expire_at` 为 null 视为长期有效（站长手动开的永久档）；
+  /// 有值则必须晚于当前时间 —— 过期账号自动退回免费待遇，不需要人工降级。
+  static bool get isMember {
+    final hit = kMemberLevels.where((e) => e.id == memberLevel);
+    if (hit.isEmpty || !hit.first.paid) return false;
+    final exp = profileData['expire_at'];
+    if (exp == null || '$exp'.isEmpty) return true;
+    final t = DateTime.tryParse('$exp');
+    if (t == null) return true;
+    return t.isAfter(DateTime.now());
+  }
+
+  /// 某个表在当前等级下能否同步。
+  static bool canSyncTable(String table) {
+    if (!syncTables.contains(table)) return false;
+    if (_contentTables.contains(table)) return isMember;
+    return true;
+  }
+
   /// 通用：按表写一行（载荷与网页端 syncPush 同构）
   static Future<bool> tableUp(String table, String id, Object data) async {
-    if (!loggedIn || !syncTables.contains(table)) return false;
+    if (!loggedIn || !canSyncTable(table)) return false;
     try {
       final r = await http.post(Uri.parse('$base/rest/v1/$table'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
@@ -277,7 +323,7 @@ class Cloud {
   ///   只删本机 → 下次 `pullAll()` 会把云端旧行**原样拉回来**（幽灵复活）。
   ///   网页端 v3.29.6 修过同一个坑（`sync-service.js` 的 `delRow`）。
   static Future<bool> tableDelete(String table, String id) async {
-    if (!loggedIn || !syncTables.contains(table) || id.isEmpty) return false;
+    if (!loggedIn || !canSyncTable(table) || id.isEmpty) return false;
     try {
       final r = await http.delete(
           Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&id=eq.${Uri.encodeQueryComponent(id)}'),
@@ -393,8 +439,11 @@ class Cloud {
   }
 
   /// 通用：按表读回本用户的全部行
+  ///
+  /// ★ 分级同步：内容表（书架/进度/收藏/历史）非会员直接返回空 ——
+  ///   否则「升级→同步→降级」之后还能把云端旧内容拉下来，等于绕过等级限制。
   static Future<List<Map<String, dynamic>>> tableDown(String table) async {
-    if (!loggedIn || !syncTables.contains(table)) return [];
+    if (!loggedIn || !canSyncTable(table)) return [];
     try {
       final r = await http.get(Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&select=*'), headers: _authHeaders);
       if (r.statusCode == 200) {
