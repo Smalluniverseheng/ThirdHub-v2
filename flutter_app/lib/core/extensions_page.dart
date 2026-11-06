@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
 import 'extensions.dart';
+import 'i18n.dart';
 
 // 转发出去：调用方只 import 本页面就能同时拿到 Extensions 清单，
 // 否则像 main.dart 那样在入口里写 `Extensions.catalog` 会报 "getter 未定义"。
@@ -39,7 +40,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     final scheme = Theme.of(c).colorScheme;
     if (_loading) {
       return Scaffold(
-          appBar: AppBar(title: const Text('资源包')),
+          appBar: AppBar(title: Text(tr('资源包'))),
           body: const Center(child: CircularProgressIndicator()));
     }
     final groups = <ExtKind, List<AppExt>>{};
@@ -48,7 +49,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('资源包')),
+      appBar: AppBar(title: Text(tr('资源包'))),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
         // 顶部说明：先讲清「不装会怎样」，比催着装更让人放心
         Container(
@@ -61,7 +62,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             Row(children: [
               Icon(Icons.inventory_2_outlined, size: 18, color: scheme.primary),
               const SizedBox(width: 8),
-              const Text('按需安装',
+              Text(tr('按需安装'),
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             ]),
             const SizedBox(height: Gap.sm),
@@ -71,7 +72,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               style: TextStyle(fontSize: 12, height: 1.6, color: Colors.grey),
             ),
             const SizedBox(height: 6),
-            Text('已装占用 ${Extensions.sizeText(Extensions.installedBytes())}',
+            Text(trf('已装占用 {size}',
+                    {'size': Extensions.sizeText(Extensions.installedBytes())}),
                 style: TextStyle(fontSize: 11, color: scheme.primary)),
           ]),
         ),
@@ -88,7 +90,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         const SizedBox(height: Gap.md),
         const Text(
           '说明：\n'
-          '· 引擎包是独立的安装器，装完在系统里单独一个图标，负责解析站点\n'
+          '· 资料库包是独立的安装器，装完在系统里单独一个图标，负责解析站点\n'
           '· 本机 AI 运行时需要约 2GB 可用内存；手机上跑不动的话，用云端 AI 也一样',
           style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.7),
         ),
@@ -98,7 +100,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   String _kindName(ExtKind k) => switch (k) {
         ExtKind.runtime => 'AI 运行时',
-        ExtKind.engine => '内容引擎',
+        ExtKind.engine => tr('内容资料库'),
         ExtKind.sources => '源包',
         ExtKind.model => '本地模型',
         ExtKind.skill => '技能包',
@@ -138,7 +140,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
           Text(e.desc,
               style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.grey)),
           const SizedBox(height: 8),
-          Text('装了可以：${Extensions.unlockText(e)}',
+          Text(trf('装了可以：{what}', {'what': Extensions.unlockText(e)}),
               style: TextStyle(fontSize: 11, color: scheme.primary)),
           const SizedBox(height: 10),
           if (!e.available)
@@ -146,7 +148,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               Icon(Icons.schedule, size: 15,
                   color: scheme.onSurface.withValues(alpha: 0.4)),
               const SizedBox(width: 6),
-              Text('还没做好，先别装',
+              Text(tr('还没做好，先别装'),
                   style: TextStyle(
                       fontSize: 11,
                       color: scheme.onSurface.withValues(alpha: 0.5))),
@@ -159,7 +161,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                   await Extensions.markRemoved(e.id);
                   if (mounted) setState(() {});
                 },
-                child: const Text('标记为已卸载'),
+                child: Text(tr('标记为已卸载')),
               ),
             )
           else
@@ -169,7 +171,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                 onPressed: e.kind == ExtKind.engine
                     ? () => _openEngine(e)
                     : null,
-                child: const Text('下载'),
+                child: Text(tr('下载')),
               ),
             ),
         ]),
@@ -182,7 +184,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     showDialog<void>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text('安装「${e.name}」'),
+        title: Text(trf('安装「{name}」', {'name': e.name})),
         content: Text(
           '会下载 ${Extensions.sizeText(e.sizeBytes)} 的安装包，'
           '装完在桌面上单独一个图标。\n\n'
@@ -190,15 +192,15 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
           style: const TextStyle(fontSize: 13, height: 1.6),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr('取消'))),
           FilledButton(
             onPressed: () {
               Navigator.pop(c);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('下载会走系统浏览器，在下载中心里点「引擎」可以直接装')),
+                SnackBar(content: Text(tr('下载会走系统浏览器，在下载中心里点「资料库」可以直接装'))),
               );
             },
-            child: const Text('知道了'),
+            child: Text(tr('知道了')),
           ),
         ],
       ),
