@@ -1006,26 +1006,36 @@ class EngineDirect {
   /// 返回统一归一成调用方契约：text/content、images/pages、header/headers
   /// 各键都补齐（NovelReaderPage 要 text、EngineComicReader 要 images+headers、
   /// 播放器要 url+headers）。
+  /// 取内容。
+  ///
+  /// [limit] 只对图片类（漫画）有意义：**先要前 N 张**，拿到就能显示第一页，
+  /// 不用等引擎把整话解析完。引擎不支持该参数时会忽略它、照旧返回全集 ——
+  /// 上层按「返回条数是否被截断」判断，不依赖引擎一定认这个参数。
+  ///
+  /// ★2026-11-07 用户报「看一话要等整个漫画下完」：根因是这里一次性拿整话。
+  ///   漫画一话常有 20-40 页，引擎逐页解析要十几秒，用户只能干等白屏。
   static Future<Map<String, dynamic>> content(
-      String type, String id, String chapter) async {
+      String type, String id, String chapter, {int limit = 0}) async {
     final mod = moduleOf(type);
     final eid = Uri.encodeComponent(id);
     // 空章节引用(音乐单曲/视频直链这类无目录条目)退化为第 0 章，
     // 否则引擎回 400「缺参数 chapterId」，用户只看到一句取内容失败。
     final ch = Uri.encodeComponent(chapter.trim().isEmpty ? '0' : chapter);
+    // 只有漫画谈得上「先给前几张」，小说/视频/音乐分批没有意义
+    final limitQ = (mod == 'comic' && limit > 0) ? '&limit=$limit' : '';
     Map<String, dynamic> r;
     if (mod == 'novel') {
       r = await _get('/thp/content?type=novel&id=$eid&chapter=$ch', false, 30);
     } else {
       try {
-        r = await _get('/thp/m/$mod/content?id=$eid&chapter=$ch', false, 30);
+        r = await _get('/thp/m/$mod/content?id=$eid&chapter=$ch$limitQ', false, 18);
       } catch (e) {
         final msg = '$e';
         final notFound = msg.contains('未知端点') ||
             msg.contains('NOT_FOUND') ||
             msg.contains('HTTP 404');
         if (!notFound) rethrow;
-        r = await _get('/thp/content?type=$mod&id=$eid&chapter=$ch', false, 30);
+        r = await _get('/thp/content?type=$mod&id=$eid&chapter=$ch$limitQ', false, 18);
       }
     }
     final d = r['data'];
