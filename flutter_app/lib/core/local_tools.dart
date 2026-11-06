@@ -515,7 +515,7 @@ class LocalTools {
       return '已通过${r.via == PeerVia.hub ? "后端转发" : "直连"}调用「${t.name}」的 $tool，结果：$s';
     }),
     // ══ 2026-11-06 新增：给 AI 的「整机自知」工具 ══
-    LocalTool('app_state', '一句话了解当前状态：在哪个模块、有多少书/角色卡/笔记、引擎连没连。回答用户「我现在有什么」这类问题时先调它',
+    LocalTool('app_state', '一句话了解当前状态：在哪个模块、有多少书/角色卡/笔记、资料库连没连。回答用户「我现在有什么」这类问题时先调它',
         _obj({}), (_) async {
       final p = await SharedPreferences.getInstance();
       final mods = await LocalHooks.listModules?.call() ?? <String>[];
