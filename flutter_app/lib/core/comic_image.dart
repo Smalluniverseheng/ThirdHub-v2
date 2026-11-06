@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-
-import 'i18n.dart';
 import 'package:flutter/semantics.dart';
 
-/// 漫画页图组件 —— 移植自 Venera（venera-app/venera，MIT）。
+import 'i18n.dart';
+
+/// 漫画页图组件 —— 移植自 Venera（venera-app/venera，**GPL-3.0**，2026-11-07 核实）。
+/// 许可证边界见 outputs/ThirdHub全盘升级计划-20261107.md：桌面端/自托管侧分发，
+/// 移动端只保留尺寸计算算法，不整套分发其 UI。
 ///
 /// 解决的正是「每张图只出来一半」这个问题：
 ///
@@ -22,7 +24,7 @@ import 'package:flutter/semantics.dart';
 ///
 /// 移植时有四处改动（原版依赖它自己的工程）：
 /// · `part of 'reader.dart'` → 独立文件（这就是为什么原版 0 个 import：全靠 part 共享）
-/// · `"Retry".tl` → `'重试'`（去掉它的翻译扩展）
+/// · `"Retry".tl` → `tr('重试')`（接到本项目的 i18n，6 语言都有译文）
 /// · `GlobalState.find<...>().ignoreNextTap()` → 删掉（我们没有那套手势协调）
 /// · `context.colorScheme.surfaceContainer` → `Theme.of(context)...`
 class ComicImage extends StatefulWidget {
@@ -319,7 +321,8 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
                   });
                   _resolveImage();
                 },
-                child: Text(tr('重试'), style: const TextStyle(fontSize: 12)),
+                child: Text(tr('重试'),
+                    style: const TextStyle(fontSize: 12)),
               ),
               const SizedBox(height: 12),
             ],
