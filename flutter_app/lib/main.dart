@@ -15837,8 +15837,8 @@ class _Ei extends State<EngineItemPage> {
     _toast('已加入下载队列（$n 话）—— 进度到「离线内容」里看');
   }
 
-  Future<Map<String, dynamic>> _content(String chapter) async {
-    final d = await EngineDirect.content(widget.type, id, chapter);
+  Future<Map<String, dynamic>> _content(String chapter, {int limit = 0}) async {
+    final d = await EngineDirect.content(widget.type, id, chapter, limit: limit);
     if (d['pages'] != null && d['images'] == null)
       d['images'] = d['pages']; // THP v1 images/pages 归一
     if (d['text'] == null && d['content'] != null)
@@ -15856,7 +15856,7 @@ class _Ei extends State<EngineItemPage> {
                   chapters: chapters,
                   index: index ?? 0,
                   comicName: name,
-                  fetch: (chapUrl) => _content(chapUrl))));
+                  fetch: (chapUrl, {int limit = 0}) => _content(chapUrl, limit: limit))));
       return;
     }
     if (t == 'novel') {
@@ -16519,7 +16519,9 @@ class EngineComicReader extends StatefulWidget {
   final List chapters;
   final int index;
   final String comicName;
-  final Future<Map<String, dynamic>> Function(String chapUrl) fetch;
+  /// 取一话内容。`limit` > 0 表示「只要前 N 张」——
+  /// 引擎支持时先返回前面几张，让用户立刻看到第一页；不支持时会忽略它返回全集。
+  final Future<Map<String, dynamic>> Function(String chapUrl, {int limit}) fetch;
   const EngineComicReader(
       {super.key,
       required this.chapters,
@@ -16562,6 +16564,13 @@ class _Ecr extends State<EngineComicReader> {
     return n.isNotEmpty ? n : '第${idx + 1}话';
   }
 
+  /// 分批加载本话（2026-11-07）。
+  ///
+  /// 用户报「看一话要等整个漫画下完」：原来这里一次 fetch 拿整话，一话二三十页、
+  /// 引擎逐页解析十几秒，用户只能对着白屏等。现在两段式：
+  ///   ① 先要前 10 张 → 拿到立刻渲染，用户能开始看
+  ///   ② 首批恰好 10 张（说明引擎认了这个参数、后面还有）→ 后台再补全集
+  /// 引擎不认 limit 时会直接返回全集，首批就不是 10 张，自动跳过第二段，不浪费请求。
   Future<void> _load() async {
     setState(() {
       loading = true;
@@ -16569,26 +16578,55 @@ class _Ecr extends State<EngineComicReader> {
       images = [];
     });
     try {
-      final d = await widget.fetch(chapUrl);
+      final d = await widget.fetch(chapUrl, limit: 10);
       final raw = (d['images'] as List? ?? d['pages'] as List? ?? []);
-      images = [for (final e in raw) '$e'];
+      final list = [for (final e in raw) '$e'];
       headers = Map<String, String>.from(d['headers'] ?? d['header'] ?? {});
-      if (images.isEmpty) err = '本话没有图片';
+
       // 本地优先：本话保存过就直接读本地图片（断网/引擎关了照样看）。
-      if (images.isNotEmpty) {
+      if (list.isNotEmpty) {
         final local = await MediaOfflineStore.localPagesOf(_chapKey,
             title: '${widget.comicName} · $chapName');
         if (local.isNotEmpty) {
           images = [for (final f in local) f.path];
           _fromLocal = true;
-        } else {
-          _fromLocal = false;
+          if (mounted) setState(() => loading = false);
+          return;
+        }
+        _fromLocal = false;
+      }
+
+      if (list.isEmpty) {
+        err = '本话没有图片';
+        if (mounted) setState(() => loading = false);
+        return;
+      }
+
+      // 第一段：把拿到的先显示出来
+      images = list;
+      if (mounted) setState(() => loading = false);
+
+      // 第二段：首批刚好 10 张 → 引擎可能还有更多，后台补齐
+      if (list.length == 10) {
+        try {
+          final full = await widget.fetch(chapUrl);
+          final rawFull = (full['images'] as List? ?? full['pages'] as List? ?? []);
+          final fullList = [for (final e in rawFull) '$e'];
+          if (fullList.length > images.length && mounted) {
+            setState(() {
+              images = fullList;
+              headers = Map<String, String>.from(
+                  full['headers'] ?? full['header'] ?? headers);
+            });
+          }
+        } catch (_) {
+          // 补全失败不影响已显示的内容，用户至少能看前 10 张
         }
       }
     } catch (e) {
       err = '$e';
+      if (mounted) setState(() => loading = false);
     }
-    if (mounted) setState(() => loading = false);
   }
 
   void _go(int i) {
