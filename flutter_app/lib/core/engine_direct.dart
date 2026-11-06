@@ -241,6 +241,27 @@ class EngineDirect {
 
   /// 引擎支持 `stream=1` 的 NDJSON 增量流 —— caps `stream-search`。
   static bool get supportsStream => caps.contains('stream-search');
+
+  /// 引擎是否支持某个内容类型（novel / comic / music / video）。
+  ///
+  /// ★2026-11-07 用户报：「明明这个引擎只支持漫画，我在音乐区搜到了漫画，
+  ///   还被当成音乐格式渲染，糊成一坨」。根因就在这里：
+  ///   `searchPage` 把用户选的 type **原样发给引擎**，从不校验。
+  ///   引擎不支持该类型时有两种行为 —— 忽略参数（按它自己唯一的类型返回）
+  ///   或直接报错，前者就把漫画条目混进了音乐结果。
+  ///
+  ///   引擎的能力在 `caps` 里以 `m:<type>` 声明，据此拦截。
+  static bool supportsType(String type) {
+    if (!connected) return false;
+    if (type == 'all') return true;
+    return caps.contains('m:$type');
+  }
+
+  /// 当前引擎支持的模块类型（给 UI 过滤类型选择器用）。
+  static List<String> get supportedTypes => [
+        for (final c in caps)
+          if (c.startsWith('m:')) c.substring(2)
+      ];
   static String get lastError => s.message;
 
   static bool _autoConnecting = false;
@@ -815,6 +836,14 @@ class EngineDirect {
     String mode = 'fuzzy',
     bool deep = false,
   }) async {
+    // ★2026-11-07 类型闸门：引擎不支持的类型不去请求，直接返回空页。
+    //   用户反馈的「音乐区搜到漫画」就是缺这道闸 —— 之前 type 原样发过去，
+    //   引擎按自己唯一的类型返回，条目混进别的模块后按该模块的格式渲染，全乱。
+    //   返回空页而不是抛错：上层看到「0 条」会显示「换个关键词」，比报错更贴用户预期。
+    if (type != 'all' && !supportsType(type)) {
+      return const SearchPage();
+    }
+
     // mode 只在引擎声明了 search-mode 时才发 —— 老引擎忽略未知参数虽无副作用，
     // 但少发一个参数就少一处"版本漂移时行为不一致"的可能。
     final modeQ =
