@@ -16705,10 +16705,11 @@ class _Ecr extends State<EngineComicReader> {
     // ComicImage 的做法是解码后记住真实像素宽高（静态缓存），
     // 高度 = 宽度 × 真实高 / 真实宽，从第一帧起就是准的；
     // 同一张图翻回来时缓存已存在，连解码都不用等。
-    // 三元两支各是具体子类，不标注会被推断成 Object（analyze 报 argument_type_not_assignable）
+    // 三元两支是不同具体子类（FileImage / NetworkImage），直接推断会退化成 Object，
+    // 所以两支各自显式转成 ImageProvider<Object>（analyze: invalid_assignment）。
     final ImageProvider<Object> prov = local
-        ? FileImage(File(p.replaceFirst('file://', '')))
-        : NetworkImage(images[i], headers: headers);
+        ? FileImage(File(p.replaceFirst('file://', ''))) as ImageProvider<Object>
+        : NetworkImage(images[i], headers: headers) as ImageProvider<Object>;
     return ComicImage(
       image: prov,
       width: double.infinity,
