@@ -33,6 +33,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'discover.dart';
 import 'app_log.dart';
 import 'apple_gate.dart';
+import 'engine_fanout.dart';
 
 /// 连到的是「资源库」而不是「引擎」。
 ///
@@ -290,6 +291,8 @@ class EngineDirect {
     final savedName = p.getString('engine_direct_name') ?? '';
     final savedCaps = p.getStringList('engine_direct_caps') ?? [];
     final savedVer = p.getString('engine_direct_version') ?? '';
+    // 多资料库并行开关（#193）：默认开；用户关过就尊重设置。
+    _fanout = p.getBool('engine_fanout') ?? true;
     if (savedUrl.isNotEmpty) {
       state.value = EngineState(
           status: EngineStatus.connecting,
@@ -609,9 +612,14 @@ class EngineDirect {
     return ok ? b.takeBytes() : null;
   }
 
+  /// [base] 指定**这一发请求打到哪台资料库**（多实例层，任务 #193）。
+  ///   传 null = 走原有的「按模块路由 + 主连接」逻辑，行为与以前逐字节一致。
+  ///   传具体地址时不再做「网络错误就换地址重连」的兜底 —— 那会改写主连接状态，
+  ///   而并行里某台挂掉不该影响其它台，更不该把用户的当前连接切走。
   static Future<Map<String, dynamic>> _get(String path,
-      [bool retried = false, int timeoutSec = 30]) async {
-    if (url.isEmpty) throw Exception('未连接资料库');
+      [bool retried = false, int timeoutSec = 30, String? base]) async {
+    final root = (base != null && base.isNotEmpty) ? base : urlForPath(path);
+    if (root.isEmpty) throw Exception('未连接资料库');
     // ★ 4.7.2 运行时闸门（阶段6）：iOS 上引擎只当纯 HTTP 数据源。
     //   判定口径收口在 core/apple_gate.dart（AppleGate.allowEngineEndpoint），
     //   这里只执行 —— 将来谁加了新端点，iOS 上会被这里拦住而不是漏到审核。
@@ -620,8 +628,9 @@ class EngineDirect {
     }
     final cli = _client();
     try {
-      // ★按 path 里的模块选资料库（多资料库路由；单资料库时等价于 url）
-      final req = http.Request('GET', Uri.parse('${urlForPath(path)}$path'));
+      // ★按 path 里的模块选资料库（多资料库路由；单资料库时等价于 url）；
+      //   base 非空时以 base 为准（并行扇出：一台资料库一发请求）。
+      final req = http.Request('GET', Uri.parse('$root$path'));
       final res = await cli.send(req).timeout(Duration(seconds: timeoutSec));
       // ① 有 Content-Length 时先拒（连下载都不下载）
       final cl = res.contentLength;
@@ -668,7 +677,8 @@ class EngineDirect {
       return {'data': j, 'raw': j};
     } catch (e) {
       // ★只有「网络层」错误才尝试重连换地址；业务错误(400/ok:false/超限)直接抛，别吞掉原因。
-      if (retried || !_isNetErr(e)) rethrow;
+      //   指定了 base（并行扇出）时不换地址：那台挂掉就报它的错，主连接不动。
+      if (retried || base != null || !_isNetErr(e)) rethrow;
       final old = url;
       // 不再先把 url 清空再 autoConnect（那会让 UI 闪一下「未连接」）；
       // 改为后台找一个可用地址，且**必须与旧地址不同**才切换重试。
@@ -836,14 +846,81 @@ class EngineDirect {
     String mode = 'fuzzy',
     bool deep = false,
   }) async {
+    // ★多资料库并行（#193）：同一模块发现到 2 台以上资料库、且开关打开时，
+    //   向它们**同时**发这一发搜索，结果按标题/作者去重合并。
+    //   只有 0/1 台时完全走老路径 —— 单资料库用户的行为与以前逐字节相同。
+    //   并行返回顺序是不确定的，合并按**目标顺序**铺（主连接在最前），
+    //   所以同一台资料库内部的结果相对顺序不会因为"谁先返回"而变化。
+    final targets = fanoutEnabled ? fanoutTargets(type) : const <String>[];
+    if (targets.length > 1) {
+      final pages = await Future.wait([
+        for (final u in targets)
+          _searchPageAt(u, type, q,
+                  page: page,
+                  limit: limit,
+                  budgetSec: budgetSec,
+                  restart: restart,
+                  mode: mode,
+                  deep: deep)
+              .then((p) => FanoutPage(
+                  url: u,
+                  items: p.items,
+                  total: p.total,
+                  hasMore: p.hasMore,
+                  truncated: p.truncated))
+              .catchError((Object e) => FanoutPage.failed(u, e)),
+      ]);
+      final m = mergeFanout(pages);
+      // 全挂才报错：多台里挂一台不该让整个搜索变红，用户要的是结果。
+      if (m.okCount == 0) throw Exception(m.errorText);
+      return SearchPage(
+        items: m.items,
+        page: page,
+        total: m.total,
+        hasMore: m.hasMore,
+        truncated: m.truncated,
+        budgetSec: budgetSec,
+      );
+    }
+
     // ★2026-11-07 类型闸门：引擎不支持的类型不去请求，直接返回空页。
     //   用户反馈的「音乐区搜到漫画」就是缺这道闸 —— 之前 type 原样发过去，
     //   引擎按自己唯一的类型返回，条目混进别的模块后按该模块的格式渲染，全乱。
     //   返回空页而不是抛错：上层看到「0 条」会显示「换个关键词」，比报错更贴用户预期。
-    if (type != 'all' && !supportsType(type)) {
+    //
+    //   并行场景下这台"该打"的资料库可能不是主连接（主连接不支持该类型），
+    //   所以闸门只在「就是要打主连接」时才判。
+    final primary = urlForPath('/thp/search?type=$type');
+    final only = (targets.length == 1 && targets.first != primary)
+        ? targets.first
+        : null;
+    if (type != 'all' && only == null && !supportsType(type)) {
       return const SearchPage();
     }
+    return _searchPageAt(only, type, q,
+        page: page,
+        limit: limit,
+        budgetSec: budgetSec,
+        restart: restart,
+        mode: mode,
+        deep: deep);
+  }
 
+  /// 向**一台**资料库要一页搜索结果。[base] 为空 = 主连接（按模块路由的老路径）。
+  ///
+  /// 抽出来是为了并行扇出时"每台各自超时、各自失败"：
+  /// 全在一个 try 里串着写，一台超时就会把整轮搜索拖死。
+  static Future<SearchPage> _searchPageAt(
+    String? base,
+    String type,
+    String q, {
+    required int page,
+    required int limit,
+    required int budgetSec,
+    required bool restart,
+    required String mode,
+    required bool deep,
+  }) async {
     // mode 只在引擎声明了 search-mode 时才发 —— 老引擎忽略未知参数虽无副作用，
     // 但少发一个参数就少一处"版本漂移时行为不一致"的可能。
     final modeQ =
@@ -854,7 +931,7 @@ class EngineDirect {
         '&page=$page&limit=$limit&budget=$budgetSec$modeQ$deepQ'
         '${restart ? '&restart=1' : ''}';
     try {
-      final r = await _get(path, false, _searchTimeoutSec);
+      final r = await _get(path, false, _searchTimeoutSec, base);
       return SearchPage.from(r);
     } catch (e) {
       // ★「加载更多」翻页时引擎端缓存已过期(10 分钟) → HTTP 409 no_cache。
@@ -869,8 +946,9 @@ class EngineDirect {
           '/thp/search?type=$type&q=${Uri.encodeComponent(q)}'
           '&page=1&limit=$limit&budget=$budgetSec$modeQ$deepQ',
           false,
-          _searchTimeoutSec);
-      final r = await _get(path, false, _searchTimeoutSec);
+          _searchTimeoutSec,
+          base);
+      final r = await _get(path, false, _searchTimeoutSec, base);
       return SearchPage.from(r);
     }
   }
@@ -1135,6 +1213,68 @@ class EngineDirect {
   /// 模块键（novel/comic/music/video）→ 该模块的资料库地址。
   static final Map<String, String> _moduleUrls = {};
 
+  /// 模块键 → 该模块**全部**可用资料库地址（并行搜索用，任务 #193）。
+  ///
+  /// 与 [_moduleUrls] 的关系：那张表是「一台」的结论（主连接），这张表是「都有谁」。
+  /// 单资料库时两者等价；多台时前者只是后者的第一个。
+  static final Map<String, List<String>> _moduleEngines = {};
+
+  /// 多资料库并行开关（#193）。默认开 —— 只有真发现 2 台以上同模块资料库才生效，
+  /// 单资料库用户完全感觉不到差别。关掉后一律只问主连接（= 老行为）。
+  static bool _fanout = true;
+  static bool get fanoutEnabled => _fanout;
+
+  static Future<void> setFanout(bool on) async {
+    _fanout = on;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('engine_fanout', on);
+    } catch (_) {}
+  }
+
+  /// 当前可用资料库的**实例快照**（多实例层的对外视图）。
+  ///
+  /// 每台一个 [EngineNode]（地址 + 能力 + 端口），剔掉资源库、同地址只留一台。
+  /// 并行搜索就是「按这份快照逐台发请求」。
+  static List<EngineNode> nodes() {
+    _ensureRoutes();
+    final out = <EngineNode>[];
+    final seen = <String>{};
+    for (final d in ThpDiscovery.list()) {
+      final n = EngineNode(
+          url: d.url, name: d.name, caps: d.caps, port: d.port);
+      if (!n.isValid || n.isLibrary) continue;
+      if (!seen.add(n.key)) continue;
+      out.add(n);
+    }
+    return out;
+  }
+
+  /// 这个模块这一轮该向哪几台资料库要结果（第一项 = 主连接）。
+  ///
+  /// 返回 0/1 项表示**不并行**：调用方照旧走单发路径，行为与老版本一致。
+  /// `all` 不扇出 —— 一台资料库的一次扫描已经覆盖它自己的全部类型，
+  /// 跨台合并不同类型的结果对「全类型搜索」没有增量价值，只会把耗时翻倍。
+  static List<String> fanoutTargets(String type) {
+    if (type == 'all') return const <String>[];
+    _ensureRoutes();
+    final primary = urlForPath('/thp/search?type=$type');
+    final list = _moduleEngines[type] ?? const <String>[];
+    final out = <String>[];
+    // 主连接能提供该类型（或本来就是路由表里的那台）就排在第一位，
+    // 这样第一页的"手感"与并行无关的那部分保持与老版本一致。
+    if (primary.isNotEmpty && (list.contains(primary) || supportsType(type))) {
+      out.add(primary);
+    }
+    for (final u in list) {
+      if (u.isNotEmpty && !out.contains(u)) out.add(u);
+    }
+    return out;
+  }
+
+  /// 该模块能并行的资料库台数（>1 才真的并行）。
+  static int fanoutCount(String type) => fanoutTargets(type).length;
+
   /// 路由表快照（诊断页/测试用）。
   static Map<String, String> get moduleRoutes => Map.unmodifiable(_moduleUrls);
 
@@ -1168,12 +1308,16 @@ class EngineDirect {
   /// 路由表里有该模块 → 用它的地址；否则回落默认连接（既有行为）。
   static DateTime _routesAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  static String urlForPath(String path) {
-    // 懒刷新：发现列表变化后 5 秒内自动生效，不必依赖某个启动点先跑过。
+  /// 懒刷新：发现列表变化后 5 秒内自动生效，不必依赖某个启动点先跑过。
+  static void _ensureRoutes() {
     if (DateTime.now().difference(_routesAt) > const Duration(seconds: 5)) {
       refreshModuleRoutes();
       _routesAt = DateTime.now();
     }
+  }
+
+  static String urlForPath(String path) {
+    _ensureRoutes();
     final mod = moduleOfPath(path);
     if (mod.isNotEmpty) {
       final u = _moduleUrls[mod];
@@ -1213,6 +1357,27 @@ class EngineDirect {
     _moduleUrls
       ..clear()
       ..addAll(map);
+
+    // ── 并行路由：同一模块可能有多台资料库（#193）──
+    //   与上面「先到先得、一台」不同，这里把**所有**能提供该模块的地址都收进来
+    //   （顺序 = 发现顺序，主连接由 fanoutTargets 提到最前）。
+    //   模块判定走 EngineNode.supports：有 `m:` 标签就只认标签，没标签才按端口兜底 ——
+    //   否则一台跑在 1234 端口上的漫画资料库会被并进小说搜索（老 bug 复发）。
+    final all = <String, List<String>>{};
+    for (final d in list) {
+      if (d.isLibrary) continue;
+      final node = EngineNode(
+          url: d.url, name: d.name, caps: d.caps, port: d.port);
+      if (!node.isValid) continue;
+      for (final mod in kContentModules) {
+        if (!node.supports(mod)) continue;
+        final l = all.putIfAbsent(mod, () => <String>[]);
+        if (!l.contains(node.url)) l.add(node.url);
+      }
+    }
+    _moduleEngines
+      ..clear()
+      ..addAll(all);
   }
 
   /// 手填某模块的资料库地址（用户在「连接资料库」里指定时用）。
