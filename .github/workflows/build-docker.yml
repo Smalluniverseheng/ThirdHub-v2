@@ -1,0 +1,63 @@
+# 桌面端 / NAS 容器：多架构镜像（全盘升级 #203，2026-11-07）
+#
+# 为什么交给 CI：本机没有 docker 命令，不能假装本地验过。
+# 产物推到 GHCR，NAS 上 `docker compose pull && docker compose up -d` 即可，
+# linux/amd64 覆盖 x86 NAS 与云服务器，linux/arm64 覆盖 ARM NAS 与树莓派。
+name: build-docker
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - '.github/workflows/build-docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read backend version (single source of truth)
+        id: ver
+        run: echo "v=$(node -p "require('./server/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/thirdhub-backend:${{ steps.ver.outputs.v }}
+            ghcr.io/${{ github.repository_owner }}/thirdhub-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image (HTTPS-only /v1/meta)
+        run: |
+          docker run -d --name th-smoke -p 19527:9527 \
+            ghcr.io/${{ github.repository_owner }}/thirdhub-backend:${{ steps.ver.outputs.v }}
+          for i in $(seq 1 20); do
+            if curl -sk --max-time 3 https://127.0.0.1:19527/v1/meta | grep -q '"object"'; then
+              echo "OK /v1/meta 200"; break
+            fi
+            sleep 2
+          done
+          curl -sk --max-time 5 https://127.0.0.1:19527/v1/meta | head -c 300 || true
+          docker rm -f th-smoke || true
