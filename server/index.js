@@ -470,6 +470,7 @@ const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtAgent = require('./routes-agent');
+const rtDataSources = require('./routes-data-sources');
 // 注：peerHub 已上移到 ~242 行（peerHub.init 之前），此处不再重复 require —— 见该处注释。
 // 存储进程状态(原在文件尾, 上移供 adminCtx 引用)
 const storageProcs = {}; const storageState = { cloudreve: 'absent', aria2: 'absent' };
@@ -801,6 +802,36 @@ async function handle(req, res, body) {
     } catch (e) {
       return send(500, { ok: false, error: { code: 'write_failed', message: String(e.message) } });
     }
+    // ★镜像一份到 Supabase th_logs（后台直接查，避开浏览器连不到本机后端的限制）
+    //   失败不影响本地落盘 —— 本地永远是主副本。
+    try {
+      // ★从工作区 .env 读（后端不加载 process.env，只认这个文件）
+      let U = process.env.SUPABASE2_URL || '';
+      let K = process.env.SUPABASE2_SERVICE_ROLE_KEY || '';
+      if (!U || !K) {
+        try {
+          const t = fs.readFileSync('C:/Users/英莉/WorkBuddy/第三方聚合平台/.env', 'utf8');
+          const g = (k) => (t.match(new RegExp('^' + k + '\\s*=\\s*(.+)$', 'm')) || [])[1]?.trim().replace(/^["']|["']$/g, '') || '';
+          U = U || g('SUPABASE2_URL');
+          K = K || g('SUPABASE2_SERVICE_ROLE_KEY');
+        } catch (_) {}
+      }
+      if (U && K) {
+        await fetch(U + '/rest/v1/th_logs', {
+          method: 'POST',
+          headers: {
+            apikey: K, Authorization: 'Bearer ' + K,
+            'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify(logs.map((x) => ({
+            at: x.at ? new Date(Number(x.at)).toISOString() : new Date().toISOString(),
+            cat: x.cat, level: x.level, msg: x.msg,
+            detail: x.detail || null, app: x.app, ver: x.ver, uid: x.uid,
+          }))),
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
     // 顺手清理 14 天前的
     try {
       const cut = Date.now() - 14 * 864e5;
@@ -1141,9 +1172,17 @@ async function handle(req, res, body) {
     }
   }
 
+  // ── 数据源分层（免鉴权）：移动端 / 公开网页端只读官方公开清单（全盘升级 #208）──
+  //   ★ 必须在鉴权闸门之前：移动端还没配对时也要能拿到「哪些是官方公开接口」。
+  //   第三方内容源只在 /v1/admin/* 端点，且必须持配对 token（见下方）。
+  if (await rtDataSources.handlePublic(req, res, p, send)) return;
+
   // 其余全需鉴权
   // ★ 2026-10-10：常量时间比较（防时序侧信道）
   if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+  // ── 数据源分层（管理后台，全盘升级 #209）：敏感源注册表 + 授权账号 ──
+  //   挂在 x-th-token 闸门之后 —— 只有管理员设备（或管理员授权后持配对码的设备）能读。
+  if ((await rtDataSources.handleAdmin(req, res, body, p, send, dataCtx)) || res.writableEnded) return;
   // ── 媒体路由(音乐/漫画/影视): server/routes-media.js ──
   if (await media.handle(req, res, body, u, p, send, mediaCtx)) return;
   // ── 管理台(引擎总览/存储/下载任务): server/routes-admin.js ──
