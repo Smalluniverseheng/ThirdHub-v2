@@ -16684,6 +16684,14 @@ class _Ecr extends State<EngineComicReader> {
   }
 
   /// 页图渲染：本地路径走 Image.file，联网走 Image.network（带防盗链头）。
+  ///
+  /// ★2026-11-07 用户报「每张图只出来一半，不加载完全」。查下来是**加载态表达**的问题：
+  ///   原来的 loadingBuilder 在加载中返回一个转圈，图片本身不画 —— 慢网时用户看到
+  ///   一张「只有上半截有内容、下半截空白」的画面，像是图坏了。
+  ///   现在改成：
+  ///     · 加载中显示**按比例的占位框 + 进度百分比**（占位框和真实图同高，不会跳）
+  ///     · 失败时给一个可点击的占位（点一下重试），而不是只画个破图图标
+  ///     · 宽度显式撑满（\`width: double.infinity\`），避免解析前高度塌成 0
   Widget _img(int i, {BoxFit fit = BoxFit.contain}) {
     _precacheNext(i); // ★播放器优化：看当前页时预热下一张
     final p = images[i];
@@ -16691,6 +16699,7 @@ class _Ecr extends State<EngineComicReader> {
     if (local) {
       return Image.file(File(p.replaceFirst('file://', '')),
           fit: fit,
+          width: double.infinity,
           errorBuilder: (_, __, ___) =>
               const Icon(Icons.broken_image, color: Colors.grey));
     }
@@ -16700,10 +16709,72 @@ class _Ecr extends State<EngineComicReader> {
     return Image.network(images[i],
         headers: headers,
         fit: fit,
-        loadingBuilder: (_, w, q) =>
-            q == null ? w : const Center(child: CircularProgressIndicator()),
-        errorBuilder: (_, __, ___) =>
-            const Icon(Icons.broken_image, color: Colors.grey));
+        // 显式撑满宽度：不写的话，图片解码出尺寸之前高度会塌成 0，
+        // 列表里看起来就是"这张图没了"。
+        width: double.infinity,
+        // 淡入：解码完成那一帧不要硬切，避免"先半张后整张"的跳变感
+        frameBuilder: (c, child, frame, sync) {
+          if (sync) return child; // 本地缓存命中，直接显示，不做动画
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: child,
+          );
+        },
+        loadingBuilder: (c, child, progress) {
+          if (progress == null) return child;
+          final total = progress.expectedTotalBytes;
+          final loaded = progress.cumulativeBytesLoaded;
+          final ratio = (total != null && total > 0) ? loaded / total : null;
+          return AspectRatio(
+            // 占位比例取常见的条漫单页（3:4）。真实图出来后会自然替换，
+            // 加载期间列表高度是稳定的，不会出现"滚着滚着内容跳走"。
+            aspectRatio: 3 / 4,
+            child: Container(
+              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: 0.04),
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, value: ratio),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    ratio == null
+                        ? '加载中'
+                        : '${(ratio * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+        errorBuilder: (c, e, s) => GestureDetector(
+          // 网络抖动导致的中断很常见 —— 点一下原地重试，不用退出重进这一话
+          onTap: () => setState(() {}),
+          child: AspectRatio(
+            aspectRatio: 3 / 4,
+            child: Container(
+              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: 0.04),
+              alignment: Alignment.center,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.refresh, color: Colors.grey, size: 26),
+                  SizedBox(height: 8),
+                  Text('这张没加载出来，点一下重试',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ),
+          ),
+        ));
   }
 
   @override
