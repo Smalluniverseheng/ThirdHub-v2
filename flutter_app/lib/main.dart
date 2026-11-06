@@ -30,6 +30,7 @@ import 'package:path_provider/path_provider.dart';
 // 该文件与 core/nav_swipe_logic.dart 保留（纯函数仍被 tool/nav_swipe_selfcheck.dart
 // 覆盖、也是 4.44.0 那次反向实现的存档），但没有运行期引用。
 import 'core/ui_cover.dart';
+import 'core/comic_image.dart';
 import 'core/haptic.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
@@ -16696,85 +16697,22 @@ class _Ecr extends State<EngineComicReader> {
     _precacheNext(i); // ★播放器优化：看当前页时预热下一张
     final p = images[i];
     final local = _fromLocal || p.startsWith('/') || p.startsWith('file:');
-    if (local) {
-      return Image.file(File(p.replaceFirst('file://', '')),
-          fit: fit,
-          width: double.infinity,
-          errorBuilder: (_, __, ___) =>
-              const Icon(Icons.broken_image, color: Colors.grey));
-    }
-    // ★写成 images[i] 而非本地别名：ui_cover_selfcheck 靠「Image.network 后紧跟
-    //   images[」识别"这是阅读器正文图"，用别名会让闸门误判为违规（2026-10-11 修复）。
-    //   ⚠ 本注释刻意不写完整的左括号形式，否则会被闸门的计数扫成一处"调用"。
-    return Image.network(images[i],
-        headers: headers,
-        fit: fit,
-        // 显式撑满宽度：不写的话，图片解码出尺寸之前高度会塌成 0，
-        // 列表里看起来就是"这张图没了"。
-        width: double.infinity,
-        // 淡入：解码完成那一帧不要硬切，避免"先半张后整张"的跳变感
-        frameBuilder: (c, child, frame, sync) {
-          if (sync) return child; // 本地缓存命中，直接显示，不做动画
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            child: child,
-          );
-        },
-        loadingBuilder: (c, child, progress) {
-          if (progress == null) return child;
-          final total = progress.expectedTotalBytes;
-          final loaded = progress.cumulativeBytesLoaded;
-          final ratio = (total != null && total > 0) ? loaded / total : null;
-          return AspectRatio(
-            // 占位比例取常见的条漫单页（3:4）。真实图出来后会自然替换，
-            // 加载期间列表高度是稳定的，不会出现"滚着滚着内容跳走"。
-            aspectRatio: 3 / 4,
-            child: Container(
-              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: 0.04),
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.4, value: ratio),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    ratio == null
-                        ? '加载中'
-                        : '${(ratio * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-        errorBuilder: (c, e, s) => GestureDetector(
-          // 网络抖动导致的中断很常见 —— 点一下原地重试，不用退出重进这一话
-          onTap: () => setState(() {}),
-          child: AspectRatio(
-            aspectRatio: 3 / 4,
-            child: Container(
-              color: Theme.of(c).colorScheme.onSurface.withValues(alpha: 0.04),
-              alignment: Alignment.center,
-              child: const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.refresh, color: Colors.grey, size: 26),
-                  SizedBox(height: 8),
-                  Text('这张没加载出来，点一下重试',
-                      style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
-              ),
-            ),
-          ),
-        ));
+    // 2026-11-07 移植 Venera 的 ComicImage（core/comic_image.dart）。
+    //
+    // 之前这里用 AspectRatio(3 / 4) 硬猜占位高度 —— 条漫实际是 1:1.4 甚至更长，
+    // 猜矮了图片就被裁掉下半截，看起来就是「每张图只出来一半」。
+    //
+    // ComicImage 的做法是解码后记住真实像素宽高（静态缓存），
+    // 高度 = 宽度 × 真实高 / 真实宽，从第一帧起就是准的；
+    // 同一张图翻回来时缓存已存在，连解码都不用等。
+    return ComicImage(
+      image: local
+          ? FileImage(File(p.replaceFirst('file://', '')))
+          : NetworkImage(images[i], headers: headers),
+      width: double.infinity,
+      fit: fit,
+      filterQuality: FilterQuality.medium,
+    );
   }
 
   @override
