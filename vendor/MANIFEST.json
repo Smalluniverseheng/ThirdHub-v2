@@ -1,0 +1,145 @@
+{
+  "schema": "thirdhub.vendor_manifest/1",
+  "updated": "2026-11-07",
+  "policy": {
+    "rule": "优先直接搬现成开源项目，不自己写等价实现；搬不动必须写清依赖代价，不许假装零依赖。",
+    "license_layers": {
+      "permissive": "MIT / Apache-2.0 / BSD / ISC —— 可直接搬进移动端，保留 LICENSE 与出处即可",
+      "copyleft": "GPL-3.0 / AGPL-3.0 —— 开源可用，但整套搬进移动端会使整个 App 受同等许可约束，与上架苹果冲突；只在桌面端 / 自托管侧分发",
+      "proprietary": "EULA / NOASSERTION / 未声明 —— 视为保留所有权利，不搬代码，只参考交互"
+    }
+  },
+  "upstreams": {
+    "mangayomi": {
+      "repo": "kodjodevf/mangayomi",
+      "commit": "91bda20a9235b64ba2fa5559b1e8fa1205a83988",
+      "commit_date": "2026-11-06T19:59:32Z",
+      "license": "Apache-2.0",
+      "stars": 4394,
+      "language": "Dart / Flutter",
+      "local_mirror": "vendor/_upstream/mangayomi",
+      "role": "漫画阅读器主对标：同语言、宽松许可、可搬进移动端并上架。替代原先的 Venera(GPL-3.0) 方案。",
+      "verified_facts": {
+        "total_blobs": 1546,
+        "repo_size_kb": 509037,
+        "reader_entry": "lib/modules/manga/reader/reader_view.dart",
+        "reader_lines": 1372,
+        "reader_imports": 54,
+        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。"
+      }
+    },
+    "venera": {
+      "repo": "venera-app/venera",
+      "commit": "a0eba914f4c2",
+      "commit_date": "2026-04-05T04:33:33Z",
+      "license": "GPL-3.0",
+      "stars": 11369,
+      "language": "Dart / Flutter",
+      "local_mirror": "vendor/_upstream/venera",
+      "role": "运行规则参考（判页分区 / 六种阅读方向 / 双击长按 / 跨话导航 / 追更节流）；整套界面骨架只在桌面端 / 自托管侧，不进移动端。",
+      "verified_facts": {
+        "reader_files": 8,
+        "reader_total_bytes": 133000,
+        "main_file": "lib/pages/reader/reader.dart",
+        "main_imports": 44,
+        "note": "7 个 part 文件全部 `part of 'reader.dart'`，共享同一作用域——所以「无 import」不等于「无依赖」，这是必须写进台账的坑。"
+      }
+    },
+    "namida": {
+      "repo": "namidaco/namida",
+      "commit": "34713ead9437",
+      "commit_date": "2026-11-05T11:56:29Z",
+      "license": "NOASSERTION (自定义 EULA)",
+      "license_file": "vendor/_upstream/namida/LICENSE",
+      "stars": 6791,
+      "language": "Dart / Flutter",
+      "local_mirror": "vendor/_upstream/namida",
+      "role": "仅作交互参考。**不可搬代码**：LICENSE 实为 EULA（End User License Agreement，App Name: Namida / Company: namidaco），保留所有权利，不属于开源许可。",
+      "corrected": "2026-11-07 推翻了此前「Namida 代码可搬」的判断——当时只看到它是 Dart 项目，没读 LICENSE 正文。"
+    },
+    "harmony_music": {
+      "repo": "anandnet/Harmony-Music",
+      "license": "GPL-3.0",
+      "stars": 3086,
+      "language": "Dart / Flutter",
+      "role": "音乐播放器候选：真正开源且是 Flutter，但 GPL-3.0 → 与 Namida 不同，代码可以搬，只是移动端整套搬会传染许可。"
+    },
+    "dart_simple_live": {
+      "repo": "xiaoyaocz/dart_simple_live",
+      "license": "GPL-3.0",
+      "stars": 16228,
+      "language": "Dart / Flutter",
+      "role": "影视 / 直播候选，GPL-3.0，仅桌面端或需评估。"
+    },
+    "kazumi": {
+      "repo": "Predidit/Kazumi",
+      "license": "GPL-3.0",
+      "stars": 41251,
+      "language": "Dart / Flutter",
+      "role": "影视候选，GPL-3.0，同上。"
+    }
+  },
+  "ported": [
+    {
+      "id": "comic_image",
+      "upstream": "venera",
+      "upstream_path": "lib/pages/reader/comic_image.dart",
+      "local": "flutter_app/lib/core/comic_image.dart",
+      "state": "ported_adapted",
+      "license": "GPL-3.0",
+      "adaptation": "part of 'reader.dart' 改为独立文件；补 foundation / material / scheduler / semantics import；去掉对 Venera 全局 url / content / 翻译扩展的依赖，改为构造参数传入 ImageProvider。尺寸缓存与布局算法原样保留。",
+      "since": "4.81.42"
+    },
+    {
+      "id": "comic_reader_rules",
+      "upstream": "venera",
+      "upstream_path": "lib/pages/reader/gesture.dart",
+      "related_paths": [
+        "lib/pages/reader/reader.dart",
+        "lib/foundation/follow_updates.dart"
+      ],
+      "local": "flutter_app/lib/core/comic_reader_rules.dart",
+      "state": "rules_extracted",
+      "license": "GPL-3.0",
+      "adaptation": "只提取运行规则（六种阅读方向与 fromKey 回落、判页分区、双击/长按阈值、跨话导航、追更重试/并发/节流/免检窗口），剥离 widget 树、全局状态与 riverpod；每条规则注明上游文件与行号。",
+      "since": "4.81.45"
+    }
+  ],
+  "planned": [
+    {
+      "id": "mangayomi_reader",
+      "upstream": "mangayomi",
+      "upstream_paths": [
+        "lib/modules/manga/reader/reader_view.dart",
+        "lib/modules/reader_common/",
+        "lib/modules/manga/reader/subsampling_scale_image_view/",
+        "lib/modules/manga/reader/utils/download_ahead.dart"
+      ],
+      "target": "移动端漫画阅读器",
+      "license": "Apache-2.0",
+      "blockers": [
+        "reader_view.dart 54 个 import，依赖自有 reader_common / error_state / platform_utils / volume_keys",
+        "依赖 riverpod（本项目已有 Riverpod，可对齐）",
+        "需要把一个 ThirdHub 漫画条目适配成 Mangayomi 的 chapter/page 模型"
+      ],
+      "plan": "分 2~3 轮：先搬 reader_common（方向/键位/章导航），再搬 subsampling 图片视图与 download_ahead，最后接 reader_view 主视图。"
+    },
+    {
+      "id": "harmony_music_player",
+      "upstream": "harmony_music",
+      "target": "移动端音乐播放器",
+      "license": "GPL-3.0",
+      "blockers": [
+        "GPL-3.0：整套搬进移动端会传染许可，与上架苹果冲突",
+        "需先决定：桌面端侧整套搬 / 移动端只搬播放队列与歌词算法"
+      ],
+      "plan": "先做许可证决策，再动代码。不要再用 Namida（EULA）。"
+    }
+  ],
+  "blocked": [
+    {
+      "upstream": "namida",
+      "reason": "EULA 保留所有权利，不属于开源许可，代码不可搬。仅可参考交互与信息架构。"
+    }
+  ]
+}
