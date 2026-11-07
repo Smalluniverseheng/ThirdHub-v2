@@ -166,17 +166,9 @@ class Cloud {
         try {
           final p = await SharedPreferences.getInstance();
           await p.setString('member_level_cached', '${profileData['level'] ?? 'guest'}');
-          // ★ 自动连接 NAS 后端：登录后从账号读到后端地址就直接连，
-          //   不让用户手动填。这是「登录即用」的关键一步。
-          final remoteBase = '${profileData['backend_url'] ?? ''}'.trim();
-          if (remoteBase.isNotEmpty && !remoteBase.contains('supabase.co')) {
-            final localBase = (p.getString('base') ?? '').trim();
-            // 本地没配过、或者本地配的就是同一个地址 → 用账号里的
-            if (localBase.isEmpty || localBase == remoteBase) {
-              await p.setString('base', remoteBase);
-              selfHosted = true;
-            }
-          }
+          // ★自动连接 NAS 后端：从云端绑定里取「内网 + 当前 IPv6」，
+          //   逐个探活，第一个通的就写进本地。地址不在安装包里。
+          unawaited(resolveBackend().catchError((_) => false));
         } catch (_) {}
         return profileData;
       }
@@ -196,6 +188,76 @@ class Cloud {
       );
       profileData['backend_url'] = url;
     } catch (_) {}
+  }
+
+  /// 从云端读「NAS 后端绑定」（th_shared kind=backend）。
+  /// 返回 {lan, ipv6:[...], token}；没绑定就返回 null。
+  static Future<Map<String, dynamic>?> backendBinding() async {
+    if (!loggedIn) return null;
+    try {
+      final r = await http.get(
+        Uri.parse('$base/rest/v1/th_shared?user_id=eq.$userId&kind=eq.backend&name=eq.main&select=payload'),
+        headers: _authHeaders,
+      ).timeout(const Duration(seconds: 8));
+      if (r.statusCode != 200) return null;
+      final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
+      if (list.isEmpty) return null;
+      final p = list.first['payload'];
+      if (p is Map) return Map<String, dynamic>.from(p);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 登录后自动连接 NAS：
+  ///   候选地址 = 内网 → 各 IPv6（IPv6 会变，所以每次登录都从云端取最新的）
+  ///   逐个探活，第一个通的就写进本地并返回 true。
+  /// 地址与密钥都在云端（服务端登记），安装包里不含任何地址。
+  static Future<bool> resolveBackend({bool force = false}) async {
+    final p = await SharedPreferences.getInstance();
+    final curBase = (p.getString('base') ?? '').trim();
+    // 本地已经配好且不是官方云 → 先试它，通了就不动
+    if (!force && curBase.isNotEmpty && !curBase.contains('supabase.co')) {
+      if (await _probeBase(curBase)) { selfHosted = true; return true; }
+    }
+    final b = await backendBinding();
+    if (b == null) return false;
+    final cands = <String>[];
+    final lan = '${b['lan'] ?? ''}'.trim();
+    if (lan.isNotEmpty) cands.add(lan);
+    final v6 = b['ipv6'];
+    if (v6 is List) {
+      for (final u in v6) {
+        final s = '$u'.trim();
+        if (s.isNotEmpty && !cands.contains(s)) cands.add(s);
+      }
+    }
+    for (final c in cands) {
+      if (await _probeBase(c)) {
+        await p.setString('base', c);
+        final tk = '${b['token'] ?? ''}'.trim();
+        if (tk.isNotEmpty) await p.setString('token', tk);
+        selfHosted = true;
+        AppLog.account('已连上 NAS 后端', d: {'url': c});
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 探测某个后端地址是否可用（/v1/meta 免鉴权，能返回版本号即算通）
+  static Future<bool> _probeBase(String b) async {
+    try {
+      final r = await http
+          .get(Uri.parse('$b/v1/meta'))
+          .timeout(const Duration(seconds: 4));
+      if (r.statusCode != 200) return false;
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      return j is Map && j['object'] == 'meta';
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> updateProfile(Map<String, dynamic> fields) async {
