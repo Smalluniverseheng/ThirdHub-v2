@@ -46,9 +46,9 @@ async function handle(req, res, body, u, p, send, ctx) {
     const [books, comics, videos, musics] = await Promise.all([
       (async () => {
         const pool_list = sources.filter(s => s.enabled !== false);
-        const rs = await pool(takeByRoute('search.novel', pool_list, 3), 3, async (s) => {
+        const rs = await pool(takeByRoute('search.novel', pool_list, 10), 8, async (s) => {
           const t0 = Date.now();
-          try { const books = (await engine.search(s, q)).slice(0, 5);
+          try { const books = (await Promise.race([engine.search(s, q), new Promise((_,rej)=>setTimeout(()=>rej(new Error('源响应超时(8s)')), 8000))])).slice(0, 5);
             noteAgg(s.bookSourceUrl, true, Date.now() - t0);
             return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true, books }; }
           catch (e) { noteAgg(s.bookSourceUrl, false, Date.now() - t0, e.message);
@@ -60,14 +60,14 @@ async function handle(req, res, body, u, p, send, ctx) {
       (async () => {
         const rs = await Promise.all(takeByRoute('search.comic', comicSources, 2).map(async (s) => {
           const t0 = Date.now();
-          const r = comic.irComicList(await comic.runSource(s.code, 'search', [q, 1]));
+          const r = comic.irComicList(await Promise.race([comic.runSource(s.code, 'search', [q, 1]), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout 8s')), 8000))]));
           noteAgg(s.id, !r.error, Date.now() - t0, r.error);
           return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
         }));
         return rs.filter(r => r.ok);
       })(),
       (async () => {
-        const rs = await Promise.all(takeByRoute('search.video', drpySources, 2).map(async (s) => {
+        const rs = await Promise.all(takeByRoute('search.video', drpySources, 6).map(async (s) => {
           const t0 = Date.now();
           const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
           noteAgg(s.id, !r.error, Date.now() - t0, r.error);
@@ -82,7 +82,7 @@ async function handle(req, res, body, u, p, send, ctx) {
         //   看起来像"音源全坏了"，其实是路由问错了问题。
         const searchable = musicSources.filter(s => lx.searchAction(s.actions));
         if (!searchable.length) return [];
-        const rs = await Promise.all(takeByRoute('search.music', searchable, 2).map(async (s) => {
+        const rs = await Promise.all(takeByRoute('search.music', searchable, 5).map(async (s) => {
           const t0 = Date.now();
           const act = lx.searchAction(s.actions) || 'search';
           const r = s.format === 'lx'
