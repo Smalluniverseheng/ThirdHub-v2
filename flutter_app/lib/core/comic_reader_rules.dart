@@ -1,3 +1,5 @@
+// 上游: venera-app/venera@a0eba914f4c2 | 许可证: GPL-3.0 | 方式: 规则提取（不搬 widget / 状态层）
+// 台账: vendor/MANIFEST.json → ported[id=comic_reader_rules]
 // 漫画阅读器运行规则 —— 移植自 Venera（venera-app/venera，GPL-3.0，master，2026-11-07 核实）。
 //
 // 许可证与合规边界见 outputs/ThirdHub全盘升级计划-20261107.md：
