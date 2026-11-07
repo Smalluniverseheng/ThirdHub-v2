@@ -439,6 +439,11 @@ if (process.env.NODE_ENV === 'production' || process.env.TH_SCANNER === '1') {
 const InviteCodes = require('./invite_codes');
 const inviteCodes = new InviteCodes();
 
+// ─── 自登记：把本机地址（内网 + 当前 IPv6）定期推到云端账号绑定 ───
+//     账号与密钥都在服务端环境变量里，安装包里不含任何地址。
+const selfRegister = require('./self_register');
+selfRegister.start();
+
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
 const contentCache = new Map(); // 正文缓存30分钟(重看同章不重复抓)
