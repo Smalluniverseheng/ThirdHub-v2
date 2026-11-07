@@ -2439,3 +2439,13 @@ const Map<String, Map<String, String>> i18nUiWords15 =
     '公开接口清单': 'كتالوج الواجهات الرسمية',
   },
 };
+
+/// 第十六批：漫画自动滚动（4.81.47，搬 Mangayomi ReaderAutoScroll 的界面开关）。
+const Map<String, Map<String, String>> i18nUiWords16 = {
+  'en': {'自动滚动': 'Auto-scroll'},
+  'ja': {'自动滚动': '自動スクロール'},
+  'fr': {'自动滚动': 'Défilement auto'},
+  'ru': {'自动滚动': 'Автопрокрутка'},
+  'es': {'自动滚动': 'Desplazamiento auto'},
+  'ar': {'自动滚动': 'تمرير تلقائي'},
+};
