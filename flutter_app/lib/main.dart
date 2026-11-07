@@ -34,6 +34,8 @@ import 'core/comic_image.dart';
 import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
 import 'vendor/mangayomi/reader_auto_scroll.dart';
+import 'vendor/mangayomi/reader_motion.dart';
+import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
@@ -16804,7 +16806,9 @@ class _Ecr extends State<EngineComicReader>
     final target = action == ComicTapAction.next ? i + 1 : i - 1;
     if (target >= 0 && target < images.length) {
       pc.animateToPage(target,
-          duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+          duration: ReaderMotion.settle(
+              distance: size.width, extent: size.width),
+          curve: ReaderMotion.quinticOut);
       return;
     }
     if (action == ComicTapAction.next && idx < widget.chapters.length - 1) {
@@ -16874,6 +16878,8 @@ class _Ecr extends State<EngineComicReader>
                               child: Center(child: _img(i)))))
                   : ListView.builder(
                       controller: autoScrollController,
+                      // Mangayomi WebtoonScrollPhysics：条漫松手后的惯性滑行与章末硬停
+                      physics: const WebtoonScrollPhysics(),
                       itemCount: images.length + 1,
                       itemBuilder: (_, i) {
                         if (i == images.length) {

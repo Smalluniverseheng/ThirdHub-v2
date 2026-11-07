@@ -394,6 +394,17 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/vendor_manifest_selfcheck.dart
 
+      # 第 N 条 mangayomi_motion（2026-11-08 加，全盘升级 #205）—— Mangayomi 阅读动效 / 条漫惯性物理移植。
+      #   为什么必须进 CI：这类「抄现成开源」的改动，三类病都是静默的：
+      #     ① 照印象重写：上游常量被顺手改掉，analyze / 编译 / 台账闸门全绿，界面上没人看得出来；
+      #     ② 搬来摆着：文件在、接线没接，Android 上行为毫无变化；
+      #     ③ 顺手带上 riverpod / shiori / 绝对 package:mangayomi import，移动端直接编译不过。
+      #   本闸门逐字核对上游常量与公式、断言 import 白名单、断言 main.dart 真的接了
+      #   WebtoonScrollPhysics 与 ReaderMotion、断言台账与 CI step 都在。末尾 exit(1)。
+      - name: mangayomi_motion（Mangayomi 动效/物理：上游常量 / 依赖白名单 / 接线 / 台账）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_motion_selfcheck.dart
+
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
       #   事件顺序乱了、审批闸漏了、回合上限失效。这条闸门把这几处钉死，

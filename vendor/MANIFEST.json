@@ -25,7 +25,7 @@
         "reader_entry": "lib/modules/manga/reader/reader_view.dart",
         "reader_lines": 1372,
         "reader_imports": 54,
-        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。"
+        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。2026-11-08 复测：reader/utils/ 下 reader_motion.dart（78 行，0 外部依赖）与 webtoon_scroll_physics.dart（106 行，只依赖前者）是仅有的可直搬单元，已移植并接线；subsampling/src 有 11 个文件、主文件 44KB 且含 ffi_image_decoder.dart。"
       }
     },
     "venera": {
@@ -116,6 +116,32 @@
         "flutter_app/lib/main.dart"
       ],
       "since": "4.81.47"
+    },
+    {
+      "id": "mangayomi_reader_motion",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/modules/manga/reader/utils/reader_motion.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/reader_motion.dart",
+      "state": "ported_verbatim",
+      "license": "Apache-2.0",
+      "adaptation": "原样搬，逻辑一行未改；仅文件头加出处注释。上游仅依赖 dart:math 与 flutter/animation.dart，可独立编译进移动端。接线在 main.dart 的 _Ecr：翻页动画时长改用 ReaderMotion.settle、曲线改用 ReaderMotion.quinticOut。",
+      "wired_in": [
+        "flutter_app/lib/main.dart"
+      ],
+      "since": "4.81.52"
+    },
+    {
+      "id": "mangayomi_webtoon_physics",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/modules/manga/reader/utils/webtoon_scroll_physics.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/webtoon_scroll_physics.dart",
+      "state": "ported_adapted",
+      "license": "Apache-2.0",
+      "adaptation": "原样搬，逻辑一行未改；仅把上游绝对 import 'package:mangayomi/.../reader_motion.dart' 改成同目录相对路径，并加文件头出处。依赖闭包 = reader_motion.dart + flutter 标准库（foundation/physics/widgets），零上游自有包。接线在 main.dart 的 _Ecr：连续模式 ListView 的 physics 改为 WebtoonScrollPhysics。",
+      "wired_in": [
+        "flutter_app/lib/main.dart"
+      ],
+      "since": "4.81.52"
     }
   ],
   "planned": [
@@ -135,7 +161,7 @@
         "依赖 riverpod（本项目已有 Riverpod，可对齐）",
         "需要把一个 ThirdHub 漫画条目适配成 Mangayomi 的 chapter/page 模型"
       ],
-      "plan": "分 2~3 轮：先搬 reader_common（方向/键位/章导航），再搬 subsampling 图片视图与 download_ahead，最后接 reader_view 主视图。"
+      "plan": "按依赖闭包分轮搬。已完成：reader_auto_scroll（4.81.47）、reader_motion + webtoon_scroll_physics（4.81.52，动效与条漫惯性物理）。剩余三块经 2026-11-08 上游实测均不可一轮直搬：download_ahead.dart 仅 33 行却挂 7 个上游自有 provider/repository；subsampling_scale_image_view 是 11 文件 / 44KB 主文件的 FFI 解码工程；reader_view.dart 1372 行 52 imports 依赖 riverpod 与自有模型。后续需按依赖闭包逐层剥离，或改为桌面端侧整套分发。"
     },
     {
       "id": "harmony_music_player",
