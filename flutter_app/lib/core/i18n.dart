@@ -457,6 +457,9 @@ class I18n extends ChangeNotifier {
     i18nUiWords15.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    i18nUiWords16.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
