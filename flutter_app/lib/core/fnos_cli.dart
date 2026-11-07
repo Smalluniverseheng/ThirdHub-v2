@@ -19,7 +19,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'kv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// fnos-cli 调用封装。
 class FnosCli {
@@ -34,9 +34,10 @@ class FnosCli {
   static bool tlsInsecure = true;
 
   static Future<void> load() async {
-    final p = await AiStore.get('fnos_exe');
-    if (p != null && p.trim().isNotEmpty && File(p.trim()).existsSync()) {
-      exePath = p.trim();
+    final p = await SharedPreferences.getInstance();
+    final exe = p.getString('fnos_exe');
+    if (exe != null && exe.trim().isNotEmpty && File(exe.trim()).existsSync()) {
+      exePath = exe.trim();
       return;
     }
     exePath = _probe();
@@ -68,7 +69,7 @@ class FnosCli {
       ...args,
     ];
     try {
-      final r = await Process.run(exePath, full, timeout: timeout.inMilliseconds)
+      final r = await Process.run(exePath, full)
           .timeout(timeout + const Duration(seconds: 3));
       final out = (r.stdout ?? '').toString().trim();
       final err = (r.stderr ?? '').toString().trim();
