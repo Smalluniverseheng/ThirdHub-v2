@@ -22,6 +22,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'cloud.dart';
+import 'discover.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -68,6 +70,35 @@ class _MyBackendPageState extends State<MyBackendPage> {
       _code.text = tok;
       _selfHosted = base.isNotEmpty && !base.contains('supabase.co');
     });
+    // ★ 没配过后端就自动扫局域网，不让用户手填
+    if (base.isEmpty || base.contains('supabase.co')) {
+      await _autoDiscover();
+    }
+  }
+
+  /// 自动扫局域网找 NAS 后端（9527 端口），找到就自动填上
+  Future<void> _autoDiscover() async {
+    if (!mounted) return;
+    setState(() { _msg = tr('正在自动寻找局域网内的后端…'); });
+    try {
+      final devices = await ThpDiscovery.scan(timeoutMs: 400, concurrency: 32);
+      if (!mounted) return;
+      // 找 9527 端口的后端设备（caps 里有 novel/sources 的）
+      for (final d in devices) {
+        if (d.port == 9527 || d.caps.contains('novel') || d.caps.contains('sources')) {
+          final url = 'https://${d.host}:${d.port}';
+          setState(() {
+            _addr.text = url;
+            _msg = tr('已找到后端：') + d.name + ' (' + d.host + ')';
+          });
+          return;
+        }
+      }
+      setState(() { _msg = tr('没找到后端。可以手动填地址，或检查 NAS 是否开着。'); });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _msg = tr('自动搜索失败，可以手动填地址。'); });
+    }
   }
 
   @override
@@ -130,6 +161,8 @@ class _MyBackendPageState extends State<MyBackendPage> {
     final p = await SharedPreferences.getInstance();
     await p.setString('base', base);
     await p.setString('token', _code.text.trim());
+    // ★ 把后端地址存进账号 —— 其他设备登录后也能自动连上这个 NAS
+    try { await Cloud.saveBackendUrl(base); } catch (_) {}
     if (!mounted) return;
     setState(() {
       _selfHosted = true;
