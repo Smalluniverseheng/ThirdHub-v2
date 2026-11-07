@@ -426,6 +426,14 @@ function loadDrpy() { try { return JSON.parse(fs.readFileSync(DRPY_FILE, 'utf8')
 function saveDrpy(d) { fs.writeFileSync(DRPY_FILE, JSON.stringify(d, null, 2)); }
 let drpySources = loadDrpy();
 
+// ─── 24 小时自动源扫描器（server/source_scanner.js）───
+// 自动测源、抓元数据、标记可用/不可用；结果存 data/source-health.json + source-metadata.json
+const SourceScanner = require('./source_scanner');
+const sourceScanner = new SourceScanner({ sources, drpySources, comicSources, musicSources, engine, comic, music, lx, drpy });
+// 延迟启动（等 server 就绪后跑），且生产环境才自动跑
+if (process.env.NODE_ENV === 'production' || process.env.TH_SCANNER === '1') {
+  setTimeout(() => sourceScanner.start(), 30000); // 30 秒后开扫，避免启动风暴
+}
 
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
@@ -1263,6 +1271,15 @@ async function handle(req, res, body) {
   if ((await rtSearch.handle(req, res, body, u, p, send, searchCtx)) || res.writableEnded) return;
   // ── 书库(Legado/book/toc/content/书架): server/routes-library.js ──
   if ((await rtLibrary.handle(req, res, body, u, p, send, libraryCtx)) || res.writableEnded) return;
+  // ── 源扫描器(/v1/scanner/*): server/source_scanner.js ──
+  if (p.startsWith('/v1/scanner/') && req.method === 'GET') {
+    if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+    const sub = p.slice('/v1/scanner/'.length).split('?')[0];
+    if (sub === 'health') return send(200, { object:'list', data: sourceScanner.getHealth(u.searchParams.get('type')) });
+    if (sub === 'metadata') return send(200, { object:'list', data: sourceScanner.getMetadata(u.searchParams.get('type')) });
+    if (sub === 'summary') return send(200, { object:'meta', data: sourceScanner.getSummary() });
+    return send(404, { object:'error', data:{ type:'not_found', message: sub }});
+  }
   return send(404, { object:'error', data:{ type:'not_found', message: p }});
 }
 
