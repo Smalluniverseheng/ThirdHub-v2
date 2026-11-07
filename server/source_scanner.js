@@ -105,13 +105,29 @@ class SourceScanner {
     if (this.running) return;
     this.running = true;
     console.log('[scanner] 启动，间隔 ' + (ROUND_INTERVAL_MS / 60000) + ' 分钟');
-    this._tick();
-    this._timer = setInterval(() => this._tick(), ROUND_INTERVAL_MS);
+    // ★必须「跑完再排下一轮」：旧写法用 setInterval 每 5 秒硬触发，
+    //   而一轮全量扫 702 个源根本不可能 5 秒跑完 → 多轮重叠，
+    //   日志里出现「第458轮开始/第459轮开始…」连发，等于对数万次重复请求，
+    //   既烧 CPU 又容易被源站封 IP。改成 self-scheduling。
+    this._busy = false;
+    this._schedule();
+  }
+
+  _schedule() {
+    if (!this.running) return;
+    this._timer = setTimeout(async () => {
+      if (!this.running) return;
+      if (this._busy) { this._schedule(); return; }   // 双保险
+      this._busy = true;
+      try { await this._tick(); } catch (e) {
+        console.log('[scanner] 本轮异常（已隔离）:', String((e && e.message) || e).slice(0, 120));
+      } finally { this._busy = false; this._schedule(); }
+    }, this.round === 0 ? 0 : ROUND_INTERVAL_MS);
   }
 
   stop() {
     this.running = false;
-    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     console.log('[scanner] 已停止');
   }
 
