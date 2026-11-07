@@ -93,6 +93,8 @@ import 'core/engine_direct.dart';
 import 'core/search_type_filter.dart';
 import 'core/public_data_sources.dart';
 import 'core/public_sources_page.dart';
+// 本机 Agent：把 DSH 的 Agent 内核搬到手机上跑（不依赖电脑端）
+import 'core/local_agent_page.dart';
 import 'core/engine_direct_page.dart';
 import 'core/module_drawer.dart';
 import 'core/gallery_page.dart';
@@ -2779,6 +2781,12 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.public_outlined, tr('公开数据源'),
                 value: tr('公开接口清单'),
                 page: const PublicSourcesPage()),
+            _sep(),
+            // ★4.81.48：本机 Agent —— 与「DSH 遥控」不同，这个不连电脑端：
+            //   模型 key 在本机，工具也在本机执行，飞机上/没局域网都能用。
+            entry(Icons.smart_toy_outlined, tr('本机 Agent'),
+                value: tr('手机上直接跑'),
+                page: const LocalAgentPage()),
             _sep(),
             // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
             // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
