@@ -12,6 +12,8 @@ import 'tts.dart';
 import 'tts_presets.dart';
 import 'ai.dart';
 import 'local_tools_logic.dart';
+// 飞牛 NAS（fnOS）工具：调官方 fnos-cli 管理 EVO4（MIT，见 vendor/MANIFEST.json）
+import 'fnos_cli.dart';
 import 'peer_hub.dart';
 
 // 让调用方（main.dart / prompt 构建）只 import 本文件就能用上零依赖能力层
@@ -77,6 +79,60 @@ class LocalTools {
   static Future<Directory> _dir() async => await getApplicationDocumentsDirectory();
 
   static List<LocalTool> all = [
+    // ══ 飞牛 NAS（fnOS）· 调官方 fnos-cli，不自造轮子 ═══════════════════
+    LocalTool('nas_status', '查看飞牛 NAS 的系统型号、存储、磁盘与运行状态',
+        _obj({}), (_) async {
+      await FnosCli.load();
+      final sys = await FnosCli.systemInfo();
+      final st = await FnosCli.monitor();
+      return '系统: $sys\n\n状态: $st';
+    }),
+    LocalTool('nas_ls', '列出飞牛 NAS 上某个目录的内容（默认根目录）',
+        _obj({
+          'path': '目录路径，如 /vol1 或 /vol1/影视；留空看根目录',
+        }), (a) async {
+      await FnosCli.load();
+      return FnosCli.listDir((a['path'] ?? '').toString());
+    }),
+    LocalTool('nas_search', '在飞牛 NAS 上按文件名搜索',
+        _obj({
+          'key': '搜索关键词',
+          'path': '限定搜索目录（可选）',
+        }, ['key']), (a) async {
+      await FnosCli.load();
+      final k = (a['key'] ?? '').toString().trim();
+      if (k.isEmpty) return '缺少 key';
+      return FnosCli.searchFiles(k, path: (a['path'] ?? '').toString());
+    }),
+    LocalTool('nas_photos', '查看飞牛 NAS 的照片目录（PhotoStation）',
+        _obj({
+          'key': '按关键词搜照片（留空则只列相册目录）',
+        }), (a) async {
+      await FnosCli.load();
+      final k = (a['key'] ?? '').toString().trim();
+      if (k.isEmpty) return FnosCli.photoFolders();
+      return FnosCli.photoSearch(k);
+    }),
+    LocalTool('nas_docker', '查看飞牛 NAS 上运行的 Docker 容器',
+        _obj({}), (_) async {
+      await FnosCli.load();
+      return FnosCli.dockerList();
+    }),
+    LocalTool('nas_download', '查看飞牛 NAS 上的下载任务（qBittorrent 等）',
+        _obj({}), (_) async {
+      await FnosCli.load();
+      return FnosCli.downloadList();
+    }),
+    LocalTool('nas_media', '查看飞牛影音库（影片列表/搜索）。注意：media 需要单独授权，未授权会报 403',
+        _obj({
+          'key': '搜索关键词（留空则列影音库）',
+        }), (a) async {
+      await FnosCli.load();
+      final k = (a['key'] ?? '').toString().trim();
+      if (k.isEmpty) return FnosCli.mediaLibraries();
+      return FnosCli.mediaSearch(k);
+    }),
+
     // ══ 业务工具（★2026-10-14：AI 直接操作本软件）══════════════════════
     LocalTool('engine_status', '查看四个资料库（小说/漫画/音乐/视频）的连接状态、各有多少源、是否开机自启',
         _obj({}), (_) async {
