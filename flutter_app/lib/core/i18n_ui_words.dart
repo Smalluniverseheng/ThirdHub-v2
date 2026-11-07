@@ -2639,3 +2639,38 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "自动搜索失败，可以手动填地址。": "فشل الاكتشاف التلقائي. يمكنك إدخال العنوان يدويًا.",
   },
 };
+
+// 第十八批（4.81.51）：AI 抽屉入口文案。修复 4.81.50 模块重组时新增的 4 条硬编码中文
+// （「本机 Agent」已在第十七批补齐 6 语言，此处只补另外 3 个 key）。
+const Map<String, Map<String, String>> i18nUiWords18 = {
+  'en': {
+    "模型调本机工具自动完成任务": "The model uses on-device tools to finish tasks",
+    "API 密钥库": "API keys",
+    "一处填写 · 多模块共用": "Set once, shared across modules",
+  },
+  'ja': {
+    "模型调本机工具自动完成任务": "モデルが端末内のツールを使って作業を完了します",
+    "API 密钥库": "API キー",
+    "一处填写 · 多模块共用": "1 か所で入力、複数モジュールで共有",
+  },
+  'fr': {
+    "模型调本机工具自动完成任务": "Le modèle utilise les outils locaux pour accomplir la tâche",
+    "API 密钥库": "Clés API",
+    "一处填写 · 多模块共用": "Saisie unique, partagée entre les modules",
+  },
+  'ru': {
+    "模型调本机工具自动完成任务": "Модель использует локальные инструменты для выполнения задач",
+    "API 密钥库": "Ключи API",
+    "一处填写 · 多模块共用": "Заполняете один раз — используется везде",
+  },
+  'es': {
+    "模型调本机工具自动完成任务": "El modelo usa las herramientas del dispositivo para completar tareas",
+    "API 密钥库": "Claves API",
+    "一处填写 · 多模块共用": "Se configura una vez y se comparte entre módulos",
+  },
+  'ar': {
+    "模型调本机工具自动完成任务": "يستخدم النموذج أدوات الجهاز لإنجاز المهام",
+    "API 密钥库": "مفاتيح API",
+    "一处填写 · 多模块共用": "أدخل مرة واحدة واستخدمه في كل الوحدات",
+  },
+};

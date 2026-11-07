@@ -463,6 +463,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords17.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-08 第十八批：AI 抽屉入口文案（4.81.51）。
+    i18nUiWords18.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

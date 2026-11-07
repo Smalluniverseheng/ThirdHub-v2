@@ -928,14 +928,11 @@ main.dart	${mod.name}设置
 main.dart	${tr(mod.name)} · 模块菜单
 main.dart	AI Key等敏感信息, AES加密存资源库
 main.dart	PIN 不正确
-main.dart	THP 直连 · 最新 ${ev.isEmpty ? 
-main.dart	THP 直连 · 最新 ${vv.isEmpty ? 
 main.dart	ThirdHub 全系列产品 · 点按查看详情与下载 · 覆盖安装数据保留
 main.dart	ThirdHub 已锁定
 main.dart	ThirdHub 是纯播放器, 零内置源; 内容由你自行接入的资料库提供
 main.dart	Work 作业完成/待确认时提醒
 main.dart	v${Updater.currentVersion} · 点按检查更新
-main.dart	venera 漫画资料库
 main.dart	…还有 ${synced.length - 8} 张
 main.dart	上一话
 main.dart	上次读到: ${chapters[lastRead][
@@ -1049,7 +1046,6 @@ main.dart	常见问题
 main.dart	底部导航栏
 main.dart	底部导航栏 · 折叠 · 悬浮球
 main.dart	开始下载
-main.dart	开源阅读资料库
 main.dart	彻底删除
 main.dart	恢复失败: $e
 main.dart	悬浮球

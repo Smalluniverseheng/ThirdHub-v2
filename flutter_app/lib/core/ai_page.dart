@@ -1193,13 +1193,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           subtitle: const Text('设备信息/剪贴板/朗读/文件/分享/打开链接…', style: TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _localToolsSheet(c); }),
         // ★本机 Agent（从「我的」挪过来）：模型调本机工具自动完成任务
-        ListTile(dense: true, leading: const Icon(Icons.smart_toy_outlined), title: const Text('本机 Agent', style: TextStyle(fontSize: 14)),
-          subtitle: const Text('模型调本机工具自动完成任务', style: TextStyle(fontSize: 11)),
+        ListTile(dense: true, leading: const Icon(Icons.smart_toy_outlined), title: Text(tr('本机 Agent'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text(tr('模型调本机工具自动完成任务'), style: const TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () async { Navigator.pop(c2);
             await Navigator.push(c, MaterialPageRoute(builder: (_) => const LocalAgentPage())); }),
         // ★API 密钥库（从「我的」挪过来）：一处填写，AI/语音共用
-        ListTile(dense: true, leading: const Icon(Icons.key_outlined), title: const Text('API 密钥库', style: TextStyle(fontSize: 14)),
-          subtitle: const Text('一处填写 · 多模块共用', style: TextStyle(fontSize: 11)),
+        ListTile(dense: true, leading: const Icon(Icons.key_outlined), title: Text(tr('API 密钥库'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text(tr('一处填写 · 多模块共用'), style: const TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () async { Navigator.pop(c2);
             await Navigator.push(c, MaterialPageRoute(builder: (_) => const ApiKeysPage())); }),
         ListTile(dense: true, leading: const Icon(Icons.compress), title: const Text('上下文管理', style: TextStyle(fontSize: 14)),
