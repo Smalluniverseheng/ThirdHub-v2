@@ -76,14 +76,30 @@ class _MyBackendPageState extends State<MyBackendPage> {
     }
   }
 
-  /// 自动扫局域网找 NAS 后端（9527 端口），找到就自动填上
+  /// 自动找后端：先问云端绑定（账号里登记的内网 + IPv6），再扫局域网
   Future<void> _autoDiscover() async {
     if (!mounted) return;
     setState(() { _msg = tr('正在自动寻找局域网内的后端…'); });
+    // 1) 云端绑定（登录状态下才有；会写 base/token）
+    try {
+      if (Cloud.loggedIn) {
+        final ok = await Cloud.resolveBackend(force: true);
+        if (ok && mounted) {
+          final p = await SharedPreferences.getInstance();
+          setState(() {
+            _addr.text = p.getString('base') ?? '';
+            _code.text = p.getString('token') ?? '';
+            _selfHosted = true;
+            _msg = tr('已找到后端：') + (p.getString('base') ?? '');
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+    // 2) 局域网扫描兜底
     try {
       final devices = await ThpDiscovery.scan(timeoutMs: 400, concurrency: 32);
       if (!mounted) return;
-      // 找 9527 端口的后端设备（caps 里有 novel/sources 的）
       for (final d in devices) {
         if (d.port == 9527 || d.caps.contains('novel') || d.caps.contains('sources')) {
           final url = 'https://${d.host}:${d.port}';
