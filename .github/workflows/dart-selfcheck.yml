@@ -385,6 +385,15 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/comic_reader_rules_selfcheck.dart
 
+      # 第 N 条 vendor_manifest（2026-11-07 加）—— 开源移植台账闸门。
+      #   用户原则：优先搬现成开源项目，不重复造车轮。但「说搬了」和「真搬了」差三件事：
+      #   台账登记的文件必须真的存在；文件头部必须写明上游 repo@commit 与许可证；
+      #   被判「不可搬」的项目（如 Namida 的 EULA）不得出现在已搬清单里。
+      #   上游原始镜像 vendor/_upstream 不随仓库携带，那层会打印 SKIP 并计数，不伪装成通过。
+      - name: vendor_manifest（开源移植台账：出处 / 许可证 / 不可搬项不得混入）
+        working-directory: flutter_app
+        run: dart run tool/vendor_manifest_selfcheck.dart
+
       # 第 N 条 branding（2026-10-10 加）—— 前后端与网页端「内容来源类」用词必须清零。
       #
       #   为什么必须进 CI —— 用户明令：**不允许出现「引擎 / 换源 / 书源」这类会触发
