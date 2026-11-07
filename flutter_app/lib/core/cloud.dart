@@ -166,11 +166,36 @@ class Cloud {
         try {
           final p = await SharedPreferences.getInstance();
           await p.setString('member_level_cached', '${profileData['level'] ?? 'guest'}');
+          // ★ 自动连接 NAS 后端：登录后从账号读到后端地址就直接连，
+          //   不让用户手动填。这是「登录即用」的关键一步。
+          final remoteBase = '${profileData['backend_url'] ?? ''}'.trim();
+          if (remoteBase.isNotEmpty && !remoteBase.contains('supabase.co')) {
+            final localBase = (p.getString('base') ?? '').trim();
+            // 本地没配过、或者本地配的就是同一个地址 → 用账号里的
+            if (localBase.isEmpty || localBase == remoteBase) {
+              await p.setString('base', remoteBase);
+              selfHosted = true;
+            }
+          }
         } catch (_) {}
         return profileData;
       }
     }
     return {};
+  }
+
+  /// 把 NAS 后端地址存进账号（th_profiles.backend_url），
+  /// 这样其他设备登录后也能自动连上同一个 NAS。
+  static Future<void> saveBackendUrl(String url) async {
+    if (!loggedIn || url.isEmpty) return;
+    try {
+      await http.patch(
+        Uri.parse('$base/rest/v1/th_profiles?id=eq.$userId'),
+        headers: { ..._authHeaders, 'Prefer': 'return=minimal' },
+        body: jsonEncode({'backend_url': url}),
+      );
+      profileData['backend_url'] = url;
+    } catch (_) {}
   }
 
   static Future<void> updateProfile(Map<String, dynamic> fields) async {
