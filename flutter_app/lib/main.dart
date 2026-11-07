@@ -1662,7 +1662,12 @@ class OnboardingPage extends StatefulWidget {
 class _Ob extends State<OnboardingPage> {
   int step = 0;
   final ctrl = PageController();
-  final Set<String> _mods = kModules.keys.toSet();
+  // ★默认只显示核心模块（不再 67 个全开），其余收进「导航设置」按需开启
+  static const _coreMods = <String>{
+    '搜索', '小说', '漫画', '视频', '音乐', 'AI',
+    '聊天', '社区', '相册', '工具箱', '我的',
+  };
+  final Set<String> _mods = _coreMods.toSet();
   // ★第十六轮：这两行以前是 `const` 中文字面量，**整页不过 tr()**。后果在模拟器上
   // 一眼可见：选了 Français，标题还写「选择语言」、按钮还写「下一步」——
   // 引导页是全应用第一个界面，"选了外语还是中文"的第一印象就坏在这里。
@@ -2761,32 +2766,11 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.dashboard_customize_outlined, '功能管理',
                 page: const NavSettingsPage()),
             _sep(),
-            // 语音朗读是**全局设置**（决定所有朗读走哪个引擎），所以留在「我的」。
-            entry(Icons.record_voice_over_outlined, '语音朗读',
-                value: '资料库 · 厂商 · 试听', page: const TtsSettingsPage()),
-            _sep(),
-            // ★2026-10-13：语音识别（把语音转文字）——与语音朗读并列的全局设置。
-            //   厂商层支持小米 MiMo / 阿里百炼 / 火山 / 百度 / 自托管 Whisper；
-            //   Key 与 AI、语音朗读共用统一密钥库。
-            entry(Icons.mic_none, '语音识别',
-                value: '厂商 · Key · 试录', page: const AsrSettingsPage()),
-            _sep(),
-            // 密钥库也是**全局**设置：AI 与语音共用同一把 Key，
-            // 「在 AI 里填过的小米 Key，语音自动带上」这件事就落在这里。
-            entry(Icons.key_outlined, 'API 密钥库',
-                value: '一处填写 · 多模块共用', page: const ApiKeysPage()),
-            _sep(),
-            // ★4.81.43（全盘升级 #208）：移动端只列厂商官方公开、免费开放的数据源。
-            //   第三方内容源归桌面端管理后台，不下发到移动端 / 公开网页端。
+            // ★语音/密钥/Agent 已挪到「AI」模块抽屉里（2026-11-07 模块重组）
+            // 公开数据源仍留在「我的」（属于全局数据配置）
             entry(Icons.public_outlined, tr('公开数据源'),
                 value: tr('公开接口清单'),
                 page: const PublicSourcesPage()),
-            _sep(),
-            // ★4.81.48：本机 Agent —— 与「DSH 遥控」不同，这个不连电脑端：
-            //   模型 key 在本机，工具也在本机执行，飞机上/没局域网都能用。
-            entry(Icons.smart_toy_outlined, tr('本机 Agent'),
-                value: tr('手机上直接跑'),
-                page: const LocalAgentPage()),
             _sep(),
             // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
             // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
@@ -10319,7 +10303,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     final saved = p.getStringList('nav_modules');
     if (saved == null || saved.isEmpty) {
       setState(() {
-        enabled = ['我的'];
+        enabled = ['搜索', '小说', '漫画', '视频', '音乐', 'AI', '聊天', '社区', '相册', '工具箱', '我的'];
         if (idx >= enabled.length) idx = 0;
       });
       return;
@@ -10328,6 +10312,21 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     final migrated =
         migrateModuleKeys(saved).where((k) => kModules.containsKey(k)).toList();
     if (!migrated.contains('我的')) migrated.add('我的');
+    // ★一次性精简迁移（2026-11-07）：老用户有 60+ 模块全开 → 自动精简到核心集。
+    //   只执行一次（打了 _modsTrimmed 标记），之后用户自己在导航设置里加回。
+    if (migrated.length > 20 && !(p.getBool('_modsTrimmed') ?? false)) {
+      const core = <String>{
+        '搜索', '小说', '漫画', '视频', '音乐', 'AI',
+        '聊天', '社区', '相册', '工具箱', '我的',
+      };
+      final trimmed = migrated.where((k) => core.contains(k)).toList();
+      if (trimmed.isNotEmpty && trimmed.length < migrated.length) {
+        migrated.clear();
+        migrated.addAll(trimmed);
+        await p.setBool('_modsTrimmed', true);
+        await p.setStringList('nav_modules', migrated);
+      }
+    }
     // ★ 5.2.3/§5.3（iOS）：第三方采集类模块整体不进导航（如「直播」）。
     //   只滤**显示**，回写仍用 migrated 全量 —— 平台门不该改写用户的模块意愿，
     //   否则 iOS 端一启动就把「直播」从共享布局里抹掉，Android 端跟着丢。
