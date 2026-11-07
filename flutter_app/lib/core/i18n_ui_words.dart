@@ -2442,12 +2442,24 @@ const Map<String, Map<String, String>> i18nUiWords15 =
 
 /// 第十六批：漫画自动滚动（4.81.47，搬 Mangayomi ReaderAutoScroll 的界面开关）。
 const Map<String, Map<String, String>> i18nUiWords16 = {
-  'en': {'自动滚动': 'Auto-scroll'},
-  'ja': {'自动滚动': '自動スクロール'},
-  'fr': {'自动滚动': 'Défilement auto'},
-  'ru': {'自动滚动': 'Автопрокрутка'},
-  'es': {'自动滚动': 'Desplazamiento auto'},
-  'ar': {'自动滚动': 'تمرير تلقائي'},
+  'en': {'自动滚动': 'Auto-scroll'}
+
+,
+  'ja': {'自动滚动': '自動スクロール'}
+
+,
+  'fr': {'自动滚动': 'Défilement auto'}
+
+,
+  'ru': {'自动滚动': 'Автопрокрутка'}
+
+,
+  'es': {'自动滚动': 'Desplazamiento auto'}
+
+,
+  'ar': {'自动滚动': 'تمرير تلقائي'}
+
+,
 };
 
 /// 第十七批：本机 Agent（4.81.48，把 DSH 的 Agent 内核搬到手机上跑）。
@@ -2476,6 +2488,10 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "Done",
     "回合": "Steps",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "No model key yet — add one in AI → Keys",
+    "正在自动寻找局域网内的后端…": "Looking for backend on your network...",
+    "已找到后端：": "Backend found: ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "No backend found. Enter the address manually, or check if your NAS is on.",
+    "自动搜索失败，可以手动填地址。": "Auto-discovery failed. You can enter the address manually.",
   },
   'ja': {
     "本机 Agent": "ローカルエージェント",
@@ -2501,6 +2517,10 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "終了",
     "回合": "ステップ",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "モデルキー未設定。「AI → キー」で追加してください",
+      "正在自动寻找局域网内的后端…": "LAN内のバックエンドを検索中...",
+    "已找到后端：": "バックエンドが見つかりました: ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "バックエンドが見つかりません。手動でアドレスを入力するか、NASの電源を確認してください。",
+    "自动搜索失败，可以手动填地址。": "自動検索に失敗しました。手動でアドレスを入力できます。",
   },
   'fr': {
     "本机 Agent": "Agent local",
@@ -2526,6 +2546,10 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "Terminé",
     "回合": "Étapes",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "Aucune clé de modèle — ajoutez-la dans IA → Clés",
+      "正在自动寻找局域网内的后端…": "Recherche du backend sur le réseau local...",
+    "已找到后端：": "Backend trouvé : ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "Backend introuvable. Entrez l adresse manuellement ou vérifiez si le NAS est allumé.",
+    "自动搜索失败，可以手动填地址。": "La découverte automatique a échoué. Vous pouvez entrer l adresse manuellement.",
   },
   'ru': {
     "本机 Agent": "Локальный агент",
@@ -2551,6 +2575,10 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "Готово",
     "回合": "Шаги",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "Нет ключа модели — добавьте в «AI → Ключи»",
+      "正在自动寻找局域网内的后端…": "Поиск сервера в локальной сети...",
+    "已找到后端：": "Сервер найден: ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "Сервер не найден. Введите адрес вручную или проверьте, включён ли NAS.",
+    "自动搜索失败，可以手动填地址。": "Автопоиск не удался. Вы можете ввести адрес вручную.",
   },
   'es': {
     "本机 Agent": "Agente local",
@@ -2576,6 +2604,10 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "Listo",
     "回合": "Pasos",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "Sin clave de modelo: añádela en IA → Claves",
+      "正在自动寻找局域网内的后端…": "Buscando backend en la red local...",
+    "已找到后端：": "Backend encontrado: ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "No se encontró el backend. Ingresa la dirección manualmente o verifica si el NAS está encendido.",
+    "自动搜索失败，可以手动填地址。": "El descubrimiento automático falló. Puedes ingresar la dirección manualmente.",
   },
   'ar': {
     "本机 Agent": "وكيل محلي",
@@ -2601,5 +2633,9 @@ const Map<String, Map<String, String>> i18nUiWords17 = {
     "结束": "انتهى",
     "回合": "خطوات",
     "还没填模型 Key，先去「AI → 密钥」里填一个": "لا يوجد مفتاح نموذج — أضفه من AI ← المفاتيح",
+      "正在自动寻找局域网内的后端…": "البحث عن الخادم في الشبكة المحلية...",
+    "已找到后端：": "تم العثور على الخادم: ",
+    "没找到后端。可以手动填地址，或检查 NAS 是否开着。": "لم يتم العثور على الخادم. أدخل العنوان يدويًا أو تحقق من تشغيل NAS.",
+    "自动搜索失败，可以手动填地址。": "فشل الاكتشاف التلقائي. يمكنك إدخال العنوان يدويًا.",
   },
 };
