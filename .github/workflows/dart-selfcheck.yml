@@ -405,6 +405,15 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/mangayomi_motion_selfcheck.dart
 
+      # 第 N 条 mangayomi_double_page（2026-11-08 加，全盘升级 #205）—— 双页索引数学移植。
+      #   上游 reader_page_index_math.dart 的分组规则（跨章不配对 / 宽页独屏 / 过渡页独屏 /
+      #   首页单放）被改坏时不会报错，只会静默表现成「页码乱跳、翻页越界」。
+      #   逐字核对上游正文 + 长度闸 + 本地镜像逐字节 / import 白名单 / 类型投影 /
+      #   main.dart 七处接线 / 台账 CI 六语言合规，末尾 exit(1)。
+      - name: mangayomi_double_page（Mangayomi 双页数学：上游逐字 / 依赖 / 接线 / 台账 / 六语言）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_double_page_selfcheck.dart
+
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
       #   事件顺序乱了、审批闸漏了、回合上限失效。这条闸门把这几处钉死，

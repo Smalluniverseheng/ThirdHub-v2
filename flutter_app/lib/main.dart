@@ -35,6 +35,7 @@ import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
 import 'vendor/mangayomi/reader_auto_scroll.dart';
 import 'vendor/mangayomi/reader_motion.dart';
+import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/splash_page.dart';
@@ -16581,7 +16582,18 @@ class _Ecr extends State<EngineComicReader>
   bool loading = true;
   String err = '';
   bool paged = false;
+  // Mangayomi ReaderPageIndexMath：翻页模式下一屏并排显示两页，封面单独占一屏。
+  bool doublePage = false;
+  int curPage = 0;
   final PageController pc = PageController();
+
+  // 上游算法的合成路径（pages 为空）：一屏一个 DoublePageSpread，
+  // 单页模式一屏一张，双页模式一屏两张，跨话不会把两话的页配在一起。
+  ReaderPageIndexMath get pageMath => ReaderPageIndexMath(
+        isDoublePageActive: doublePage && paged,
+        singleFirst: true,
+        pageCount: images.length,
+      );
 
   // 自动滚动（Mangayomi ReaderAutoScroll，lib/vendor/mangayomi/）：
   // 条漫连续模式下滑得手指一直动，这里改成帧驱动自动推进；翻页模式不启用。
@@ -16704,6 +16716,7 @@ class _Ecr extends State<EngineComicReader>
       onAutoScrollChanged();
     }
     idx = i;
+    curPage = 0;
     if (paged) pc.jumpToPage(0);
     _load();
   }
@@ -16804,7 +16817,7 @@ class _Ecr extends State<EngineComicReader>
     final action = tapActionOf(ComicReadMode.galleryLeftToRight, hit);
     if (action == ComicTapAction.toggleUi) return;
     final target = action == ComicTapAction.next ? i + 1 : i - 1;
-    if (target >= 0 && target < images.length) {
+    if (target >= 0 && target < pageMath.pageViewPageCount) {
       pc.animateToPage(target,
           duration: ReaderMotion.settle(
               distance: size.width, extent: size.width),
@@ -16843,6 +16856,21 @@ class _Ecr extends State<EngineComicReader>
                   }
                   onAutoScrollChanged();
                 }),
+            if (paged)
+              IconButton(
+                  icon: Icon(
+                      doublePage
+                          ? Icons.view_agenda_outlined
+                          : Icons.view_column_outlined,
+                      size: 20),
+                  tooltip: doublePage ? tr('单页') : tr('双页'),
+                  onPressed: () {
+                    setState(() {
+                      doublePage = !doublePage;
+                      curPage = 0;
+                    });
+                    if (pc.hasClients) pc.jumpToPage(0);
+                  }),
             if (!paged)
               IconButton(
                   icon: Icon(
@@ -16869,13 +16897,27 @@ class _Ecr extends State<EngineComicReader>
               : paged
                   ? PageView.builder(
                       controller: pc,
-                      itemCount: images.length,
-                      itemBuilder: (_, i) => GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTapUp: (d) => _onReaderTap(
-                              d.globalPosition, MediaQuery.sizeOf(c), i),
-                          child: InteractiveViewer(
-                              child: Center(child: _img(i)))))
+                      itemCount: pageMath.pageViewPageCount,
+                      onPageChanged: (i) {
+                        if (mounted) setState(() => curPage = i);
+                      },
+                      itemBuilder: (_, i) {
+                        final spread = pageMath.spreads[i];
+                        final second = spread.secondIndex;
+                        final Widget page = doublePage && second != null
+                            ? Row(children: [
+                                Expanded(child: _img(spread.firstIndex)),
+                                const SizedBox(width: 8),
+                                Expanded(child: _img(second)),
+                              ])
+                            : _img(spread.firstIndex);
+                        return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTapUp: (d) => _onReaderTap(
+                                d.globalPosition, MediaQuery.sizeOf(c), i),
+                            child:
+                                InteractiveViewer(child: Center(child: page)));
+                      })
                   : ListView.builder(
                       controller: autoScrollController,
                       // Mangayomi WebtoonScrollPhysics：条漫松手后的惯性滑行与章末硬停
@@ -16910,6 +16952,13 @@ class _Ecr extends State<EngineComicReader>
                     TextButton(
                         onPressed: idx > 0 ? () => _go(idx - 1) : null,
                         child: const Text('上一话')),
+                    if (doublePage)
+                      Text(
+                          pageMath.currentIndexLabel(
+                              pageMath.pageViewToActualIndex(curPage),
+                              images.length),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     Text('${idx + 1}/${widget.chapters.length} 话',
                         style:
                             const TextStyle(fontSize: 12, color: Colors.grey)),

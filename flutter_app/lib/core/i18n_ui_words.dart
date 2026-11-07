@@ -2674,3 +2674,31 @@ const Map<String, Map<String, String>> i18nUiWords18 = {
     "一处填写 · 多模块共用": "أدخل مرة واحدة واستخدمه في كل الوحدات",
   },
 };
+
+/// 第十九批：漫画双页阅读开关（4.81.54，全盘升级 #205）。
+const Map<String, Map<String, String>> i18nUiWords19 = {
+  'en': {
+    "双页": "Two pages",
+    "单页": "Single page",
+  },
+  'ja': {
+    "双页": "見開き",
+    "单页": "単ページ",
+  },
+  'fr': {
+    "双页": "Double page",
+    "单页": "Page simple",
+  },
+  'ru': {
+    "双页": "Разворот",
+    "单页": "Одна страница",
+  },
+  'es': {
+    "双页": "Doble página",
+    "单页": "Página simple",
+  },
+  'ar': {
+    "双页": "صفحتان",
+    "单页": "صفحة واحدة",
+  },
+};

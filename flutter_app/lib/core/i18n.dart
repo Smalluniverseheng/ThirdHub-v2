@@ -467,6 +467,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords18.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-08 第十九批：漫画双页阅读开关（4.81.54）。
+    i18nUiWords19.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
