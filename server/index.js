@@ -435,6 +435,10 @@ if (process.env.NODE_ENV === 'production' || process.env.TH_SCANNER === '1') {
   setTimeout(() => sourceScanner.start(), 30000); // 30 秒后开扫，避免启动风暴
 }
 
+// ─── 邀请码系统（server/invite_codes.js）───
+const InviteCodes = require('./invite_codes');
+const inviteCodes = new InviteCodes();
+
 // ─── TOC缓存+书源健康分 ───
 const tocCache = new Map(); // key: sourceId|url → {at, data}
 const contentCache = new Map(); // 正文缓存30分钟(重看同章不重复抓)
@@ -554,7 +558,11 @@ async function handle(req, res, body) {
   if (p === '/v1/meta') return send(200, { v: 1, object: 'meta', data: {
     name: 'ThirdHub', version: PKG_VERSION, fingerprint,
     capabilities: { novel: sources.length > 0, sources: sources.length, devices: devices.length },
-    encrypted: true, time: Date.now()
+    encrypted: true, time: Date.now(),
+    // 远程连接地址（FN Connect / 内网穿透，环境变量配置）
+    remoteUrl: process.env.TH_REMOTE_URL || '',
+    // 24h 源扫描器状态
+    scanner: sourceScanner ? { running: sourceScanner.running, round: sourceScanner.round } : null,
   }});
 
   // ── 账号级数据同步（App 与网页端共用的唯一数据源）──
@@ -1240,6 +1248,15 @@ async function handle(req, res, body) {
   //   第三方内容源只在 /v1/admin/* 端点，且必须持配对 token（见下方）。
   if (await rtDataSources.handlePublic(req, res, p, send)) return;
 
+  // ── 邀请码验证（免鉴权 —— 用户还没密钥时用邀请码获取访问权）──
+  if (p === '/v1/invite/validate' && req.method === 'POST') {
+    let b = {};
+    try { b = typeof body === 'string' ? JSON.parse(body || '{}') : (body || {}); } catch (e) {}
+    const r = inviteCodes.validate(b.code, b.deviceId, req.socket.remoteAddress);
+    if (r.ok) return send(200, { object:'invite', data: r });
+    return send(403, { object:'error', data:{ type:'forbidden', message: r.error }});
+  }
+
   // 其余全需鉴权
   // ★ 2026-10-10：常量时间比较（防时序侧信道）
   if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
@@ -1280,6 +1297,35 @@ async function handle(req, res, body) {
     if (sub === 'summary') return send(200, { object:'meta', data: sourceScanner.getSummary() });
     return send(404, { object:'error', data:{ type:'not_found', message: sub }});
   }
+
+  // ── 邀请码(/v1/invite/*): server/invite_codes.js ──
+  if (p.startsWith('/v1/invite/')) {
+    const sub = p.slice('/v1/invite/'.length).split('?')[0];
+    // 生成/列表/删除：需管理员密钥
+    if (sub === 'generate' && req.method === 'POST') {
+      if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+      const b = typeof body === 'string' ? JSON.parse(body || '{}') : body;
+      const rec = inviteCodes.generate({ permission: b.permission, note: b.note, maxUses: b.maxUses, expiresAt: b.expiresAt });
+      return send(200, { object:'invite', data: rec });
+    }
+    if (sub === 'list' && req.method === 'GET') {
+      if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+      return send(200, { object:'list', data: inviteCodes.list() });
+    }
+    if (sub === 'toggle' && req.method === 'POST') {
+      if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+      const b = typeof body === 'string' ? JSON.parse(body || '{}') : body;
+      const rec = inviteCodes.toggle(b.code, b.enabled);
+      return send(200, { object:'invite', data: rec });
+    }
+    if (sub === 'remove' && req.method === 'POST') {
+      if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+      const b = typeof body === 'string' ? JSON.parse(body || '{}') : body;
+      return send(200, { object:'meta', data: { removed: inviteCodes.remove(b.code) }});
+    }
+    return send(404, { object:'error', data:{ type:'not_found', message: sub }});
+  }
+
   return send(404, { object:'error', data:{ type:'not_found', message: p }});
 }
 
