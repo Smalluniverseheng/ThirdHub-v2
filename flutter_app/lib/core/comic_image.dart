@@ -5,6 +5,8 @@ import 'package:flutter/semantics.dart';
 
 import 'i18n.dart';
 
+/// 上游: venera-app/venera@a0eba914f4c2 | 许可证: GPL-3.0 | 方式: 文件移植（part → 独立文件）
+/// 台账: vendor/MANIFEST.json → ported[id=comic_image]
 /// 漫画页图组件 —— 移植自 Venera（venera-app/venera，**GPL-3.0**，2026-11-07 核实）。
 /// 许可证边界见 outputs/ThirdHub全盘升级计划-20261107.md：桌面端/自托管侧分发，
 /// 移动端只保留尺寸计算算法，不整套分发其 UI。
