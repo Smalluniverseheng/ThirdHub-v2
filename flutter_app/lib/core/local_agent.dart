@@ -418,6 +418,14 @@ const List<LocalAgentTool> localAgentTools = <LocalAgentTool>[
   LocalAgentTool(name: 'recent_history', description: '最近的阅读/观看记录（参数 limit）', risk: AgentRisk.read),
   LocalAgentTool(name: 'shelf_list', description: '书架里的条目', risk: AgentRisk.read),
   LocalAgentTool(name: 'tavern_list', description: '角色卡列表', risk: AgentRisk.read),
+  // ── 飞牛 NAS（fnOS）· 调官方 fnos-cli（MIT），见 vendor/MANIFEST.json ──
+  LocalAgentTool(name: 'nas_status', description: '查看飞牛 NAS 的系统型号、存储与运行状态', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_ls', description: '列出 NAS 某个目录的内容（参数 path）', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_search', description: '在 NAS 上按文件名搜索（参数 key、path）', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_photos', description: 'NAS 照片相册目录或按关键词搜照片（参数 key）', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_docker', description: 'NAS 上运行的 Docker 容器列表', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_download', description: 'NAS 上的下载任务', risk: AgentRisk.read),
+  LocalAgentTool(name: 'nas_media', description: 'NAS 影音库（影片列表/搜索）。注意 media 需单独授权，未授权会报 403', risk: AgentRisk.read),
   LocalAgentTool(name: 'note_add', description: '记一条本地笔记（参数 text）', risk: AgentRisk.write),
   LocalAgentTool(name: 'note_list', description: '列出本地笔记', risk: AgentRisk.read),
 ];
