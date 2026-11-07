@@ -112,7 +112,23 @@ void main() {
     for (final t in kMobileBannedTerms) {
       ok(!body.contains(t), 'ported[$id] 不含第三方内容源标识「$t」');
     }
+
+    // 「搬了但没接上」= 摆设。声明了 wired_in 的，接线文件必须真的引用它。
+    final wired = (p['wired_in'] as List?) ?? const <dynamic>[];
+    for (final wRaw in wired) {
+      final wRel = '$wRaw';
+      final wf = File('../$wRel');
+      ok(wf.existsSync(), 'ported[$id] 接线文件存在: $wRel');
+      if (!wf.existsSync()) continue;
+      final wBody = wf.readAsStringSync();
+      final base = localRel.split('/').last;
+      ok(wBody.contains(base), 'ported[$id] 接线文件确实引用了 $base');
+    }
   }
+
+  // 至少有一个 Apache-2.0 上游真的落了文件（防「台账写得漂亮、仓库里没有」）
+  final mangayomiPorted = ported.any((x) => (x as Map)['upstream'] == 'mangayomi');
+  ok(mangayomiPorted, 'mangayomi（Apache-2.0）至少有一个已搬文件');
 
   // ── 被判不可搬的项目，不得出现在已搬清单 ──
   for (final raw in blocked) {
