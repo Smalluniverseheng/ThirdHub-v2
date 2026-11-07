@@ -25,6 +25,8 @@ import 'asr_rec.dart';
 import 'asr_service.dart';
 import 'asr_settings_page.dart';
 import 'asr_vendors.dart';
+import 'api_keys_page.dart';
+import 'local_agent_page.dart';
 import 'local_tools.dart';
 import 'mcp_page.dart';
 import 'vendor_icons.dart';
@@ -1190,6 +1192,16 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         ListTile(dense: true, leading: const Icon(Icons.phone_android), title: const Text('本机工具清单', style: TextStyle(fontSize: 14)),
           subtitle: const Text('设备信息/剪贴板/朗读/文件/分享/打开链接…', style: TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _localToolsSheet(c); }),
+        // ★本机 Agent（从「我的」挪过来）：模型调本机工具自动完成任务
+        ListTile(dense: true, leading: const Icon(Icons.smart_toy_outlined), title: const Text('本机 Agent', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('模型调本机工具自动完成任务', style: TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right), onTap: () async { Navigator.pop(c2);
+            await Navigator.push(c, MaterialPageRoute(builder: (_) => const LocalAgentPage())); }),
+        // ★API 密钥库（从「我的」挪过来）：一处填写，AI/语音共用
+        ListTile(dense: true, leading: const Icon(Icons.key_outlined), title: const Text('API 密钥库', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('一处填写 · 多模块共用', style: TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.chevron_right), onTap: () async { Navigator.pop(c2);
+            await Navigator.push(c, MaterialPageRoute(builder: (_) => const ApiKeysPage())); }),
         ListTile(dense: true, leading: const Icon(Icons.compress), title: const Text('上下文管理', style: TextStyle(fontSize: 14)),
           subtitle: Text(_ctxTurns == 0 ? '携带全部历史消息' : '只携带最近 $_ctxTurns 条消息', style: const TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _ctxSheet(c); }),
