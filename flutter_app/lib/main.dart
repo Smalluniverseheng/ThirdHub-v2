@@ -32,6 +32,8 @@ import 'package:path_provider/path_provider.dart';
 import 'core/ui_cover.dart';
 import 'core/comic_image.dart';
 import 'core/comic_reader_rules.dart';
+// 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
+import 'vendor/mangayomi/reader_auto_scroll.dart';
 import 'core/haptic.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
@@ -16562,7 +16564,8 @@ class EngineComicReader extends StatefulWidget {
   State<EngineComicReader> createState() => _Ecr();
 }
 
-class _Ecr extends State<EngineComicReader> {
+class _Ecr extends State<EngineComicReader>
+    with TickerProviderStateMixin, ReaderAutoScroll {
   late int idx = widget.index;
   List<String> images = [];
   Map<String, String> headers = {};
@@ -16570,6 +16573,17 @@ class _Ecr extends State<EngineComicReader> {
   String err = '';
   bool paged = false;
   final PageController pc = PageController();
+
+  // 自动滚动（Mangayomi ReaderAutoScroll，lib/vendor/mangayomi/）：
+  // 条漫连续模式下滑得手指一直动，这里改成帧驱动自动推进；翻页模式不启用。
+  @override
+  final ValueNotifier<bool> autoScrollEnabled = ValueNotifier<bool>(false);
+  @override
+  final ValueNotifier<double> autoScrollSpeed = ValueNotifier<double>(1.5);
+  @override
+  final ScrollController autoScrollController = ScrollController();
+  @override
+  bool get canAutoScroll => !paged;
 
   /// 本话的离线稳定键。
   String get _chapKey => 'comic:${widget.comicName}:$chapUrl';
@@ -16580,7 +16594,21 @@ class _Ecr extends State<EngineComicReader> {
   @override
   void initState() {
     super.initState();
+    // 滚到尾部时 mixin 会自己关掉开关，这里同步刷新图标
+    autoScrollEnabled.addListener(() {
+      if (mounted) setState(() {});
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    disposeAutoScroll();
+    autoScrollController.dispose();
+    autoScrollEnabled.dispose();
+    autoScrollSpeed.dispose();
+    pc.dispose();
+    super.dispose();
   }
 
   String get chapUrl {
@@ -16661,6 +16689,11 @@ class _Ecr extends State<EngineComicReader> {
 
   void _go(int i) {
     if (i < 0 || i >= widget.chapters.length) return;
+    // 换话后内容长度变了，自动滚动先停，避免在新话里继续冲
+    if (autoScrollEnabled.value) {
+      autoScrollEnabled.value = false;
+      onAutoScrollChanged();
+    }
     idx = i;
     if (paged) pc.jumpToPage(0);
     _load();
@@ -16793,7 +16826,26 @@ class _Ecr extends State<EngineComicReader> {
                 tooltip: paged ? '条漫滚动' : '翻页模式',
                 onPressed: () {
                   setState(() => paged = !paged);
+                  // 翻页模式下没有可滚动的列表，自动滚动必须停
+                  if (paged && autoScrollEnabled.value) {
+                    autoScrollEnabled.value = false;
+                  }
+                  onAutoScrollChanged();
                 }),
+            if (!paged)
+              IconButton(
+                  icon: Icon(
+                      autoScrollEnabled.value
+                          ? Icons.pause_circle_outline
+                          : Icons.play_circle_outline,
+                      size: 20),
+                  tooltip: tr('自动滚动'),
+                  onPressed: () {
+                    setState(() {
+                      autoScrollEnabled.value = !autoScrollEnabled.value;
+                    });
+                    onAutoScrollChanged();
+                  }),
           ]),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -16814,6 +16866,7 @@ class _Ecr extends State<EngineComicReader> {
                           child: InteractiveViewer(
                               child: Center(child: _img(i)))))
                   : ListView.builder(
+                      controller: autoScrollController,
                       itemCount: images.length + 1,
                       itemBuilder: (_, i) {
                         if (i == images.length) {
