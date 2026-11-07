@@ -12,26 +12,33 @@ const DATA = process.env.TH_DATA_DIR || path.join(__dirname, 'data');
 const HEALTH_FILE = path.join(DATA, 'source-health.json');
 const META_FILE = path.join(DATA, 'source-metadata.json');
 
-// 扫描间隔：每 30 分钟一轮，每轮内每源间隔 200ms（避免打太猛）
-const ROUND_INTERVAL_MS = 30 * 60 * 1000;
-const PROBE_INTERVAL_MS = 200;
-const PROBE_TIMEOUT_MS = 12 * 1000;
+// 扫描策略：不停连续扫，全量覆盖后再从头来。不设每轮上限。
+const ROUND_INTERVAL_MS = 5 * 1000;  // 批次间隔仅 5 秒（连续扫，不等）
+const PROBE_INTERVAL_MS = 100;  // 每源间隔 100ms
+const PROBE_TIMEOUT_MS = 10 * 1000;
 const SEARCH_QUERIES = ['三体', '火影', '周杰伦', '海贼王', '斗罗大陆'];
 
 // 元数据抓取用的关键词 → 字段映射（从搜索结果 JSON 里尽量抽取）
 function extractMeta(item) {
   const meta = {};
   meta.name = item.name || item.title || item.bookName || item.novelName || '';
-  meta.author = item.author || item.writer || item.artist || '';
-  meta.cover = item.cover || item.coverUrl || item.pic || item.img || item.image || '';
-  meta.desc = item.desc || item.description || item.intro || item.summary || '';
-  meta.tags = item.tags || item.tag || item.genre || item.categories || item.group || '';
+  meta.author = item.author || item.writer || item.artist || item.singer || '';
+  meta.cover = item.cover || item.coverUrl || item.pic || item.img || item.image || item.albumArt || '';
+  meta.desc = item.desc || item.description || item.intro || item.summary || item.lyric || item.lyrics || '';
+  meta.tags = item.tags || item.tag || item.genre || item.categories || item.group || item.style || '';
   meta.rating = item.rating || item.score || item.star || '';
   meta.latest = item.latestChapter || item.lastChapter || item.updateTime || item.update || '';
-  meta.url = item.url || item.bookUrl || item.articleUrl || item.id || '';
+  meta.url = item.url || item.bookUrl || item.articleUrl || item.id || item.songId || '';
   meta.sourceId = item.sourceId || item.source || '';
   meta.type = item.type || '';
-  return meta;
+  // 补充字段
+  meta.status = item.status || item.state || item.serialize || '';  // 连载/完结
+  meta.album = item.album || item.albumName || '';
+  meta.duration = item.duration || item.interval || item.time || '';
+  meta.year = item.year || '';
+  meta.wordCount = item.wordCount || item.wordCountStr || '';
+  meta.chapterCount = item.chapterCount || '';
+  meta.language = item.language || item.lang || '';  return meta;
 }
 
 // 测试单个源：用搜索查询看能不能返回结果
@@ -141,13 +148,25 @@ class SourceScanner {
       }
     }
 
-    console.log('[scanner] 本轮共 ' + allSources.length + ' 个源');
+    console.log('[scanner] 本轮全量扫 ' + allSources.length + ' 个源（连续模式）');
 
-    // 逐个测，每源间隔 PROBE_INTERVAL_MS
+    // 全量扫：按最久未扫排序
+    const now = Date.now();
+    allSources.sort((a, b) => {
+      const ha = this.health[a.type + ':' + a.id];
+      const hb = this.health[b.type + ':' + b.id];
+      const ta = ha ? (ha.ok ? new Date(ha.lastCheck).getTime() : new Date(ha.deadSince || ha.lastCheck).getTime()) : 0;
+      const tb = hb ? (hb.ok ? new Date(hb.lastCheck).getTime() : new Date(hb.deadSince || hb.lastCheck).getTime()) : 0;
+      return ta - tb;
+    });
+
+    const batch = allSources;  // 全量，不切
+
+    // 逐个测，测完一个立刻测下一个
     let ok = 0, fail = 0;
-    for (let i = 0; i < allSources.length; i++) {
+    for (let i = 0; i < batch.length; i++) {
       if (!this.running) break;
-      const { type, id, name, source } = allSources[i];
+      const { type, id, name, source } = batch[i];
 
       // 轮换查询词
       const query = SEARCH_QUERIES[i % SEARCH_QUERIES.length];
@@ -204,6 +223,7 @@ class SourceScanner {
       round: this.round,
       time: new Date().toISOString(),
       total: allSources.length,
+      scanned: batch.length,
       ok, fail,
       byType: {},
     };
