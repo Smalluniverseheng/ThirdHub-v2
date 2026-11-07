@@ -412,7 +412,7 @@ const List<LocalAgentTool> localAgentTools = <LocalAgentTool>[
   LocalAgentTool(name: 'goto_module', description: '切换到指定模块（参数 module 用键名）', risk: AgentRisk.write),
   LocalAgentTool(name: 'get_setting', description: '读一个设置项（参数 key）', risk: AgentRisk.read),
   LocalAgentTool(name: 'set_setting', description: '写一个设置项（参数 key / value）', risk: AgentRisk.write),
-  LocalAgentTool(name: 'engine_status', description: '资料库（引擎）连接与健康状态', risk: AgentRisk.read),
+  LocalAgentTool(name: 'engine_status', description: '资料库连接与健康状态', risk: AgentRisk.read),
   LocalAgentTool(name: 'engine_search', description: '在资料库搜索（参数 type=novel/comic/music/video/all、query、limit）', risk: AgentRisk.read),
   LocalAgentTool(name: 'open_item', description: '打开一本书/一部漫画/一个媒体（参数 type、id、title）', risk: AgentRisk.write),
   LocalAgentTool(name: 'recent_history', description: '最近的阅读/观看记录（参数 limit）', risk: AgentRisk.read),
