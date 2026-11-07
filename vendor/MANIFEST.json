@@ -103,6 +103,19 @@
       "license": "GPL-3.0",
       "adaptation": "只提取运行规则（六种阅读方向与 fromKey 回落、判页分区、双击/长按阈值、跨话导航、追更重试/并发/节流/免检窗口），剥离 widget 树、全局状态与 riverpod；每条规则注明上游文件与行号。",
       "since": "4.81.45"
+    },
+    {
+      "id": "mangayomi_auto_scroll",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/modules/reader_common/mixins/reader_auto_scroll.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/reader_auto_scroll.dart",
+      "state": "ported_verbatim",
+      "license": "Apache-2.0",
+      "adaptation": "原样搬，逻辑一行未改；只在文件头加出处注释（上游路径、commit、许可证）。接线在 main.dart 的 _Ecr：连续模式的 ListView 用它提供的 ScrollController，AppBar 加开关（仅连续模式显示），换话与切翻页模式时停止；滚到尾部由 mixin 自己关闭。",
+      "wired_in": [
+        "flutter_app/lib/main.dart"
+      ],
+      "since": "4.81.47"
     }
   ],
   "planned": [
