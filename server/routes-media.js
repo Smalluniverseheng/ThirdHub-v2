@@ -153,8 +153,13 @@ async function handle(req, res, body, u, p, send, ctx) {
   }
   if (p.startsWith('/v1/video/search')) {
     const q = u.searchParams.get('q');
-    const pool = drpySources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
-    const results = await Promise.all(pool.slice(0, 5).map(async (s) => {
+    const all = drpySources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
+    // ★2026-11-09：CMS 采集源（有 api）排前面 —— 它们返回标准 JSON，
+    //   源站换皮也不受影响；drpy(HTML解析) 源已大面积失效（如 348 已换域名）。
+    //   顺序：CMS 优先，drpy 补充；总数从 5 提到 8，结果更足。
+    const isCms = (s) => !!(s && (s.api || s.format === 'cms'));
+    const pool = [...all.filter(isCms), ...all.filter(s => !isCms(s))].slice(0, 8);
+    const results = await Promise.all(pool.map(async (s) => {
       const t0 = Date.now();
       const r = await registry.run(s, 'search', q);
       return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0, ...(r.error ? { error: r.error } : { items: r.items }) };

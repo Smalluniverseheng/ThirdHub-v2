@@ -5,6 +5,7 @@ const lx = require('./engine-lx');
 const music = require('./engine-music');
 const comic = require('./engine-comic');
 const drpy = require('./engine-drpy');
+const cms = require('./engine-cms');
 
 // ctx: 共享状态注入(引用类型, 与 index.js 互通)
 async function handle(req, res, body, u, p, send, ctx) {
@@ -67,13 +68,38 @@ async function handle(req, res, body, u, p, send, ctx) {
         return rs.filter(r => r.ok);
       })(),
       (async () => {
-        const rs = await Promise.all(takeByRoute('search.video', drpySources, 6).map(async (s) => {
+        // ★2026-11-09：影视分两路并跑 ——
+        //   ① CMS 采集源（format='cms'）：返回标准 JSON，源站换皮也不受影响，**优先**；
+        //   ② drpy(HTML解析) 源：保留做补充。实测 348电影网 这类站已改版/换域名，
+        //      搜索页直接返回「域名已失效」错误页 → 一次性全废。所以别把影视全押在它上面。
+        const cmsSrc = drpySources.filter(s => (s.format === 'cms' || s.api) && s.enabled !== false);
+        const cmsP = Promise.all(cmsSrc.slice(0, 6).map(async (s) => {
+          const t0 = Date.now();
+          try {
+            const r = await Promise.race([
+              cms.search(s.api || s.source || s.code, q),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('cms 超时 10s')), 10000)),
+            ]);
+            noteAgg(s.id, true, Date.now() - t0, '');
+            return { source: s.name, sourceId: s.id, ok: true,
+              total: r.total, items: r.items.slice(0, 5) };
+          } catch (e) {
+            noteAgg(s.id, false, Date.now() - t0, e.message);
+            return { source: s.name, sourceId: s.id, ok: false, error: e.message };
+          }
+        }));
+
+        const htmlSrc = drpySources.filter(s => s.format !== 'cms' && !s.api);
+        const drpyP = Promise.all(takeByRoute('search.video', htmlSrc, 4).map(async (s) => {
           const t0 = Date.now();
           const r = drpy.irSearch(await drpy.runSource(s.code, 'search', [q]));
           noteAgg(s.id, !r.error, Date.now() - t0, r.error);
           return { source: s.name, sourceId: s.id, ok: !r.error, ...(r.error ? {} : { items: r.items.slice(0, 5) }) };
         }));
-        return rs.filter(r => r.ok);
+
+        const [cmsRs, drpyRs] = await Promise.all([cmsP, drpyP]);
+        // CMS 结果排前面（量足且稳定），坏的直接丢掉
+        return [...cmsRs.filter(r => r.ok && r.items.length), ...drpyRs.filter(r => r.ok && r.items.length)];
       })(),
       (async () => {
         // ★ 只挑**声明支持搜索**的音源。实测本机 31 条可用音源里只有 4 条声明

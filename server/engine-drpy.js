@@ -318,21 +318,37 @@ function irDetail(result) {
   if (!result) return { error: '空结果' };
   if (result.error) return { error: result.error };
   const v = (result.list || [result])[0] || result;
-  // 选集: vod_play_url 格式 "线路名$集名$url#集名$url##线路2$..."
+  // 选集解析（★2026-11-09 修正）
+  //   苹果CMS 的 vod_play_url 形如： 第01集$http://a#第02集$http://b$$$第01集$http://c#...
+  //   即「集名$地址」用 # 连接，**多条线路用 $$$ 分隔，线路本身没有名字**；
+  //   线路名在另一个字段 vod_play_from 里，同样是 $$$ 分隔。
+  //   旧代码把每段按 $ 切开、拿 parts[0] 当线路名 → 第一集被吃成线路名，
+  //   集名变成「第01集·第02集」这种串。这里按正确结构重写。
   const episodes = [];
-  const playUrl = v.vod_play_url || '';
-  for (const line of String(playUrl).split('$$$')) {
-    const parts = line.split('$');
-    const lineName = parts.length > 2 ? parts[0] : '';
-    const flag = lineName; // drpy play(flag, id) 的线路参数
-    const eps = (parts.length > 2 ? parts.slice(1).join('$') : line).split('#');
-    for (const ep of eps) {
-      const si = ep.lastIndexOf('$');
-      if (si > 0) episodes.push({ name: (lineName ? lineName + '·' : '') + ep.slice(0, si), url: ep.slice(si + 1), flag });
-    }
-  }
-  return { id: v.vod_id, name: v.vod_name, coverUrl: v.vod_pic,
-    intro: v.vod_content || '', episodes: episodes.filter(e => e.url) };
+  const playUrl = String(v.vod_play_url || '');
+  const froms = String(v.vod_play_from || '').split('$$$');
+  playUrl.split('$$$').forEach((line, idx) => {
+    const lineName = (froms[idx] || '').trim();
+    String(line).split('#').forEach((seg) => {
+      const t = String(seg || '').trim();
+      if (!t) return;
+      const k = t.lastIndexOf('$');
+      if (k <= 0) return;
+      const nm = t.slice(0, k).trim();
+      const u = t.slice(k + 1).trim();
+      if (!u) return;
+      episodes.push({ name: nm, url: u, flag: lineName || '', line: lineName });
+    });
+  });
+  // 字段名同时给两套：name/title、intro/description —— 前端各处读取不统一，避免"详情页空白"。
+  return {
+    id: v.vod_id, name: v.vod_name, title: v.vod_name,
+    coverUrl: v.vod_pic, pic: v.vod_pic,
+    intro: v.vod_content || '', description: v.vod_content || '',
+    year: String(v.vod_year || ''), type: v.vod_type || '', area: v.vod_area || '',
+    remarks: v.vod_remarks || '', score: v.vod_score || '',
+    episodes, chapters: episodes,
+  };
 }
 function irPlay(result) {
   if (!result) return { error: '空结果' };
