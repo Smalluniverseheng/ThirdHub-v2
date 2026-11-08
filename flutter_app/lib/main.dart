@@ -33,6 +33,7 @@ import 'core/ui_cover.dart';
 import 'core/comic_image.dart';
 import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
+import 'vendor/mangayomi/custom_value_indicator_shape.dart';
 import 'vendor/mangayomi/reader_auto_scroll.dart';
 import 'vendor/mangayomi/reader_motion.dart';
 import 'vendor/mangayomi/reader_page_index_math.dart';
@@ -16959,6 +16960,39 @@ class _Ecr extends State<EngineComicReader>
                               images.length),
                           style: const TextStyle(
                               fontSize: 12, color: Colors.grey)),
+                    // Mangayomi CustomValueIndicatorShape：翻页模式底部页码滑杆的气泡形状（上游逐字移植）。
+                    // 拖动进度条跳到任意一屏；双页模式的页码由 ReaderPageIndexMath 换算，动画沿用 ReaderMotion。
+                    if (pageMath.pageViewPageCount > 1)
+                      Expanded(
+                          child: SliderTheme(
+                              data: SliderTheme.of(c).copyWith(
+                                valueIndicatorShape:
+                                    const CustomValueIndicatorShape(),
+                              ),
+                              child: Slider(
+                                value: curPage
+                                    .clamp(0, pageMath.pageViewPageCount - 1)
+                                    .toDouble(),
+                                min: 0.0,
+                                max: (pageMath.pageViewPageCount - 1)
+                                    .toDouble(),
+                                divisions: pageMath.pageViewPageCount - 1,
+                                label: pageMath.currentIndexLabel(
+                                    pageMath.pageViewToActualIndex(curPage),
+                                    images.length),
+                                onChanged: (v) {
+                                  if (mounted) setState(() => curPage = v.round());
+                                },
+                                onChangeEnd: (v) {
+                                  if (pc.hasClients) {
+                                    pc.animateToPage(v.round(),
+                                        duration: ReaderMotion.settle(
+                                            distance: MediaQuery.sizeOf(c).width,
+                                            extent: MediaQuery.sizeOf(c).width),
+                                        curve: ReaderMotion.quinticOut);
+                                  }
+                                },
+                              ))),
                     Text('${idx + 1}/${widget.chapters.length} 话',
                         style:
                             const TextStyle(fontSize: 12, color: Colors.grey)),

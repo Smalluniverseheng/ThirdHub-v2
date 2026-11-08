@@ -414,6 +414,16 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/mangayomi_double_page_selfcheck.dart
 
+      # 第 N 条 mangayomi_page_slider（2026-11-08 加，全盘升级 #205）—— 页码滑杆气泡指示器移植。
+      #   上游 custom_value_indicator_shape.dart 被改坏或没接上不会报错，只会静默表现成
+      #   「拖进度条没有页码气泡」「从右往左阅读时气泡没镜像」「或者压根没接 SliderTheme」。
+      #   逐字核对上游正文（内嵌全文，CI 不依赖本地镜像）+ 长度闸 + import 白名单 +
+      #   main.dart 接线 + 台账 / CI / 版本，末尾 exit(1)。
+      - name: mangayomi_page_slider（Mangayomi 页码滑杆：上游逐字 / 依赖 / 接线 / 台账）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_page_slider_selfcheck.dart
+
+
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
       #   事件顺序乱了、审批闸漏了、回合上限失效。这条闸门把这几处钉死，

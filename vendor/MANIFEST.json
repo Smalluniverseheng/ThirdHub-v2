@@ -1,6 +1,6 @@
 {
   "schema": "thirdhub.vendor_manifest/1",
-  "updated": "2026-11-07",
+  "updated": "2026-11-08",
   "policy": {
     "rule": "优先直接搬现成开源项目，不自己写等价实现；搬不动必须写清依赖代价，不许假装零依赖。",
     "license_layers": {
@@ -25,7 +25,7 @@
         "reader_entry": "lib/modules/manga/reader/reader_view.dart",
         "reader_lines": 1372,
         "reader_imports": 54,
-        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。2026-11-08 复测：reader/utils/ 下 reader_motion.dart（78 行，0 外部依赖）与 webtoon_scroll_physics.dart（106 行，只依赖前者）已移植并接线；subsampling/src 有 11 个文件、主文件 44KB 且含 ffi_image_decoder.dart。第 16 轮再复测：reader_page_index_math.dart（299 行，唯一 import 指向上游 UChapDataPreload 类型，闭包 7 imports）可用最小类型投影独立编译，已原样搬并接成双页阅读模式；reader/utils/ 与 subsampling/src 下另有 5 个零依赖纯算法单元待后续按组件搬。"
+        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。2026-11-08 复测：reader/utils/ 下 reader_motion.dart（78 行，0 外部依赖）与 webtoon_scroll_physics.dart（106 行，只依赖前者）已移植并接线；subsampling/src 有 11 个文件、主文件 44KB 且含 ffi_image_decoder.dart。第 16 轮再复测：reader_page_index_math.dart（299 行，唯一 import 指向上游 UChapDataPreload 类型，闭包 7 imports）可用最小类型投影独立编译，已原样搬并接成双页阅读模式；reader/utils/ 与 subsampling/src 下另有 5 个零依赖纯算法单元待后续按组件搬。第 17 轮（2026-11-08）上游 reader 全树实测：58 个 dart 中 13 个零自有依赖，其中 subsampling_pan.dart 是 part of 不可独立编译、3 个 .g.dart 为生成代码、2 个是纯 export 空壳、reader_chapter_navigation.dart 只是全局标志；真正可独立编译且能自然接线的只剩 custom_value_indicator_shape.dart（本轮已搬并接线）与 coordinate_transformer / row_pan / page_pan_forwarding 三块纯算法，后三者服务于 subsampling 控制器的缩放平移状态模型，单轮直搬会与本项目现有 InteractiveViewer 手势冲突，留待按组件逐层剥离。"
       }
     },
     "venera": {
@@ -168,6 +168,19 @@
         "flutter_app/lib/vendor/mangayomi/reader_page_index_math.dart"
       ],
       "since": "4.81.54"
+    },
+    {
+      "id": "mangayomi_value_indicator_shape",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/modules/manga/reader/widgets/custom_value_indicator_shape.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/custom_value_indicator_shape.dart",
+      "state": "ported_verbatim",
+      "license": "Apache-2.0",
+      "adaptation": "原样搬，正文 1774 字节 / 62 行与上游逐字一致；仅文件头加出处注释。上游仅依赖 package:flutter/material.dart，零自有包，可独立编译进移动端。接线在 main.dart 的 _Ecr：翻页模式底部 SliderTheme.valueIndicatorShape 用它，拖动进度条跳页，双页页码由 ReaderPageIndexMath 换算，翻页动画沿用 ReaderMotion。",
+      "wired_in": [
+        "flutter_app/lib/main.dart"
+      ],
+      "since": "4.81.55"
     }
   ],
   "planned": [
@@ -187,7 +200,7 @@
         "依赖 riverpod（本项目已有 Riverpod，可对齐）",
         "需要把一个 ThirdHub 漫画条目适配成 Mangayomi 的 chapter/page 模型"
       ],
-      "plan": "按依赖闭包分轮搬。已完成：reader_auto_scroll（4.81.47）、reader_motion + webtoon_scroll_physics（4.81.52，动效与条漫惯性物理）、reader_page_index_math（4.81.54，双页索引数学与双页阅读模式）。剩余三块经 2026-11-08 上游实测均不可一轮直搬：download_ahead.dart 仅 33 行却挂 7 个上游自有 provider/repository；subsampling_scale_image_view 是 11 文件 / 44KB 主文件的 FFI 解码工程；reader_view.dart 1372 行 52 imports 依赖 riverpod 与自有模型。后续需按依赖闭包逐层剥离，或改为桌面端侧整套分发。第 16 轮复测上游另找到 5 个零依赖纯算法单元（tall_image_slices / row_pan / page_pan_forwarding / coordinate_transformer / reader_chapter_navigation），可在后续轮次按组件继续搬。"
+      "plan": "按依赖闭包分轮搬。已完成：reader_auto_scroll（4.81.47）、reader_motion + webtoon_scroll_physics（4.81.52，动效与条漫惯性物理）、reader_page_index_math（4.81.54，双页索引数学与双页阅读模式）。剩余三块经 2026-11-08 上游实测均不可一轮直搬：download_ahead.dart 仅 33 行却挂 7 个上游自有 provider/repository；subsampling_scale_image_view 是 11 文件 / 44KB 主文件的 FFI 解码工程；reader_view.dart 1372 行 52 imports 依赖 riverpod 与自有模型。后续需按依赖闭包逐层剥离，或改为桌面端侧整套分发。第 16 轮复测上游另找到 5 个零依赖纯算法单元（tall_image_slices / row_pan / page_pan_forwarding / coordinate_transformer / reader_chapter_navigation），可在后续轮次按组件继续搬。第 17 轮已搬 custom_value_indicator_shape.dart（页码滑杆气泡）并接线；三块 subsampling 纯算法与 reader_chapter_navigation 的依赖结论见 verified_facts.note。"
     },
     {
       "id": "harmony_music_player",
