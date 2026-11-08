@@ -1286,6 +1286,14 @@ async function handle(req, res, body) {
         p.startsWith('/v1/music') ||
         p.startsWith('/v1/library') ||
         p.startsWith('/v1/thp') ||
+        // 封面代理：搜索结果里的封面全走 /v1/img?url=
+        p.startsWith('/v1/img') ||
+        // 阅读相关（只读）：正文、书签、标注、章节
+        p.startsWith('/v1/content') ||
+        p.startsWith('/v1/chapter') ||
+        p.startsWith('/v1/bookmarks') ||
+        p.startsWith('/v1/annotations') ||
+        p.startsWith('/v1/book/') ||
         p.startsWith('/v1/data-sources/public')
       );
     if (!publicOk) {
