@@ -248,20 +248,24 @@ void main() {
   ck('§5 CI 有 mangayomi_page_slider 步骤',
       ci.contains('tool/mangayomi_page_slider_selfcheck.dart') &&
           ci.contains('mangayomi_page_slider（'));
-  ck('§5 版本三件套一致 4.81.55 / 50726',
-      av.contains("kAppVersion = '4.81.55'") &&
-          av.contains('kAppCode = 50726') &&
-          pub.contains('version: 4.81.55+50726') &&
-          readme.contains('4.81.55') &&
-          readme.contains('50726'));
-  ck('§5 版本三件套无旧版残留',
-      !av.contains('4.81.54') &&
-          !pub.contains('4.81.54') &&
-          !readme.contains('4.81.54'));
-  ck('§5 changelog 首条为 4.81.55',
-      cl.contains('"latest": "4.81.55"') && cl.contains('"v": "4.81.55"'));
-  ck('§5 changelog 历史 4.81.54 条目仍在',
-      cl.contains('"v": "4.81.54"'));
+  // ★ 4.81.56 起：版本号不再写死在本闸门里。
+  // 血泪：上一版把 4.81.55 / 50726 硬编码进断言，升到 4.81.56 后本闸门立刻假红 ——
+  // 每轮发版都要回来改一次旧闸门，漏一次就变成「功能没坏但闸门红」。
+  // 现在从唯一来源 app_version.dart 读出当前版本，再要求三件套与 changelog 跟它一致；
+  // 判据强度不降（仍逐项比对），但不再随版本升级而失效。
+  final verMatch = RegExp(r"kAppVersion = '([0-9.]+)'").firstMatch(av);
+  final codeMatch = RegExp(r'kAppCode = ([0-9]+)').firstMatch(av);
+  final curVer = verMatch?.group(1) ?? '';
+  final curCode = codeMatch?.group(1) ?? '';
+  ck('§5 能从唯一来源读出当前版本', curVer.isNotEmpty && curCode.isNotEmpty);
+  ck('§5 版本三件套与唯一来源一致（$curVer / $curCode）',
+      pub.contains('version: $curVer+$curCode') &&
+          readme.contains(curVer) &&
+          readme.contains(curCode));
+  ck('§5 changelog 首条为当前版本（$curVer）',
+      cl.contains('"latest": "$curVer"') && cl.contains('"v": "$curVer"'));
+  ck('§5 changelog 历史 4.81.55 条目仍在',
+      cl.contains('"v": "4.81.55"'));
   for (final t in <String>[
     'copy_manga',
     'baozi',

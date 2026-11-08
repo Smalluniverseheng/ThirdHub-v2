@@ -4,6 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart';
 
 import 'i18n.dart';
+import '../vendor/mangayomi/reader_interactive_region.dart';
 
 /// 上游: venera-app/venera@a0eba914f4c2 | 许可证: GPL-3.0 | 方式: 文件移植（part → 独立文件）
 /// 台账: vendor/MANIFEST.json → ported[id=comic_image]
@@ -27,7 +28,7 @@ import 'i18n.dart';
 /// 移植时有四处改动（原版依赖它自己的工程）：
 /// · `part of 'reader.dart'` → 独立文件（这就是为什么原版 0 个 import：全靠 part 共享）
 /// · `"Retry".tl` → `tr('重试')`（接到本项目的 i18n，6 语言都有译文）
-/// · `GlobalState.find<...>().ignoreNextTap()` → 删掉（我们没有那套手势协调）
+/// · `GlobalState.find<...>().ignoreNextTap()` → 改由 Mangayomi 的交互区注册表替代（见下方失败态）
 /// · `context.colorScheme.surfaceContainer` → `Theme.of(context)...`
 class ComicImage extends StatefulWidget {
   /// Modified from flutter Image (Venera 原作者注释：从 Flutter 的 Image 改写)
@@ -315,16 +316,20 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _loadingProgress = null;
-                    _lastException = null;
-                  });
-                  _resolveImage();
-                },
-                child: Text(tr('重试'),
-                    style: const TextStyle(fontSize: 12)),
+              // Mangayomi ReaderInteractiveRegion：把「重试」登记为交互区，
+              // 翻页手势命中此区域时让位（见 main.dart 的 _onReaderTap 守卫）。
+              ReaderInteractiveRegion(
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _loadingProgress = null;
+                      _lastException = null;
+                    });
+                    _resolveImage();
+                  },
+                  child: Text(tr('重试'),
+                      style: const TextStyle(fontSize: 12)),
+                ),
               ),
               const SizedBox(height: 12),
             ],

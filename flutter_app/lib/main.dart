@@ -35,6 +35,7 @@ import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
 import 'vendor/mangayomi/custom_value_indicator_shape.dart';
 import 'vendor/mangayomi/reader_auto_scroll.dart';
+import 'vendor/mangayomi/reader_interactive_region.dart';
 import 'vendor/mangayomi/reader_motion.dart';
 import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
@@ -16814,6 +16815,9 @@ class _Ecr extends State<EngineComicReader>
   /// 中间 40% 留给工具栏（当前没有工具栏，保持不动，避免误翻页）。
   /// 与底部「上一话 / 下一话」按钮共用 _go，不另写一套章节跳转。
   void _onReaderTap(Offset pos, Size size, int i) {
+    // Mangayomi ReaderInteractiveRegion：页内按钮（图片失败态「重试」）优先于
+    // 全屏翻页手势，命中已登记交互区时不翻页，避免点一次重试顺带翻一页。
+    if (ReaderInteractiveRegions.containsPosition(pos)) return;
     final hit = ComicTapHit.at(pos.dx, pos.dy, size.width, size.height);
     final action = tapActionOf(ComicReadMode.galleryLeftToRight, hit);
     if (action == ComicTapAction.toggleUi) return;

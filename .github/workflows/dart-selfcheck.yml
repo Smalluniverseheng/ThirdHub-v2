@@ -423,6 +423,15 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/mangayomi_page_slider_selfcheck.dart
 
+      # 第 N 条 mangayomi_interactive_region（2026-11-08 加，全盘升级 #205）—— 阅读器页内交互区。
+      #   上游 reader_interactive_region.dart 被改坏或没接上不会报错，只会静默表现成
+      #   「点失败页的重试按钮顺带翻一页」——comic_image.dart 头注释里记着这笔欠账。
+      #   逐字核对上游正文（内嵌全文，CI 不依赖本地镜像）+ 长度闸 + import 白名单 +
+      #   两处接线与判页顺序 + 台账 / CI / 版本 / 合规，末尾 exit(1)。
+      - name: mangayomi_interactive_region（Mangayomi 交互区：上游逐字 / 依赖 / 双接线 / 台账）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_interactive_region_selfcheck.dart
+
 
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
