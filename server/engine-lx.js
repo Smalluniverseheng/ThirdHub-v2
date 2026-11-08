@@ -137,15 +137,25 @@ async function runLX(code, action, data = {}) {
     //   人能看懂的原因（谁不支持、它支持什么），而不是让源内部抛出
     //   `仅支持musicUrl操作` 这种看起来像"引擎坏了"的字样。
     const declared = collectActions(inited);
-    if (declared.size && !declared.has(action)) {
+    // ★2026-11-08：调用方传进来的 action 可能来自**存储里的能力标签**，
+    //   而那个标签有时是空的（导入时没打上）→ 退化成 'search'；
+    //   可源自己只声明了 'musicSearch'，于是被下面误判成「不支持搜索」。
+    //   实测 3 条音源全部因此报「未声明支持 search」，一条都搜不出歌。
+    //   这里按源自己装载后的真实声明纠一次动作名（search ↔ musicSearch）。
+    let act = action;
+    if (declared.size && !declared.has(act)) {
+      const alt = searchAction([...declared]);
+      if (alt && alt !== act) act = alt;
+    }
+    if (declared.size && !declared.has(act)) {
       return {
-        error: '该来源未声明支持 ' + action + '（其声明: ' + [...declared].join(',') + '）',
+        error: '该来源未声明支持 ' + act + '（其声明: ' + [...declared].join(',') + '）',
         unsupported: true,
         actions: [...declared],
       };
     }
     const result = await Promise.race([
-      Promise.resolve(handlers.request({ action, source: data.source || '', data })),
+      Promise.resolve(handlers.request({ action: act, source: data.source || '', data })),
       new Promise((_, rej) => setTimeout(() => rej(new Error('调用超时')), 20000)),
     ]);
     return result;
