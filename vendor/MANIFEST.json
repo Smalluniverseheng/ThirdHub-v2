@@ -25,7 +25,7 @@
         "reader_entry": "lib/modules/manga/reader/reader_view.dart",
         "reader_lines": 1372,
         "reader_imports": 54,
-        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。2026-11-08 复测：reader/utils/ 下 reader_motion.dart（78 行，0 外部依赖）与 webtoon_scroll_physics.dart（106 行，只依赖前者）已移植并接线；subsampling/src 有 11 个文件、主文件 44KB 且含 ffi_image_decoder.dart。第 16 轮再复测：reader_page_index_math.dart（299 行，唯一 import 指向上游 UChapDataPreload 类型，闭包 7 imports）可用最小类型投影独立编译，已原样搬并接成双页阅读模式；reader/utils/ 与 subsampling/src 下另有 5 个零依赖纯算法单元待后续按组件搬。第 17 轮（2026-11-08）上游 reader 全树实测：58 个 dart 中 13 个零自有依赖，其中 subsampling_pan.dart 是 part of 不可独立编译、3 个 .g.dart 为生成代码、2 个是纯 export 空壳、reader_chapter_navigation.dart 只是全局标志；真正可独立编译且能自然接线的只剩 custom_value_indicator_shape.dart（本轮已搬并接线）与 coordinate_transformer / row_pan / page_pan_forwarding 三块纯算法，后三者服务于 subsampling 控制器的缩放平移状态模型，单轮直搬会与本项目现有 InteractiveViewer 手势冲突，留待按组件逐层剥离。第 18 轮（2026-11-08）复测纠正上述结论：widgets/reader_interactive_region.dart（84 行 / 2688 字节，仅 flutter/rendering.dart 与 flutter/widgets.dart）同样零自有依赖、且与本项目手势层能自然接线，第 17 轮按「零依赖纯算法」筛选时漏记了它；本轮已逐字搬入并接线。reader_view / download_ahead / subsampling_scale_image_view 三块依赖闭包仍过大。"
+        "note": "reader_view.dart 依赖自有 reader_common / subsampling_scale_image_view / download_ahead / error_state / platform_utils / volume_keys，且用 riverpod；不是单文件可搬，要按依赖闭包分轮搬。2026-11-08 复测：reader/utils/ 下 reader_motion.dart（78 行，0 外部依赖）与 webtoon_scroll_physics.dart（106 行，只依赖前者）已移植并接线；subsampling/src 有 11 个文件、主文件 44KB 且含 ffi_image_decoder.dart。第 16 轮再复测：reader_page_index_math.dart（299 行，唯一 import 指向上游 UChapDataPreload 类型，闭包 7 imports）可用最小类型投影独立编译，已原样搬并接成双页阅读模式；reader/utils/ 与 subsampling/src 下另有 5 个零依赖纯算法单元待后续按组件搬。第 17 轮（2026-11-08）上游 reader 全树实测：58 个 dart 中 13 个零自有依赖，其中 subsampling_pan.dart 是 part of 不可独立编译、3 个 .g.dart 为生成代码、2 个是纯 export 空壳、reader_chapter_navigation.dart 只是全局标志；真正可独立编译且能自然接线的只剩 custom_value_indicator_shape.dart（本轮已搬并接线）与 coordinate_transformer / row_pan / page_pan_forwarding 三块纯算法，后三者服务于 subsampling 控制器的缩放平移状态模型，单轮直搬会与本项目现有 InteractiveViewer 手势冲突，留待按组件逐层剥离。第 18 轮（2026-11-08）复测纠正上述结论：widgets/reader_interactive_region.dart（84 行 / 2688 字节，仅 flutter/rendering.dart 与 flutter/widgets.dart）同样零自有依赖、且与本项目手势层能自然接线，第 17 轮按「零依赖纯算法」筛选时漏记了它；本轮已逐字搬入并接线。reader_view / download_ahead / subsampling_scale_image_view 三块依赖闭包仍过大。 第 19 轮（2026-11-08）实测：utils/download_ahead.dart 33 行挂 7 个自有 provider/repository，但其规则内核 lib/services/download_manager/next_downloads.dart 是 51 行纯算法，只挂 Chapter / Download 两个模型；用本地最小类型投影替代后可独立编译，本轮已逐字搬入并接线。download_ahead 的 provider / repository / settings 适配层、subsampling_scale_image_view 的 FFI 工程、reader_view 的 52 imports 仍未搬。"
       }
     },
     "venera": {
@@ -195,6 +195,32 @@
         "flutter_app/lib/core/comic_image.dart"
       ],
       "since": "4.81.56"
+    },
+    {
+      "id": "mangayomi_download_ahead",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/services/download_manager/next_downloads.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/next_downloads.dart",
+      "state": "ported_verbatim",
+      "license": "Apache-2.0",
+      "adaptation": "原样搬，上游 51 行 / 1635 字节中的算法正文 48 行 / 1537 字节逐字未改；仅把两行绝对 import（Chapter / Download 模型）合并为一行相对 import，指向本地最小类型投影 chapter_download_min.dart（见 ported[mangayomi_chapter_download_shim]）。这是 #205 剩余块 utils/download_ahead.dart 挂的 7 个自有 provider/repository 里第一层可剥离的纯规则内核：已完成 / 已排队的不占名额、按阅读顺序取后续 N 项、当前项自身未下载时不预读。本项目按页粒度复用该规则（Chapter→页、Download→已预热页），接在 main.dart 的 _Ecr._precacheNext：把原先「固定只预热下一张」升级为最多 3 张的预读窗口，并在 _load() 换话时清空预热集合。上游 provider / repository / settings 适配层仍未搬，不假装整套 download_ahead 已完成。",
+      "wired_in": [
+        "flutter_app/lib/main.dart"
+      ],
+      "since": "4.81.57"
+    },
+    {
+      "id": "mangayomi_chapter_download_shim",
+      "upstream": "mangayomi",
+      "upstream_path": "lib/models/chapter.dart",
+      "local": "flutter_app/lib/vendor/mangayomi/chapter_download_min.dart",
+      "state": "adapted_shim",
+      "license": "Apache-2.0",
+      "adaptation": "本地最小类型投影，不是上游文件、不含任何上游运行逻辑。上游 Chapter / Download 挂在 Isar 模型、riverpod provider 与 repository 上，整套搬进移动端等于把半座书架拖进来；这里只投影 next_downloads.dart 算法实际读到的 5 个字段（id / isRead / isDownload / isStartDownload），字段名与语义保持一致。零 import、零 IO、零界面文案。",
+      "wired_in": [
+        "flutter_app/lib/vendor/mangayomi/next_downloads.dart"
+      ],
+      "since": "4.81.57"
     }
   ],
   "planned": [
@@ -214,7 +240,7 @@
         "依赖 riverpod（本项目已有 Riverpod，可对齐）",
         "需要把一个 ThirdHub 漫画条目适配成 Mangayomi 的 chapter/page 模型"
       ],
-      "plan": "按依赖闭包分轮搬。已完成：reader_auto_scroll（4.81.47）、reader_motion + webtoon_scroll_physics（4.81.52，动效与条漫惯性物理）、reader_page_index_math（4.81.54，双页索引数学与双页阅读模式）。剩余三块经 2026-11-08 上游实测均不可一轮直搬：download_ahead.dart 仅 33 行却挂 7 个上游自有 provider/repository；subsampling_scale_image_view 是 11 文件 / 44KB 主文件的 FFI 解码工程；reader_view.dart 1372 行 52 imports 依赖 riverpod 与自有模型。后续需按依赖闭包逐层剥离，或改为桌面端侧整套分发。第 16 轮复测上游另找到 5 个零依赖纯算法单元（tall_image_slices / row_pan / page_pan_forwarding / coordinate_transformer / reader_chapter_navigation），可在后续轮次按组件继续搬。第 17 轮已搬 custom_value_indicator_shape.dart（页码滑杆气泡）并接线；第 18 轮全树复测补上漏记的 reader_interactive_region.dart（页内按钮交互区优先于翻页手势，补回 comic_image.dart 因缺手势协调而删掉的 ignoreNextTap），并纠正 verified_facts.note 里「只剩 custom_value_indicator_shape」的结论；三块 subsampling 纯算法与 reader_chapter_navigation 的依赖结论见 verified_facts.note。"
+      "plan": "按依赖闭包分轮搬。已完成：reader_auto_scroll（4.81.47）、reader_motion + webtoon_scroll_physics（4.81.52，动效与条漫惯性物理）、reader_page_index_math（4.81.54，双页索引数学与双页阅读模式）。剩余三块经 2026-11-08 上游实测均不可一轮直搬：download_ahead.dart 仅 33 行却挂 7 个上游自有 provider/repository；subsampling_scale_image_view 是 11 文件 / 44KB 主文件的 FFI 解码工程；reader_view.dart 1372 行 52 imports 依赖 riverpod 与自有模型。后续需按依赖闭包逐层剥离，或改为桌面端侧整套分发。第 16 轮复测上游另找到 5 个零依赖纯算法单元（tall_image_slices / row_pan / page_pan_forwarding / coordinate_transformer / reader_chapter_navigation），可在后续轮次按组件继续搬。第 17 轮已搬 custom_value_indicator_shape.dart（页码滑杆气泡）并接线；第 18 轮全树复测补上漏记的 reader_interactive_region.dart（页内按钮交互区优先于翻页手势，补回 comic_image.dart 因缺手势协调而删掉的 ignoreNextTap），并纠正 verified_facts.note 里「只剩 custom_value_indicator_shape」的结论；三块 subsampling 纯算法与 reader_chapter_navigation 的依赖结论见 verified_facts.note。 第 19 轮按依赖闭包逐层剥离推进第一层：搬 download_ahead 的规则内核 next_downloads.dart（逐字 + 最小类型投影），接成 _Ecr 页预读窗口；provider / repository 适配层仍待后续轮次。"
     },
     {
       "id": "harmony_music_player",

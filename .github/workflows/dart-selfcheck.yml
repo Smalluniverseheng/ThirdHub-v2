@@ -432,6 +432,18 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/mangayomi_interactive_region_selfcheck.dart
 
+      # 第 N 条 mangayomi_download_ahead（2026-11-08 加，全盘升级 #205）—— download_ahead 规则内核。
+      #   上游 lib/services/download_manager/next_downloads.dart 是 51 行纯算法，
+      #   只挂 Chapter / Download 两个模型；用本地最小类型投影替代后能独立编译进移动端。
+      #   被改坏或没接上不会报错，只会静默退化成「翻页又要等加载」：
+      #   .take(count) 被顺手加一、漏掉「当前项自身未下载时不预读」、
+      #   换话不清空预热集合，analyze / 编译 / 台账闸门全绿。
+      #   逐字核对上游算法正文（内嵌全文，CI 不依赖本地镜像）+ 依赖白名单 +
+      #   最小投影字段 + _precacheNext 方法块接线与换话重置 + 台账 / CI / 版本，末尾 exit(1)。
+      - name: mangayomi_download_ahead（Mangayomi 预读规则：上游逐字 / 投影 / 接线 / 台账）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_download_ahead_selfcheck.dart
+
 
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、

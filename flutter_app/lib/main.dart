@@ -34,6 +34,7 @@ import 'core/comic_image.dart';
 import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
 import 'vendor/mangayomi/custom_value_indicator_shape.dart';
+import 'vendor/mangayomi/next_downloads.dart';
 import 'vendor/mangayomi/reader_auto_scroll.dart';
 import 'vendor/mangayomi/reader_interactive_region.dart';
 import 'vendor/mangayomi/reader_motion.dart';
@@ -16653,6 +16654,8 @@ class _Ecr extends State<EngineComicReader>
   ///   ② 首批恰好 10 张（说明引擎认了这个参数、后面还有）→ 后台再补全集
   /// 引擎不认 limit 时会直接返回全集，首批就不是 10 张，自动跳过第二段，不浪费请求。
   Future<void> _load() async {
+    _precached.clear();
+    _precacheAt = -1;
     setState(() {
       loading = true;
       err = '';
@@ -16754,20 +16757,44 @@ class _Ecr extends State<EngineComicReader>
                     : '没保存成功')));
   }
 
-  /// ★播放器优化：下一张页图的预加载记录（每张只预热一次；本地/联网都覆盖）。
+  /// ★ Mangayomi download_ahead 规则（lib/vendor/mangayomi/next_downloads.dart）：
+  /// 原先只固定预热下一张；现在按上游「已完成 / 已排队的不占名额、
+  /// 按阅读顺序取后续 N 张」的规则算预读窗口。
+  /// Chapter 投影为页、Download 投影为已预热页，上游算法正文逐字未改，
+  /// 只把两个模型 import 换成 chapter_download_min.dart。零新增界面文案。
+  static const int _prefetchWindow = 3;
   final Set<int> _precached = {};
+  int _precacheAt = -1;
 
   void _precacheNext(int i) {
-    final next = i + 1;
-    if (next >= images.length || !_precached.add(next)) return;
-    final p = images[next];
-    try {
-      if (_fromLocal || p.startsWith('/') || p.startsWith('file:')) {
-        precacheImage(FileImage(File(p.replaceFirst('file://', ''))), context);
-      } else {
-        precacheImage(NetworkImage(p, headers: headers), context);
-      }
-    } catch (_) {/* 预加载失败不影响正常渲染 */}
+    if (i < 0 || i >= images.length || _precacheAt == i) return;
+    _precacheAt = i;
+    final readingOrder = <Chapter>[
+      for (var k = 0; k < images.length; k++)
+        Chapter(id: '$k', isRead: k < i),
+    ];
+    final downloads = <Download>[
+      Download(id: '$i', isDownload: true), // 当前页正在渲染，等价于已缓存
+      for (final k in _precached) Download(id: '$k', isDownload: true),
+    ];
+    final ahead = selectDownloadAhead(
+      readingOrder,
+      readingOrder[i],
+      count: _prefetchWindow,
+      downloads: downloads,
+    );
+    for (final ch in ahead) {
+      final k = int.tryParse(ch.id) ?? -1;
+      if (k < 0 || k >= images.length || !_precached.add(k)) continue;
+      final p = images[k];
+      try {
+        if (_fromLocal || p.startsWith('/') || p.startsWith('file:')) {
+          precacheImage(FileImage(File(p.replaceFirst('file://', ''))), context);
+        } else {
+          precacheImage(NetworkImage(p, headers: headers), context);
+        }
+      } catch (_) {/* 预加载失败不影响正常渲染 */}
+    }
   }
 
   /// 页图渲染：本地路径走 Image.file，联网走 Image.network（带防盗链头）。
