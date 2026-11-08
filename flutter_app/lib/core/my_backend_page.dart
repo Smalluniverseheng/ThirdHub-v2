@@ -80,20 +80,18 @@ class _MyBackendPageState extends State<MyBackendPage> {
   Future<void> _autoDiscover() async {
     if (!mounted) return;
     setState(() { _msg = tr('正在自动寻找局域网内的后端…'); });
-    // 1) 云端绑定（登录状态下才有；会写 base/token）
+    // 1) 云端地址清单（★免登录也能用，这是主通道）：内部会写 base/token
     try {
-      if (Cloud.loggedIn) {
-        final ok = await Cloud.resolveBackend(force: true);
-        if (ok && mounted) {
-          final p = await SharedPreferences.getInstance();
-          setState(() {
-            _addr.text = p.getString('base') ?? '';
-            _code.text = p.getString('token') ?? '';
-            _selfHosted = true;
-            _msg = tr('已找到后端：') + (p.getString('base') ?? '');
-          });
-          return;
-        }
+      final ok = await Cloud.resolveBackend(force: true);
+      if (ok && mounted) {
+        final p = await SharedPreferences.getInstance();
+        setState(() {
+          _addr.text = p.getString('base') ?? '';
+          _code.text = p.getString('token') ?? '';
+          _selfHosted = true;
+          _msg = tr('已找到后端：') + (p.getString('base') ?? '');
+        });
+        return;
       }
     } catch (_) {}
     // 2) 局域网扫描兜底

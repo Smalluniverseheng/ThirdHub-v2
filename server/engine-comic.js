@@ -74,48 +74,152 @@ function buildSandbox() {
     createUuid: () => crypto.randomUUID() };
 
   // ── 基类: 构造时捕获实例与类名 ──
+  // ★2026-11-08：补上 Venera 基类实际提供的东西。原来只有一个空壳构造器，于是源里
+  //   一调 `this.loadData("token")` 就抛异常 → 整个源搜不出东西（comic_walker 就是这种）。
   box.ComicSource = class {
-    constructor() { box.__instance = this; box.__className = this.constructor.name; }
+    constructor() {
+      box.__instance = this;
+      box.__className = this.constructor.name;
+      if (!this.__kv) this.__kv = {};
+      if (!this.__cfg) this.__cfg = {};
+    }
+    loadData(k) { return this.__kv[k]; }
+    saveData(k, v) { this.__kv[k] = v; return v; }
+    deleteData(k) { delete this.__kv[k]; }
+    // 用户级设置（有些源靠它存语言/线路/画质偏好），缺了会直接抛 loadSetting is not a function
+    loadSetting(k) { return this.__cfg[k]; }
+    saveSetting(k, v) { this.__cfg[k] = v; return v; }
+    deleteSetting(k) { delete this.__cfg[k]; }
+    get settings() { return this.__cfg; }
+  };
+  // Venera 的数据类：源里会 `new Comic({...})` / `new ComicDetails({...})`
+  box.Comic = class { constructor(o) { Object.assign(this, o || {}); } };
+  box.ComicDetails = class { constructor(o) { Object.assign(this, o || {}); } };
+  box.ComicPage = class { constructor(o) { Object.assign(this, o || {}); } };
+  box.randomInt = (a, b) => Math.floor(Math.random() * (Math.abs(b - a) + 1)) + Math.min(a, b);
+  // Venera 的 compute(script, arg)：跑一段"返回函数"的 JS 再调用它（图片解密用）
+  box.compute = (script, arg) => {
+    try {
+      const f = vm.runInContext('(' + String(script) + ')', box, { timeout: 5000 });
+      return typeof f === 'function' ? f(arg) : null;
+    } catch (e) { return arg; }
   };
   box.HtmlDocument = HtmlDocument;
   box.Network = Network;
   box.Convert = Convert;
   box.UI = UI;
   box.Utils = Utils;
+  box.__promise = null;
   box.fetch = async (url, headers) => Buffer.from(await (await rawFetch(url, { headers })).arrayBuffer());
   return box;
 }
 
 // 跑图源: method=search/comicInfo/comicPages/explore
+//
+// ★2026-11-08 重写调用层。起因：用户反馈「搜什么都搜不到」。
+//   实测这批图源是 **Venera 的类写法**，方法不是平铺的，而是分组挂着：
+//     search = { load: (keyword, filter, page) => ({comics, maxPage}) }
+//     comic  = { loadInfo: (id) => ComicDetails, loadEp: (comicId, epId) => {url, headers, onResponse} }
+//     explore = [ {title, load: (page)=>...} ]
+//   旧代码一律 `s.search(q, page)` / `s.comicInfo(id)` 去调，于是：
+//     · s.search 是个对象 → "s.search.apply is not a function"
+//     · 根本没有 s.comicInfo   → "无此方法"
+//   结果 32 个漫画源一个都出不来。这里补上 Venera 的真实调用约定，
+//   同时保留 Mangayomi 的平铺写法做兜底（两种源都能跑）。
 async function runSource(sourceCode, method, args = []) {
   let code = String(sourceCode).replace(/export\s+default\s+/, '');
   const box = buildSandbox();
   vm.createContext(box);
+  const M = JSON.stringify(method);
+  const A = JSON.stringify(args);
   const entry = `
 ;(function(){
-  try {
-    let s = __instance;
-    if (!s && __className) {
-      try { const C = eval(__className); if (typeof C === 'function') s = new C(); } catch(e) {}
+  const __src = ${JSON.stringify(String(sourceCode))};
+  __promise = (async function(){
+    try {
+      let s = __instance;
+      if (!s && __className) {
+        try { const C = eval(__className); if (typeof C === 'function') s = new C(); } catch(e) {}
+      }
+      // 兜底一：源只写 \`export default class Xxx extends ComicSource\` 而从不 \`new\`。
+      // 扫源码里继承 ComicSource 的类名，逐个试实例化，谁注册上 __instance 就用谁。
+      if (!s) {
+        try {
+          const re = /class\\s+([A-Za-z_$][\\w$]*)\\s+extends\\s+ComicSource/g;
+          let m;
+          while ((m = re.exec(__src))) {
+            try { const C = eval(m[1]); if (typeof C === 'function') new C(); } catch (e) {}
+            if (__instance) { s = __instance; break; }
+          }
+        } catch (e) {}
+      }
+      if (!s) return { error: '来源未注册实例(需末尾new或export default class)' };
+
+      // 有些源要先 init()（拉版本号 / 换 token），失败不致命
+      if (typeof s.init === 'function') {
+        try { await s.init(); } catch (e) { console.log('[init失败]', e && e.message); }
+      }
+
+      const M = ${M};
+      const A = ${A};
+      let out;
+      if (M === 'search') {
+        if (s.search && typeof s.search.load === 'function') out = await s.search.load(A[0], A[1] == null ? null : A[1], A[2] || 1);
+        else if (typeof s.search === 'function') out = await s.search.apply(s, A);
+        else return { error: '该源没有 search / search.load' };
+      } else if (M === 'comicInfo') {
+        if (s.comic && typeof s.comic.loadInfo === 'function') out = await s.comic.loadInfo(A[0]);
+        else if (typeof s.comicInfo === 'function') out = await s.comicInfo.apply(s, A);
+        else return { error: '该源没有 comic.loadInfo' };
+      } else if (M === 'comicPages') {
+        if (s.comic && typeof s.comic.loadEp === 'function') out = await s.comic.loadEp(A[0], A[1]);
+        else if (typeof s.comicPages === 'function') out = await s.comicPages.apply(s, A);
+        else return { error: '该源没有 comic.loadEp' };
+      } else if (M === 'explore') {
+        if (Array.isArray(s.explore)) {
+          const parts = [];
+          for (const sec of s.explore) {
+            if (!sec || typeof sec.load !== 'function') continue;
+            try { parts.push({ title: sec.title || '', data: await sec.load(A[0] || 1) }); }
+            catch (e) { parts.push({ title: sec.title || '', error: String(e && e.message || e) }); }
+          }
+          out = parts;
+        } else if (typeof s.explore === 'function') out = await s.explore.apply(s, A);
+        else return { error: '该源没有 explore' };
+      } else {
+        if (typeof s[M] === 'function') out = await s[M].apply(s, A);
+        else return { error: '无此方法: ' + M };
+      }
+      return out;
+    } catch (e) {
+      return { error: String(e && e.message || e) };
     }
-    if (!s) { __result = { error: '来源未注册实例(需末尾new或export default class)' }; return; }
-    __result = s[${JSON.stringify(method)}] ? s[${JSON.stringify(method)}].apply(s, ${JSON.stringify(args)}) : { error: '无此方法: ' + ${JSON.stringify(method)} };
-  } catch (e) { __result = { error: String(e && e.message || e) }; }
+  })();
 })();`;
   try {
     vm.runInContext(code + entry, box, { timeout: 30000 });
   } catch (e) {
     return { error: '来源执行失败: ' + e.message };
   }
-  try { return await Promise.resolve(box.__result); }
-  catch (e) { return { error: '来源方法异常: ' + e.message }; }
+  try {
+    return await Promise.race([
+      box.__promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('源执行超时(25s)')), 25000)),
+    ]);
+  } catch (e) {
+    return { error: '来源方法异常: ' + (e && e.message || e) };
+  }
 }
 
 // ── IR 归一 ──
+// 注意：源在 vm 沙箱里跑，它造的 Map 属于**另一个 realm**，
+// 所以不能用 `instanceof Map` 判断，只能按鸭子类型（有 entries/get）。
+const isMapLike = (v) => !!v && typeof v === 'object' && typeof v.entries === 'function' && typeof v.get === 'function';
+
 function irComicList(r) {
   if (!r) return { items: [] };
   if (r.error) return { error: r.error };
-  const list = r.comics || r.list || [];
+  const list = r.comics || r.list || (Array.isArray(r) ? r : []);
   return { items: list.map(c => ({ id: c.url || c.id || '', title: c.title || c.name || '',
     coverUrl: c.cover || c.coverUrl || '', subTitle: c.subTitle || c.author || '' })),
     maxPage: r.maxPage || 1 };
@@ -123,13 +227,40 @@ function irComicList(r) {
 function irComicInfo(r) {
   if (!r) return { error: '空结果' };
   if (r.error) return { error: r.error };
+  // chapters 在 Venera 里是 Map<id, title>；Mangayomi 里是数组。两种都认。
+  let chapters = [];
+  const chs = r.chapters;
+  if (isMapLike(chs)) {
+    chapters = Array.from(chs.entries()).map(([id, title]) => ({ id: String(id), title: String(title) }));
+  } else if (Array.isArray(chs)) {
+    chapters = chs.map((ch, i) => ({ title: ch.title || ch.name || ('第' + (i + 1) + '话'),
+      id: ch.id || ch.url || String(i), time: ch.time || '' }));
+  } else if (chs && typeof chs === 'object') {
+    chapters = Object.entries(chs).map(([id, title]) => ({ id: String(id), title: String(title) }));
+  }
+  // tags 在 Venera 里是 Map<分组, 数组>，拍平成字符串数组即可
+  let tags = [];
+  if (isMapLike(r.tags)) {
+    for (const [, v] of r.tags.entries()) {
+      if (Array.isArray(v)) tags.push(...v.map(String));
+      else if (v != null) tags.push(String(v));
+    }
+  } else if (Array.isArray(r.tags)) {
+    tags = r.tags.map(String);
+  }
   return { id: r.id || r.url || '', title: r.title || r.name || '', coverUrl: r.cover || '',
-    description: r.description || r.intro || '', tags: r.tags || [],
-    chapters: (r.chapters || []).map((ch, i) => ({ title: ch.title || ch.name || ('第' + (i + 1) + '话'), id: ch.id || ch.url || String(i), time: ch.time || '' })) };
+    description: r.description || r.intro || '', tags,
+    chapters,
+    subtitle: r.subtitle || '', updateTime: r.updateTime || '' };
 }
 function irPages(r) {
   if (!r) return { images: [] };
   if (r.error) return { error: r.error };
+  // Venera 的 comic.loadEp 返回**单张图**的描述：{url, headers, onResponse}
+  // Mangayomi 的 comicPages 返回数组或 {images|urls|pages}。两种都认。
+  if (typeof r === 'object' && typeof r.url === 'string' && r.url) {
+    return { images: [r.url], headers: r.headers || {} };
+  }
   const urls = Array.isArray(r) ? r : (r.urls || r.images || r.pages || []);
   return { images: urls.map(u => (typeof u === 'string' ? u : (u.url || ''))).filter(Boolean),
     headers: r.headers || {} };

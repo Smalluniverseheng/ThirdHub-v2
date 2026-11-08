@@ -1264,7 +1264,34 @@ async function handle(req, res, body) {
 
   // 其余全需鉴权
   // ★ 2026-10-10：常量时间比较（防时序侧信道）
-  if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+  // ★2026-11-08：新增「公开只读令牌」(TH_PUBLIC_TOKEN)。
+  //   起因：之前只有一把主密钥（SECRET），想「让别人也能用我的搜索」就只能把主密钥给出去，
+  //   等于把改配置/删源的权限一起给了。这里把两种令牌分开：
+  //     · SECRET       —— 全部权限（管理台/写操作/扫描器）
+  //     · 公开令牌     —— 只能 GET 搜索 / 阅读 / 清单类端点，任何写操作与管理端点一律 403
+  //   公开令牌本身不含任何密钥内容，可以安全地随"后端地址清单"一起公开。
+  if (!timingEqual(req.headers['x-th-token'], SECRET)) {
+    const pubTok = process.env.TH_PUBLIC_TOKEN || '';
+    const isPublicTok = pubTok.length > 0 && timingEqual(req.headers['x-th-token'], pubTok);
+    if (!isPublicTok) {
+      return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
+    }
+    // 公开令牌白名单：只允许只读（GET）且路径在下列前缀内。白名单之外一律拒绝。
+    const publicOk =
+      req.method === 'GET' && (
+        p === '/v1/status' || p === '/v1/meta' ||
+        p.startsWith('/v1/search') ||
+        p.startsWith('/v1/comic') ||
+        p.startsWith('/v1/video') ||
+        p.startsWith('/v1/music') ||
+        p.startsWith('/v1/library') ||
+        p.startsWith('/v1/thp') ||
+        p.startsWith('/v1/data-sources/public')
+      );
+    if (!publicOk) {
+      return send(403, { object:'error', data:{ type:'forbidden', message:'该令牌只能搜索和阅读，不能修改配置' }});
+    }
+  }
   // ── 数据源分层（管理后台，全盘升级 #209）：敏感源注册表 + 授权账号 ──
   //   挂在 x-th-token 闸门之后 —— 只有管理员设备（或管理员授权后持配对码的设备）能读。
   if ((await rtDataSources.handleAdmin(req, res, body, p, send, dataCtx)) || res.writableEnded) return;

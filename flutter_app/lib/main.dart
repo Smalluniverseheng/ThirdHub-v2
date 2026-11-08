@@ -322,6 +322,13 @@ Future<void> main() async {
         if (!splashDone.isCompleted) splashDone.complete();
       }));
   await Cloud.init();
+  // ★2026-11-08：启动就自动连 NAS 后端（不管登不登录）。
+  //   以前连接只在「登录后」或「进后端管理页」才发生 —— 于是没登录的机器
+  //   永远是空 base，搜索走不到后端，表现就是「装了新版还是什么都没有」。
+  //   这里最多等 6 秒：连上就立刻可用；连不上（比如在外面没 IPv6）也不拖死启动。
+  try {
+    await Cloud.resolveBackend().timeout(const Duration(seconds: 6));
+  } catch (_) {}
   // ★2026-10-30 远端配置中心：先用本地缓存（同步就绪、不阻塞），云端返回后覆盖。
   //   目的：第三方 API / 地图 / 语音 / 源模板 / 资源库后端地址都在后台一键替换，不写死在包里。
   unawaited(RemoteConfig.init());

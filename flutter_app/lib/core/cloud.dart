@@ -31,6 +31,9 @@ class Cloud {
       try { await profile(); } catch (_) {}
       if (refreshToken.isNotEmpty) { try { await refresh(); } catch (_) {} }
     }
+    // 注意：这里**不**发起自动连后端。
+    // ★2026-11-08：自动连接改由 main() 在 `await Cloud.init()` 之后显式等待，
+    //   否则会出现「连接还在后台跑、界面已经用空的 base 起来了」→ 本次启动照样搜不到。
   }
 
   static Future<void> _save() async {
@@ -210,51 +213,123 @@ class Cloud {
     }
   }
 
-  /// 登录后自动连接 NAS：
-  ///   候选地址 = 内网 → 各 IPv6（IPv6 会变，所以每次登录都从云端取最新的）
+  /// 「后端地址清单」的公开地址。
+  /// ★2026-11-08：这是 App 找到 NAS 的**主通道**。
+  ///   起因：原先只从自己账号的私有记录里读后端地址，但那张表开了行级权限，
+  ///   普通用户读自己那行会被挡住（实测返回空数组），于是「登录了却连不上」。
+  ///   改成读这个公开清单：免登录、免账号权限，谁来都能读。
+  ///   清单里只有地址和一个「只读搜索令牌」（只能搜、不能改配置），
+  ///   不含主密钥，所以公开没有风险；而且地址仍然**不在安装包里**（每次联网现取）。
+  static const String backendManifestUrl =
+      'https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub/backend.json';
+
+  /// 读公开的后端地址清单。返回 {lan, ipv6:[...], port, publicToken}；读不到返回 null。
+  static Future<Map<String, dynamic>?> backendManifest() async {
+    try {
+      final r = await http
+          .get(Uri.parse(backendManifestUrl))
+          .timeout(const Duration(seconds: 8));
+      if (r.statusCode != 200) return null;
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is Map) return Map<String, dynamic>.from(j);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 自动连接 NAS：
+  ///   候选地址 = 内网 → 各 IPv6（IPv6 会变，所以每次都取最新的）
   ///   逐个探活，第一个通的就写进本地并返回 true。
   /// 地址与密钥都在云端（服务端登记），安装包里不含任何地址。
+  static bool _resolving = false;
+
+  /// 对外入口：加防重入锁。
+  /// 启动时 Cloud.init 与「登录后 profile()」可能同时触发，若不锁会并发探活两遍。
   static Future<bool> resolveBackend({bool force = false}) async {
+    if (_resolving) return false;
+    _resolving = true;
+    try {
+      return await _resolveBackendInner(force: force);
+    } catch (_) {
+      return false;
+    } finally {
+      _resolving = false;
+    }
+  }
+
+  static Future<bool> _resolveBackendInner({bool force = false}) async {
     final p = await SharedPreferences.getInstance();
     final curBase = (p.getString('base') ?? '').trim();
     // 本地已经配好且不是官方云 → 先试它，通了就不动
     if (!force && curBase.isNotEmpty && !curBase.contains('supabase.co')) {
-      if (await _probeBase(curBase)) { selfHosted = true; return true; }
-    }
-    final b = await backendBinding();
-    if (b == null) return false;
-    final cands = <String>[];
-    final lan = '${b['lan'] ?? ''}'.trim();
-    if (lan.isNotEmpty) cands.add(lan);
-    final v6 = b['ipv6'];
-    if (v6 is List) {
-      for (final u in v6) {
-        final s = '$u'.trim();
-        if (s.isNotEmpty && !cands.contains(s)) cands.add(s);
+      if (await _probeBase(curBase, token: p.getString('token'))) {
+        selfHosted = true;
+        return true;
       }
     }
+    // ① 主通道：公开清单（不依赖登录，也不依赖账号权限）
+    final man = await backendManifest();
+    // ② 兜底：自己账号里的私有绑定（能读到就用它的主密钥，权限更全）
+    final own = await backendBinding();
+
+    final cands = <String>[];
+    void addAddr(dynamic v) {
+      final s = '$v'.trim();
+      if (s.isNotEmpty && !cands.contains(s)) cands.add(s);
+    }
+
+    for (final src in [own, man]) {
+      if (src == null) continue;
+      addAddr(src['lan']);
+      final v6 = src['ipv6'];
+      if (v6 is List) {
+        for (final u in v6) {
+          addAddr(u);
+        }
+      }
+    }
+    if (cands.isEmpty) return false;
+
+    // 令牌：私有记录里的主密钥优先；拿不到就用清单里的只读搜索令牌（够搜、够看）
+    final ownTok = '${own?['token'] ?? ''}'.trim();
+    final pubTok = '${man?['publicToken'] ?? ''}'.trim();
+    final tok = ownTok.isNotEmpty ? ownTok : pubTok;
+
     for (final c in cands) {
-      if (await _probeBase(c)) {
+      if (await _probeBase(c, token: tok)) {
         await p.setString('base', c);
-        final tk = '${b['token'] ?? ''}'.trim();
-        if (tk.isNotEmpty) await p.setString('token', tk);
+        if (tok.isNotEmpty) await p.setString('token', tok);
         selfHosted = true;
-        AppLog.account('已连上 NAS 后端', d: {'url': c});
+        AppLog.account('已连上 NAS 后端', d: {
+          'url': c,
+          'token': tok.isEmpty ? 'none' : (tok == ownTok ? 'master' : 'public'),
+        });
         return true;
       }
     }
     return false;
   }
 
-  /// 探测某个后端地址是否可用（/v1/meta 免鉴权，能返回版本号即算通）
-  static Future<bool> _probeBase(String b) async {
+  /// 探测某个后端地址是否可用。
+  /// 两步：① /v1/meta 免鉴权，能返回版本号说明「这是 ThirdHub 后端」；
+  ///       ② 有令牌时再打一次受保护端点，确认令牌真的能用
+  ///          （否则会出现「显示连上了、一搜就 401」的假连通）。
+  static Future<bool> _probeBase(String b, {String? token}) async {
     try {
       final r = await http
           .get(Uri.parse('$b/v1/meta'))
           .timeout(const Duration(seconds: 4));
       if (r.statusCode != 200) return false;
       final j = jsonDecode(utf8.decode(r.bodyBytes));
-      return j is Map && j['object'] == 'meta';
+      if (!(j is Map && j['object'] == 'meta')) return false;
+      final tk = (token ?? '').trim();
+      if (tk.isEmpty) return true;
+      final r2 = await http.get(
+        Uri.parse('$b/v1/status'),
+        headers: {'x-th-token': tk},
+      ).timeout(const Duration(seconds: 5));
+      return r2.statusCode == 200;
     } catch (_) {
       return false;
     }
