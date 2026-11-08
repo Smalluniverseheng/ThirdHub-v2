@@ -4928,6 +4928,25 @@ class _Home extends State<SearchSection> {
           });
         }
       } else {
+        // 既没连引擎也没连资源库：先补一次「自动找 NAS 后端」，再退回直连引擎。
+        // ★2026-11-08：开机那 6 秒内没连上（比如网络慢、Supabase 慢），
+        //   用户一点搜索就会走到这里。以前这里**只**试直连引擎、不试 NAS，
+        //   所以「装了新版第一次搜索还是空的」。现在先补连 NAS，连上就重发请求。
+        try {
+          if (await Cloud.resolveBackend()) {
+            final sp = await SharedPreferences.getInstance();
+            final nb = (sp.getString('base') ?? '').trim();
+            final nt = (sp.getString('token') ?? '').trim();
+            if (nb.isNotEmpty && mounted) {
+              setState(() {
+                Api.base = nb;
+                Api.token = nt;
+              });
+              await go();
+              return;
+            }
+          }
+        } catch (_) {}
         // 既没连引擎也没连资源库: 尝试自动连一次, 连不上再提示
         await EngineDirect.autoConnect();
         if (EngineDirect.connected) {
