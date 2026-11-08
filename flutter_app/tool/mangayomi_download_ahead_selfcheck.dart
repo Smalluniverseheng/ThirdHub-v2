@@ -246,6 +246,12 @@ void main() {
   const importWant = "import 'vendor/mangayomi/next_downloads.dart';";
   ck('§5 main.dart 有 vendor import（行首精确）',
       importLinesOf(mainSrc).contains(importWant));
+  // ★ 第 19 轮 CI 真红反证：上游文件只 import（非 export）投影，Chapter / Download
+  // 不会自动传给调用方；调用方必须显式 import 投影文件，否则 dart analyze 报
+  // "Method not found: 'Chapter'" 并让其后 40 步全 skip。此断言钉死这第二处 import。
+  ck('§5 main.dart 也 import 最小类型投影（Chapter/Download 可见）',
+      importLinesOf(mainSrc)
+          .contains("import 'vendor/mangayomi/chapter_download_min.dart';"));
   final start = mainSrc.indexOf('  void _precacheNext(int i) {');
   final endMark = '\n  }\n\n  /// 页图渲染';
   var block = '';

@@ -34,6 +34,7 @@ import 'core/comic_image.dart';
 import 'core/comic_reader_rules.dart';
 // 上游: kodjodevf/mangayomi@91bda20a9235 | Apache-2.0 | 文件移植（见 vendor/MANIFEST.json）
 import 'vendor/mangayomi/custom_value_indicator_shape.dart';
+import 'vendor/mangayomi/chapter_download_min.dart';
 import 'vendor/mangayomi/next_downloads.dart';
 import 'vendor/mangayomi/reader_auto_scroll.dart';
 import 'vendor/mangayomi/reader_interactive_region.dart';
