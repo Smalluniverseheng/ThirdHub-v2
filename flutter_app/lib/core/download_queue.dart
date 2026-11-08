@@ -13,7 +13,9 @@
 //
 // 队列规则（全部在自检里断言）：
 //   · **并发上限 = 1**：媒体下载单线程友好；多任务抢带宽反而更慢、更容易失败；
-//   · **自动重试**：失败后隔 [retryDelay]（默认 3s）自动重试，每任务最多 1 次自动重试；
+//   · **自动重试**：普通失败隔 [retryDelay]（默认 3s）自动重试，每任务最多 1 次；
+//     **限速失败**（429/503，由上游 Mangayomi download_retry.dart 判定）改走
+//     [rateLimitedDelay] 退避与 [rateLimitedMaxRetries] 上限（上游 6 次）；
 //     仍失败 → 置 error（可在任务中心手动重试，手动重试会重置自动重试次数）；
 //   · **去重**：同 kind+key 已在队列（queued/running）→ submit 直接忽略（防连点）；
 //   · **取消**：queued 直接移出；running 断流（执行器的流被 cancel → store 侧停止）；
@@ -25,6 +27,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+
+import '../vendor/mangayomi/download_retry.dart' as retry_rules;
 
 /// 任务状态。
 enum DlState { queued, running, done, error, cancelled }
@@ -71,6 +75,10 @@ class DlJob {
   int bytes = 0;
   String message = '';
   int attempts = 0; // 已自动重试过的次数（手动重试会清零）
+
+  /// 服务端要求的最短等待（Retry-After），仅运行时有效，不持久化。
+  /// 由上游 RateLimitedException 提供，见 DownloadQueue._retryOrFail。
+  Duration? rateLimitedAfter;
   final DateTime createdAt;
   DateTime updatedAt;
 
@@ -141,8 +149,18 @@ class DownloadQueue {
   /// 自动重试间隔（自检里会改小；生产默认 3 秒）。
   Duration retryDelay = const Duration(seconds: 3);
 
-  /// 自动重试上限（次数）。
+  /// 自动重试上限（次数，普通失败）。
   int maxAutoRetries = 1;
+
+  /// 限速失败（429/503）的重试上限，取自上游 Mangayomi 的 rateLimitedAttempts。
+  /// 「等待」本身能解决限速，所以上游允许比普通失败多试几次。
+  int rateLimitedMaxRetries = retry_rules.rateLimitedAttempts;
+
+  /// 限速失败的等待规则，取自上游 Mangayomi 的 retryDelay：服务端给了
+  /// Retry-After 就照它等（封顶 maxRetryDelay），否则 500ms 起每次翻倍
+  /// （封顶 16s）。自检可注入短间隔。
+  Duration Function(int attempt, {Duration? retryAfter}) rateLimitedDelay =
+      retry_rules.retryDelay;
 
   /// 未完成任务（queued + running）。
   final List<DlJob> active = [];
@@ -205,6 +223,7 @@ class DownloadQueue {
     final j = finished.removeAt(i);
     j.state = DlState.queued;
     j.attempts = 0;
+    j.rateLimitedAfter = null;
     j.message = '';
     j.updatedAt = DateTime.now();
     active.add(j);
@@ -279,14 +298,14 @@ class DownloadQueue {
         next.updatedAt = DateTime.now();
         _notify();
       }, onError: (Object e) {
-        _retryOrFail(next, '$e');
+        _retryOrFail(next, '$e', e);
       }, onDone: () {
         next.state = DlState.done;
         next.updatedAt = DateTime.now();
         _finish(next);
       }, cancelOnError: true);
     } catch (e) {
-      _retryOrFail(next, '$e');
+      _retryOrFail(next, '$e', e);
     }
   }
 
@@ -297,17 +316,39 @@ class DownloadQueue {
     return null;
   }
 
-  void _retryOrFail(DlJob j, String err) {
+  /// 上游 Mangayomi download_retry.dart 的限速判定入口：执行器直接抛
+  /// RateLimitedException 时用它；否则从错误文本里认 429/503 与 Retry-After，
+  /// 交给上游 RateLimitedException.fromResponse / parseRetryAfter 判定。
+  /// 本项目不另写一套限速规则。
+  retry_rules.RateLimitedException? _asRateLimited(String err, Object? error) {
+    if (error is retry_rules.RateLimitedException) return error;
+    final status = RegExp(r'\b(429|503)\b').firstMatch(err);
+    if (status == null) return null;
+    final header = RegExp(r"Retry-After\s*[:=]\s*([^\s,;]+)", caseSensitive: false)
+        .firstMatch(err);
+    return retry_rules.RateLimitedException.fromResponse(
+      int.parse(status.group(1)!),
+      header?.group(1),
+    );
+  }
+
+  void _retryOrFail(DlJob j, String err, [Object? error]) {
     _subs.remove(j.id)?.cancel();
-    if (j.attempts < maxAutoRetries) {
+    final limited = _asRateLimited(err, error);
+    final cap = limited != null ? rateLimitedMaxRetries : maxAutoRetries;
+    if (j.attempts < cap) {
       j.attempts++;
+      j.rateLimitedAfter = limited?.retryAfter;
       j.state = DlState.queued;
-      j.message = '失败，${retryDelay.inSeconds} 秒后自动重试';
+      final wait = limited != null
+          ? rateLimitedDelay(j.attempts, retryAfter: limited.retryAfter)
+          : retryDelay;
+      j.message = '失败，${wait.inSeconds} 秒后自动重试';
       j.updatedAt = DateTime.now();
       _pumping = false;
       _flush();
       _notify();
-      Timer(retryDelay, _pump);
+      Timer(wait, _pump);
     } else {
       j.state = DlState.error;
       j.message = err;

@@ -444,6 +444,13 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/mangayomi_download_ahead_selfcheck.dart
 
+      # 第 20 轮（2026-11-08）—— Mangayomi 下载限速 / 重试退避规则。
+      #   逐字核对上游全文（内嵌，CI 不依赖本地镜像）+ 依赖白名单 +
+      #   上游规则行为探针 + 队列接线 + 队列行为探针 + 台账 / CI / 版本 / 合规，末尾 exit(1)。
+      - name: mangayomi_retry（Mangayomi 下载限速与退避规则：上游逐字 / 接线 / 行为 / 台账）
+        working-directory: flutter_app
+        run: dart run tool/mangayomi_retry_selfcheck.dart
+
 
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
