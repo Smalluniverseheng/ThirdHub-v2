@@ -86,6 +86,9 @@ const tvbox = require('./engine-tvbox');
 const lx = require('./engine-lx');
 const comic = require('./engine-comic');
 const music = require('./engine-music');
+// ── 服务网关（2026-11-10）：把 NAS 上的开源容器（Jellyfin/qB/Navidrome/…）聚成一个调用面 ──
+const services = require('./services/registry');
+const gateway = require('./services/gateway');
 const { Bonjour } = require('bonjour-service');
 /* ★ 2026-10-10：出货面安全工具唯一收口点（HTML 转义 / 头净化 / 常量时间比较 / 限速） */
 const { escapeHtml, safeHeaderValue, timingEqual, makeLimiter } = require('./safe');
@@ -1294,6 +1297,11 @@ async function handle(req, res, body) {
         p.startsWith('/v1/bookmarks') ||
         p.startsWith('/v1/annotations') ||
         p.startsWith('/v1/book/') ||
+        // 服务网关：只放「看」的部分；/v1/gateway/config、/v1/gateway/download 不在内
+        p === '/v1/gateway/services' ||
+        p.startsWith('/v1/gateway/search') ||
+        p.startsWith('/v1/gateway/detail') ||
+        p.startsWith('/v1/gateway/downloads') ||
         p.startsWith('/v1/data-sources/public')
       );
     if (!publicOk) {
@@ -1328,6 +1336,52 @@ async function handle(req, res, body) {
   if ((await rtSearch.handle(req, res, body, u, p, send, searchCtx)) || res.writableEnded) return;
   // ── 书库(Legado/book/toc/content/书架): server/routes-library.js ──
   if ((await rtLibrary.handle(req, res, body, u, p, send, libraryCtx)) || res.writableEnded) return;
+  // ── 服务网关(/v1/gateway/*) ★2026-11-10 ──
+  //   前端（App/网页）只认这一个入口，不需要知道后面是 Jellyfin 还是 qBittorrent。
+  //   权限：走上面的 x-th-token 闸门（主密钥全权 / 只读令牌只读，见白名单）。
+  if (p.startsWith('/v1/gateway/')) {
+    const sub = p.slice('/v1/gateway/'.length).split('?')[0];
+    if (sub === 'services' && req.method === 'GET') {
+      const refresh = u.searchParams.get('refresh') === '1';
+      return send(200, { object: 'list', data: await services.list(refresh),
+        meta: { file: services.FILE, ttl: 15 } });
+    }
+    if (sub === 'search' && req.method === 'GET') {
+      const r = await gateway.search(u.searchParams.get('q'), {
+        kinds: u.searchParams.get('kinds') || '',
+        limitPerService: u.searchParams.get('limit') || 20,
+      });
+      return send(200, { object: 'list', data: r.groups,
+        meta: { q: r.q, total: r.total, services: r.services } });
+    }
+    if (sub === 'detail' && req.method === 'GET') {
+      const r = await gateway.detail(u.searchParams.get('service'), u.searchParams.get('id'));
+      if (r && r.error) return send(400, { object:'error', data:{ type:'gateway_error', message: r.error }});
+      return send(200, { object: 'item', data: r });
+    }
+    if (sub === 'downloads' && req.method === 'GET') {
+      return send(200, { object: 'list', data: await gateway.downloads() });
+    }
+    if (sub === 'download' && req.method === 'POST') {
+      let b = {};
+      try { b = typeof body === 'string' ? JSON.parse(body || '{}') : (body || {}); } catch (e) {}
+      const r = await gateway.addDownload(b.url, { savePath: b.savePath, category: b.category });
+      return send(r.ok ? 200 : 400, { object: r.ok ? 'download' : 'error', data: r });
+    }
+    if (sub === 'config' && req.method === 'POST') {
+      // 填/改服务凭证。只改传进来的字段，其它保持原样。
+      let b = {};
+      try { b = typeof body === 'string' ? JSON.parse(body || '{}') : (body || {}); } catch (e) {}
+      if (!b.id) return send(400, { object:'error', data:{ type:'invalid_request', message:'缺 id' }});
+      const patch = {};
+      if (b.auth && typeof b.auth === 'object') patch.auth = b.auth;
+      if (typeof b.enabled === 'boolean') patch.enabled = b.enabled;
+      const r = services.update(b.id, patch);
+      if (!r) return send(404, { object:'error', data:{ type:'not_found', message:'服务不存在' }});
+      return send(200, { object:'meta', data: { id: r.id, auth: services.maskAuth(r.auth), enabled: r.enabled !== false }});
+    }
+    return send(404, { object:'error', data:{ type:'not_found', message: sub }});
+  }
   // ── 源扫描器(/v1/scanner/*): server/source_scanner.js ──
   if (p.startsWith('/v1/scanner/') && req.method === 'GET') {
     if (!timingEqual(req.headers['x-th-token'], SECRET)) return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
