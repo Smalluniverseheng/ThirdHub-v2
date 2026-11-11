@@ -137,6 +137,7 @@ import 'core/download_queue.dart';
 import 'core/dialog_kit.dart';
 import 'core/playback_settings_page.dart';
 import 'core/advanced_playback_page.dart';
+import 'core/th_http.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -293,60 +294,13 @@ class IntentRouter {
   }
 }
 
-
-/// ★2026-11-11 自签名证书放行（只信任局域网/回环/自建 NAS）
-///
-/// 为什么必须有这段：
-///   NAS 后端走自签名 HTTPS（证书 subject/issuer 都是 CN=ThirdHub），
-///   Android 的 TLS 校验会直接拒绝（curl 表现为 exit 60），
-///   Flutter 侧表现为 SocketException / HandshakeException。
-///   结果：探活 /v1/meta 全部失败 → 后端地址写不进去 → 搜索永远空。
-///
-/// 放行条件（任一满足才信任）：
-///   ① host 落在私网/回环/链路本地/CGNAT 段
-///   ② 证书 DN 里带 CN=ThirdHub（自建后端标识，公网 IPv6 直连也认）
-///   正规 CA 证书（如 Supabase）不会触发此回调，不受影响。
-class _ThirdHubHttpOverrides extends HttpOverrides {
-  const _ThirdHubHttpOverrides();
-
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    final c = super.createHttpClient(context);
-    c.badCertificateCallback = (X509Certificate cert, String host, int port) {
-      if (_isPrivateHost(host)) return true;
-      final dn = '${cert.subject}|${cert.issuer}';
-      if (dn.contains('CN=ThirdHub') || dn.contains('CN = ThirdHub')) return true;
-      return false;
-    };
-    return c;
-  }
-}
-
-/// 判断是否内网/回环地址（自签名证书只在这些地方才可信）
-bool _isPrivateHost(String host) {
-  final h = host.trim().toLowerCase();
-  if (h.isEmpty) return false;
-  if (h == 'localhost' || h == '127.0.0.1' || h == '::1') return true;
-  if (h.endsWith('.local') || h.endsWith('.lan')) return true;
-  final m = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(h);
-  if (m != null) {
-    final a = int.parse(m.group(1)!);
-    final b = int.parse(m.group(2)!);
-    if (a == 10) return true;
-    if (a == 192 && b == 168) return true;
-    if (a == 172 && b >= 16 && b <= 31) return true;
-    if (a == 100 && b >= 64 && b <= 127) return true;
-    if (a == 127) return true;
-    return false;
-  }
-  if (h.startsWith('fe8') || h.startsWith('fe9') || h.startsWith('fea') || h.startsWith('feb')) return true;
-  if (h.startsWith('fc') || h.startsWith('fd')) return true;
-  return false;
-}
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  HttpOverrides.global = const _ThirdHubHttpOverrides(); // 放行 NAS 自签名证书
+  // ★2026-11-11：放行自签名证书（NAS 后端证书是 CN=ThirdHub 自签，
+  //   不挂这个全局 overrides，Android 会拒绝握手 → 探活全失败 → 永远连不上）。
+  //   实现在 core/th_http.dart：那边只 import dart:io，
+  //   避开 webview_flutter 也导出 X509Certificate 造成的名字冲突。
+  HttpOverrides.global = const ThirdHubHttpOverrides();
   // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
   installAiStorePrefs();
   await AppSettings.init();
