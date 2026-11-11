@@ -24,6 +24,7 @@ import 'design_tokens.dart';
 import 'i18n.dart';
 import 'cloud.dart';
 import 'discover.dart';
+import 'nas_services_page.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -212,6 +213,26 @@ class _MyBackendPageState extends State<MyBackendPage> {
     return Scaffold(
       appBar: AppBar(title: Text(tr('我的后端'))),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
+        // ── 服务广场入口（★2026-11-11）──
+        // 直接调用 NAS 上的影视库/音乐库等第三方能力，不用跳出去开别的应用。
+        Card(
+          elevation: 0,
+          color: scheme.primaryContainer.withValues(alpha: 0.45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            leading: Icon(Icons.apps, color: scheme.primary),
+            title: Text(tr('服务广场'),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(tr('在你这里直接用 NAS 上的影视库、音乐库，点一下就播'),
+                style: const TextStyle(fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(c).push(
+              MaterialPageRoute(builder: (_) => const NasServicesPage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: Gap.md),
+
         // ── 说明 ──
         Container(
           padding: const EdgeInsets.all(Gap.md),
