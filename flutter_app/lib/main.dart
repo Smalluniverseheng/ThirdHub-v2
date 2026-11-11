@@ -300,7 +300,7 @@ Future<void> main() async {
   //   不挂这个全局 overrides，Android 会拒绝握手 → 探活全失败 → 永远连不上）。
   //   实现在 core/th_http.dart：那边只 import dart:io，
   //   避开 webview_flutter 也导出 X509Certificate 造成的名字冲突。
-  HttpOverrides.global = const ThirdHubHttpOverrides();
+  HttpOverrides.global = ThirdHubHttpOverrides();
   // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
   installAiStorePrefs();
   await AppSettings.init();

@@ -26,7 +26,9 @@ import 'dart:io';
 
 /// 全局 HTTP 覆盖：只对自建 NAS 放行自签名证书。
 class ThirdHubHttpOverrides extends HttpOverrides {
-  const ThirdHubHttpOverrides();
+  // 注意：这里不能写 const —— HttpOverrides 的父类构造不是 const，
+  // 子类声明 const 构造会报 "A constant constructor can't call a non-constant super constructor"。
+  ThirdHubHttpOverrides();
 
   @override
   HttpClient createHttpClient(SecurityContext? context) {
