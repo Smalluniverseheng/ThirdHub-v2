@@ -71,7 +71,13 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # ★2026-11-12：锁定 Flutter 版本。
+        #   起因：CI 用 channel: stable 自动升级，2026-11-12 那天 runner 上的 Flutter
+        #   换成了要求 Gradle >= 9.3.1 的版本，而本项目 Gradle 还是 8.14，
+        #   构建在 compileFlutterBuildRelease 之前就报
+        #   "Your project's Gradle version (8.14.0) is lower than Flutter's minimum supported version of 9.3.1"。
+        #   锁死在验证过的版本上，避免上游升级把发版搞挂；要升级时连同 Gradle 一起升。
+        with: { flutter-version: "3.47.9", cache: true }
 
       - name: decode release keystore
         run: |
