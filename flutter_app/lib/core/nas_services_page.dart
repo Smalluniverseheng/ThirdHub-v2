@@ -1,19 +1,23 @@
-// 服务广场 —— 在 App 里直接使用 NAS 上的所有第三方能力，不用跳出去打开别的应用。
+// 服务广场 —— 一个搜索框，把「本地有的」和「网上找的」一次搜完。
 //
-// 它解决的问题（2026-11-11 用户需求）：
-//   「直接调用并集成第三方的各类功能（相当于通过 API 接口统一调用这些能力），
-//     让用户无需点进对应应用即可在我这边使用这些功能。」
+// 用户需求（2026-11-12）：
+//   「搜索电影、搜索小说，当搜索的东西本地没有的时候，也自动搜索网络上的，
+//     通过那些书源、音乐源去搜索。」
 //
-// 怎么做到的：
-//   后端 /v1/gateway/* 把 Jellyfin（影视）、Navidrome（音乐）等统一成一个接口，
-//   并且把封面、媒体流都做了**代理**（/v1/gateway/img、/v1/gateway/stream）。
-//   所以本页只需要连 NAS 一个地址，就能搜索 + 直接播放，不需要知道后面是谁。
+// 所以本页不再只调 /v1/gateway/search（那只有本地库），
+// 而是调 **/v1/search/all** —— 后端那侧已经是「本地库 + 影视CMS源 + 书源 + 音源」
+// 五路并行，一次返回：
+//   locals  本地 Jellyfin / Navidrome
+//   videos  网络影视源（CMS 采集接口，返回 JSON，源站换皮也不受影响）
+//   books   网络书源（legado 规则）
+//   comics  网络漫画源
+//   musics  网络音源
 //
 // 设计约定：
-//   · 自包含：只读 SharedPreferences 里的 base/token，不依赖 Api/Cloud 的内部状态，
-//     这样即使那两处以后改签名，这一页也不会跟着坏。
-//   · 文案一律走 tr()，不硬编码中文（硬编码会让 i18n 扫描棘轮升高导致 CI 红）。
-//   · 播放复用项目已有的 video_player/chewie（视频）与 just_audio（音乐），不新增依赖。
+//   · 自包含：只读 SharedPreferences 的 base/token，不依赖 Api/Cloud 内部状态
+//   · 文案一律走 tr()，不硬编码中文（硬编码会让 i18n 扫描棘轮升高导致 CI 红）
+//   · 播放复用已有 video_player/chewie（视频）与 just_audio（音乐），不新增依赖
+//   · 本地条目后端已给 playUrl（代理地址）；网络影视条目要再问一次 detail 才拿得到播放地址
 
 import 'dart:async';
 import 'dart:convert';
@@ -27,15 +31,16 @@ import 'package:just_audio/just_audio.dart';
 
 import 'i18n.dart';
 
-/// 一条统一媒体条目（后端 gateway 的返回结构）
+/// 一条统一媒体条目
 class NasItem {
   final String id;
   final String title;
   final String subtitle;
   final String cover;
-  final String kind; // movie | tv | music | book | comic
+  final String kind; // movie | tv | music | novel | comic
   final String playUrl;
   final String serviceId;
+  final String sourceId;
   const NasItem({
     required this.id,
     required this.title,
@@ -44,28 +49,36 @@ class NasItem {
     required this.kind,
     required this.playUrl,
     required this.serviceId,
+    required this.sourceId,
   });
 
-  factory NasItem.fromJson(Map<String, dynamic> j) {
+  /// 兼容三种来源的字段命名：
+  ///   本地库（gateway）→ title / subtitle / cover / playUrl
+  ///   网络影视（CMS）  → name / id / coverUrl
+  ///   网络书籍（legado）→ name / author / coverUrl / bookUrl
+  factory NasItem.fromJson(Map<String, dynamic> j, {String kindHint = ''}) {
+    final rawCover = '${j['cover'] ?? j['coverUrl'] ?? ''}';
     return NasItem(
-      id: '${j['id'] ?? ''}',
-      title: '${j['title'] ?? ''}',
-      subtitle: '${j['subtitle'] ?? ''}',
-      cover: '${j['cover'] ?? ''}',
-      kind: '${j['kind'] ?? ''}',
+      id: '${j['id'] ?? j['bookUrl'] ?? ''}',
+      title: '${j['title'] ?? j['name'] ?? ''}',
+      subtitle: '${j['subtitle'] ?? j['author'] ?? ''}',
+      cover: rawCover,
+      kind: '${j['kind'] ?? kindHint}',
       playUrl: '${j['playUrl'] ?? ''}',
       serviceId: '${j['serviceId'] ?? j['source'] ?? ''}',
+      sourceId: '${j['sourceId'] ?? ''}',
     );
   }
 }
 
-/// 一个服务分组
+/// 一个来源分组
 class NasGroup {
   final String serviceId;
   final String serviceName;
   final bool ok;
   final int latency;
   final String error;
+  final bool isLocal;
   final List<NasItem> items;
   const NasGroup({
     required this.serviceId,
@@ -73,6 +86,7 @@ class NasGroup {
     required this.ok,
     required this.latency,
     required this.error,
+    required this.isLocal,
     required this.items,
   });
 }
@@ -89,14 +103,13 @@ class _NasServicesPageState extends State<NasServicesPage> {
   String _err = '';
   List<NasGroup> _groups = <NasGroup>[];
   int _total = 0;
-  /// 当前令牌：封面图走 /v1/gateway/img 也需要它，Image.network 得带上请求头
   String _token = '';
+  String _base = '';
 
   @override
   void initState() {
     super.initState();
-    // 进来先看服务清单，让用户知道现在有哪些能用
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadServices());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _primeConn());
   }
 
   @override
@@ -105,55 +118,69 @@ class _NasServicesPageState extends State<NasServicesPage> {
     super.dispose();
   }
 
-  Future<({String base, String token})> _conn() async {
+  Future<void> _primeConn() async {
     final p = await SharedPreferences.getInstance();
-    return (
-      base: (p.getString('base') ?? '').trim(),
-      token: (p.getString('token') ?? '').trim(),
-    );
+    if (!mounted) return;
+    setState(() {
+      _base = (p.getString('base') ?? '').trim();
+      _token = (p.getString('token') ?? '').trim();
+      if (_base.isEmpty) {
+        _err = tr('还没连上后端，请先到「我的后端」完成连接');
+      }
+    });
   }
 
-  Future<void> _loadServices() async {
-    final c = await _conn();
-    if (c.base.isEmpty) {
-      setState(() => _err = tr('还没连上后端，请先到「我的后端」完成连接'));
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _err = '';
-      _token = c.token;
-    });
-    try {
-      final r = await http.get(
-        Uri.parse('${c.base}/v1/gateway/services?refresh=1'),
-        headers: {'x-th-token': c.token},
-      ).timeout(const Duration(seconds: 20));
-      if (r.statusCode != 200) {
-        setState(() => _err = tr('服务清单读取失败') + '(HTTP ${r.statusCode})');
-      } else {
-        final j = jsonDecode(utf8.decode(r.bodyBytes));
-        final rows = (j is Map ? j['data'] : null) as List? ?? [];
-        final online = rows.where((e) => e is Map && e['online'] == true).length;
-        setState(() => _err = '');
-        if (mounted && online > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${tr('在线服务')}: $online / ${rows.length}')),
-          );
+  /// 把 search/all 的五个数组拍平成统一的分组列表（本地排最前）
+  List<NasGroup> _flatten(Map<String, dynamic> d) {
+    const order = <List<String>>[
+      ['locals', 'local', ''],
+      ['videos', 'net', 'video'],
+      ['books', 'net', 'novel'],
+      ['comics', 'net', 'comic'],
+      ['musics', 'net', 'music'],
+    ];
+    final out = <NasGroup>[];
+    for (final spec in order) {
+      final key = spec[0];
+      final isLocal = spec[1] == 'local';
+      final hint = spec[2];
+      final arr = (d[key] as List?) ?? const [];
+      for (final g in arr) {
+        if (g is! Map) continue;
+        final rawItems = (g['items'] ?? g['books'] ?? const []) as List;
+        final items = <NasItem>[];
+        for (final it in rawItems) {
+          if (it is Map) {
+            items.add(NasItem.fromJson(
+              Map<String, dynamic>.from(it),
+              kindHint: hint.isNotEmpty ? hint : (isLocal ? 'movie' : ''),
+            ));
+          }
         }
+        if (items.isEmpty) continue;
+        out.add(NasGroup(
+          serviceId: '${g['sourceId'] ?? g['serviceId'] ?? ''}',
+          serviceName: '${g['source'] ?? g['serviceName'] ?? ''}',
+          ok: g['ok'] != false,
+          latency: (g['latency'] is num) ? (g['latency'] as num).toInt() : 0,
+          error: '${g['error'] ?? ''}',
+          isLocal: isLocal,
+          items: items,
+        ));
       }
-    } catch (e) {
-      setState(() => _err = tr('连不上后端') + ': $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
+    return out;
   }
 
   Future<void> _search() async {
     final kw = _q.text.trim();
     if (kw.isEmpty) return;
-    final c = await _conn();
-    if (c.base.isEmpty) {
+    if (_base.isEmpty) {
+      final p = await SharedPreferences.getInstance();
+      _base = (p.getString('base') ?? '').trim();
+      _token = (p.getString('token') ?? '').trim();
+    }
+    if (_base.isEmpty) {
       setState(() => _err = tr('还没连上后端，请先到「我的后端」完成连接'));
       return;
     }
@@ -162,58 +189,90 @@ class _NasServicesPageState extends State<NasServicesPage> {
       _err = '';
       _groups = <NasGroup>[];
       _total = 0;
-      _token = c.token;
     });
     try {
+      // 一次搜全部：本地库 + 影视源 + 书源 + 漫画源 + 音源（后端并行，60s 内秒回缓存）
       final r = await http.get(
-        Uri.parse('${c.base}/v1/gateway/search?q=${Uri.encodeQueryComponent(kw)}'),
-        headers: {'x-th-token': c.token},
-      ).timeout(const Duration(seconds: 30));
+        Uri.parse('${_base}/v1/search/all?q=${Uri.encodeQueryComponent(kw)}'),
+        headers: {'x-th-token': _token},
+      ).timeout(const Duration(seconds: 60));
       if (r.statusCode != 200) {
-        setState(() => _err = tr('搜索失败') + '(HTTP ${r.statusCode})');
+        setState(() => _err = '${tr('搜索失败')} (HTTP ${r.statusCode})');
         return;
       }
       final j = jsonDecode(utf8.decode(r.bodyBytes));
-      final data = (j is Map ? j['data'] : null) as List? ?? [];
-      final meta = (j is Map ? j['meta'] : null) as Map? ?? {};
-      final out = <NasGroup>[];
-      for (final g in data) {
-        if (g is! Map) continue;
-        final items = <NasItem>[];
-        for (final it in ((g['items'] as List?) ?? const [])) {
-          if (it is Map) items.add(NasItem.fromJson(Map<String, dynamic>.from(it)));
-        }
-        out.add(NasGroup(
-          serviceId: '${g['serviceId'] ?? ''}',
-          serviceName: '${g['serviceName'] ?? g['serviceId'] ?? ''}',
-          ok: g['ok'] == true,
-          latency: (g['latency'] is num) ? (g['latency'] as num).toInt() : 0,
-          error: '${g['error'] ?? ''}',
-          items: items,
-        ));
+      final d = (j is Map ? j['data'] : null);
+      if (d is! Map) {
+        setState(() => _err = tr('搜索返回格式不对'));
+        return;
+      }
+      final groups = _flatten(Map<String, dynamic>.from(d));
+      var tot = 0;
+      for (final g in groups) {
+        tot += g.items.length;
       }
       setState(() {
-        _groups = out;
-        _total = (meta['total'] is num) ? (meta['total'] as num).toInt() : 0;
+        _groups = groups;
+        _total = tot;
+        if (tot == 0) {
+          _err = tr('本地和网络都没找到。影视源通常可用；书源/音源多数已过期，这部分还在修。');
+        }
       });
     } catch (e) {
-      setState(() => _err = tr('搜索失败') + ': $e');
+      setState(() => _err = '${tr('搜索失败')}: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _open(NasItem it) {
-    if (it.playUrl.isEmpty) {
+  /// 网络影视条目没有现成播放地址，要点进去问一次详情
+  Future<String> _resolvePlayUrl(NasItem it) async {
+    if (it.playUrl.isNotEmpty) return it.playUrl;
+    if (it.sourceId.isEmpty || it.id.isEmpty) return '';
+    try {
+      final r = await http.get(
+        Uri.parse('${_base}/v1/video/detail?sourceId=${Uri.encodeQueryComponent(it.sourceId)}'
+            '&id=${Uri.encodeQueryComponent(it.id)}'),
+        headers: {'x-th-token': _token},
+      ).timeout(const Duration(seconds: 25));
+      if (r.statusCode != 200) return '';
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final d = (j is Map ? j['data'] : null);
+      if (d is! Map) return '';
+      final eps = (d['episodes'] ?? const []) as List;
+      if (eps.isEmpty) return '';
+      final first = eps.first;
+      if (first is Map) return '${first['url'] ?? ''}';
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<void> _open(NasItem it) async {
+    // 书 / 漫画：这一版只到「搜得到」，正文阅读走原有的书源阅读链路
+    if (it.kind == 'novel' || it.kind == 'comic') {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('这个条目没有可播放的地址'))),
+        SnackBar(content: Text(tr('书籍/漫画请在「书库」里打开阅读'))),
+      );
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    final url = await _resolvePlayUrl(it);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('这个条目暂时拿不到播放地址'))),
       );
       return;
     }
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => it.kind == 'music'
-          ? _MusicPlayerPage(item: it)
-          : _VideoPlayerPage(item: it),
+          ? _MusicPlayerPage(item: it, url: url)
+          : _VideoPlayerPage(item: it, url: url),
     ));
   }
 
@@ -221,16 +280,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(tr('服务广场')),
-        actions: [
-          IconButton(
-            tooltip: tr('刷新服务状态'),
-            onPressed: _busy ? null : _loadServices,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(tr('服务广场'))),
       body: Column(
         children: [
           Padding(
@@ -243,7 +293,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => _search(),
                     decoration: InputDecoration(
-                      hintText: tr('搜影视、音乐…'),
+                      hintText: tr('搜电影、小说、音乐…'),
                       prefixIcon: const Icon(Icons.search),
                       isDense: true,
                       border: OutlineInputBorder(
@@ -264,6 +314,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.info_outline, size: 18, color: cs.error),
                   const SizedBox(width: 8),
@@ -276,7 +327,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
             ),
           if (_busy)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+              padding: EdgeInsets.symmetric(vertical: 16),
               child: CircularProgressIndicator(),
             ),
           Expanded(
@@ -285,7 +336,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
                     child: Padding(
                       padding: const EdgeInsets.all(32),
                       child: Text(
-                        tr('输入关键词搜索。结果来自你 NAS 上的影视库与音乐库，点一下就能在这里直接播放，不用跳出去。'),
+                        tr('搜一个词试试。本地库(影视/音乐)有就直接出，没有再上网络源找。'),
                         textAlign: TextAlign.center,
                         style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
                       ),
@@ -297,7 +348,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
                     itemBuilder: (ctx, i) {
                       if (i == 0) {
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                           child: Text(
                             '${tr('共找到')} $_total ${tr('条')}',
                             style: TextStyle(
@@ -323,34 +374,40 @@ class _NasServicesPageState extends State<NasServicesPage> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(
             children: [
-              Text(g.serviceName,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Text(
-                g.ok ? '${g.latency}ms' : (g.error.isEmpty ? tr('失败') : g.error),
-                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              if (g.isLocal) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: cs.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(tr('本地'),
+                      style: TextStyle(fontSize: 10, color: cs.primary)),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                child: Text(g.serviceName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
               ),
+              const SizedBox(width: 8),
+              Text(g.latency > 0 ? '${g.latency}ms' : '',
+                  style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
             ],
           ),
         ),
-        if (g.items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(tr('这个服务没有结果'),
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-          )
-        else
-          SizedBox(
-            height: 208,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: g.items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (ctx, i) => _card(g.items[i]),
-            ),
+        SizedBox(
+          height: 208,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: g.items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (ctx, i) => _card(g.items[i]),
           ),
+        ),
       ],
     );
   }
@@ -375,8 +432,8 @@ class _NasServicesPageState extends State<NasServicesPage> {
                     : Image.network(
                         it.cover,
                         fit: BoxFit.cover,
-                        // 封面走本站代理，需要带令牌（只读令牌即可看图）
-                        headers: _token.isEmpty ? null : {'x-th-token': _token},
+                        headers:
+                            _token.isEmpty ? null : {'x-th-token': _token},
                         errorBuilder: (_, __, ___) =>
                             Container(color: cs.surfaceContainerHighest),
                       ),
@@ -401,10 +458,11 @@ class _NasServicesPageState extends State<NasServicesPage> {
   }
 }
 
-/// 视频播放页（走 /v1/gateway/stream 代理，支持拖动）
+/// 视频播放页（本地走 gateway 代理，网络走源站直链）
 class _VideoPlayerPage extends StatefulWidget {
   final NasItem item;
-  const _VideoPlayerPage({required this.item});
+  final String url;
+  const _VideoPlayerPage({required this.item, required this.url});
   @override
   State<_VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
@@ -424,10 +482,8 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
     try {
       final p = await SharedPreferences.getInstance();
       final tok = (p.getString('token') ?? '').trim();
-      // 流地址由后端给（已是代理地址）；把令牌放请求头，URL 里不出现密钥
-      final uri = Uri.parse(widget.item.playUrl);
       _vp = VideoPlayerController.networkUrl(
-        uri,
+        Uri.parse(widget.url),
         httpHeaders: {'x-th-token': tok},
       );
       await _vp!.initialize();
@@ -481,7 +537,8 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
 /// 音乐播放页
 class _MusicPlayerPage extends StatefulWidget {
   final NasItem item;
-  const _MusicPlayerPage({required this.item});
+  final String url;
+  const _MusicPlayerPage({required this.item, required this.url});
   @override
   State<_MusicPlayerPage> createState() => _MusicPlayerPageState();
 }
@@ -502,8 +559,7 @@ class _MusicPlayerPageState extends State<_MusicPlayerPage> {
       final p = await SharedPreferences.getInstance();
       final tok = (p.getString('token') ?? '').trim();
       _token = tok;
-      await _player.setUrl(widget.item.playUrl,
-          headers: {'x-th-token': tok});
+      await _player.setUrl(widget.url, headers: {'x-th-token': tok});
       await _player.play();
       if (mounted) setState(() {});
     } catch (e) {
