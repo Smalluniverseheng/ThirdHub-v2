@@ -30,6 +30,8 @@ import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'i18n.dart';
+// 网络书籍点开后直接进阅读器（复用已有阅读页，不另造一套）
+import 'novel_reader.dart';
 
 /// 一条统一媒体条目
 class NasItem {
@@ -63,7 +65,10 @@ class NasItem {
       title: '${j['title'] ?? j['name'] ?? ''}',
       subtitle: '${j['subtitle'] ?? j['author'] ?? ''}',
       cover: rawCover,
-      kind: '${j['kind'] ?? kindHint}',
+      // ★2026-11-13 以「分组给的类型」为准：书源的条目自己也带 kind 字段
+      //   （形如 `[都市言情][阅读]`），照抄会让 kind 既不是 novel 也不是 video，
+      //   点击时就分不清该进阅读器还是播放器。
+      kind: kindHint.isNotEmpty ? kindHint : '${j['kind'] ?? ''}',
       playUrl: '${j['playUrl'] ?? ''}',
       serviceId: '${j['serviceId'] ?? j['source'] ?? ''}',
       sourceId: '${j['sourceId'] ?? ''}',
@@ -250,11 +255,15 @@ class _NasServicesPageState extends State<NasServicesPage> {
   }
 
   Future<void> _open(NasItem it) async {
-    // 书 / 漫画：这一版只到「搜得到」，正文阅读走原有的书源阅读链路
-    if (it.kind == 'novel' || it.kind == 'comic') {
+    // 网络书籍：点开就是正文（先取目录 → 进阅读器）
+    if (it.kind == 'novel') {
+      await _openNovel(it);
+      return;
+    }
+    if (it.kind == 'comic') {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('书籍/漫画请在「书库」里打开阅读'))),
+        SnackBar(content: Text(tr('漫画请在「文库」里打开阅读'))),
       );
       return;
     }
@@ -274,6 +283,77 @@ class _NasServicesPageState extends State<NasServicesPage> {
           ? _MusicPlayerPage(item: it, url: url)
           : _VideoPlayerPage(item: it, url: url),
     ));
+  }
+
+  /// 网络书籍：取目录 → 进阅读器
+  ///
+  /// 为什么不直接在列表里显示正文：正文按章节来，一本书动辄几百章，
+  /// 必须先有目录才能翻页/记忆进度。目录走 `/v1/toc`，正文走 `/v1/content`，
+  /// 两者都只要 sourceId + 章节 url，和搜索结果是同一套标识，不需要再登录/配对。
+  Future<void> _openNovel(NasItem it) async {
+    final srcId = it.sourceId.isNotEmpty ? it.sourceId : it.serviceId;
+    if (srcId.isEmpty || it.id.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('这个结果缺少来源信息，换一个试试'))),
+      );
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    List chapters = const [];
+    try {
+      final r = await http.get(
+        Uri.parse('$_base/v1/toc?sourceId=${Uri.encodeQueryComponent(srcId)}'
+            '&url=${Uri.encodeQueryComponent(it.id)}'),
+        headers: {'x-th-token': _token},
+      ).timeout(const Duration(seconds: 35));
+      if (r.statusCode == 200) {
+        final j = jsonDecode(utf8.decode(r.bodyBytes));
+        final d = (j is Map ? j['data'] : null);
+        if (d is List) {
+          chapters = d;
+        } else if (d is Map) {
+          chapters = (d['chapters'] ?? d['list'] ?? const []) as List;
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (chapters.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('这个来源暂时取不到目录，换一条结果试试'))),
+      );
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => NovelReaderPage(
+        sourceId: srcId,
+        chapters: chapters,
+        index: 0,
+        bookName: it.title,
+        bookUrl: it.id,
+        sourceName: it.serviceId,
+        fetchContent: _fetchChapter,
+      ),
+    ));
+  }
+
+  /// 阅读器回调：按章节 url 取正文
+  Future<Map<String, dynamic>> _fetchChapter(String sourceId, String url) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_base/v1/content?sourceId=${Uri.encodeQueryComponent(sourceId)}'
+            '&url=${Uri.encodeQueryComponent(url)}'),
+        headers: {'x-th-token': _token},
+      ).timeout(const Duration(seconds: 45));
+      if (r.statusCode != 200) return <String, dynamic>{'text': ''};
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final d = (j is Map ? j['data'] : null);
+      return d is Map ? Map<String, dynamic>.from(d) : <String, dynamic>{'text': ''};
+    } catch (_) {
+      return <String, dynamic>{'text': ''};
+    }
   }
 
   @override
