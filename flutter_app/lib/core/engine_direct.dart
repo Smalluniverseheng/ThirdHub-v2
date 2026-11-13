@@ -283,6 +283,45 @@ class EngineDirect {
 
   // ─────────────────────────── 生命周期 ───────────────────────────
 
+  /// 把「已连上的后端 NAS」直接当资料库用（★2026-11-13）。
+  ///
+  /// 起因：用户在家连上了 NAS，但小说/漫画/影视模块搜索走的还是**手机本地引擎**
+  /// （THP 只在局域网广播发现 :1234），后端那 2000+ 书源一个都用不上 ——
+  /// 表现就是「各模块都只能搜本地资料库，用不上 NAS」。
+  ///
+  /// 现在 NAS 后端也实现了 THP（/thp/meta、/thp/search、/thp/chapters、/thp/content），
+  /// 所以把 prefs 里的 `base`（后端地址）喂给同一套客户端即可，模块页一行都不用改。
+  /// 探测超时压到 5s：不通时要尽快回落，不能让开机白等十几秒。
+  static Future<bool> _tryBackendAsEngine(String base) async {
+    final u = base.replaceAll(RegExp(r'/+$'), '');
+    if (u.isEmpty) return false;
+    try {
+      final j = await _probeMeta(u, const Duration(seconds: 5));
+      final m = (j['data'] is Map ? j['data'] : j) as Map;
+      final nm = '${m['name'] ?? ''}'.trim();
+      final cp = m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : <String>[];
+      final ver = '${m['version'] ?? ''}';
+      // 只认「真的能搜」的资料库：caps 里必须有 m:novel，否则说明连到的不是我们的 NAS
+      if (!cp.contains('m:novel')) return false;
+      final p = await SharedPreferences.getInstance();
+      await p.setString('engine_direct_url', u);
+      await p.setString('engine_direct_name', nm.isEmpty ? '资料库' : nm);
+      await p.setStringList('engine_direct_caps', cp);
+      await p.setString('engine_direct_version', ver);
+      state.value = EngineState(
+        status: EngineStatus.connected,
+        url: u,
+        name: nm.isEmpty ? '资料库' : nm,
+        caps: cp,
+        version: ver,
+        message: '',
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<void> init() async {
     if (_inited) return;
     _inited = true;
@@ -293,6 +332,22 @@ class EngineDirect {
     final savedVer = p.getString('engine_direct_version') ?? '';
     // 多资料库并行开关（#193）：默认开；用户关过就尊重设置。
     _fanout = p.getBool('engine_fanout') ?? true;
+
+    // ★2026-11-13：优先把「已连上的后端 NAS」当资料库。
+    //   通了就用它（2000+ 书源、250+ 实测可用源都在 NAS 侧），
+    //   没通再回落到原来的 savedUrl / 局域网广播发现，行为不变。
+    final backendBase = (p.getString('base') ?? '').trim();
+    if (backendBase.isNotEmpty) {
+      unawaited(() async {
+        if (await _tryBackendAsEngine(backendBase)) return;
+        if (savedUrl.isNotEmpty) {
+          await _verifySaved(savedUrl, savedName, savedCaps);
+          return;
+        }
+        await autoConnect();
+      }());
+      return;
+    }
     if (savedUrl.isNotEmpty) {
       state.value = EngineState(
           status: EngineStatus.connecting,
