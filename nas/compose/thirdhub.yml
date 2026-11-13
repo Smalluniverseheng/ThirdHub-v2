@@ -1,0 +1,72 @@
+# ThirdHub 后端 + DSH · NAS（fnOS / 飞牛 EVO4）部署配置
+# ============================================================
+#  这个文件是给 NAS 上的 Docker 直接用的，不编译，直接拉现成镜像。
+#
+#  镜像来源：GitHub Container Registry（CI build-docker #4 自动构建）
+#    ghcr.io/smalluniverseheng/thirdhub-backend:0.8.8
+#
+#  ★ 一个容器 = 两个能力：
+#    · 第三方聚合后端（/v1/* 各类接口、账号同步、资料库代理）
+#    · DSH Agent 后端（/v1/agent/* 会话、工具、审计 —— App 里的 AI 调它）
+#
+#  用法（fnOS 网页）：
+#    1) 登录 https://192.168.31.200:5667
+#    2) 打开「Docker」应用 → 「项目 / Compose」→ 导入本文件
+#    3) 首次会提示登录 GHCR（见下方 注①），贴 token 后启动
+#    4) 起来后浏览器开 https://192.168.31.200:9527/v1/meta 应返回版本号
+#
+# ============================================================
+services:
+  thirdhub-backend:
+    # ★ 直接拉 CI 构建好的镜像，不在 NAS 上编译
+    image: ghcr.io/smalluniverseheng/thirdhub-backend:0.8.8
+    container_name: thirdhub-backend
+    restart: unless-stopped
+
+    ports:
+      - "9527:9527"
+
+    volumes:
+      # 数据持久化：证书 / 密钥 / 下载 / 会话 / 设备表都放这
+      # fnOS 上建议放到你外接硬盘那个目录，换 NAS 也带得走
+      - ./data:/app/data
+      # 或者指定绝对路径（外接硬盘）：
+      # - /mnt/external/外接存储-TOSHIBA MQ01ABD100/05 开发/thirdhub-data:/data
+
+    environment:
+      - TH_PORT=9527
+      - TH_OWNER_EMAIL=1829487897@qq.com
+      - TH_PUBLIC_TOKEN=thpub_81011c20f9287b353bc69b2a159ca8836aab39f1
+      - TH_LAN_URL=https://192.168.31.200:9527
+      - TH_SCANNER=1
+      - TH_REMOTE_URL=https://fnos.net/smalluniverse
+      - TH_DATA_DIR=/app/data
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+
+    healthcheck:
+      # 后端是 HTTPS-only（自签证书），健康检查要跳过证书校验
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://127.0.0.1:9527/v1/meta"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 注①  登录 GHCR：
+#   镜像在 GitHub 的容器仓库里。虽然仓库是公开的，Docker 拉取时仍可能要
+#   一次性登录。命令行等价操作（如果你开了 NAS 的终端）：
+#     docker login ghcr.io -u <你的GitHub用户名>   # 密码用 Personal Access Token
+#   在 fnOS 网页里通常是「镜像仓库」设置里填一次。
+#
+# 注②  端口 9527 是 HTTPS，浏览器首次访问会提示证书不受信 —— 点「继续访问」，
+#   这是自签证书的正常表现，不影响使用。
+#
+# 注③  想让 App / 网页端自动发现这个后端，用 host 网络更稳（下面两行取消注释）：
+#   network_mode: host
+#   （host 模式下 ports 映射失效，端口就是宿主 9527）

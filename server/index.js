@@ -489,6 +489,7 @@ const rtData = require('./routes-data');
 const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
+const rtThp = require('./routes-thp');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
 // 全盘升级 #202：三端统一账号绑定与设备互通同步契约。
@@ -503,7 +504,7 @@ const mediaCtx = { musicSources, saveMusic, comicSources, saveComic, drpySources
 const adminCtx = { health, devices, sources, musicSources, comicSources, drpySources, storageState };
 const dataCtx = { DATA, SECRET };
 const sourcesCtx = { sources, saveSources, drpySources, saveDrpy, comicSources, saveComic, musicSources, saveMusic, devices, health, DATA, requestLog };
-const searchCtx = { aggCache, sources, engine, pool, comicSources, drpySources, musicSources, devices, thpOnline, thpCall, library, health, healthHit, requestLog, routeTable, healthGate, srcUsage, bumpUsage };
+const searchCtx = { aggCache, sources, engine, pool, comicSources, drpySources, musicSources, devices, thpOnline, thpCall, library, health, healthHit, requestLog, routeTable, healthGate, srcUsage, bumpUsage, gateway };
 const libraryCtx = { sources, engine, devices, library, saveLib, LIB_DIR, tocCache, contentCache, tocGet, healthHit };
 const agentCtx = { DATA, SECRET };
 
@@ -548,6 +549,14 @@ async function handle(req, res, body) {
   const send = (code, obj) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(obj)); };
 
   // THP/1.0 端点：匿名可达(L0)，统一信封，优先于旧 /v1 路由
+  // ── THP：搜索/阅读这几个子操作由 routes-thp 提供（★2026-11-13）──
+  //   为什么排在 thp1 之前：thp1 是「端间互通」的资源库层，它的
+  //   /thp/m/novel/search 在本机没有在线引擎时直接回 UPSTREAM_FAIL，
+  //   而 App 的模块搜索/阅读要的是**本机书源**的结果。这里只截
+  //   meta/search/chapters/content，其余（blob/changes/events/jobs）仍归 thp1。
+  if (p.startsWith('/thp/')) {
+    if (await rtThp.handle(req, res, body, u, p, send)) return;
+  }
   if (p.startsWith('/thp') && await thp1.handle(req, res, body, u)) return;
 
   // ── PH/1 端间互通中枢(端/插件注册 · 跨端调用 · 密钥统一) ──
@@ -1302,6 +1311,8 @@ async function handle(req, res, body) {
         p.startsWith('/v1/gateway/search') ||
         p.startsWith('/v1/gateway/detail') ||
         p.startsWith('/v1/gateway/downloads') ||
+        p.startsWith('/v1/gateway/img') ||
+        p.startsWith('/v1/gateway/stream') ||
         p.startsWith('/v1/data-sources/public')
       );
     if (!publicOk) {
@@ -1340,6 +1351,9 @@ async function handle(req, res, body) {
   //   前端（App/网页）只认这一个入口，不需要知道后面是 Jellyfin 还是 qBittorrent。
   //   权限：走上面的 x-th-token 闸门（主密钥全权 / 只读令牌只读，见白名单）。
   if (p.startsWith('/v1/gateway/')) {
+    // 本站对外地址：前端拿到的封面/播放地址都指向这里，永远只连一个域名。
+    const _origin = (req.headers['x-forwarded-proto'] || 'https') + '://' +
+      (req.headers['x-forwarded-host'] || req.headers.host || '');
     const sub = p.slice('/v1/gateway/'.length).split('?')[0];
     if (sub === 'services' && req.method === 'GET') {
       const refresh = u.searchParams.get('refresh') === '1';
@@ -1350,14 +1364,48 @@ async function handle(req, res, body) {
       const r = await gateway.search(u.searchParams.get('q'), {
         kinds: u.searchParams.get('kinds') || '',
         limitPerService: u.searchParams.get('limit') || 20,
+        origin: _origin,
       });
       return send(200, { object: 'list', data: r.groups,
         meta: { q: r.q, total: r.total, services: r.services } });
     }
     if (sub === 'detail' && req.method === 'GET') {
-      const r = await gateway.detail(u.searchParams.get('service'), u.searchParams.get('id'));
+      const r = await gateway.detail(u.searchParams.get('service'), u.searchParams.get('id'), _origin);
       if (r && r.error) return send(400, { object:'error', data:{ type:'gateway_error', message: r.error }});
       return send(200, { object: 'item', data: r });
+    }
+    // 封面代理 + 媒体流代理（★2026-11-11）
+    //   前端只连本站，上游的地址与密钥不出后端；Range 原样透传，视频可拖动。
+    if ((sub === 'img' || sub === 'stream') && req.method === 'GET') {
+      const sid = u.searchParams.get('service');
+      const iid = u.searchParams.get('id');
+      if (!sid || !iid) {
+        return send(400, { object:'error', data:{ type:'invalid_request', message:'缺 service 或 id' }});
+      }
+      const r = await gateway.proxy(sid, iid, sub === 'img' ? 'img' : 'stream', req.headers.range);
+      if (r.json) {
+        return send(r.status, { object:'error', data:{ type:'gateway_error', message: r.json.error }});
+      }
+      const hh = {
+        'Content-Type': r.headers.get('content-type') || 'application/octet-stream',
+        'Accept-Ranges': r.headers.get('accept-ranges') || 'bytes',
+        'Cache-Control': sub === 'img' ? 'public, max-age=86400' : 'no-store',
+      };
+      const cl = r.headers.get('content-length');
+      const cr = r.headers.get('content-range');
+      if (cl) hh['Content-Length'] = cl;
+      if (cr) hh['Content-Range'] = cr;
+      res.writeHead(r.status, hh);
+      if (!r.body) { try { res.end(); } catch (e) {} return; }
+      try {
+        const { Readable } = require('stream');
+        const rs = Readable.fromWeb(r.body);
+        rs.on('error', () => { try { res.destroy(); } catch (e) {} });
+        rs.pipe(res);
+      } catch (e) {
+        try { res.end(); } catch (_) {}
+      }
+      return;
     }
     if (sub === 'downloads' && req.method === 'GET') {
       return send(200, { object: 'list', data: await gateway.downloads() });

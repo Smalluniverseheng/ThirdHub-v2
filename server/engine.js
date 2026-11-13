@@ -21,6 +21,12 @@ function xpathToCheerio(xp) {
     tag = tag === '*' ? '' : tag;
     return ` ${tag}[${attr}='${val}']`;
   });
+  // ★2026-11-13 `//a[text()='全文阅读']`：按文本选节点，Legado 书源里很常见
+  //   （飞速小说网的 tocUrl 就是它）。原样丢给 cheerio 会报
+  //   `Attribute selector didn't terminate` —— 这个异常还会把整本书的详情接口打成 500。
+  //   cheerio 没有 text() 伪类，用 :contains() 近似（取第一个包含该文本的节点）。
+  s = s.replace(/\[\s*text\(\)\s*=\s*['"]([^'"]+)['"]\s*\]/g, (mm, v) => `:contains('${v}')`);
+  s = s.replace(/\[\s*contains\(\s*text\(\)\s*,\s*['"]([^'"]+)['"]\s*\)\s*\]/g, (mm, v) => `:contains('${v}')`);
   // //tag[1] → tag 第一个(记录索引)
   s = s.replace(/\/\/?([\w*]+)\[(\d+)\]/g, (mm, tag, idx) => ` __IDX_${tag}_${idx} `);
   // //tag → tag
@@ -36,6 +42,27 @@ function xpathToCheerio(xp) {
 function parseChain(rule) {
   if (!rule) return null;
   rule = String(rule).trim();
+  // ★2026-11-09：`||` 是 Legado 的「或」分隔符 —— 多个候选规则任取一个成功的。
+  //   旧代码直接在整条规则上 split('@')，于是 `class.novelslist2@ul@li||class.l@li`
+  //   被切成 `li||class.l` 当作一个 CSS 选择器丢给 cheerio，
+  //   直接抛 `Column combinators are not yet supported by css-select`，
+  //   整个源搜出 0 条（乐文小说① 就是这种）。
+  //   这里只取第一个非空分支（绝大多数源第一分支就是对的，第二分支是改版备份）；
+  //   真正的「逐个回退」由调用方 pickByRule 负责，不在语法层做。
+  if (rule.includes('||')) {
+    const first = rule.split('||').map((x) => x.trim()).filter(Boolean)[0];
+    if (first) rule = first;
+  }
+  // ★2026-11-13 `&&` 是 Legado 的「并且」：多段规则都算命中，结果合并。
+  //   本引擎原来完全不认，于是 `xxx && .book-tag` 会被当成**一个**选择器丢给 cheerio，
+  //   报 `Unmatched selector: &&.book-tag`，整个字段取值抛异常 → 源废掉
+  //   （轻之文库就是这种）。这里退化为「取第一个非空分支」，先保证不崩、能出值。
+  if (rule.includes('&&')) {
+    const parts = rule.split('&&').map((x) => x.trim()).filter(Boolean);
+    if (parts.length > 1) rule = parts[0];
+  }
+  // `@css:` / `css:` 前缀（Legado 显式声明用 CSS 选择器）不是选择器的一部分
+  rule = rule.replace(/^@?css:/, '');
   const segs = rule.split('@').map(s => s.trim());
   const ops = [];
   for (const seg of segs) {
@@ -48,27 +75,75 @@ function parseChain(rule) {
     else {
       // 选择段: tag.a.0 | class.xxx | id.xxx | .xxx | 裸名
       let sel = seg;
-      const idxMatch = sel.match(/^(.*)\.(\d+)$/); // 末尾数字=eq
-      const idx = idxMatch ? parseInt(idxMatch[2]) : null;
-      if (idxMatch) sel = idxMatch[1];
+      let idx = null;      // 取第 n 个
+      let ridx = null;     // 反向索引（[-1] = 最后一个）
+      let excl = null;     // 排除区间 [起, 止]
+
+      // ★2026-11-13 Legado 的**索引/排除语法**。真实书源里极常见，本引擎原来完全不认，
+      //   于是 `li!0` 被当成一个叫 `li!0` 的 CSS 选择器丢给 cheerio → 非法选择器 →
+      //   要么抛异常要么 0 命中 → 整个源永远 0 条。
+      //   实例：飞速小说网的 bookList 是 `div.novelslist3@ul@li!0`
+      //   （页面里明明有 50 条结果，引擎却 0 条），就是死在这一行。
+      //   语义（对齐 Legado）：
+      //     li!0     排除第 0 个        li!0:-1   排除第 0 个和最后一个
+      //     li[n]    取第 n 个          li[-1]   取最后一个
+      //     li[!0]   排除第 0 个        li.1:3   取第 1~3 个（区间）
+      let mm;
+      let rangeSel = null;
+      let exclList = null;
+      if ((mm = sel.match(/^(.*?)\[\s*!\s*(-?\d+(?::\s*-?\d+)*)\s*\]$/))) {
+        sel = mm[1]; exclList = String(mm[2]).split(':').map(Number);
+      } else if ((mm = sel.match(/^(.*?)\[\s*(-?\d+)\s*\]$/))) {
+        sel = mm[1];
+        const v = Number(mm[2]);
+        if (v < 0) ridx = v; else idx = v;
+      } else if ((mm = sel.match(/^(.*?)!\s*(-?\d+(?::\s*-?\d+)*)$/))) {
+        sel = mm[1]; exclList = String(mm[2]).split(':').map(Number);
+      } else if ((mm = sel.match(/^(.*?)\.(-?\d+(?::\s*-?\d+)*)$/))) {
+        sel = mm[1];
+        const ps = String(mm[2]).split(':').map(Number);
+        if (ps.length === 1) { if (ps[0] < 0) ridx = ps[0]; else idx = ps[0]; }
+        else rangeSel = [Math.min.apply(null, ps), Math.max.apply(null, ps)];
+      }
+
       let alt = null;                                  // 裸名的兼容解释（见下）
       if (sel.startsWith('class.')) sel = '.' + sel.slice(6);
       else if (sel.startsWith('id.')) sel = '#' + sel.slice(3);
       else if (sel.startsWith('tag.')) sel = sel.slice(4);
       else if (sel.startsWith('.') || sel.startsWith('#')) { /* 保持 */ }
       else if (/^[\w-]+$/.test(sel)) alt = '.' + sel;
-      ops.push({ op: 'sel', sel, idx, alt });
+      ops.push({ op: 'sel', sel, idx, ridx, excl: exclList, range: rangeSel, alt });
     }
   }
   return ops;
 }
 
-// ─── JSONPath 迷你: $.a.b[0] ───
+// ─── JSONPath 迷你: $.a.b[0]，并支持 Legado 常见的递归写法 `$..key[*]` ───
 function miniJsonPath(obj, path) {
   if (!path) return null;
-  let p = path.trim();
-  if (p.startsWith('$.')) p = p.slice(2);
-  else if (p.startsWith('$')) p = p.slice(1);
+  let p = String(path).trim();
+  if (p.startsWith('$')) p = p.slice(1);
+  // ★2026-11-09：`$..list[*]` 这类「递归下降」在真实书源里非常常见
+  //   （9x阅读器 的 bookList 就是它）。旧实现只会按键名逐层走，遇到 `..` 直接返回 null，
+  //   于是整个源永远 0 条。这里在整棵树上收集所有同名 key 的值并展平。
+  if (p.startsWith('..')) {
+    const key = p.slice(2).replace(/\[.*?\]/g, '').split(/[.[]/).filter(Boolean)[0];
+    if (!key) return null;
+    const out = [];
+    const walk = (v) => {
+      if (v == null) return;
+      if (Array.isArray(v)) { for (const x of v) walk(x); return; }
+      if (typeof v === 'object') {
+        for (const [k, vv] of Object.entries(v)) {
+          if (k === key) out.push(vv);
+          walk(vv);
+        }
+      }
+    };
+    walk(obj);
+    const flat = out.flat();
+    return flat.length ? flat : null;
+  }
   const keys = p.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
   let cur = obj;
   for (const k of keys) {
@@ -114,6 +189,12 @@ function applyPosts(v, parts) {
 
 // ─── 在一组 cheerio 元素上执行规则链 ───
 function applyRuleRaw($root, elements, rule, context) {
+  // 兜底：规则里任何解析异常（非法选择器 / 正则写错 / js 抛错）
+  // 都只让「这个字段取不到值」，绝不让整个书籍详情/目录接口 500。
+  try { return applyRuleRawUnsafe($root, elements, rule, context); } catch (e) { return null; }
+}
+
+function applyRuleRawUnsafe($root, elements, rule, context) {
   if (rule == null) return null;
   const rs = String(rule).trim();
   // XPath 规则: 直接换算选择器
@@ -138,7 +219,7 @@ function applyRuleRaw($root, elements, rule, context) {
     if (cur == null) return null;
     if (o.op === 'sel') {
       if (cur && cur.find) {
-        let n = cur.find(o.sel);
+        let n = safeFind(cur, o.sel) || cur.find('__none__');
         // ★2026-09-25 裸名双解：Legado 的链式规则里，裸段是**选择器**（裸名即标签名），
         //   本引擎原来把它一律当 class（`a`→`.a`、`h2`→`.h2`），于是形如
         //   `.bookdesc@a@href` / `.bookdesc@h2@text` 这种极常见写法永远取空 ——
@@ -146,7 +227,7 @@ function applyRuleRaw($root, elements, rule, context) {
         //   表现就是「站点 200、页面里明明有关键词、引擎却 0 条」。
         //   这里改成「先按标签名找，找不到再退回 class」：严格是超集，
         //   原本靠 class 命中的源不受影响（标签名找不到时会退回原行为）。
-        if (!n.length && o.alt) n = cur.find(o.alt);
+        if (!n.length && o.alt) n = safeFind(cur, o.alt) || n;
         // ★2026-09-25 首段自匹配：真实源常把 bookList 的选择器在字段规则里**再写一遍**
         //   （bookList=`class.tui_1_item`，name=`class.tui_1_item@a@text`）。
         //   而 find() 只搜**后代**，行元素自身符合时取空 → 字段全空 → 被 filter 丢掉 → 0 条。
@@ -155,6 +236,20 @@ function applyRuleRaw($root, elements, rule, context) {
           if (cur.is(o.sel) || (o.alt && cur.is(o.alt))) n = cur.first();
         }
         if (o.idx != null && n.length) n = n.eq(o.idx);
+        // 反向索引（[-1] 等）：Legado 里常用来取「最后一个」
+        if (o.ridx != null && n.length) {
+          const k = o.ridx < 0 ? n.length + o.ridx : o.ridx;
+          n = k >= 0 && k < n.length ? n.eq(k) : n.slice(0, 0);
+        }
+        // 区间（li.1:3）：取第 a~b 个（含两端）
+        if (o.range && n.length) n = n.slice(o.range[0], o.range[1] + 1);
+        // 排除（!0 / !0:-1）：剔除指定下标，负数按「倒数」解释
+        if (o.excl && n.length) {
+          const len = n.length;
+          const drop = new Set();
+          for (const t of o.excl) { const k = t < 0 ? len + t : t; if (k >= 0 && k < len) drop.add(k); }
+          if (drop.size) n = n.filter((i) => !drop.has(i));
+        }
         cur = n;
       } else return null;
     } else if (o.op === 'text') {
@@ -239,8 +334,11 @@ async function fetchPage(url, source, method, body) {
     if (headers['User-Agent'] || headers['user-agent'])
       headers['User-Agent'] = headers['User-Agent'] || headers['user-agent'];
   }
-  // 失败重试1次(仅网络错误/5xx, 4xx不重试)
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // 失败重试(仅网络错误/5xx, 4xx不重试)
+  // ★2026-11-13 次数与单次超时都改为可配：批量探测要跑 2000+ 个源，
+  //   "12s × 2 次 = 单源最坏 24s" 会让全量探测永远跑不完。
+  const maxTry = Math.max(1, Number(process.env.TH_FETCH_RETRY) || 2);
+  for (let attempt = 0; attempt < maxTry; attempt++) {
     const r = await tryFetch(url, headers, method, body);
     // 被地址准入门拦下的**不重试**：这是策略判定，不是网络抖动，重试只会白等 12s
     if (r.blocked) return r;
@@ -255,7 +353,7 @@ async function tryFetch(url, headers, method, body) {
   // `302 Location: http://169.254.169.254/` 就能绕过（SSRF 最常见的绕过手法）。
   // 超时仍由 safeFetch 的 timeoutMs 统一负责，故这里不再需要 AbortController。
   try {
-    const opts = { headers, timeoutMs: 12000, maxRedirects: 5 };
+    const opts = { headers, timeoutMs: Math.max(3000, Number(process.env.TH_FETCH_TIMEOUT) || 12000), maxRedirects: 5 };
     if (method === 'POST') { opts.method = 'POST'; opts.body = body || ''; }
     const resp = await ssrf.safeFetch(url, opts);
     const buf = await resp.arrayBuffer();
@@ -282,7 +380,99 @@ function absUrl(url, base) {
   try { return new URL(url, base).href; } catch (e) { return url; }
 }
 
+// ─── 安全查找 ───
+// 真实书源的规则里经常带**非法 CSS**（改版残留、写错的属性选择器、旧语法）。
+// cheerio 遇到就抛（例如 `Attribute selector didn't terminate`），
+// 而调用链没有一层接住 → 整个 /v1/book 详情接口变成 500，
+// 表现成「搜到了书，点开却报错」。这里把「单条规则写坏」降级成「这条取不到值」，
+// 而不是让整个请求失败。
+function safeFind(cur, sel) {
+  if (!cur || !cur.find || !sel) return null;
+  try { return cur.find(sel); } catch (e) {
+    try { return cur.slice(0, 0); } catch (e2) { return null; }
+  }
+}
+
 // ═══ 书源生命周期 ═══
+
+// ─── 自动识别引擎（兜底）：不依赖书源里写死的选择器 ───
+//
+// 为什么需要它：书源里的 bookList/name/bookUrl 是对着**某个年代的页面结构**写的。
+// 站点一改版（换域名、改模板、加 SSR 壳），选择器就全部失效 —— 但站点本身活得好好的。
+// 实测：飞速小说网页面里有 50 条搜索结果，书源规则只因为写了 `li!0` 就整源 0 条；
+// 书荒部落/话本小说则是站点自己返回「0 条结果」。
+// 靠「逐个人工修选择器」不可能覆盖 2000+ 源，所以这里做一层**结构无关**的兜底：
+//
+//   锚点 = 关键词本身。搜索结果里的书名几乎必然包含搜索词（搜"斗罗大陆"→"斗罗大陆IV终极斗罗"）。
+//   于是：找出页面上所有**文本命中关键词**的链接 → 按父容器签名分组 → 取最大的一组当结果列表。
+//
+// 这样即使站点大改版，只要结果还显示在页面上，就能抓出来。
+function searchAuto($, key, baseUrl) {
+  const k = String(key || '').replace(/\s+/g, '').trim();
+  if (k.length < 2) return [];
+  // 关键词的前缀（去掉末字），用于匹配「斗罗大陆之…」「斗罗大陆IV…」这类衍生标题
+  const pre = k.length >= 3 ? k.slice(0, k.length - 1) : k;
+
+  const cands = [];
+  $('a').each((i, a) => {
+    const $a = $(a);
+    const t = $a.text().replace(/\s+/g, ' ').trim();
+    if (t.length < 2 || t.length > 70) return;
+    const tk = t.replace(/\s+/g, '');
+    if (!tk.includes(k) && !tk.includes(pre)) return;
+    const href = $a.attr('href');
+    if (!href || /^javascript:/i.test(href) || href === '#' || href === '/') return;
+    // 排除「搜索/首页」这类导航链接（它们的文本偶尔也带关键词）
+    if (/^(搜索|搜|首页|登录|注册|书架|分类|排行|更多|全部)$/.test(t)) return;
+    const p = $a.parent()[0];
+    const sig = p ? p.tagName + '|' + ((p.attribs && p.attribs.class) || '') : 'root';
+    cands.push({ t, href, sig, $a });
+  });
+  if (!cands.length) return [];
+
+  // 同一父容器签名的链接聚成一组，取元素最多的那组当列表
+  const groups = new Map();
+  for (const c of cands) {
+    const arr = groups.get(c.sig) || [];
+    arr.push(c);
+    groups.set(c.sig, arr);
+  }
+  let best = [];
+  for (const arr of groups.values()) if (arr.length > best.length) best = arr;
+  if (!best.length) return [];
+
+  const seen = new Set();
+  const out = [];
+  for (const c of best) {
+    let url;
+    try { url = new URL(c.href, baseUrl).href; } catch (e) { continue; }
+    if (seen.has(url)) continue;
+    seen.add(url);
+    // 作者/简介：从最近的「行级容器」里找，取不到不影响书名和链接
+    let rowText = '';
+    try {
+      const row = c.$a.closest('li,tr,dl,dd,div,p,article,section').first();
+      if (row && row.length) rowText = row.text().replace(/\s+/g, ' ').trim();
+    } catch (e) {}
+    const am = rowText.match(/作\s*者[:：]?\s*([^\s|，,、/]{2,14})/);
+    const cover = (() => {
+      try {
+        const img = c.$a.find('img').first();
+        return img.length ? img.attr('src') || img.attr('data-src') || null : null;
+      } catch (e) { return null; }
+    })();
+    out.push({
+      name: c.t,
+      author: am ? am[1] : '',
+      coverUrl: cover ? absUrl(cover, baseUrl) : null,
+      intro: rowText.slice(0, 160),
+      kind: '',
+      bookUrl: url,
+      sourceId: baseUrl,
+    });
+  }
+  return out.slice(0, 40);
+}
 
 async function search(source, key) {
   const rule = source.ruleSearch || {};
@@ -331,30 +521,56 @@ async function search(source, key) {
   const $ = cheerio.load(html);
   const list = resolveList($, listRuleRaw);
   const books = [];
+  // 表头/非书籍文本黑名单：很多站的结果表格首行是「作品名称 最新章节 作者 更新时间 状态」，
+  // `!0` 只能排除一行，thead+tbody 结构下会漏进来，表现成"第一条结果是作品名称"。
+  const HEADER_RE = /^(作品名称|书名|小说名|书\s*名|作者|最新章节|更新时间|状态|阅读|分类|类别|操作|封面|简介|点击|推荐票|最新更新)$/;
   list.each((i, el) => {
     const $el = $(el);
     const pick = (k) => { const r = rget(rule, k); return r ? applyRule($, $el, r, ctx) : null; };
+    const nm = pick('name');
+    if (!nm || HEADER_RE.test(String(nm).trim())) return;
+    // bookUrl 兜底顺序：规则值 → 行内第一个 a 的 href → 当前搜索页。
+    // 注意**不能**无条件退回搜索页：那会让每一行都指向同一个 URL，
+    // 点击后回到搜索结果（飞速小说网的表头行就是这样混进 50 条里的）。
+    const rawUrl = pick('bookUrl');
+    let bookUrl = absUrl(rawUrl, finalUrl);
+    if (!bookUrl || bookUrl === finalUrl || bookUrl === searchUrl) {
+      const inner = $el.find('a[href]').first().attr('href');
+      bookUrl = inner ? absUrl(inner, finalUrl) : null;
+    }
+    if (!bookUrl) return;
     books.push({
-      name: pick('name'), author: pick('author') || '',
+      name: String(nm).trim(), author: pick('author') || '',
       coverUrl: absUrl(pick('coverUrl') || pick('cover'), source.bookSourceUrl),
       intro: pick('intro') || '', kind: pick('kind') || '',
-      bookUrl: absUrl(pick('bookUrl'), finalUrl) || finalUrl,
+      bookUrl,
       sourceId: source.bookSourceUrl
     });
   });
-  return books.filter(b => b.name && b.bookUrl);
+  return (() => {
+    const cleaned = books.filter(b => b.name && b.bookUrl);
+    if (cleaned.length) return cleaned;
+    // 规则一条都没取到 —— 站点改版 / 选择器过期 / 结果在别处。
+    // 走「关键词锚定」的自动识别，只要页面上还显示着结果就能抓到。
+    const auto = searchAuto($, key, finalUrl || source.bookSourceUrl);
+    return auto.length ? auto : cleaned;
+  })();
 }
 
 // 统一列表解析: XPath 子集 或 Legado 链式(多段 sel 链)
 function resolveList($, listRule) {
+  try { return resolveListUnsafe($, listRule); } catch (e) { try { return $(); } catch (e2) { return null; } }
+}
+
+function resolveListUnsafe($, listRule) {
   if (!listRule) return $();
   const lr = String(listRule).trim();
   if (lr.startsWith('/')) { const { selector } = xpathToCheerio(lr); return $(selector); }
   let cur = $.root();
   for (const o of parseChain(lr)) {
     if (o.op === 'sel') {
-      let n = cur.find(o.sel);
-      if (!n.length && o.alt) n = cur.find(o.alt);        // 裸名双解，与规则链同一语义
+      let n = safeFind(cur, o.sel) || cur.find('__none__');
+      if (!n.length && o.alt) n = safeFind(cur, o.alt) || n;   // 裸名双解，与规则链同一语义
       // ★2026-09-25 自身匹配兜底：真实源常把同一选择器写两遍
       //   （chapterList=`class.hide@tag.a`，而 `<a>` 自己就带 class `hide`），
       //   这时 find() 只会搜后代 → 取空。这里退化成「在**当前这批元素里**筛出符合的」，
@@ -362,6 +578,16 @@ function resolveList($, listRule) {
       if (!n.length) { const f = cur.filter ? cur.filter(o.sel) : null;
         if (f && f.length) n = f; else if (o.alt && cur.filter) { const f2 = cur.filter(o.alt); if (f2.length) n = f2; } }
       if (o.idx != null && n.length) n = n.eq(o.idx);
+      if (o.ridx != null && n.length) {
+        const k = o.ridx < 0 ? n.length + o.ridx : o.ridx;
+        n = k >= 0 && k < n.length ? n.eq(k) : n.slice(0, 0);
+      }
+      if (o.range && n.length) n = n.slice(o.range[0], o.range[1] + 1);
+      if (o.excl && n.length) {
+        const l2 = n.length; const d2 = new Set();
+        for (const t of o.excl) { const k = t < 0 ? l2 + t : t; if (k >= 0 && k < l2) d2.add(k); }
+        if (d2.size) n = n.filter((i) => !d2.has(i));
+      }
       cur = n;
     }
     else if (o.op === 'js') { /* 列表级 js 暂不应用, 元素级在 pick 里 */ }

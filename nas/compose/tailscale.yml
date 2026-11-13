@@ -1,0 +1,35 @@
+# Tailscale —— 远程访问的确定性兜底通道
+#
+# 为什么需要它：
+#   家里宽带虽然有公网 IPv6（240e:...），但**入站被路由器/光猫的 IPv6 防火墙拦着**，
+#   从手机流量直连大概率连不上。Tailscale 用 NAT 穿透 + DERP 中继，
+#   不依赖公网 IP、不改路由器、也不需要端口映射，任何网络都能连回 NAS。
+#
+# 它给 NAS 分配一个固定的 100.x.x.x 地址，永不变（不怕 IPv6 前缀漂移）。
+#
+# 启动： cd /vol1/docker/tailscale && docker compose up -d
+# 首次登录： docker logs tailscale 2>&1 | grep -o 'https://login.tailscale.com/[^ ]*' | tail -1
+#           把那串链接在浏览器打开、用 Google/GitHub 账号授权即可。
+# 查地址：   docker exec tailscale tailscale ip -4
+name: thirdhub-tailscale
+
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - /vol1/1000/Media/_配置/tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TZ=Asia/Shanghai
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_HOSTNAME=thirdhub-nas
+      # 重要：允许其它设备通过 100.x 地址访问 NAS 的局域网服务（子网路由不需要，
+      # 因为 NAS 上跑的服务直接就监听在 host 网络上）
+      - TS_ACCEPT_DNS=false
+      - TS_AUTH_ONCE=true

@@ -1,0 +1,135 @@
+# ThirdHub 实用应用栈（全部开源免费）
+# 部署：cd /vol1/docker/apps && docker compose up -d
+# 媒体与下载目录统一在 /vol1/1000/Media
+
+name: thirdhub-apps
+
+services:
+  # ── 导航首页：一个页面进所有服务 ──
+  sun-panel:
+    image: hslr/sun-panel:latest
+    container_name: sun-panel
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      - /vol1/1000/Media/_配置/sun-panel/conf:/app/conf
+      - /vol1/1000/Media:/media
+    environment:
+      - TZ=Asia/Shanghai
+
+  # ── 工具箱：编码/JSON/时间戳/哈希/网络等 ──
+  it-tools:
+    image: corentinth/it-tools:latest
+    container_name: it-tools
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - TZ=Asia/Shanghai
+
+  # ── PDF 全能处理：合并/拆分/OCR/压缩/转换 ──
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    volumes:
+      - /vol1/1000/Media/_配置/stirling-pdf/tessdata:/usr/share/tesseract-ocr/5/tessdata
+      - /vol1/1000/Media/_配置/stirling-pdf/configs:/configs
+      - /vol1/1000/Media/_配置/stirling-pdf/logs:/logs
+      - /vol1/1000/Media:/media
+    environment:
+      - TZ=Asia/Shanghai
+      - DOCKER_ENABLE_SECURITY=false
+      - LANGS=chs
+
+  # ── 视频下载：B站/YouTube 等，页面粘贴链接即可 ──
+  metube:
+    image: alexta69/metube:latest
+    container_name: metube
+    restart: unless-stopped
+    ports:
+      - "8084:8081"
+    volumes:
+      - /vol1/1000/Media/_下载/完成/video:/downloads
+    environment:
+      - TZ=Asia/Shanghai
+      - DOWNLOAD_DIR=/downloads
+
+  # ── 跨设备文件同步 ──
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    ports:
+      - "8384:8384"
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+    volumes:
+      - /vol1/1000/Media/_配置/syncthing:/var/syncthing
+      - /vol1/1000/Media/_同步:/data
+    environment:
+      - TZ=Asia/Shanghai
+
+  # ── 密码管理（Bitwarden 兼容客户端）──
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "8086:80"
+    volumes:
+      - /vol1/1000/Media/_配置/vaultwarden:/data
+    environment:
+      - TZ=Asia/Shanghai
+      - SIGNUPS_ALLOWED=true
+
+  # ── 轻量笔记 / 碎片记录 ──
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    ports:
+      - "5230:5230"
+    volumes:
+      - /vol1/1000/Media/_配置/memos:/var/opt/memos
+    environment:
+      - TZ=Asia/Shanghai
+
+  # ── 有声书 / 播客 ──
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    restart: unless-stopped
+    ports:
+      - "13378:80"
+    volumes:
+      - /vol1/1000/Media/有声书:/audiobooks
+      - /vol1/1000/Media/播客:/podcasts
+      - /vol1/1000/Media/_配置/audiobookshelf/config:/config
+      - /vol1/1000/Media/_配置/audiobookshelf/metadata:/metadata
+    environment:
+      - TZ=Asia/Shanghai
+
+  # ── 影视自动订阅/整理（PT/BT 站自动追剧入库）──
+  moviepilot:
+    image: jxxghp/moviepilot-v2:latest
+    container_name: moviepilot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /vol1/1000/Media/_配置/moviepilot:/config
+      - /vol1/1000/Media:/media
+      - /vol1/1000/Media/_下载:/downloads
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=1000
+      - PGID=1000
+      - UMASK=000
+      - MOVIEPILOT_AUTO_UPDATE=false
+      - API_TOKEN=thirdhub_nas_token_2026
+      - SUPERUSER=xiaoyuzhouheng

@@ -1,0 +1,32 @@
+# DSH 服务端（DeepSeek Harness · Web 模式）
+#
+# ★ 为什么用 host 网络（2026-11-10 实测）：
+#   NAS 上 Docker 的 bridge 网络**访问不了 github.com** —— DNS 能解析（20.205.243.166），
+#   但 https 握手一直超时；dsh / alist / navidrome 三个容器表现一致，
+#   而宿主机 curl github 返回 200。插件安装必须 git clone github，所以只能用宿主机网络。
+#
+# 启动： cd /vol1/docker/dsh && docker compose up -d
+# 看日志：docker logs -f dsh
+# 影响：host 模式下 3800 端口直接监听在宿主机，无需 ports 映射
+name: thirdhub-dsh
+
+services:
+  dsh:
+    image: node:24-alpine
+    container_name: dsh
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /vol1/docker/dsh:/srv
+      - /vol1/1000/Media/_配置/dsh:/root/.dsh
+      # 让 DSH 能读写媒体库（整理/转存/离线下载）
+      - /vol1/1000/Media:/media
+    env_file:
+      - /vol1/docker/dsh/dsh.env
+    environment:
+      - TZ=Asia/Shanghai
+      - DSH_HOME=/root/.dsh
+      - DSH_PORT=3800
+      - DSH_VERSION=0.2.2-rc.1
+      - DSH_HOST_IP=192.168.31.200
+    entrypoint: ["/bin/sh", "/srv/start.sh"]

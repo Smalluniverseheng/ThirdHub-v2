@@ -33,7 +33,11 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p.startsWith('/v1/search/all')) {
     const q = u.searchParams.get('q');
     // 60s短缓存(重复搜索秒回)
-    const ac = aggCache.get(q);
+    // 缓存 key 必须带 host：cover/playUrl 是按请求 Host 重写过的，
+    // 用纯关键词做 key 会让外网拿到局域网地址的缓存结果。
+    const _host = req.headers['x-forwarded-host'] || req.headers.host || '127.0.0.1:9527';
+    const _ck = q + '|' + _host;
+    const ac = aggCache.get(_ck);
     if (ac && Date.now() - ac.at < 60000) return send(200, { object:'meta', data: ac.data, meta: { cached: true }});
     // ★ 本聚合路径的失败结果此前被 `filter(r => r.ok)` 直接丢掉、也从不记账 ——
     //   于是"只在聚合搜索里失败的源"永远攒不够失败次数、永远不被摘除（C2 的前提就断了）。
@@ -44,12 +48,23 @@ async function handle(req, res, body, u, p, send, ctx) {
         ok: !!ok, ms: ms || 0, error: err ? String(err).slice(0, 120) : '' }); } catch (_) {}
     };
     // 聚合搜索: 书+漫画+视频+音乐 并行
-    const [books, comics, videos, musics] = await Promise.all([
+    const [books, comics, videos, musics, locals] = await Promise.all([
       (async () => {
-        const pool_list = sources.filter(s => s.enabled !== false);
-        const rs = await pool(takeByRoute('search.novel', pool_list, 10), 8, async (s) => {
+        // ★2026-11-12：这里原来**没有任何排序**，等于从 2175 个源里随机抽 10 个。
+        //   抽到的那批如果恰好都失效，聚合搜索的书就是 0 条 —— 看起来像『小说搜不到』。
+        //   现在和 /v1/search 一样按分组可信度排序，且「已探活」最高。
+        const _gs = (x) => {
+          const g = String(x.bookSourceGroup || '');
+          if (g.includes('已探活')) return 120;
+          if (g.includes('校验可用')) return 100;
+          if (g.includes('精选') || g.includes('精品')) return 85;
+          if (g.includes('校验')) return 60;
+          return 0;
+        };
+        const pool_list = sources.filter(s => s.enabled !== false).sort((a, b) => _gs(b) - _gs(a));
+        const rs = await pool(takeByRoute('search.novel', pool_list, 12), 8, async (s) => {
           const t0 = Date.now();
-          try { const books = (await Promise.race([engine.search(s, q), new Promise((_,rej)=>setTimeout(()=>rej(new Error('源响应超时(8s)')), 8000))])).slice(0, 5);
+          try { const books = (await Promise.race([engine.search(s, q), new Promise((_,rej)=>setTimeout(()=>rej(new Error('源响应超时(6s)')), 6000))])).slice(0, 5);
             noteAgg(s.bookSourceUrl, true, Date.now() - t0);
             return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true, books }; }
           catch (e) { noteAgg(s.bookSourceUrl, false, Date.now() - t0, e.message);
@@ -119,10 +134,39 @@ async function handle(req, res, body, u, p, send, ctx) {
         }));
         return rs.filter(r => r.ok);
       })(),
+      // ── 本地库（Jellyfin 影视 / Navidrome 音乐）★2026-11-12 ──
+      //   用户要的是「本地有就直接用，没有才上网找」。本地库放在最前面，
+      //   前端先渲染它，网络源的结果稍后补进来。
+      (async () => {
+        if (!ctx.gateway) return [];
+        const t0 = Date.now();
+        try {
+          const proto = req.headers['x-forwarded-proto'] || 'https';
+          const o2 = proto + '://' + (req.headers['x-forwarded-host'] || req.headers.host || '127.0.0.1:9527');
+          const r = await Promise.race([
+            ctx.gateway.search(q, { origin: o2 }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('本地库超时 10s')), 10000)),
+          ]);
+          noteAgg('local:gateway', true, Date.now() - t0);
+          return (r.groups || [])
+            .filter((g) => g.ok && (g.items || []).length > 0)
+            .map((g) => ({
+              source: '本地·' + (g.serviceName || g.serviceId),
+              sourceId: 'local:' + (g.serviceId || ''),
+              kind: g.kind,
+              ok: true,
+              latency: g.latency || (Date.now() - t0),
+              items: (g.items || []).slice(0, 10),
+            }));
+        } catch (e) {
+          noteAgg('local:gateway', false, Date.now() - t0, e.message);
+          return [];
+        }
+      })(),
     ]);
-    const aggData = { q, books, comics, videos, musics,
-      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length, musicSources: musicSources.length } };
-    aggCache.set(q, { at: Date.now(), data: aggData });
+    const aggData = { q, locals, books, comics, videos, musics,
+      stats: { bookSources: sources.length, comicSources: comicSources.length, videoSources: drpySources.length, musicSources: musicSources.length, localHits: locals.length } };
+    aggCache.set(_ck, { at: Date.now(), data: aggData });
     return send(200, { object:'meta', data: aggData });
   }
   if (p.startsWith('/v1/search')) {
@@ -181,14 +225,43 @@ async function handle(req, res, body, u, p, send, ctx) {
         return send(200, { object:'list', data: [{ source: 'Legado(官方引擎)', sourceId: 'legado:' + legadoDev.device_url,
           ok: true, latency: Date.now() - t0, books: items }], meta: { engine: 'legado-native', via: 'websocket' }});
       } catch (e) { /* 不可达→内置引擎兜底 */ } }
-    const pool_list = sources.filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid));
-    // 限流并行(最多3个源同时请求, 防小站被封)
-    const results = await pool(pool_list, 6, async (s) => {
+    // ★2026-11-09：按「分组可信度」排序后再取源。
+    //   起因：2175 个源里绝大多数是"能连上但搜不出东西"的空壳，而路由表第一次跑时
+    //   还没有任何健康分，取到的恰好都是这类 → 接口 200 了，书目还是 0。
+    //   历史上这份源清单做过校验，把结果归进了几个分组（见 assets/sources/manifest.json：
+    //   「校验可用」1305 条、「精选/精品」若干）。这里按分组给权重，先问这些。
+    const grpScore = (s) => {
+      const g = String(s.bookSourceGroup || '');
+      // 实跑探测出过结果的源（来源：probe_sources.cjs 全量扫一遍），优先级最高。
+      // 起因：2175 条源里绝大多数已失效，靠分组名猜『哪批能活』猜不准 ——
+      // 实测『校验可用』那 1141 条里大量是死的。只有真跑出结果才算数。
+      if (g.includes('已探活')) return 120;
+      if (g.includes('校验可用')) return 100;
+      if (g.includes('精选') || g.includes('精品')) return 85;
+      if (g.includes('校验')) return 60;
+      if (g.includes('合集') || g.includes('小说')) return 40;
+      return 0;
+    };
+    const pool_list = sources
+      .filter(s => s.enabled !== false && (!sid || s.bookSourceUrl === sid))
+      .sort((a, b) => grpScore(b) - grpScore(a));
+    // ★2026-11-09 关键修复（这是"搜书永远搜不出来"的真正原因）：
+    //   原代码是 `pool(pool_list, 6, ...)` —— 把**全部书源**排进队列，并发只有 6，
+    //   而且 `engine.search` 外面**没有任何超时**。
+    //   书源从 500 涨到 2175 之后，队列长度 = 2175/6 ≈ 360 批，实测 45 秒都返回不了，
+    //   接口直接挂死（HTTP 000 / 0 字节）。用户看到的就是"一直在搜、什么都没有"。
+    //   现在：① 用路由表挑源（健康分优先，默认 20 个）；② 每个源 8 秒硬超时；
+    //        ③ 并发 10。最坏 2 批 × 8 秒 = 16 秒一定返回。
+    const picked = sid ? pool_list.slice(0, 1) : takeByRoute('search.novel', pool_list, 20);
+    const results = await pool(picked, 10, async (s) => {
       const t0 = Date.now();
       try {
-        const books = await engine.search(s, q);
+        const books = (await Promise.race([
+          engine.search(s, q),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('源响应超时(8s)')), 8000)),
+        ])).slice(0, 10);
         return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: true,
-                 latency: Date.now() - t0, books: books.slice(0, 10) };
+                 latency: Date.now() - t0, books };
       } catch (e) {
         return { source: s.bookSourceName, sourceId: s.bookSourceUrl, ok: false,
                  latency: Date.now() - t0, error: String(e.message || e).slice(0, 120) };
