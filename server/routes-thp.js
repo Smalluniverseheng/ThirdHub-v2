@@ -206,25 +206,263 @@ async function searchBooks(type, q, page, limit, budgetMs) {
   return { items, scanned, total: out.length, truncated };
 }
 
+// ─── 播放地址二次解析 ───
+//
+// CMS 采集源给回来的"播放地址"有三种形态（实测）：
+//   · 直接是 m3u8          → 无尽资源。可以直接播
+//   · /play/<id> 播放页     → 极速资源。页面里 `const vid='…/index.m3u8'`，能提取
+//   · /share/<hash> 分享页  → 量子、非凡。页面靠 JS 生成，纯抓取拿不到
+//
+// 不处理的话，App 播放器拿到的是一张 HTML 页面 → **只出封面、播不出画面**
+// （用户报的"只能加载出封面"就是这种）。
+// 这里做通用解析：能解出来的换成真直链；解不出来的原样返回，
+// 让 App 至少还能拿着它试（换一个源的结果就好了）。
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36';
+
+function fetchText(url, referer, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let u;
+    try { u = new URL(url); } catch (e) { return resolve(''); }
+    const lib = u.protocol === 'https:' ? require('https') : require('http');
+    const t = setTimeout(() => { try { req.destroy(); } catch (e) {} resolve(''); }, timeoutMs);
+    const req = lib.request({
+      hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search, method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        ...(referer ? { 'Referer': referer } : {}),
+      },
+      rejectUnauthorized: false,
+    }, (r) => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
+        clearTimeout(t);
+        try { req.destroy(); } catch (e) {}
+        return fetchText(new URL(r.headers.location, url).href, referer, timeoutMs).then(resolve);
+      }
+      const cs = []; let n = 0;
+      r.on('data', (d) => { n += d.length; if (n < 400000) cs.push(d); });
+      r.on('end', () => { clearTimeout(t); resolve(Buffer.concat(cs).toString('utf8')); });
+    });
+    req.on('error', () => { clearTimeout(t); resolve(''); });
+    req.end();
+  });
+}
+
+function looksPlayable(u) { return /\.(m3u8|mp4)(\?|#|$)/i.test(String(u || '')); }
+
+async function resolveStream(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!url) return { url: '', header: {} };
+  if (looksPlayable(url)) return { url, header: {} };
+
+  // ① /play/<id> 这类：先按常见规律拼 index.m3u8（极速资源就是这种）
+  if (/\/play\/[^/?#]+$/.test(url)) {
+    try {
+      const cand = url.replace(/\/+$/, '') + '/index.m3u8';
+      const head = await fetchText(cand, url, 6000);
+      if (head && head.includes('#EXTM3U')) {
+        return { url: cand, header: { 'Referer': url, 'User-Agent': UA } };
+      }
+    } catch (e) {}
+  }
+
+  // ② 抓页面，从 HTML/JS 里挖 m3u8 / mp4（含 `const vid='…'`、`url: "…"` 这些写法）
+  const html = await fetchText(url, url, 8000);
+  if (html) {
+    const cands = [];
+    const re = /https?:\/\/[^\s'"\\<>()]+?\.(?:m3u8|mp4)(?:\?[^\s'"\\<>()]*)?/gi;
+    let m;
+    while ((m = re.exec(html)) && cands.length < 8) cands.push(m[0]);
+    if (cands.length) {
+      // 优先 m3u8
+      const pick = cands.find((c) => /\.m3u8/i.test(c)) || cands[0];
+      return { url: pick, header: { 'Referer': url, 'User-Agent': UA } };
+    }
+    // 有些站把地址放在 `var url = "/xxx/index.m3u8"` 这种相对路径里
+    const rel = html.match(/["'](\/[^"'\s]*?\.m3u8)["']/i);
+    if (rel) {
+      try {
+        const abs = new URL(rel[1], url).href;
+        return { url: abs, header: { 'Referer': url, 'User-Agent': UA } };
+      } catch (e) {}
+    }
+  }
+  // ③ 解不出来：原样返回（至少不是空），并带上 Referer 让播放器有机会
+  return { url, header: { 'Referer': url, 'User-Agent': UA } };
+}
+
 // ─── 目录 / 正文 ───
-async function chaptersOf(url, sourceId) {
-  const s = resolveSource(url, sourceId);
+//
+// ★★ 2026-11-14 关键修正：App 的真实参数是 `id` + `chapter`，不是 `url` + `sourceId`。
+//   （core/engine_direct.dart: `/thp/chapters?type=$type&id=<bookUrl>`、
+//     `/thp/content?type=novel&id=<bookUrl>&chapter=<章节url>`、
+//     影视/漫画走规范端点 `/thp/m/{mod}/content?id=&chapter=`）
+//   上一版只认 url/sourceId → 目录恒空 → **封面能搜出来、点进去什么都没有**。
+//   现在两个参数名都收，按 type 分发到各自的取数实现。
+
+function qOf(u, ...names) {
+  for (const n of names) {
+    const v = u.searchParams.get(n);
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+// 本地自调用（转发到已有的 /v1/* 实现，带内部令牌）
+async function localGet(pathAndQuery) {
+  const https = require('https');
+  const http = require('http');
+  const port = process.env.PORT || 9527;
+  const url = `https://127.0.0.1:${port}${pathAndQuery}`;
+  const body = await new Promise((resolve) => {
+    const req = https.request(url, {
+      method: 'GET',
+      rejectUnauthorized: false,
+      headers: { 'x-th-token': internalToken(), 'user-agent': 'thp-bridge' },
+      timeout: 25000,
+    }, (r) => {
+      const cs = []; r.on('data', (d) => cs.push(d));
+      r.on('end', () => resolve(Buffer.concat(cs).toString('utf8')));
+    });
+    req.on('error', () => resolve(''));
+    req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve(''); });
+    req.end();
+  });
+  try { return JSON.parse(body); } catch (e) { return null; }
+}
+
+// 影视/音乐的 item.id 编码成 `v1|<sourceId>|<原始id>`：
+// 因为 App 的 content 只把 id + chapter 传回来，没有 sourceId 的位置，
+// 不编码就没法知道去哪个源取详情/播放地址。
+function packId(kind, sourceId, id) { return kind + '|' + sourceId + '|' + id; }
+function unpackId(v) {
+  const s = String(v || '');
+  const i = s.indexOf('|');
+  const j = s.indexOf('|', i + 1);
+  if (i < 0 || j < 0) return null;
+  return { kind: s.slice(0, i), sourceId: s.slice(i + 1, j), id: s.slice(j + 1) };
+}
+
+async function chaptersOf(type, id, u) {
+  const t = String(type || 'novel');
+
+  // ── 影视：详情里的 episodes 就是剧集列表 ──
+  if (t === 'video') {
+    const pk = unpackId(id);
+    let sourceId = pk ? pk.sourceId : qOf(u, 'sourceId', 'source');
+    let vid = pk ? pk.id : id;
+    if (!sourceId) return null;
+    const d = await localGet(`/v1/video/detail?sourceId=${encodeURIComponent(sourceId)}&id=${encodeURIComponent(vid)}`);
+    const data = (d && d.data) || {};
+    const eps = data.episodes || data.chapters || [];
+    const items = eps.map((e, i) => ({
+      name: String(e.name || `第${i + 1}集`),
+      title: String(e.name || `第${i + 1}集`),
+      // chapter 回传时带 flag：播放要用它
+      url: 'ep|' + String(e.flag || e.line || '') + '|' + String(e.url || ''),
+    })).filter((x) => x.url.length > 4);
+    return { items, chapters: items, sourceId, name: data.name || '' };
+  }
+
+  // ── 音乐：单曲没有目录，给一条占位 ──
+  if (t === 'music') {
+    const pk = unpackId(id);
+    const items = [{ name: '播放', title: '播放', url: 'track|' + (pk ? pk.id : id) }];
+    return { items, chapters: items, sourceId: pk ? pk.sourceId : '' };
+  }
+
+  // ── 漫画：交给已有的漫画注册表 ──
+  if (t === 'comic') {
+    const pk = unpackId(id);
+    if (!pk) return null;
+    const d = await localGet(`/v1/comic/info?sourceId=${encodeURIComponent(pk.sourceId)}&id=${encodeURIComponent(pk.id)}`);
+    const data = (d && d.data) || {};
+    const chs = data.chapters || data.episodes || [];
+    const items = chs.map((ch, i) => ({
+      name: String(ch.name || ch.title || `第${i + 1}话`),
+      title: String(ch.name || ch.title || `第${i + 1}话`),
+      url: String(ch.id || ch.url || ch.chapterId || ''),
+    })).filter((x) => x.url);
+    return { items, chapters: items, sourceId: pk.sourceId, name: data.name || '' };
+  }
+
+  // ── 小说（默认）：书源目录 ──
+  const s = resolveSource(id, qOf(u, 'sourceId', 'source'));
   if (!s) return null;
-  const arr = await engine.catalog(s, url);
+  const arr = await engine.catalog(s, id);
   const items = (arr || []).map((c) => ({
     name: c.name || c.title || '',
     title: c.name || c.title || '',
     url: c.url || c.chapterUrl || '',
   })).filter((c) => c.url);
-  // 记住章节所属的源：阅读页翻章时可能只带 url 不带 sourceId
   for (const c of items) remember(c.url, String(s.bookSourceUrl || ''));
   return { items, chapters: items, sourceId: String(s.bookSourceUrl || '') };
 }
 
-async function contentOf(url, sourceId) {
-  const s = resolveSource(url, sourceId);
+async function contentOf(type, id, chapter, u) {
+  const t = String(type || 'novel');
+
+  // ── 影视：episode → /v1/video/play 换真实播放地址 ──
+  if (t === 'video') {
+    const pk = unpackId(id);
+    const sourceId = pk ? pk.sourceId : qOf(u, 'sourceId', 'source');
+    if (!sourceId) return null;
+    let flag = '', epUrl = '';
+    const ch = String(chapter || '');
+    if (ch.startsWith('ep|')) {
+      const rest = ch.slice(3);
+      const k = rest.indexOf('|');
+      flag = k < 0 ? '' : rest.slice(0, k);
+      epUrl = k < 0 ? rest : rest.slice(k + 1);
+    } else {
+      epUrl = ch;
+    }
+    if (!epUrl) return null;
+    const d = await localGet(`/v1/video/play?sourceId=${encodeURIComponent(sourceId)}`
+      + `&flag=${encodeURIComponent(flag)}&id=${encodeURIComponent(epUrl)}`);
+    const data = (d && d.data) || {};
+    const raw = data.url || data.playUrl || '';
+    if (!raw) return { text: '', content: '', url: '', header: {} };
+    let header = data.header || data.headers || {};
+    if (typeof header === 'string') { try { header = JSON.parse(header); } catch (e) { header = {}; } }
+    // ★二次解析：CMS 源常把"分享页/播放页"当播放地址返回，直接丢给播放器只能出封面。
+    const rs = await resolveStream(raw);
+    const merged = Object.assign({}, header, rs.header || {});
+    return { text: '', content: '', url: rs.url, header: merged, headers: merged, rawUrl: raw };
+  }
+
+  // ── 音乐：单曲直链 ──
+  if (t === 'music') {
+    const ch = String(chapter || '');
+    const url = ch.startsWith('track|') ? ch.slice(6) : ch;
+    return { text: '', content: '', url, header: {}, headers: {} };
+  }
+
+  // ── 漫画：图片列表 ──
+  if (t === 'comic') {
+    const pk = unpackId(id);
+    if (!pk) return null;
+    const d = await localGet(`/v1/comic/pages?sourceId=${encodeURIComponent(pk.sourceId)}`
+      + `&id=${encodeURIComponent(pk.id)}&chapterId=${encodeURIComponent(chapter)}`);
+    const data = (d && d.data) || {};
+    const imagess = (data.images || data.pages || []).map((u) => {
+      const s = String(u || '');
+      // ★Android 9+ 默认禁止明文 HTTP，漫画图直链很多是 http://
+      //   （实测优酷漫画的图站会 301 到 https）。统一升级成 https，
+      //   否则阅读器里全是"图片加载失败"，用户以为是没取到图。
+      return s.startsWith('http://') ? 'https://' + s.slice(7) : s;
+    }).filter(Boolean);
+    let header = data.header || data.headers || {};
+    if (typeof header === 'string') { try { header = JSON.parse(header); } catch (e) { header = {}; } }
+    return { text: '', content: '', images: imagess, header, headers: header };
+  }
+
+  // ── 小说（默认）：章节正文 ──
+  const s = resolveSource(chapter || id, qOf(u, 'sourceId', 'source'));
   if (!s) return null;
-  const c = await engine.content(s, url);
+  const c = await engine.content(s, chapter || id);
   const text = String((c && (c.text || c.content)) || '');
   const images = (c && c.images) || [];
   return { text, content: text, images, sourceId: String(s.bookSourceUrl || '') };
@@ -243,7 +481,8 @@ function internalToken() {
 async function forwardSearch(type, q, limit) {
   const https = require('https');
   const port = process.env.PORT || 9527;
-  const p = type === 'video' ? '/v1/video/search' : '/v1/music/search';
+  const p = type === 'video' ? '/v1/video/search'
+    : (type === 'comic' ? '/v1/comic/search' : '/v1/music/search');
   const url = `https://127.0.0.1:${port}${p}?q=${encodeURIComponent(q)}`;
   const body = await new Promise((resolve) => {
     const req = https.request(url, {
@@ -263,19 +502,42 @@ async function forwardSearch(type, q, limit) {
   try { j = JSON.parse(body); } catch (e) { return { items: [], scanned: 0, total: 0 }; }
   const groups = (j && j.data) || [];
   const items = [];
+  const kind = type === 'video' ? 'v1' : 'm1';
   for (const g of groups) {
     for (const it of (g.items || [])) {
+      const sid = String(g.sourceId || g.serviceId || '');
+      const rawId = (it.id != null ? it.id : (it.vid != null ? it.vid : ''));
       items.push(Object.assign({}, it, {
+        // ★id 必须把 sourceId 编进去：App 取内容时只回传 id + chapter，
+        //   没有地方放 sourceId，不编码就不知道该去哪个源取详情/播放地址。
+        id: packId(kind, sid, rawId),
+        vid: rawId,
         name: it.name || it.title || '',
         title: it.title || it.name || '',
         coverUrl: it.coverUrl || it.cover || it.pic || '',
         cover: it.cover || it.coverUrl || it.pic || '',
         sourceName: g.source || g.serviceName || '',
-        sourceId: g.sourceId || g.serviceId || '',
+        sourceId: sid,
         url: it.url || it.playUrl || '',
         type,
       }));
     }
+  }
+  // ★影视源偏好排序（2026-11-14 实测结论，不是拍脑袋）：
+  //   无尽资源 → 接口直接给 m3u8，最稳；
+  //   极速资源 → /play/<id> 播放页里能提到 index.m3u8，也能播；
+  //   量子资源 / 非凡资源 → 给的是 /share/<hash>，页面靠 JS 生成，纯抓取拿不到直链。
+  //   App 的视频模块只会拿列表里第一条去播，所以把"能直出"的源排前面，
+  //   用户点开就能看到画面，而不是黑屏只剩封面。
+  if (type === 'video') {
+    const pref = (n) => {
+      const s = String(n || '');
+      if (s.includes('无尽')) return 0;
+      if (s.includes('极速')) return 1;
+      if (s.includes('量子') || s.includes('非凡')) return 9;
+      return 5;
+    };
+    items.sort((a, b) => pref(a.sourceName) - pref(b.sourceName));
   }
   return { items: items.slice(0, Math.max(20, limit || 40)), scanned: groups.length, total: items.length, truncated: false };
 }
@@ -291,8 +553,23 @@ async function handle(req, res, body, u, p, send) {
 
   // ★只接管「搜索 / 阅读 / 元信息」这几件，其余（blob、changes、events、jobs…）
   //   一律 return false 交回 thp1 —— 那部分是端间互通用的，我们没实现也不该拦。
-  const MINE = ['', 'meta', 'search', 'chapters', 'toc', 'content', 'chapter'];
+  const MINE = ['', 'meta', 'search', 'chapters', 'toc', 'content', 'chapter', 'discover', 'explore'];
   if (!MINE.includes(op)) return false;
+
+  if (op === 'discover' || op === 'explore') {
+    // 分类/发现页需要逐源解析各自的 exploreUrl（每个源的结构都不一样），本轮没做。
+    // ★但**不能**让它落到令牌闸门后面：那边会回 401「无效密钥」，
+    //   用户看到的是「连不上」，而实际情况只是「这个功能没做」。
+    //   所以这里回一个空列表 + 空分类，App 会显示「暂无内容」。
+    send(200, {
+      ok: true,
+      object: 'thp-' + op,
+      data: { items: [], groups: [], categories: [], tags: [] },
+      page: 1, total: 0, hasMore: false, truncated: false, budgetSec: 0,
+      scannedSources: 0, totalSources: sources().length,
+    });
+    return true;
+  }
 
   if (op === 'meta' || op === '') {
     const caps = ['m:novel', 'paging', 'search-mode'];
@@ -334,7 +611,7 @@ async function handle(req, res, body, u, p, send) {
     const t0 = Date.now();
     let r;
     try {
-      if (type === 'video' || type === 'music') r = await forwardSearch(type, q, limit);
+      if (type === 'video' || type === 'music' || type === 'comic') r = await forwardSearch(type, q, limit);
       else r = await searchBooks(type, q, page, limit, budgetSec * 1000);
     } catch (e) {
       send(500, { ok: false, error: { code: 'search_failed', message: String(e && e.message || e) } });
@@ -358,12 +635,12 @@ async function handle(req, res, body, u, p, send) {
   }
 
   if (op === 'chapters' || op === 'toc') {
-    const url = u.searchParams.get('url') || '';
-    const sid = u.searchParams.get('sourceId') || u.searchParams.get('source') || '';
-    if (!url) { send(400, { ok: false, error: { code: 'bad_request', message: '缺少 url' } }); return true; }
+    const type = qOf(u, 'type') || 'novel';
+    const id = qOf(u, 'id', 'url');
+    if (!id) { send(400, { ok: false, error: { code: 'bad_request', message: '缺少 id' } }); return true; }
     try {
-      const r = await chaptersOf(url, sid);
-      if (!r) { send(404, { ok: false, error: { code: 'no_source', message: '这本书找不到可用的来源规则' } }); return true; }
+      const r = await chaptersOf(type, id, u);
+      if (!r) { send(404, { ok: false, error: { code: 'no_source', message: '这个条目找不到可用的来源规则' } }); return true; }
       send(200, { ok: true, object: 'thp-chapters', data: r });
     } catch (e) {
       send(500, { ok: false, error: { code: 'chapters_failed', message: String(e && e.message || e) } });
@@ -372,11 +649,12 @@ async function handle(req, res, body, u, p, send) {
   }
 
   if (op === 'content' || op === 'chapter') {
-    const url = u.searchParams.get('url') || '';
-    const sid = u.searchParams.get('sourceId') || u.searchParams.get('source') || '';
-    if (!url) { send(400, { ok: false, error: { code: 'bad_request', message: '缺少 url' } }); return true; }
+    const type = qOf(u, 'type') || 'novel';
+    const id = qOf(u, 'id', 'url');
+    const chapter = qOf(u, 'chapter', 'chapterId', 'ep');
+    if (!id) { send(400, { ok: false, error: { code: 'bad_request', message: '缺少 id' } }); return true; }
     try {
-      const r = await contentOf(url, sid);
+      const r = await contentOf(type, id, chapter, u);
       if (!r) { send(404, { ok: false, error: { code: 'no_source', message: '这一章找不到可用的来源规则' } }); return true; }
       send(200, { ok: true, object: 'thp-content', data: r });
     } catch (e) {

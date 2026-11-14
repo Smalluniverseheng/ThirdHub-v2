@@ -60,13 +60,50 @@ function buildSandbox() {
   };
 
   // ── Convert ──
+  // ★2026-11-14：原来这里只有 base64encode/base64decode 四个自造函数，
+  //   而 Venera 书源调的是 **Convert.decodeBase64 / encodeBase64 / decodeUtf8**
+  //   （Venera 官方 API，返回 ArrayBuffer）。实测 32 个漫画源里 **7 个**直接死在
+  //   `Convert.decodeBase64 is not a function`（拷贝漫画等大站全在内）。
+  //   这里按 venera-runtime.js 补齐，并保留旧名字做兼容。
+  const abuf = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
   const Convert = {
-    md5: (s) => crypto.createHash('md5').update(s).digest('hex'),
-    sha1: (s) => crypto.createHash('sha1').update(s).digest('hex'),
-    sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'),
+    // —— Venera 官方 API（ArrayBuffer 语义）——
+    encodeUtf8(str) { return new Uint8Array(Buffer.from(String(str), 'utf8')).buffer; },
+    decodeUtf8(buf) { return Buffer.from(buf).toString('utf8'); },
+    encodeBase64(buf) {
+      return Buffer.from(buf instanceof ArrayBuffer ? Buffer.from(buf) : String(buf)).toString('base64');
+    },
+    decodeBase64(str) {
+      const b = Buffer.from(String(str), 'base64');
+      return abuf(b);
+    },
+    async md5(buf) { return abuf(crypto.createHash('md5').update(Buffer.from(buf)).digest()); },
+    async sha1(buf) { return abuf(crypto.createHash('sha1').update(Buffer.from(buf)).digest()); },
+    async sha256(buf) { return abuf(crypto.createHash('sha256').update(Buffer.from(buf)).digest()); },
+    async sha512(buf) { return abuf(crypto.createHash('sha512').update(Buffer.from(buf)).digest()); },
+    async hmac(key, value, hash) {
+      const h = String(hash).toLowerCase().replace('-', '');
+      return abuf(crypto.createHmac(h, Buffer.from(key)).update(Buffer.from(value)).digest());
+    },
+    async hmacString(key, value, hash) {
+      return Buffer.from(await this.hmac(key, value, hash)).toString('base64');
+    },
+    async decryptAesEcb(value, key) {
+      const d = crypto.createDecipheriv('aes-128-ecb', Buffer.from(key).subarray(0, 16), null);
+      return abuf(Buffer.concat([d.update(Buffer.from(value)), d.final()]));
+    },
+    async decryptAesCbc(value, key, iv) {
+      const k = Buffer.from(key);
+      const d = crypto.createDecipheriv('aes-' + (k.length * 8) + '-cbc', k, Buffer.from(iv));
+      return abuf(Buffer.concat([d.update(Buffer.from(value)), d.final()]));
+    },
+    // —— 旧名字/十六进制版（保持既有源不回归）——
     base64encode: (s) => Buffer.from(s).toString('base64'),
     base64decode: (s) => Buffer.from(s, 'base64').toString(),
-    aes: { encrypt: (t, k) => t, decrypt: (t, k) => t } // 占位: 需CryptoJS的源可后接
+    md5Hex: (s) => crypto.createHash('md5').update(String(s)).digest('hex'),
+    sha1Hex: (s) => crypto.createHash('sha1').update(String(s)).digest('hex'),
+    sha256Hex: (s) => crypto.createHash('sha256').update(String(s)).digest('hex'),
+    aes: { encrypt: (t, k) => t, decrypt: (t, k) => t },
   };
 
   const UI = { showMessage: (m) => console.log('[来源]', m) };
@@ -231,7 +268,31 @@ function irComicInfo(r) {
   let chapters = [];
   const chs = r.chapters;
   if (isMapLike(chs)) {
-    chapters = Array.from(chs.entries()).map(([id, title]) => ({ id: String(id), title: String(title) }));
+    // ★2026-11-14：Venera 的 chapters 真实结构是 **两层 Map**
+    //   `Map<分组名, Map<章节id, ComicChapter>>`（优酷漫画就是 `连载列表 → 各话`）。
+    //   原来只拍一层 → 得到 {id:'连载列表', title:'[object Map]'}，
+    //   于是"目录只有 1 条、点进去取不到图"。这里按层展开。
+    const out = [];
+    for (const [k, v] of chs.entries()) {
+      if (isMapLike(v)) {
+        for (const [cid, cv] of v.entries()) {
+          out.push({
+            id: String(cid),
+            title: String((cv && (cv.title || cv.name)) || cv || cid),
+            group: String(k),
+          });
+        }
+      } else if (v && typeof v === 'object') {
+        out.push({
+          id: String(v.id || v.url || k),
+          title: String(v.title || v.name || k),
+          group: String(k),
+        });
+      } else {
+        out.push({ id: String(k), title: String(v) });
+      }
+    }
+    chapters = out;
   } else if (Array.isArray(chs)) {
     chapters = chs.map((ch, i) => ({ title: ch.title || ch.name || ('第' + (i + 1) + '话'),
       id: ch.id || ch.url || String(i), time: ch.time || '' }));

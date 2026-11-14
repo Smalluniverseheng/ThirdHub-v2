@@ -38,7 +38,16 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p.startsWith('/v1/music/search')) {
     const q = u.searchParams.get('q');
     const pool = musicSources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
-    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+    // 与漫画同理：37 个音源只跑前 3 个，前 3 个一旦失效就永远 0 条。
+    // 读体检清单 data/music-alive.json 把能用的排前面，取样提到 8。
+    let aliveIds = [];
+    try {
+      const p2 = require('path').join(__dirname, 'data', 'music-alive.json');
+      if (require('fs').existsSync(p2)) aliveIds = JSON.parse(require('fs').readFileSync(p2, 'utf8'));
+    } catch (e) { aliveIds = []; }
+    const aliveSet = new Set(Array.isArray(aliveIds) ? aliveIds : []);
+    pool.sort((a, b) => (aliveSet.has(b.id) ? 1 : 0) - (aliveSet.has(a.id) ? 1 : 0));
+    const results = await Promise.all(pool.slice(0, 8).map(async (s) => {
       const t0 = Date.now();
       const r = await registry.run(s, 'search', q);
       return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0,
@@ -89,7 +98,20 @@ async function handle(req, res, body, u, p, send, ctx) {
   if (p.startsWith('/v1/comic/search')) {
     const q = u.searchParams.get('q');
     const pool = comicSources.filter(s => !u.searchParams.get('sourceId') || s.id === u.searchParams.get('sourceId'));
-    const results = await Promise.all(pool.slice(0, 3).map(async (s) => {
+    // ★2026-11-14 漫画搜索一直是 0 条的真因：
+    //   这里原来固定 `pool.slice(0, 3)` —— 只跑**前 3 个源**。
+    //   而实测 32 个漫画源里唯一还能出结果的「优酷漫画」排在**第 31 位**，
+    //   于是无论搜什么都是 0 条，看起来像「漫画功能坏了」，其实是取样取不到它。
+    //   修法：① 读体检清单 data/comic-alive.json，把可用源排前面；
+    //         ② 取样从 3 提到 8（并发跑，慢了也不会串行拖死）。
+    let aliveIds = [];
+    try {
+      const p2 = require('path').join(__dirname, 'data', 'comic-alive.json');
+      if (require('fs').existsSync(p2)) aliveIds = JSON.parse(require('fs').readFileSync(p2, 'utf8'));
+    } catch (e) { aliveIds = []; }
+    const aliveSet = new Set(Array.isArray(aliveIds) ? aliveIds : []);
+    pool.sort((a, b) => (aliveSet.has(b.id) ? 1 : 0) - (aliveSet.has(a.id) ? 1 : 0));
+    const results = await Promise.all(pool.slice(0, 8).map(async (s) => {
       const t0 = Date.now();
       const r = await registry.run(s, 'search', q, 1);
       return { source: s.name, sourceId: s.id, ok: !r.error, latency: Date.now() - t0,
@@ -111,7 +133,11 @@ async function handle(req, res, body, u, p, send, ctx) {
     const s = comicSources.find(x => x.id === u.searchParams.get('sourceId'));
     if (!s) { send(404, { object:'error', data:{ type:'source_error', message:'该来源不存在' }}); return true; }
     const chapId = u.searchParams.get('chapterId') || '';
-    const r = await registry.run(s, 'content', { id: chapId, chapterId: chapId });
+    // ★2026-11-14：Venera 的 `loadEp(comicId, epId)` 需要**两个**参数，
+    //   原来只传了 chapterId → 源内部拿不到漫画对象，返回 {type,message} 这种错误体，
+    //   表现就是「目录有了、点开 0 张图」。这里把漫画 id 一起带上。
+    const comicId = u.searchParams.get('id') || u.searchParams.get('comicId') || '';
+    const r = await registry.run(s, 'content', { id: comicId, comicId, chapterId: chapId, epId: chapId });
     if (r.error) { send(500, { object:'error', data:{ type:'source_error', message: r.error }}); return true; }
     send(200, { object:'comic-pages', data: r });
     return true;

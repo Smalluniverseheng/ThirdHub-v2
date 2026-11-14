@@ -166,8 +166,13 @@ const comicPlugin = new EnginePlugin({
     search: async (s, q, page) => comicE.irComicList(await comicE.runSource(s.code, 'search', [q, page || 1])),
     detail: async (s, item) => comicE.irComicInfo(await comicE.runSource(s.code, 'comicInfo',
       [(item && (item.id || item.url)) || item])),
-    content: async (s, item) => comicE.irPages(await comicE.runSource(s.code, 'comicPages',
-      [(item && (item.id || item.chapterId)) || item])),
+    content: async (s, item) => comicE.irPages(await comicE.runSource(s.code, 'comicPages', [
+      // ★2026-11-14：Venera 的 `loadEp(comicId, epId)` 是**两个参数**。
+      //   原来只传了 `item.id` 一个 → epId 恒为 undefined → 源内部取不到章节
+      //   → 返回 {type,message} 这种错误体 → 目录正常但**一张图都没有**。
+      (item && (item.comicId || item.id)) || item,
+      (item && (item.chapterId || item.epId || item.chapter)) || '',
+    ])),
   },
 });
 
