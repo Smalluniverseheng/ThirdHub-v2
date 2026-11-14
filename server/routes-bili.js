@@ -40,6 +40,64 @@ const FORMAT_LABEL = {
   125: 'HDR', 126: '杜比视界', 127: '8K',
 };
 
+// B 站频道 tid 常量表（web 端 newlist/ranking 共用；写死即可，B 站多年不变）
+const BILI_PARTITIONS = [
+  { rid: 0, name: '全站' },
+  { rid: 1, name: '动画' },
+  { rid: 13, name: '番剧' },
+  { rid: 167, name: '国创' },
+  { rid: 177, name: '纪录片' },
+  { rid: 23, name: '电影' },
+  { rid: 11, name: '电视剧' },
+  { rid: 129, name: '舞蹈' },
+  { rid: 4, name: '游戏' },
+  { rid: 36, name: '知识' },
+  { rid: 188, name: '科技' },
+  { rid: 234, name: '运动' },
+  { rid: 223, name: '汽车' },
+  { rid: 160, name: '生活' },
+  { rid: 211, name: '美食' },
+  { rid: 217, name: '动物圈' },
+  { rid: 119, name: '鬼畜' },
+  { rid: 155, name: '时尚' },
+  { rid: 5, name: '娱乐' },
+  { rid: 181, name: '影视' },
+  { rid: 3, name: '音乐' },
+];
+
+/**
+ * 给单个 (bvid,cid) 造一个 createTask 任务体。
+ * 与 addTask 同一套选流规则（codecid AVC→HEVC→AV1、flac 优先、默认 1080P）。
+ */
+async function taskBodyFor(bvid, cid, meta, wantedFormat) {
+  const pi = await up('/getPlayInfo?bvid=' + encodeURIComponent(bvid) + '&cid=' + encodeURIComponent(cid));
+  if (!pi || !pi.success || !pi.data) return { error: '取播放地址失败，稍后再试' };
+  const dash = pi.data.dash;
+  if (!dash) return { error: '这个分P没有可下载的流' };
+  const opts = formatOptions(pi.data);
+  const want = Number(wantedFormat) || 0;
+  let fmt = want;
+  if (!fmt || !opts.some((o) => o.id === fmt)) {
+    fmt = opts.some((o) => o.id === 80) ? 80 : (opts[0] ? opts[0].id : 0);
+  }
+  if (!fmt) return { error: '没有可用的清晰度' };
+  const videoUrl = pickVideo(dash, fmt);
+  const audioUrl = pickAudio(dash);
+  if (!videoUrl) return { error: '取不到视频流地址' };
+  return { ok: true, format: fmt, body: {
+    bvid: String(bvid),
+    cid: Number(cid) || 0,
+    format: fmt,
+    title: String(meta.title || ''),
+    owner: String(meta.owner || ''),
+    cover: fixUrl(meta.cover),
+    audio: fixUrl(audioUrl),
+    video: fixUrl(videoUrl),
+    duration: Number(meta.duration) || 0,
+    downloadType: audioUrl ? 'merge' : 'video',
+  } };
+}
+
 function biliBase() {
   if (process.env.BILIDOWN_URL) return String(process.env.BILIDOWN_URL).replace(/\/+$/, '');
   try {
@@ -610,9 +668,16 @@ async function handle(req, res, body, u, p) {
     const kind = u.searchParams.get('type') || 'popular';
     const pn = u.searchParams.get('pn') || '1';
     const ps = u.searchParams.get('ps') || '20';
-    const j = kind === 'recommend'
+    await ensureCookie();
+    let j = kind === 'recommend'
       ? await webApi('/x/web-interface/index/top/rcmd?ps=' + ps + '&fresh_idx=' + pn)
       : await webApi('/x/web-interface/popular?ps=' + ps + '&pn=' + pn);
+    if (j.code === -412) {
+      await ensureCookie(true);
+      j = kind === 'recommend'
+        ? await webApi('/x/web-interface/index/top/rcmd?ps=' + ps + '&fresh_idx=' + pn)
+        : await webApi('/x/web-interface/popular?ps=' + ps + '&pn=' + pn);
+    }
     const list = ((j.data && (j.data.list || j.data.item)) || []).map(feedItem);
     send(res, 200, { ok: j.code === 0, code: j.code, items: list,
       hasMore: !!(j.data && j.data.no_more) === false, message: j.message || '' });
@@ -700,6 +765,94 @@ async function handle(req, res, body, u, p) {
       acceptQuality: d.accept_quality || [], acceptDesc: d.accept_description || [],
       length: d.timelength || first.length || 0, size: first.size || 0,
       segments: durl.map((x) => biliStream(x.url || '')),
+    });
+    return true;
+  }
+
+  // ── 分区列表（服务端常量）──
+  if (op === 'partitions') {
+    send(res, 200, { ok: true, items: BILI_PARTITIONS });
+    return true;
+  }
+
+  // ── 排行榜（按频道 rid，rid=0 全站）──
+  if (op === 'rank') {
+    const rid = u.searchParams.get('rid') || '0';
+    await ensureCookie();
+    let j = await webApi('/x/web-interface/ranking/v2?rid=' + encodeURIComponent(rid) + '&type=all');
+    if (j.code === -412) {
+      await ensureCookie(true);
+      j = await webApi('/x/web-interface/ranking/v2?rid=' + encodeURIComponent(rid) + '&type=all');
+    }
+    const list = ((j.data && j.data.list) || []).map(feedItem);
+    send(res, 200, { ok: j.code === 0, code: j.code, items: list, message: j.message || '' });
+    return true;
+  }
+
+  // ── 分区最新（newlist；dynamic/region 已被 B 站下线，-404）──
+  if (op === 'region') {
+    const rid = u.searchParams.get('rid') || '1';
+    const pn = u.searchParams.get('pn') || '1';
+    const ps = u.searchParams.get('ps') || '20';
+    const j = await webApi('/x/web-interface/newlist?rid=' + encodeURIComponent(rid)
+      + '&ps=' + encodeURIComponent(ps) + '&pn=' + encodeURIComponent(pn) + '&type=0');
+    const list = ((j.data && j.data.archives) || []).map(feedItem);
+    send(res, 200, { ok: j.code === 0, code: j.code, items: list, message: j.message || '' });
+    return true;
+  }
+
+  // ── 整季/整 P 批量下载：一个 BV 的所有分P一次全提交 ──
+  if (op === 'addall') {
+    let payload = {};
+    try { payload = body ? JSON.parse(body) : {}; } catch (e) { payload = {}; }
+    const bvid = String(payload.bvid || u.searchParams.get('bvid') || '');
+    const fmt = payload.format || u.searchParams.get('format') || '';
+    if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    const info = await up('/getVideoInfo?bvid=' + encodeURIComponent(bvid));
+    if (!info || !info.success || !info.data) {
+      send(res, 400, { ok: false, error: (info && info.message) || '取视频信息失败（B 站下载服务可能未登录）' });
+      return true;
+    }
+    const d = info.data;
+    const pages = Array.isArray(d.pages) ? d.pages : [];
+    if (!pages.length) { send(res, 400, { ok: false, error: '没有分P信息' }); return true; }
+    const MAX = 120;                       // 上限防呆：超过的截断并告知
+    const todo = pages.slice(0, MAX);
+    const meta = {
+      title: String(d.title || ''),
+      owner: String((d.owner && d.owner.name) || ''),
+      cover: fixUrl(d.pic),
+    };
+    const bodies = [];
+    const errors = [];
+    let idx = 0;
+    // 3 路并发逐 P 取流（每 P 都要自己的 getPlayInfo 签名直链，省不了）
+    const workers = Array.from({ length: 3 }, async () => {
+      while (idx < todo.length) {
+        const i = idx++;
+        const p = todo[i];
+        const r = await taskBodyFor(bvid, Number(p.cid) || 0, meta, fmt);
+        if (r.ok) {
+          r.body.title = meta.title
+            + (todo.length > 1 ? ' P' + (i + 1) : '')
+            + (p.part ? ' ' + String(p.part).slice(0, 40) : '');
+          r.body.duration = Number(p.duration) || 0;
+          bodies.push(r.body);
+        } else {
+          errors.push('P' + (i + 1) + ':' + r.error);
+        }
+      }
+    });
+    await Promise.all(workers);
+    if (!bodies.length) { send(res, 400, { ok: false, error: errors[0] || '所有分P都取流失败' }); return true; }
+    const r = await upPost('/createTask', bodies, 180000);
+    send(res, r && r.success ? 200 : 400, {
+      ok: !!(r && r.success),
+      added: bodies.length,
+      total: pages.length,
+      truncated: pages.length > MAX,
+      message: (r && r.message) || '',
+      errors: errors.slice(0, 5),
     });
     return true;
   }

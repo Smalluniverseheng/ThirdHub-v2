@@ -170,7 +170,7 @@ class _BiliFeedPageState extends State<BiliFeedPage> {
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _FeedPlayerPage(title: title, url: url),
+      builder: (_) => BiliPlayerPage(title: title, url: url),
     ));
   }
 
@@ -359,16 +359,16 @@ class _BiliFeedPageState extends State<BiliFeedPage> {
   }
 }
 
-class _FeedPlayerPage extends StatefulWidget {
+class BiliPlayerPage extends StatefulWidget {
   final String title;
   final String url;
-  const _FeedPlayerPage({required this.title, required this.url});
+  const BiliPlayerPage({required this.title, required this.url});
 
   @override
-  State<_FeedPlayerPage> createState() => _FeedPlayerPageState();
+  State<BiliPlayerPage> createState() => _BiliPlayerPageState();
 }
 
-class _FeedPlayerPageState extends State<_FeedPlayerPage> {
+class _BiliPlayerPageState extends State<BiliPlayerPage> {
   VideoPlayerController? _vp;
   ChewieController? _chewie;
   String _err = '';

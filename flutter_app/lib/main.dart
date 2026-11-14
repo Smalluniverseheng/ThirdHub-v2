@@ -42,6 +42,7 @@ import 'vendor/mangayomi/reader_motion.dart';
 import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
+import 'core/bili_module_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
@@ -8325,6 +8326,10 @@ class _Vs extends State<VideoSection> {
               sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
           ModuleAction(Icons.history, '历史',
               sub: '最近看过', onTap: () => setState(() => sub = 1)),
+          ModuleAction(Icons.live_tv_outlined, tr('哔哩哔哩'),
+              sub: tr('推荐、热门、排行、分区、下载'),
+              onTap: () => Navigator.push(c,
+                  MaterialPageRoute(builder: (_) => const BiliModulePage()))),
           if (thirdParty)
             ModuleAction(Icons.explore_outlined, '发现',
                 sub: '各片单推荐', onTap: () => setState(() => sub = 2)),

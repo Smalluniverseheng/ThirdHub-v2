@@ -26,7 +26,7 @@ import 'cloud.dart';
 import 'discover.dart';
 import 'nas_services_page.dart';
 import 'bili_down_page.dart';
-import 'bili_feed_page.dart';
+import 'bili_module_page.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -245,11 +245,11 @@ class _MyBackendPageState extends State<MyBackendPage> {
             leading: Icon(Icons.play_circle_outline, color: scheme.primary),
             title: Text(tr('刷 B 站'),
                 style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(tr('热门、推荐、搜索，点开就在这看，不用跳浏览器'),
+            subtitle: Text(tr('推荐、热门、排行、分区、搜索，还能整季下载'),
                 style: const TextStyle(fontSize: 12)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(c).push(
-              MaterialPageRoute(builder: (_) => const BiliFeedPage()),
+              MaterialPageRoute(builder: (_) => const BiliModulePage()),
             ),
           ),
         ),

@@ -471,6 +471,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords19.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-14 第二十批：B 站独立模块（4.81.67）。
+    i18nUiWords20.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
