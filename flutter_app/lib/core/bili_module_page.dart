@@ -240,7 +240,7 @@ class _BiliGridTab extends StatefulWidget {
   final bool rankBadge;
 
   const _BiliGridTab(
-      {required this.ctx, required this.pathBuilder, this.rankBadge = false});
+      {super.key, required this.ctx, required this.pathBuilder, this.rankBadge = false});
 
   @override
   State<_BiliGridTab> createState() => _BiliGridTabState();
@@ -454,6 +454,7 @@ class _BiliChipsTab extends StatefulWidget {
   final bool rankBadge;
 
   const _BiliChipsTab({
+    super.key,
     required this.ctx,
     required this.chipsPath,
     required this.pathBuilder,
@@ -538,7 +539,7 @@ class _BiliChipsTabState extends State<_BiliChipsTab>
 
 class _BiliSearchTab extends StatefulWidget {
   final BiliCtx ctx;
-  const _BiliSearchTab({required this.ctx});
+  const _BiliSearchTab({super.key, required this.ctx});
 
   @override
   State<_BiliSearchTab> createState() => _BiliSearchTabState();
