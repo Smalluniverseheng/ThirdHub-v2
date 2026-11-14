@@ -387,6 +387,98 @@ function proxyFile(res, req, id) {
   r2.end();
 }
 
+// ─────────────────────────────────────────────────────────────
+// B 站网页接口（浏览 / 播放用，不走 bilidown 那个下载器）
+//
+// 为什么要这一层：
+//   ① B 站 web 接口对 UA + Referer 敏感，不给就 -412 或空；
+//   ② 视频直链（upos-*.bilivideo.com）**必须带 Referer: https://www.bilibili.com/**，
+//      手机播放器带不了 → 一律包成我们的媒体代理（9548? 实为 9528/thp/stream）。
+// 接口路径参照开源文档 bilibili-API-collect（SocialSisterYi），不自己猜。
+const WEB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const WEB_REF = 'https://www.bilibili.com/';
+
+function mediaProxyBase() {
+  const lan = (process.env.TH_LAN_URL || '').trim();
+  let host = '127.0.0.1';
+  try { if (lan) host = new URL(lan).hostname; } catch (e) {}
+  return 'http://' + host + ':' + (process.env.TH_MEDIA_PORT || '9528');
+}
+
+function biliStream(u) {
+  if (!u) return '';
+  return mediaProxyBase() + '/thp/stream?u=' + encodeURIComponent(u) + '&r=' + encodeURIComponent(WEB_REF);
+}
+
+async function webApi(path, timeoutMs = 15000, ref) {
+  const headers = {
+    'user-agent': WEB_UA, referer: ref || WEB_REF, accept: 'application/json,text/plain,*/*',
+    'accept-language': 'zh-CN,zh;q=0.9',
+  };
+  if (biliCookie) headers.cookie = biliCookie;
+  const r = await fetch('https://api.bilibili.com' + path, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  const t = await r.text();
+  try { return JSON.parse(t); } catch (e) { return { code: -1, message: '返回非 JSON: ' + t.slice(0, 60) }; }
+}
+
+// ★ 搜索接口要 cookie（buvid3），否则 -412 request was banned。
+//   做法：先访问一次首页把 Set-Cookie 收下来，缓存 30 分钟。
+let biliCookie = '';
+let biliCookieAt = 0;
+
+async function ensureCookie(force) {
+  if (!force && biliCookie && Date.now() - biliCookieAt < 30 * 60 * 1000) return biliCookie;
+  const jar = {};
+  // ① 首页 Set-Cookie（buvid3 等）
+  try {
+    const r = await fetch('https://www.bilibili.com/', {
+      headers: { 'user-agent': WEB_UA, accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const raw = typeof r.headers.getSetCookie === 'function' ? r.headers.getSetCookie() : [];
+    for (const c of raw) {
+      const kv = String(c).split(';')[0];
+      const i = kv.indexOf('=');
+      if (i > 0) jar[kv.slice(0, i)] = kv.slice(i + 1);
+    }
+  } catch (e) { /* 忽略，下面用 spi 兜底 */ }
+  // ② 官方 spi 接口直接给 buvid3/buvid4（比首页稳，个别环境首页只回 2 项）
+  try {
+    const r = await fetch('https://api.bilibili.com/x/frontend/finger/spi', {
+      headers: { 'user-agent': WEB_UA, referer: WEB_REF },
+      signal: AbortSignal.timeout(12000),
+    });
+    const j = await r.json();
+    const d = (j && j.data) || {};
+    if (d.b_3) jar.buvid3 = d.b_3;
+    if (d.b_4) jar.buvid4 = d.b_4;
+  } catch (e) { /* 忽略 */ }
+  const pairs = Object.entries(jar).map(([k, v]) => k + '=' + v);
+  if (pairs.length) {
+    biliCookie = pairs.join('; ');
+    biliCookieAt = Date.now();
+    console.log('[bili] cookie 已获取，' + pairs.length + ' 项');
+  }
+  return biliCookie;
+}
+
+/** 热门/推荐列表 → 统一结构 */
+function feedItem(v) {
+  const bvid = v.bvid || '';
+  return {
+    bvid,
+    title: v.title || '',
+    cover: v.pic ? '/v1/bili/cover?u=' + encodeURIComponent(v.pic.startsWith('//') ? 'https:' + v.pic : v.pic) : '',
+    coverRaw: v.pic || '',
+    owner: (v.owner && v.owner.name) || v.author || '',
+    duration: v.duration || 0,
+    play: (v.stat && (v.stat.view || v.stat.vv)) || 0,
+    danmaku: (v.stat && v.stat.danmaku) || 0,
+    pubdate: v.pubdate || v.ctime || 0,
+    desc: v.desc || '',
+  };
+}
+
 /**
  * 返回值 true 表示这个请求已经处理完（调用方不要再往下走）
  * p 形如 /v1/bili/status
@@ -510,6 +602,105 @@ async function handle(req, res, body, u, p) {
   if (op === 'logout') {
     const r = await up('/logout', 15000);
     send(res, 200, { ok: !!(r && r.success) });
+    return true;
+  }
+
+  // ── 浏览：热门 / 推荐 ──
+  if (op === 'feed') {
+    const kind = u.searchParams.get('type') || 'popular';
+    const pn = u.searchParams.get('pn') || '1';
+    const ps = u.searchParams.get('ps') || '20';
+    const j = kind === 'recommend'
+      ? await webApi('/x/web-interface/index/top/rcmd?ps=' + ps + '&fresh_idx=' + pn)
+      : await webApi('/x/web-interface/popular?ps=' + ps + '&pn=' + pn);
+    const list = ((j.data && (j.data.list || j.data.item)) || []).map(feedItem);
+    send(res, 200, { ok: j.code === 0, code: j.code, items: list,
+      hasMore: !!(j.data && j.data.no_more) === false, message: j.message || '' });
+    return true;
+  }
+
+  // ── 浏览：搜索 ──
+  if (op === 'search') {
+    const q = u.searchParams.get('q') || '';
+    const pn = u.searchParams.get('pn') || '1';
+    if (!q) { send(res, 400, { ok: false, error: '缺少 q' }); return true; }
+    await ensureCookie();
+    let j = await webApi('/x/web-interface/search/type?search_type=video&keyword='
+      + encodeURIComponent(q) + '&page=' + pn, 15000, 'https://search.bilibili.com/');
+    if (j.code === -412) {                     // cookie 过期 → 强制换一次再试
+      await ensureCookie(true);
+      j = await webApi('/x/web-interface/search/type?search_type=video&keyword='
+        + encodeURIComponent(q) + '&page=' + pn, 15000, 'https://search.bilibili.com/');
+    }
+    const raw = (j.data && j.data.result) || [];
+    const items = raw.map((v) => {
+      const it = feedItem(v);
+      it.title = String(it.title || '').replace(/<[^>]+>/g, '');   // 搜索结果标题带 <em> 高亮
+      if (typeof v.duration === 'string') {
+        const parts = v.duration.split(':').map(Number).reverse();
+        it.duration = (parts[0] || 0) + (parts[1] || 0) * 60 + (parts[2] || 0) * 3600;
+      }
+      return it;
+    });
+    send(res, 200, { ok: j.code === 0, code: j.code, items, message: j.message || '' });
+    return true;
+  }
+
+  // ── 分P列表（拿 cid 用；这个接口不吃风控，比 view 稳）──
+  if (op === 'pages') {
+    const bvid = u.searchParams.get('bvid') || '';
+    if (!bvid) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    const j = await webApi('/x/player/pagelist?bvid=' + encodeURIComponent(bvid));
+    const pages = (j.data || []).map((p) => ({ cid: p.cid, page: p.page, part: p.part, duration: p.duration }));
+    send(res, 200, { ok: j.code === 0 && pages.length > 0, code: j.code, pages, message: j.message || '' });
+    return true;
+  }
+
+  // ── 浏览：视频详情（含分P）──
+  if (op === 'view') {
+    const bvid = u.searchParams.get('bvid') || '';
+    if (!bvid) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    await ensureCookie();
+    let j = await webApi('/x/web-interface/view?bvid=' + encodeURIComponent(bvid));
+    if (j.code === -412) {
+      await ensureCookie(true);
+      j = await webApi('/x/web-interface/view?bvid=' + encodeURIComponent(bvid));
+    }
+    if (j.code !== 0) { send(res, 200, { ok: false, code: j.code, message: j.message || '取详情失败' }); return true; }
+    const d = j.data || {};
+    send(res, 200, {
+      ok: true,
+      data: {
+        bvid: d.bvid, aid: d.aid, title: d.title, desc: d.desc || '',
+        cover: d.pic ? '/v1/bili/cover?u=' + encodeURIComponent(d.pic) : '',
+        owner: (d.owner && d.owner.name) || '', duration: d.duration || 0,
+        stat: d.stat || {},
+        pages: (d.pages || []).map((p) => ({ cid: p.cid, page: p.page, part: p.part, duration: p.duration })),
+      },
+    });
+    return true;
+  }
+
+  // ── 播放：拿直链（免签名，最高 720P；够手机看，且不依赖 B 站登录）──
+  if (op === 'playurl') {
+    const bvid = u.searchParams.get('bvid') || '';
+    const cid = u.searchParams.get('cid') || '';
+    const qn = u.searchParams.get('qn') || '64';
+    if (!bvid || !cid) { send(res, 400, { ok: false, error: '缺少 bvid 或 cid' }); return true; }
+    const j = await webApi('/x/player/playurl?bvid=' + encodeURIComponent(bvid)
+      + '&cid=' + encodeURIComponent(cid) + '&fnval=1&qn=' + qn + '&platform=html5&high_quality=1');
+    if (j.code !== 0) { send(res, 200, { ok: false, code: j.code, message: j.message || '取播放地址失败' }); return true; }
+    const d = j.data || {};
+    const durl = d.durl || [];
+    const first = durl[0] || {};
+    // 直链必须带 Referer → 一律过媒体代理
+    const url = biliStream(first.url || '');
+    send(res, 200, {
+      ok: !!url, url, quality: d.quality || 0,
+      acceptQuality: d.accept_quality || [], acceptDesc: d.accept_description || [],
+      length: d.timelength || first.length || 0, size: first.size || 0,
+      segments: durl.map((x) => biliStream(x.url || '')),
+    });
     return true;
   }
 

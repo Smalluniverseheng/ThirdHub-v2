@@ -32,6 +32,126 @@ const URLMAP_FILE = path.join(DATA, 'thp-urlmap.json');
 let engine = null;
 try { engine = require('./engine.js'); } catch (e) { engine = null; }
 
+// ─────────────────────────────────────────────────────────────
+// 媒体反向代理（2026-11-14 加）
+//
+// 为什么必须有：源站的 m3u8 分片经常在**另一个域名**上，且不带浏览器 UA 就 403
+// （实测 v6.ppqrrs.com 的清单 200，分片 v6.adfg8.vip/xxx.ts 裸请求 403、带 UA 200）。
+// 而 ExoPlayer 发的是自己的 UA → 手机上一律 `Source error`。
+// App 侧没法给每个分片加头（播放器只认一个入口 URL），所以在 NAS 侧做一层：
+//   · App 只拿到 http://<nas>:9528/thp/stream?u=<原始地址>
+//   · 清单里的每一行（含 EXT-X-KEY/MAP 的 URI）都改写成再走这层
+//   · 分片透传，自动补 UA/Referer，支持 Range
+// 用明文 HTTP 是因为 ExoPlayer 不走 Dart 的 HttpOverrides，不认我们的自签证书。
+const MEDIA_PORT = parseInt(process.env.TH_MEDIA_PORT || '9528', 10);
+const PROXY_UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+
+function lanHostOnly() {
+  const s = (process.env.TH_LAN_URL || '').trim();
+  try { if (s) return new URL(s).hostname; } catch (e) {}
+  return '127.0.0.1';
+}
+
+function mediaBase() {
+  return 'http://' + lanHostOnly() + ':' + MEDIA_PORT;
+}
+
+/** 把一个可播放地址包成走本机代理的地址 */
+function wrapMedia(u, referer) {
+  if (!u || !/^https?:\/\//i.test(u)) return u;
+  let out = mediaBase() + '/thp/stream?u=' + encodeURIComponent(u);
+  if (referer) out += '&r=' + encodeURIComponent(referer);
+  return out;
+}
+
+function startMediaProxy() {
+  const http = require('http');
+  const srv = http.createServer(async (req, res) => {
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Range,Content-Type',
+      'Access-Control-Expose-Headers': 'Content-Length,Content-Range,Accept-Ranges',
+    };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+    let args;
+    try { args = new URL(req.url, 'http://x'); } catch (e) { res.writeHead(400, cors); res.end('bad url'); return; }
+    if (args.pathname !== '/thp/stream' && args.pathname !== '/stream') {
+      res.writeHead(404, { ...cors, 'Content-Type': 'text/plain' }); res.end('not found'); return;
+    }
+    const target = args.searchParams.get('u') || '';
+    const ref = args.searchParams.get('r') || '';
+    if (!/^https?:\/\//i.test(target)) { res.writeHead(400, cors); res.end('bad target'); return; }
+
+    const headers = { 'User-Agent': PROXY_UA, 'Accept': '*/*', 'Accept-Language': 'zh-CN,zh;q=0.9' };
+    if (ref) headers['Referer'] = ref;
+    if (req.headers.range) headers['Range'] = req.headers.range;
+
+    let up;
+    try {
+      up = await fetch(target, { headers, signal: AbortSignal.timeout(30000), redirect: 'follow' });
+    } catch (e) {
+      res.writeHead(502, { ...cors, 'Content-Type': 'text/plain' }); res.end('upstream error: ' + String(e.message || e)); return;
+    }
+
+    const ctype = String(up.headers.get('content-type') || '');
+    const isPlaylist = /mpegurl/i.test(ctype) || /\.m3u8(\?|$)/i.test(target);
+
+    if (isPlaylist) {
+      const text = await up.text();
+      const baseUrl = target;             // 相对地址按清单自身位置解析
+      const out = [];
+      for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) { out.push(''); continue; }
+        if (line.startsWith('#')) {
+          // EXT-X-KEY / EXT-X-MAP / EXT-X-MEDIA 里的 URI 也要过代理，否则密钥/init 片会 403
+          const rewritten = line.replace(/URI="([^"]+)"/g, (m, uri) => {
+            let abs = uri;
+            try { abs = new URL(uri, baseUrl).toString(); } catch (e) {}
+            return 'URI="' + wrapMedia(abs, ref) + '"';
+          });
+          out.push(rewritten);
+          continue;
+        }
+        let abs = line;
+        try { abs = new URL(line, baseUrl).toString(); } catch (e) {}
+        out.push(wrapMedia(abs, ref));
+      }
+      const body = out.join('\n');
+      // 清单是文本、且被我们重写过长度变了：一律 200 全量返回，别沿用上游的 206/Content-Range，
+      // 否则播放器会以为拿到的是片段而反复重试。
+      res.writeHead(200, {
+        ...cors,
+        'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Length': Buffer.byteLength(body),
+      });
+      res.end(body);
+      return;
+    }
+
+    // 分片 / mp4：原样透传，保留 Range 语义
+    const h = { ...cors, 'Content-Type': ctype || 'application/octet-stream', 'Accept-Ranges': 'bytes' };
+    for (const k of ['content-length', 'content-range', 'etag', 'last-modified']) {
+      const v = up.headers.get(k);
+      if (v) h[k.replace(/(^|-)([a-z])/g, (m, a, b) => a + b.toUpperCase())] = v;
+    }
+    res.writeHead(up.status, h);
+    if (!up.body) { res.end(); return; }
+    const { Readable } = require('stream');
+    Readable.fromWeb(up.body).on('error', () => {}).pipe(res);
+  });
+  srv.on('error', (e) => {
+    if (e && e.code === 'EADDRINUSE') console.log('[thp] 媒体代理端口 ' + MEDIA_PORT + ' 已被占用');
+    else console.log('[thp] 媒体代理启动失败:', String(e && e.message || e));
+  });
+  srv.listen(MEDIA_PORT, '0.0.0.0', () => {
+    console.log('[thp] 媒体反向代理 http://0.0.0.0:' + MEDIA_PORT + '/thp/stream (补 UA/Referer + 清单改写)');
+  });
+}
+
+try { startMediaProxy(); } catch (e) { console.log('[thp] 媒体代理未启动:', String(e && e.message || e)); }
+
 // ─── 源清单（带缓存，避免每次搜索都读 2MB JSON）───
 let _cache = { at: 0, list: [] };
 function sources() {
@@ -354,6 +474,20 @@ async function chaptersOf(type, id, u) {
     let sourceId = pk ? pk.sourceId : qOf(u, 'sourceId', 'source');
     let vid = pk ? pk.id : id;
     if (!sourceId) return null;
+
+    // ★B 站是"虚拟影视源"：用分P列表当剧集，不需要 CMS 的 detail 接口
+    if (sourceId === 'bili') {
+      const pg = await localGet('/v1/bili/pages?bvid=' + encodeURIComponent(vid));
+      const pages = (pg && pg.pages) || [];
+      const items = pages.map((p) => ({
+        name: pages.length > 1 ? ('P' + p.page + ' ' + (p.part || '')) : '正片',
+        title: p.part || ('P' + p.page),
+        url: 'ep|bili|' + String(p.cid),
+      }));
+      if (!items.length) return null;
+      return { items, chapters: items, sourceId, name: '' };
+    }
+
     const d = await localGet(`/v1/video/detail?sourceId=${encodeURIComponent(sourceId)}&id=${encodeURIComponent(vid)}`);
     const data = (d && d.data) || {};
     const eps = data.episodes || data.chapters || [];
@@ -409,6 +543,18 @@ async function contentOf(type, id, chapter, u) {
     const pk = unpackId(id);
     const sourceId = pk ? pk.sourceId : qOf(u, 'sourceId', 'source');
     if (!sourceId) return null;
+
+    // ★B 站虚拟源：章节目录是 'ep|bili|<cid>'，播放走 /v1/bili/playurl（直链已过媒体代理）
+    if (sourceId === 'bili') {
+      const chB = String(chapter || '');
+      const cid = chB.startsWith('ep|bili|') ? chB.slice(8) : chB.replace(/^ep\|[^|]*\|/, '');
+      const bvid = pk ? pk.id : String(id || '');
+      if (!cid || !bvid) return null;
+      const d = await localGet(`/v1/bili/playurl?bvid=${encodeURIComponent(bvid)}&cid=${encodeURIComponent(cid)}`);
+      if (!d || !d.ok || !d.url) return { text: '', content: '', url: '', header: {}, error: (d && d.message) || '取 B 站播放地址失败' };
+      return { text: '', content: '', url: d.url, header: {}, headers: {}, quality: d.quality || 0 };
+    }
+
     let flag = '', epUrl = '';
     const ch = String(chapter || '');
     if (ch.startsWith('ep|')) {
@@ -430,14 +576,19 @@ async function contentOf(type, id, chapter, u) {
     // ★二次解析：CMS 源常把"分享页/播放页"当播放地址返回，直接丢给播放器只能出封面。
     const rs = await resolveStream(raw);
     const merged = Object.assign({}, header, rs.header || {});
-    return { text: '', content: '', url: rs.url, header: merged, headers: merged, rawUrl: raw };
+    // ★再包一层本机媒体代理：播放器（ExoPlayer）默认 UA 会被源站 403，
+    //   而且清单里的分片常跨域。走代理后 App 只需播一个地址，头由 NAS 补。
+    const referer = merged.Referer || merged.referer || (rs.header && rs.header.Referer) || raw;
+    const playUrl = wrapMedia(rs.url, referer);
+    return { text: '', content: '', url: playUrl, header: {}, headers: {}, rawUrl: raw, origin: rs.url };
   }
 
   // ── 音乐：单曲直链 ──
   if (t === 'music') {
     const ch = String(chapter || '');
     const url = ch.startsWith('track|') ? ch.slice(6) : ch;
-    return { text: '', content: '', url, header: {}, headers: {} };
+    // 同样过代理：不少音源 CDN 也挑 UA
+    return { text: '', content: '', url: wrapMedia(url), header: {}, headers: {}, origin: url };
   }
 
   // ── 漫画：图片列表 ──
@@ -523,6 +674,33 @@ async function forwardSearch(type, q, limit) {
       }));
     }
   }
+  // ★把 B 站当成一个"影视源"：搜索结果最前面插一组
+  //   这样 App 现有的影视模块（搜索→选集→播放）直接就能刷 B 站，不用改 App。
+  if (type === 'video') {
+    try {
+      const bj = await localGet('/v1/bili/search?q=' + encodeURIComponent(q));
+      const bitems = (bj && bj.items) || [];
+      const lanBase = (process.env.TH_LAN_URL || '').replace(/\/+$/, '');
+      const abs = (p) => (p && p.startsWith('/') ? lanBase + p : p);
+      for (const b of bitems.slice(0, 12).reverse()) {
+        items.unshift({
+          id: packId('v1', 'bili', b.bvid),
+          vid: b.bvid,
+          name: b.title,
+          title: b.title,
+          coverUrl: abs(b.cover),
+          cover: abs(b.cover),
+          sourceName: 'B站',
+          sourceId: 'bili',
+          url: b.bvid,
+          author: b.owner || '',
+          intro: '',
+          type: 'video',
+        });
+      }
+    } catch (e) { /* B 站挂了不影响别的源 */ }
+  }
+
   // ★影视源偏好排序（2026-11-14 实测结论，不是拍脑袋）：
   //   无尽资源 → 接口直接给 m3u8，最稳；
   //   极速资源 → /play/<id> 播放页里能提到 index.m3u8，也能播；
