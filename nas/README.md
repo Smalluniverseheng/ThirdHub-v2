@@ -16,10 +16,8 @@
 │   · 2091 个书源 / 254 个实测可用              │
 │   · Jellyfin(8097) / Navidrome 代理           │
 │   · /v1/search/all 五路聚合                    │
-│   · /v1/bili/* 代理 B 站下载（转 8098）        │
 └──────────────────────────────────────────────┘
       │
-      ├── bilidown 容器（B 站视频下载，:8098）
       ├── apps 容器组（9 个实用服务，见下表）
       ├── dsh 容器（AI Agent，:3800）
       └── tailscale 容器（外网通道，可选）
@@ -39,7 +37,7 @@
 | 8084 | MeTube | B站/YouTube 下载 |
 | 8085 | qBittorrent | 飞牛自带 |
 | 8086 | Vaultwarden | 密码管理器 |
-| **8098** | **BiliDown** | **B 站视频下载**（网页须内网；App 走 `/v1/bili/*`） |
+| **8098** | bilidown | B 站下载（**内网 only，无登录**，别做公网映射） |
 | 8097 | Jellyfin | 飞牛自带影视库 |
 | 8384 | Syncthing | 文件同步 |
 | 13378 | Audiobookshelf | 有声书 |
@@ -50,21 +48,36 @@
 # 1) 把本目录拷到新 NAS（或 git clone 仓库后进 nas/）
 cd nas
 
-# 2) 改一下 IP / 路径（只需改这一处）
-export TH_LAN_HOST=192.168.31.200        # 新 NAS 的局域网 IP
+# 2) 改一下 IP / 路径（不填 IP 会自动探测默认路由的出口地址）
+export TH_LAN_HOST=192.168.31.156        # 新 NAS 的局域网 IP（有线口）
 export TH_ROOT=/vol1/docker              # 编排文件放哪
 export TH_DATA=/vol1/1000/Media/_配置     # 数据/配置放哪（建议外接盘）
+
+# 可选：填了之后后端会把自己上报到云端，App 换 NAS 也能自动找到
+export SUPABASE2_URL=https://xxxx.supabase.co
+export SUPABASE2_SERVICE_ROLE_KEY=eyJ...
 
 # 3) 一键恢复
 sudo -E bash restore.sh
 
 # 4) 验证
 curl -k https://$TH_LAN_HOST:9527/v1/meta      # 应返回 version
-curl -k "https://$TH_LAN_HOST:9527/thp/meta"   # 应返回 caps 含 m:novel
+curl -k "https://$TH_LAN_HOST:9527/thp/meta"   # 版本必须是 1.99.0（补丁生效）
+curl -k "https://$TH_LAN_HOST:9527/v1/bili/status"  # base 指向新 IP
 ```
 
-`restore.sh` 会做：建目录 → 铺 compose → 初始化数据（源清单/证书/密钥）→ 起容器 → 打印端口表。
+`restore.sh` 会做：建目录 → 铺 compose → **铺补丁层** → 初始化数据（源清单/服务广场/B站地址）
+→ 起容器 → 打印端口表 → 自检（THP 版本、B 站桥接、搜索试跑）。
 **重复执行安全**（已存在的东西不覆盖）。
+
+### 迁移后必须核对的 4 处（这次换机踩过的）
+
+| 位置 | 症状 | 现在由谁兜住 |
+|---|---|---|
+| `compose` 里的 `TH_LAN_URL` | 后端上报的地址是旧的 | restore.sh 自动改写 |
+| `data/services.json` 的 `baseUrl` | 封面/播放/搜索全空（后端在连一个不存在的地址） | restore.sh 自动改写 |
+| `data/bili.json` | B 站下载「地址不可达」 | restore.sh 直接重写 |
+| `bilidown` 端口绑定 | 容器 `Exited(255)` 起不来（绑到了不存在的 IP） | compose 里改成 `8098:8098`（不绑 IP） |
 
 ## 四、数据从哪来（关键）
 
@@ -75,27 +88,39 @@ curl -k "https://$TH_LAN_HOST:9527/thp/meta"   # 应返回 caps 含 m:novel
 | `data/music-sources.json` | 音源 | 音乐搜不到 |
 | `data/drpy-sources.json` | 影视源（drpy） | 影视搜不到 |
 | `data/secret` | 后端主密钥 | **首次启动自动生成**，别手工造 |
-| `data/bili.json` | B 站下载服务地址（`{"url":"http://<NAS IP>:8098"}`） | App 里「B 站下载」报连不上；`restore.sh` 会按 `TH_LAN_HOST` 自动写 |
 | `data/cert.pem` / `key.pem` | 自签证书 | 首次启动自动生成 |
 
 > `server/book-sources.json` 是「实测能搜出结果」的 254 个源，去掉 `exploreUrl` 后只有 0.4MB。
 > 新机器用它就能立刻搜到书；之后让后端自己跑扫描器补全更多源。
 
-## 五、编译/更新后端代码
+## 五、后端代码怎么上线（★ 补丁层，别再 docker cp）
 
-`server/` 里是**线上容器内实际运行的源码**（不是旧快照）。改完这样上线：
+镜像 `ghcr.io/.../thirdhub-backend:0.8.8` 里是**旧代码**：没有 `/thp/*`、没有 `/v1/bili/*`、
+引擎没修过、`services/` 整个不存在。这些改动现在走**补丁层**：
 
-```bash
-# 在 NAS 上（容器不是挂载目录，必须 docker cp）
-sudo docker cp index.js        thirdhub-backend:/app/index.js
-sudo docker cp routes-thp.js   thirdhub-backend:/app/routes-thp.js
-sudo docker cp engine.js       thirdhub-backend:/app/engine.js
-sudo docker exec thirdhub-backend node --check /app/index.js
-sudo docker restart thirdhub-backend
+```
+/vol1/docker/thirdhub/patch/     ← 宿主机目录（restore.sh 从仓库 server/ 铺过来）
+        ├─ index.js  routes-thp.js  routes-bili.js  engine*.js …
+        └─ services/{gateway,registry}.js + adapters/
+        ↓   compose 挂载成 /patch:ro，启动命令先覆盖再跑
+docker  command: sh -c "cp -rf /patch/. /app/ && exec node index.js"
 ```
 
-> ⚠️ `/app` **不是挂载卷**，是打进镜像的。`docker compose up -d --force-recreate`
-> 或换机重拉镜像会把 `docker cp` 的改动冲掉 —— 所以每次改完必须**回写本目录**。
+改代码的正确流程：
+
+```bash
+# ① 改仓库 server/ 下的文件（那是唯一真源），推到 GitHub
+# ② NAS 上重新铺补丁 + 重建（补丁是挂载的，重建不会丢）
+cd nas && sudo -E bash restore.sh          # 只想更新补丁时：
+sudo cp server/index.js /vol1/docker/thirdhub/patch/index.js
+cd /vol1/docker/thirdhub && sudo docker compose up -d --force-recreate
+# ③ 验证 /thp/meta 版本与搜索试跑
+```
+
+> ⚠️ **血泪教训（2026-11-14）**：以前是 `docker cp` 进容器，`/app` 不是挂载卷，
+> 换 NAS 时 `docker compose up -d` 一重建，THP、B 站桥、引擎修复、服务广场**全部消失**，
+> 表现为 `/thp/meta` 变回 1.0.0、`/v1/bili/*` 变 401。补丁层就是为这件事加的。
+> 以后新增改动也要回写 `server/` + 补丁清单（`restore.sh` 里的 `PATCH_FILES`）。
 
 ## 六、已知坑（都在真实环境踩过）
 
@@ -110,6 +135,12 @@ sudo docker restart thirdhub-backend
 6. **DSH 插件依赖要自愈**：插件 import `@deepseek-ai/dsh-tools` 解析不到会被 cordis **静默跳过**
    （不报错、就是没工具）。`scripts/dsh-start.sh` 里有 5.4 段做软链。
 7. `data/` 里的 `secret` 泄露等于把后端交出去 —— **本目录不含 secret**，由首次启动生成。
+8. **端口不要绑具体 IP**（`192.168.31.200:8098:8098` 这种写法）。换 NAS 后宿主机没有这个地址，
+   docker 绑不上，容器直接 `Exited(255)`，日志里只有一行 `listening on :8098` 看着像成功。
+   统一写 `8098:8098`（0.0.0.0），有线无线两个网卡都能进。
+9. **本机有两块网卡时**（有线 `enp5s0` + 无线 `wlp6s0`，两个 IP 都能连），
+   一切配置统一用**默认路由出口**那个（`ip route get 1.1.1.1` 的 `src`），别用无线口 —— 
+   无线会掉速、休眠断连，后端上报的地址会跟着抖。
 
 ## 七、外网访问
 
@@ -121,50 +152,3 @@ sudo docker restart thirdhub-backend
   授权后 `docker exec tailscale tailscale ip -4` 拿到 100.x 地址，写进地址清单即可。
 
 地址清单由 `scripts/register_host.sh` 上报到 Supabase，App 探活时逐个试。
-
-## 八、B 站下载（bilidown，★2026-11-14）
-
-### 它是什么
-
-上游 [`fredqin2006-X/bilidown-nas`](https://github.com/fredqin2006-X/bilidown-nas)
-（基于 `iuroc/bilidown`，MIT + NOTICE），把 B 站视频连同音轨下载合并成 mp4，跑在 NAS 上。
-扫码登录一次，之后所有人共用这一份登录态和任务列表。
-
-### 三个要知道的点
-
-1. **镜像不在 Docker Hub**。`compose/bilidown.yml` 里的 `bilidown-nas:2.1.1-nas.4`
-   必须先 `docker load`（`restore.sh` 会自动从 Release 下 220MB 的 tar.gz）。
-2. **网页 8098 没有密码**，所有访问者共用一份登录和队列 → 只绑内网，别做公网映射。
-3. **App 不直连 8098**，走主后端 `/v1/bili/*`。原因：
-   - App 只记一个后端地址，局域网/公网 IPv6/Tailscale 自动适应；
-   - 上游 `createTask` 要客户端自己交 audio/video 的**签名直链**，
-     选清晰度、挑 codecid（AVC→HEVC→AV1）、补 https、展开 b23 短链这些活放在服务端做一次；
-   - B 站封面有 Referer 防盗链，必须由服务端补头再转出去。
-
-### 接口（都在 9527 上）
-
-```
-GET  /v1/bili/status            登录态 + 下载目录
-GET  /v1/bili/qr                登录二维码（base64 PNG，直接给 App 显示）
-GET  /v1/bili/qr/status?key=    轮询扫码结果（login=true 表示已落库）
-GET  /v1/bili/parse?url=        只解析：标题/封面/UP主/清晰度列表
-POST /v1/bili/add {url,format}  解析 + 选流 + 建任务（一条龙）
-GET  /v1/bili/tasks             任务列表（已把内存里的实时进度合并进来）
-POST /v1/bili/del {id}          删除任务（连文件一起删）
-GET  /v1/bili/play?id=          取文件，Range 原样透传（能拖动进度）
-GET  /v1/bili/cover?u=          封面代理（补 Referer）
-POST /v1/bili/logout            退出登录
-```
-
-### 文件落在哪
-
-`/vol1/1000/Media/_下载/B站/<标题> <base64(id)>.mp4`（音频版是 `.m4a`）。
-文件名里的那串编码是任务 ID 的 base64，**删改任务靠它定位**，别手动改名。
-
-### 踩过的坑
-
-- **挂载目录权限是 `d---------`（000）**：`chown` 不够，必须 `chmod -R 775`。
-  `restore.sh` 已带这一步，手工部署时别忘。
-- **短链**（`b23.tv/xxx`）必须先展开才知道 BV 号，展开失败就报错，
-  不会静默失败 —— 表现为「粘了链接没反应」时看返回的 error。
-- **番剧（ep/ss）暂时不支持**：单集 BV 号可以，番剧整季要多层解析，没做。

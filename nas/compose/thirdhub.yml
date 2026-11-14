@@ -30,14 +30,26 @@ services:
       # 数据持久化：证书 / 密钥 / 下载 / 会话 / 设备表都放这
       # fnOS 上建议放到你外接硬盘那个目录，换 NAS 也带得走
       - ./data:/app/data
+      # ★ 补丁层（换 NAS / 重建容器都不会丢）：
+      #   镜像 0.8.8 里是旧代码，THP 协议、B 站桥、引擎修复、服务广场都在 patch/ 里，
+      #   启动时先覆盖再跑。改补丁后 compose up -d --force-recreate 即生效。
+      - ./patch:/patch:ro
       # 或者指定绝对路径（外接硬盘）：
       # - /mnt/external/外接存储-TOSHIBA MQ01ABD100/05 开发/thirdhub-data:/data
+
+    # ★ 必须先覆盖补丁再启动 node，顺序不能反
+    command: ["sh", "-c", "cp -rf /patch/. /app/ && exec node index.js"]
 
     environment:
       - TH_PORT=9527
       - TH_OWNER_EMAIL=1829487897@qq.com
       - TH_PUBLIC_TOKEN=thpub_81011c20f9287b353bc69b2a159ca8836aab39f1
       - TH_LAN_URL=https://192.168.31.200:9527
+      # ★ 云端自注册（可选但强烈建议）：填了之后后端每 5 分钟把自己的
+      #   内网地址 + IPv6 推到 Supabase，App 换 NAS / 换 IP 都能自动找到，
+      #   不用再手动改地址。restore.sh 会从环境变量自动写入这两行。
+      # - SUPABASE2_URL=https://<项目>.supabase.co
+      # - SUPABASE2_SERVICE_ROLE_KEY=<service_role key>
       - TH_SCANNER=1
       - TH_REMOTE_URL=https://fnos.net/smalluniverse
       - TH_DATA_DIR=/app/data

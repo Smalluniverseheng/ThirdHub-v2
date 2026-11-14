@@ -155,7 +155,10 @@ async function runLX(code, action, data = {}) {
       };
     }
     const result = await Promise.race([
-      Promise.resolve(handlers.request({ action: act, source: data.source || '', data })),
+      // ★2026-11-14：LX 音源的 request 处理器签名是 `({source, action, info})`，
+      //   我们原来只放了 `data` → 源内部 `info?.keyword` 恒为空，
+      //   报「需要搜索关键词」，搜索一条都出不来。两个键都给，源取自己认的那个。
+      Promise.resolve(handlers.request({ action: act, source: data.source || '', info: data, data })),
       new Promise((_, rej) => setTimeout(() => rej(new Error('调用超时')), 20000)),
     ]);
     return result;

@@ -1,0 +1,128 @@
+{
+  "_说明": "ThirdHub 服务插件注册表。每一项 = NAS 上一个开源服务（容器或系统应用）。",
+  "_字段": {
+    "id": "唯一键",
+    "name": "显示名",
+    "kind": "movie|tv|music|book|comic|download|storage|info",
+    "adapter": "server/services/adapters/ 下的适配器文件名（不含 .js）",
+    "baseUrl": "内网地址，后端直连用",
+    "auth": "适配器需要的凭证（可为空）",
+    "enabled": "是否启用",
+    "note": "备注"
+  },
+  "_约定": "凭证留空 = 只探活不取内容；填上后自动参与统一搜索。前端不接触这些地址与凭证。",
+  "services": [
+    {
+      "id": "jellyfin",
+      "name": "影视库",
+      "kind": "movie",
+      "adapter": "jellyfin",
+      "baseUrl": "http://__LAN__:8097",
+      "auth": {
+        "apiKey": "",
+        "username": "xiaoyuzhouheng",
+        "password": ""
+      },
+      "enabled": true,
+      "note": "飞牛应用中心自带，端口被改成 8097（非默认 8096）"
+    },
+    {
+      "id": "qbittorrent",
+      "name": "下载器",
+      "kind": "download",
+      "adapter": "qbittorrent",
+      "baseUrl": "http://__LAN__:8085",
+      "auth": {
+        "username": "",
+        "password": ""
+      },
+      "enabled": true,
+      "note": "飞牛应用中心自带，WebUI 8085；首次需在网页里设账号"
+    },
+    {
+      "id": "navidrome",
+      "name": "音乐库",
+      "kind": "music",
+      "adapter": "navidrome",
+      "baseUrl": "http://__LAN__:4533",
+      "auth": {
+        "username": "xiaoyuzhouheng",
+        "password": ""
+      },
+      "enabled": true,
+      "note": "Subsonic API，第三方客户端通用"
+    },
+    {
+      "id": "kavita",
+      "name": "漫画与电子书",
+      "kind": "comic",
+      "adapter": "kavita",
+      "baseUrl": "http://__LAN__:5000",
+      "auth": {
+        "apiKey": ""
+      },
+      "enabled": true,
+      "note": "漫画 + 电子书 + 轻小说，OPDS 可用"
+    },
+    {
+      "id": "alist",
+      "name": "文件中枢",
+      "kind": "storage",
+      "adapter": "alist",
+      "baseUrl": "http://__LAN__:5244",
+      "auth": {
+        "token": ""
+      },
+      "enabled": true,
+      "note": "挂几十种网盘，ThirdHub 的文件后端；账号 admin"
+    },
+    {
+      "id": "rsshub",
+      "name": "资讯源",
+      "kind": "info",
+      "adapter": "rsshub",
+      "baseUrl": "http://__LAN__:1200",
+      "auth": {},
+      "enabled": true,
+      "note": "万物皆可 RSS，免认证"
+    },
+    {
+      "id": "freshrss",
+      "name": "RSS 阅读",
+      "kind": "info",
+      "adapter": "freshrss",
+      "baseUrl": "http://__LAN__:8081",
+      "auth": {
+        "username": "",
+        "password": ""
+      },
+      "enabled": true,
+      "note": "资讯落地方，ThirdHub 负责展示"
+    },
+    {
+      "id": "audiobookshelf",
+      "name": "有声书",
+      "kind": "music",
+      "adapter": "audiobookshelf",
+      "baseUrl": "http://__LAN__:13378",
+      "auth": {
+        "token": ""
+      },
+      "enabled": false,
+      "note": "容器尚未启动，启动后把 enabled 改 true"
+    },
+    {
+      "id": "moviepilot",
+      "name": "影视订阅",
+      "kind": "movie",
+      "adapter": "moviepilot",
+      "baseUrl": "http://__LAN__:3000",
+      "auth": {
+        "apiKey": ""
+      },
+      "enabled": false,
+      "note": "容器尚未启动"
+    }
+  ],
+  "_迁移提示": "baseUrl 里的 __LAN__ 由 restore.sh 自动替换成新 NAS 的局域网 IP；auth 里的密码留空，需要搜索/播放时在「服务广场」填一次。"
+}

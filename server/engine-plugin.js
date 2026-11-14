@@ -150,7 +150,10 @@ const lxPlugin = new EnginePlugin({
   actions: {
     search: async (s, q) => lxE.irSearch(await lxE.runLX(s.code,
       lxE.searchAction(s.actions) || 'search',
-      { searchKey: q, page: 1, limit: 20, type: 'music' })),
+      // ★2026-11-14：不同 LX 音源读的字段名不一样（searchKey / keyword / key），
+      //   只给 searchKey 时多数源会判「需要搜索关键词」→ 一条歌都搜不出。
+      //   这里把常见别名一起给，源各自取自己认的那个。
+      { searchKey: q, keyword: q, key: q, word: q, name: q, page: 1, limit: 20, type: 'music' })),
     url: async (s, item, quality) => lxE.irUrl(await lxE.runLX(s.code, 'musicUrl',
       { musicInfo: (item && (item.raw || item)) || item, type: quality || '320k' })),
     lyric: async (s, item) => lxE.irLyric(await lxE.runLX(s.code, 'lyric',

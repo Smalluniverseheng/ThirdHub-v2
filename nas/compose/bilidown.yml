@@ -1,12 +1,19 @@
-# BiliDown NAS —— B 站视频下载（★2026-11-14）
+# B 站下载（bilidown-nas）· NAS 侧
+# ============================================================
+#  作用：把 B 站视频/音频下到 NAS，App 里的「B站下载」模块通过后端桥接调它。
 #
-# 上游：https://github.com/fredqin2006-X/bilidown-nas（MIT + NOTICE）
-# 镜像：bilidown-nas:2.1.1-nas.4（amd64），**不在 Docker Hub**，
-#       必须先从 Release 下载 tar.gz 再 docker load（restore.sh 会自动做）。
+#  镜像：不在 Docker Hub，只在 GitHub Release 里有 tar.gz
+#    https://github.com/fredqin2006-X/bilidown-nas/releases
+#    restore.sh 会尝试自动下载并 docker load；手动等价操作：
+#      curl -L -o /tmp/bilidown.tar.gz <release asset url>
+#      docker load -i /tmp/bilidown.tar.gz
 #
-# 端口 8098 只绑定局域网地址：这个网页没有独立密码，所有访问者共用一份
-# B 站登录和任务列表，所以别暴露到公网。App 侧不直连它，而是走主后端
-# 9527 的 /v1/bili/*（见 server/routes-bili.js），这样外网/Tailscale 也能用。
+#  ★ 端口不绑具体 IP（0.0.0.0:8098）。踩过的坑：绑死 192.168.31.200 后，
+#    换 NAS / 换 IP 时 docker 绑不上这个不存在的地址，容器直接 Exited(255)。
+#
+#  ★ 这个服务本身没有登录（设计如此，网页端共用一个下载队列），
+#    所以只在内网暴露，不要做公网端口映射。
+# ============================================================
 services:
   bilidown:
     image: bilidown-nas:2.1.1-nas.4
@@ -15,10 +22,10 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "192.168.31.200:8098:8098"
+      - "8098:8098"
     environment:
       TZ: Asia/Shanghai
-      # 只用于在网页上「复制 NAS 路径」时显示，不影响实际落盘位置
+      # 宿主机上的真实下载目录，用于在 App/网页里显示「文件在哪」
       BILIDOWN_DOWNLOAD_HOST_PATH: /vol1/1000/Media/_下载/B站
     volumes:
       - /vol1/1000/Media/_配置/bilidown/data:/data
