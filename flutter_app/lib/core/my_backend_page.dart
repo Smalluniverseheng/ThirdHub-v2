@@ -25,6 +25,7 @@ import 'i18n.dart';
 import 'cloud.dart';
 import 'discover.dart';
 import 'nas_services_page.dart';
+import 'bili_down_page.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -228,6 +229,27 @@ class _MyBackendPageState extends State<MyBackendPage> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(c).push(
               MaterialPageRoute(builder: (_) => const NasServicesPage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: Gap.md),
+
+        // ── B 站下载入口（★2026-11-14）──
+        // 粘一条 B 站链接就下到 NAS，不用再开浏览器进下载服务那个网页。
+        Card(
+          elevation: 0,
+          color: scheme.primaryContainer.withValues(alpha: 0.45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            leading: Icon(Icons.download_for_offline_outlined,
+                color: scheme.primary),
+            title: Text(tr('B 站下载'),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(tr('粘一条链接就下到 NAS，下载完在你这里直接放'),
+                style: const TextStyle(fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(c).push(
+              MaterialPageRoute(builder: (_) => const BiliDownPage()),
             ),
           ),
         ),

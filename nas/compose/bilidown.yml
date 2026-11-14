@@ -1,0 +1,40 @@
+# BiliDown NAS —— B 站视频下载（★2026-11-14）
+#
+# 上游：https://github.com/fredqin2006-X/bilidown-nas（MIT + NOTICE）
+# 镜像：bilidown-nas:2.1.1-nas.4（amd64），**不在 Docker Hub**，
+#       必须先从 Release 下载 tar.gz 再 docker load（restore.sh 会自动做）。
+#
+# 端口 8098 只绑定局域网地址：这个网页没有独立密码，所有访问者共用一份
+# B 站登录和任务列表，所以别暴露到公网。App 侧不直连它，而是走主后端
+# 9527 的 /v1/bili/*（见 server/routes-bili.js），这样外网/Tailscale 也能用。
+services:
+  bilidown:
+    image: bilidown-nas:2.1.1-nas.4
+    container_name: bilidown
+    user: "1000:1000"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "192.168.31.200:8098:8098"
+    environment:
+      TZ: Asia/Shanghai
+      # 只用于在网页上「复制 NAS 路径」时显示，不影响实际落盘位置
+      BILIDOWN_DOWNLOAD_HOST_PATH: /vol1/1000/Media/_下载/B站
+    volumes:
+      - /vol1/1000/Media/_配置/bilidown/data:/data
+      - /vol1/1000/Media/_下载/B站:/downloads
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+    mem_limit: 1g
+    cpus: 2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

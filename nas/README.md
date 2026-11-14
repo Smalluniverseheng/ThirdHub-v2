@@ -16,8 +16,10 @@
 │   · 2091 个书源 / 254 个实测可用              │
 │   · Jellyfin(8097) / Navidrome 代理           │
 │   · /v1/search/all 五路聚合                    │
+│   · /v1/bili/* 代理 B 站下载（转 8098）        │
 └──────────────────────────────────────────────┘
       │
+      ├── bilidown 容器（B 站视频下载，:8098）
       ├── apps 容器组（9 个实用服务，见下表）
       ├── dsh 容器（AI Agent，:3800）
       └── tailscale 容器（外网通道，可选）
@@ -37,6 +39,7 @@
 | 8084 | MeTube | B站/YouTube 下载 |
 | 8085 | qBittorrent | 飞牛自带 |
 | 8086 | Vaultwarden | 密码管理器 |
+| **8098** | **BiliDown** | **B 站视频下载**（网页须内网；App 走 `/v1/bili/*`） |
 | 8097 | Jellyfin | 飞牛自带影视库 |
 | 8384 | Syncthing | 文件同步 |
 | 13378 | Audiobookshelf | 有声书 |
@@ -72,6 +75,7 @@ curl -k "https://$TH_LAN_HOST:9527/thp/meta"   # 应返回 caps 含 m:novel
 | `data/music-sources.json` | 音源 | 音乐搜不到 |
 | `data/drpy-sources.json` | 影视源（drpy） | 影视搜不到 |
 | `data/secret` | 后端主密钥 | **首次启动自动生成**，别手工造 |
+| `data/bili.json` | B 站下载服务地址（`{"url":"http://<NAS IP>:8098"}`） | App 里「B 站下载」报连不上；`restore.sh` 会按 `TH_LAN_HOST` 自动写 |
 | `data/cert.pem` / `key.pem` | 自签证书 | 首次启动自动生成 |
 
 > `server/book-sources.json` 是「实测能搜出结果」的 254 个源，去掉 `exploreUrl` 后只有 0.4MB。
@@ -117,3 +121,50 @@ sudo docker restart thirdhub-backend
   授权后 `docker exec tailscale tailscale ip -4` 拿到 100.x 地址，写进地址清单即可。
 
 地址清单由 `scripts/register_host.sh` 上报到 Supabase，App 探活时逐个试。
+
+## 八、B 站下载（bilidown，★2026-11-14）
+
+### 它是什么
+
+上游 [`fredqin2006-X/bilidown-nas`](https://github.com/fredqin2006-X/bilidown-nas)
+（基于 `iuroc/bilidown`，MIT + NOTICE），把 B 站视频连同音轨下载合并成 mp4，跑在 NAS 上。
+扫码登录一次，之后所有人共用这一份登录态和任务列表。
+
+### 三个要知道的点
+
+1. **镜像不在 Docker Hub**。`compose/bilidown.yml` 里的 `bilidown-nas:2.1.1-nas.4`
+   必须先 `docker load`（`restore.sh` 会自动从 Release 下 220MB 的 tar.gz）。
+2. **网页 8098 没有密码**，所有访问者共用一份登录和队列 → 只绑内网，别做公网映射。
+3. **App 不直连 8098**，走主后端 `/v1/bili/*`。原因：
+   - App 只记一个后端地址，局域网/公网 IPv6/Tailscale 自动适应；
+   - 上游 `createTask` 要客户端自己交 audio/video 的**签名直链**，
+     选清晰度、挑 codecid（AVC→HEVC→AV1）、补 https、展开 b23 短链这些活放在服务端做一次；
+   - B 站封面有 Referer 防盗链，必须由服务端补头再转出去。
+
+### 接口（都在 9527 上）
+
+```
+GET  /v1/bili/status            登录态 + 下载目录
+GET  /v1/bili/qr                登录二维码（base64 PNG，直接给 App 显示）
+GET  /v1/bili/qr/status?key=    轮询扫码结果（login=true 表示已落库）
+GET  /v1/bili/parse?url=        只解析：标题/封面/UP主/清晰度列表
+POST /v1/bili/add {url,format}  解析 + 选流 + 建任务（一条龙）
+GET  /v1/bili/tasks             任务列表（已把内存里的实时进度合并进来）
+POST /v1/bili/del {id}          删除任务（连文件一起删）
+GET  /v1/bili/play?id=          取文件，Range 原样透传（能拖动进度）
+GET  /v1/bili/cover?u=          封面代理（补 Referer）
+POST /v1/bili/logout            退出登录
+```
+
+### 文件落在哪
+
+`/vol1/1000/Media/_下载/B站/<标题> <base64(id)>.mp4`（音频版是 `.m4a`）。
+文件名里的那串编码是任务 ID 的 base64，**删改任务靠它定位**，别手动改名。
+
+### 踩过的坑
+
+- **挂载目录权限是 `d---------`（000）**：`chown` 不够，必须 `chmod -R 775`。
+  `restore.sh` 已带这一步，手工部署时别忘。
+- **短链**（`b23.tv/xxx`）必须先展开才知道 BV 号，展开失败就报错，
+  不会静默失败 —— 表现为「粘了链接没反应」时看返回的 error。
+- **番剧（ep/ss）暂时不支持**：单集 BV 号可以，番剧整季要多层解析，没做。

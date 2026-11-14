@@ -490,6 +490,8 @@ const rtSources = require('./routes-sources');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtThp = require('./routes-thp');
+// ★2026-11-14 B 站下载：把 NAS 上的 bilidown 包成 App 能直接调的接口
+const rtBili = require('./routes-bili');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
 // 全盘升级 #202：三端统一账号绑定与设备互通同步契约。
@@ -558,6 +560,14 @@ async function handle(req, res, body) {
     if (await rtThp.handle(req, res, body, u, p, send)) return;
   }
   if (p.startsWith('/thp') && await thp1.handle(req, res, body, u)) return;
+
+  // ── B 站下载（★2026-11-14）──
+  //   放在鉴权闸门之前，是因为 App 的图片/视频请求走的是同一套客户端，
+  //   而 /v1/bili/cover、/v1/bili/play 需要能带着令牌直接取流。
+  //   真正的权限判断在下面 publicOk 白名单里再做一次。
+  if (p === '/v1/bili' || p.startsWith('/v1/bili/')) {
+    if (await rtBili.handle(req, res, body, u, p)) return;
+  }
 
   // ── PH/1 端间互通中枢(端/插件注册 · 跨端调用 · 密钥统一) ──
   // ★ 必须放在鉴权闸门之前：与 /v1/pair 同一个教训 —— 还没拿到密钥的端
@@ -1289,7 +1299,10 @@ async function handle(req, res, body) {
       return send(401, { object:'error', data:{ type:'authentication_error', message:'无效密钥' }});
     }
     // 公开令牌白名单：只允许只读（GET）且路径在下列前缀内。白名单之外一律拒绝。
+    // B 站下载：自己的 NAS、自己的下载队列，公开令牌也放行（含 POST add/del）
+    const biliOk = p === '/v1/bili' || p.startsWith('/v1/bili/');
     const publicOk =
+      biliOk ||
       req.method === 'GET' && (
         p === '/v1/status' || p === '/v1/meta' ||
         p.startsWith('/v1/search') ||
