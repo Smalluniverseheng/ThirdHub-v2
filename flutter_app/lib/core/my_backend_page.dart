@@ -26,6 +26,7 @@ import 'cloud.dart';
 import 'discover.dart';
 import 'nas_services_page.dart';
 import 'bili_down_page.dart';
+import 'bili_feed_page.dart';
 import 'dsh_hosts.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
@@ -229,6 +230,26 @@ class _MyBackendPageState extends State<MyBackendPage> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(c).push(
               MaterialPageRoute(builder: (_) => const NasServicesPage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: Gap.md),
+
+        // ── 刷 B 站入口（★2026-11-14）──
+        // 热门/推荐流直接在这里刷，点开即播；播放走 NAS 的媒体代理（带 UA/Referer）。
+        Card(
+          elevation: 0,
+          color: scheme.primaryContainer.withValues(alpha: 0.45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            leading: Icon(Icons.play_circle_outline, color: scheme.primary),
+            title: Text(tr('刷 B 站'),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(tr('热门、推荐、搜索，点开就在这看，不用跳浏览器'),
+                style: const TextStyle(fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(c).push(
+              MaterialPageRoute(builder: (_) => const BiliFeedPage()),
             ),
           ),
         ),
