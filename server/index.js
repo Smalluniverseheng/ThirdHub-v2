@@ -492,6 +492,8 @@ const rtLibrary = require('./routes-library');
 const rtThp = require('./routes-thp');
 // ★2026-11-14 B 站下载：把 NAS 上的 bilidown 包成 App 能直接调的接口
 const rtBili = require('./routes-bili');
+// ★2026-11-19 安装包分发：局域网内从 NAS 直接下 APK（云端只留一份，见 routes-dl.js）
+const rtDl = require('./routes-dl');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
 // 全盘升级 #202：三端统一账号绑定与设备互通同步契约。
@@ -567,6 +569,12 @@ async function handle(req, res, body) {
   //   真正的权限判断在下面 publicOk 白名单里再做一次。
   if (p === '/v1/bili' || p.startsWith('/v1/bili/')) {
     if (await rtBili.handle(req, res, body, u, p)) return;
+  }
+
+  // ── 安装包分发（★2026-11-19）──
+  //   免鉴权：更新发生在登录之前，且文件本身是公开安装包。
+  if (p === '/v1/dl' || p.startsWith('/v1/dl/')) {
+    if (rtDl.handle(req, res, u, p)) return;
   }
 
   // ── PH/1 端间互通中枢(端/插件注册 · 跨端调用 · 密钥统一) ──
@@ -1301,8 +1309,10 @@ async function handle(req, res, body) {
     // 公开令牌白名单：只允许只读（GET）且路径在下列前缀内。白名单之外一律拒绝。
     // B 站下载：自己的 NAS、自己的下载队列，公开令牌也放行（含 POST add/del）
     const biliOk = p === '/v1/bili' || p.startsWith('/v1/bili/');
+    const dlOk = p === '/v1/dl' || p.startsWith('/v1/dl/');
     const publicOk =
       biliOk ||
+      dlOk ||
       req.method === 'GET' && (
         p === '/v1/status' || p === '/v1/meta' ||
         p.startsWith('/v1/search') ||

@@ -12379,10 +12379,28 @@ class Updater {
 
   static String newVer = '';
 
-  // 多镜像: 主URL(云端) → Supabase版本包 → ghfast 镜像(GitHub) → GitHub 直链(国外线路兜底)
+  // ★2026-11-19 局域网 NAS 直连：家里/同一网络秒下，外网请求会超时后自动回落云端。
+  //   版本化文件名优先（sha 与清单严格对应），别名次之。
+  static Future<List<String>> _nasUrls(String ver) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final base = (p.getString('base') ?? '').trim();
+      if (base.isEmpty) return const <String>[];
+      final list = <String>[];
+      if (ver.isNotEmpty) list.add('$base/v1/dl/app/thirdhub-app-$ver.apk');
+      list.add('$base/v1/dl/app/latest.apk');
+      return list;
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  // 多镜像: NAS(局域网) → 主URL(云端) → Supabase版本包 → ghfast 镜像(GitHub) → GitHub 直链
   // ★GitHub 直链对国内用户需要翻墙, 默认不放在前面——镜像优先, 直链仅作最后手段
-  static List<String> _mirrorUrls(String url, String ver) {
-    final list = <String>[url];
+  static Future<List<String>> _mirrorUrls(String url, String ver) async {
+    final list = <String>[];
+    list.addAll(await _nasUrls(ver));
+    list.add(url);
     if (ver.isNotEmpty) {
       list.add(
           'https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
@@ -12615,7 +12633,7 @@ class Updater {
       final f = File(verTag.isNotEmpty
           ? '$dir/$safe.apk'
           : '$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
-      final mirrors = _mirrorUrls(url, verTag);
+      final mirrors = await _mirrorUrls(url, verTag);
       Exception? lastErr;
       var ok = false;
       final stopNotify = _bgProgressNotify(progress, 88003, '正在下载 $name');
@@ -12727,7 +12745,7 @@ class Updater {
       // ★稳定文件名（2026-10-31 修复）：带时间戳会让 .part/.meta 每次都对不上，
       //   断点续传形同虚设 —— App 自身更新正是用户最常中断的那条下载。
       final f = File('$dir/thirdhub-update-v$newVer.apk');
-      final mirrors = _mirrorUrls(url, newVer);
+      final mirrors = await _mirrorUrls(url, newVer);
       Exception? lastErr;
       var ok = false;
       final stopNotify = _bgProgressNotify(progress, 88002, '正在下载更新 v$newVer');
