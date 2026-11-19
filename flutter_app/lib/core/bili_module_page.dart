@@ -99,7 +99,7 @@ class _BiliModulePageState extends State<BiliModulePage>
           IconButton(
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link),
-            onPressed: () => openBiliLinkSheet(context, widget.ctx, ''),
+            onPressed: () => openBiliLinkSheet(context, ctx, ''),
           ),
           IconButton(
             tooltip: tr('下载管理'),

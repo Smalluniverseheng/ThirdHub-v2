@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'bili_module_page.dart'
-    show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays;
+    show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget;
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -159,7 +159,7 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
     try {
       final vp = VideoPlayerController.networkUrl(
         Uri.parse(url),
-        headers: widget.ctx.h,
+        httpHeaders: widget.ctx.h,
       );
       await vp.initialize();
       if (!mounted) {
