@@ -12318,7 +12318,9 @@ class Updater {
     }
     if (!c.mounted) return;
     final url = m['url'] as String? ?? '';
-    final notes = m['notes'] as String? ?? '';
+    // ★ 4.81.68：清单里写的一直是 releaseNotes，旧代码读 m['notes'] 永远空 →
+    //   弹窗正文缺更新内容。两个字段都认，releaseNotes 优先。
+    final notes = (m['releaseNotes'] ?? m['notes']) as String? ?? '';
     final ver = m['version'] as String? ?? '';
     // 已有该版本安装包 → 按钮变「立即安装」, 不重复下载
     final localApk = await _findLocalApk(ver);

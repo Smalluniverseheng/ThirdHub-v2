@@ -40,6 +40,81 @@ const FORMAT_LABEL = {
   125: 'HDR', 126: '杜比视界', 127: '8K',
 };
 
+// 媒体根（compose 挂载 /vol1/1000/Media → /media）。下载产物先落在影视/B站
+// （bilidown 固定目录），完成后按所选媒体库归档：视频留影视库、音频移进音乐库。
+// ★ 真库在 /vol1/1000/ 根级（与 Media 同级）：/vol1/1000/影视、/vol1/1000/音乐
+//   飞牛媒体库扫的就是这两个；Media/ 下的同名目录不是库（2026-11-19 纠正）。
+const MEDIA_DIR = process.env.MEDIA_DIR || '/media';
+const BILI_DIR = process.env.BILI_DIR || (MEDIA_DIR + '/影视/B站');
+const DL_TARGETS = [
+  { id: 'video', name: '影视', path: BILI_DIR },
+  { id: 'music', name: '音乐', path: MEDIA_DIR + '/音乐/B站' },
+];
+function targetById(id) { return DL_TARGETS.find((x) => x.id === id) || null; }
+/** 目标 id → 落盘目录；旧版子目录（如 '测试目录'）兼容为 BILI_DIR/<sub> */
+function destDirFor(folder) {
+  const t = targetById(String(folder || ''));
+  if (t) return t.path;
+  const sub = safeSub(folder);
+  return sub ? path.join(BILI_DIR, sub) : BILI_DIR;
+}
+
+function loadCfg() {
+  try { return JSON.parse(fs.readFileSync(path.join(DATA, 'bili.json'), 'utf8')); } catch (e) { return {}; }
+}
+function saveCfg(cfg) {
+  fs.writeFileSync(path.join(DATA, 'bili.json'), JSON.stringify(cfg, null, 2));
+}
+
+/** 子目录名白名单校验：中英数字/空格/_-，禁止 .. 与绝对路径 */
+function safeSub(s) {
+  const v = String(s || '').trim().replace(/^\/+|\/+$/g, '');
+  if (!v) return '';
+  if (v.includes('..') || v.includes('\\')) return null;
+  if (!/^[\w\u4e00-\u9fa5][\w\u4e00-\u9fa5 _-]*$/.test(v)) return null;
+  return v;
+}
+
+/** 把已完成任务的文件从根目录移进子目录（按标题前缀匹配文件名） */
+function moveDone() {
+  const cfg = loadCfg();
+  const moves = Array.isArray(cfg.moves) ? cfg.moves : [];
+  if (!moves.length) return { moved: 0, left: 0 };
+  if (!fs.existsSync(BILI_DIR)) return { moved: 0, left: moves.length };
+  let names;
+  try { names = fs.readdirSync(BILI_DIR).filter((n) => !n.startsWith('.')); } catch (e) { return { moved: 0, left: moves.length }; }
+  const left = [];
+  let moved = 0;
+  for (const m of moves) {
+    const title = String(m.title || '');
+    if (!title) continue;
+    const dest = destDirFor(m.folder);
+    // 目标就是下载根目录（video 默认）→ 文件本来就在那，记账即可
+    if (path.resolve(dest) === path.resolve(BILI_DIR)) continue;
+    // 精确匹配：只移「本任务创建之后」出现的文件（mtime >= at-5s），
+    // 否则同标题的历史文件会被过匹配搬走（2026-11-19 踩过）。
+    const at = Number(m.at) || 0;
+    const hits = names.filter((n) => {
+      if (!n.startsWith(title)) return false;
+      let st; try { st = fs.statSync(path.join(BILI_DIR, n)); } catch (e) { return false; }
+      return st.isFile() && st.mtimeMs < Date.now() - 30000 && st.mtimeMs >= at - 5000;
+    });
+    if (!hits.length) { left.push(m); continue; }
+    try { fs.mkdirSync(dest, { recursive: true }); } catch (e) {}
+    let okAll = true;
+    for (const n of hits) {
+      try {
+        fs.renameSync(path.join(BILI_DIR, n), path.join(dest, n));
+        moved++;
+      } catch (e) { okAll = false; }
+    }
+    if (!okAll) left.push(m);
+  }
+  cfg.moves = left;
+  saveCfg(cfg);
+  return { moved, left: left.length };
+}
+
 // B 站频道 tid 常量表（web 端 newlist/ranking 共用；写死即可，B 站多年不变）
 const BILI_PARTITIONS = [
   { rid: 0, name: '全站' },
@@ -596,13 +671,24 @@ async function handle(req, res, body, u, p) {
     try { payload = body ? JSON.parse(body) : {}; } catch (e) { payload = {}; }
     const input = payload.url || u.searchParams.get('url') || '';
     const fmt = payload.format || u.searchParams.get('format') || '';
+    const cfg0 = loadCfg();
+    const folderId = String(payload.folder !== undefined ? payload.folder : (cfg0.folder || 'video'));
+    const folder = targetById(folderId) ? folderId : 'video';
     if (!input) { send(res, 400, { ok: false, error: '缺少 url' }); return true; }
     const r = await addTask(input, fmt);
-    send(res, r.ok ? 200 : 400, Object.assign({ ok: !!r.ok }, r));
+    if (r.ok && r.title) {
+      const cfg = loadCfg();
+      const moves = Array.isArray(cfg.moves) ? cfg.moves : [];
+      moves.push({ title: r.title, folder: folder, at: Date.now() });
+      cfg.moves = moves;
+      saveCfg(cfg);
+    }
+    send(res, r.ok ? 200 : 400, Object.assign({ ok: !!r.ok, folder: folder }, r));
     return true;
   }
 
   if (op === 'tasks') {
+    moveDone();   // 顺带把已完成任务的文件移进目标子目录
     const page = u.searchParams.get('page') || '0';
     const size = u.searchParams.get('pageSize') || '60';
     const [list, act] = await Promise.all([
@@ -667,7 +753,9 @@ async function handle(req, res, body, u, p) {
   if (op === 'feed') {
     const kind = u.searchParams.get('type') || 'popular';
     const pn = u.searchParams.get('pn') || '1';
-    const ps = u.searchParams.get('ps') || '20';
+    // ★ rcmd（推荐）接口 ps≥15 会 -400 请求错误 → 统一钳到 12（实测它一次给 30 条）
+    const psRaw = parseInt(u.searchParams.get('ps') || '20', 10) || 20;
+    const ps = String(kind === 'recommend' ? Math.min(12, Math.max(1, psRaw)) : psRaw);
     await ensureCookie();
     let j = kind === 'recommend'
       ? await webApi('/x/web-interface/index/top/rcmd?ps=' + ps + '&fresh_idx=' + pn)
@@ -678,7 +766,7 @@ async function handle(req, res, body, u, p) {
         ? await webApi('/x/web-interface/index/top/rcmd?ps=' + ps + '&fresh_idx=' + pn)
         : await webApi('/x/web-interface/popular?ps=' + ps + '&pn=' + pn);
     }
-    const list = ((j.data && (j.data.list || j.data.item)) || []).map(feedItem);
+    const list = ((j.data && (j.data.list || j.data.item)) || []).map(feedItem).filter((x) => x.bvid);
     send(res, 200, { ok: j.code === 0, code: j.code, items: list,
       hasMore: !!(j.data && j.data.no_more) === false, message: j.message || '' });
     return true;
@@ -769,6 +857,37 @@ async function handle(req, res, body, u, p) {
     return true;
   }
 
+  // ── 下载位置：媒体库目标列表（video=影视 music=音乐）──
+  if (op === 'folders') {
+    const cfg = loadCfg();
+    const cur = targetById(cfg.folder) ? cfg.folder : 'video';
+    send(res, 200, {
+      ok: true,
+      targets: DL_TARGETS.map((x) => ({ id: x.id, name: x.name })),
+      folder: cur,
+    });
+    return true;
+  }
+
+  // ── 下载位置：设置默认媒体库目标 ──
+  if (op === 'folder') {
+    let payload = {};
+    try { payload = body ? JSON.parse(body) : {}; } catch (e) { payload = {}; }
+    const id = String(payload.folder !== undefined ? payload.folder : u.searchParams.get('folder') || '');
+    if (!targetById(id)) { send(res, 400, { ok: false, error: '不支持的下载位置' }); return true; }
+    const cfg = loadCfg();
+    cfg.folder = id;
+    saveCfg(cfg);
+    send(res, 200, { ok: true, folder: id });
+    return true;
+  }
+
+  // ── 手动整理：把根目录散文件按 moves 归进子目录 ──
+  if (op === 'tidy') {
+    send(res, 200, Object.assign({ ok: true }, moveDone()));
+    return true;
+  }
+
   // ── 分区列表（服务端常量）──
   if (op === 'partitions') {
     send(res, 200, { ok: true, items: BILI_PARTITIONS });
@@ -784,7 +903,7 @@ async function handle(req, res, body, u, p) {
       await ensureCookie(true);
       j = await webApi('/x/web-interface/ranking/v2?rid=' + encodeURIComponent(rid) + '&type=all');
     }
-    const list = ((j.data && j.data.list) || []).map(feedItem);
+    const list = ((j.data && j.data.list) || []).map(feedItem).filter((x) => x.bvid);
     send(res, 200, { ok: j.code === 0, code: j.code, items: list, message: j.message || '' });
     return true;
   }
@@ -796,7 +915,7 @@ async function handle(req, res, body, u, p) {
     const ps = u.searchParams.get('ps') || '20';
     const j = await webApi('/x/web-interface/newlist?rid=' + encodeURIComponent(rid)
       + '&ps=' + encodeURIComponent(ps) + '&pn=' + encodeURIComponent(pn) + '&type=0');
-    const list = ((j.data && j.data.archives) || []).map(feedItem);
+    const list = ((j.data && j.data.archives) || []).map(feedItem).filter((x) => x.bvid);
     send(res, 200, { ok: j.code === 0, code: j.code, items: list, message: j.message || '' });
     return true;
   }
@@ -807,6 +926,9 @@ async function handle(req, res, body, u, p) {
     try { payload = body ? JSON.parse(body) : {}; } catch (e) { payload = {}; }
     const bvid = String(payload.bvid || u.searchParams.get('bvid') || '');
     const fmt = payload.format || u.searchParams.get('format') || '';
+    const cfg1 = loadCfg();
+    const folderId = String(payload.folder !== undefined ? payload.folder : (cfg1.folder || 'video'));
+    const folder = targetById(folderId) ? folderId : 'video';
     if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
     const info = await up('/getVideoInfo?bvid=' + encodeURIComponent(bvid));
     if (!info || !info.success || !info.data) {
@@ -846,9 +968,17 @@ async function handle(req, res, body, u, p) {
     await Promise.all(workers);
     if (!bodies.length) { send(res, 400, { ok: false, error: errors[0] || '所有分P都取流失败' }); return true; }
     const r = await upPost('/createTask', bodies, 180000);
+    if (r && r.success) {
+      const cfg = loadCfg();
+      const moves = Array.isArray(cfg.moves) ? cfg.moves : [];
+      for (const bd of bodies) moves.push({ title: bd.title, folder: folder, at: Date.now() });
+      cfg.moves = moves;
+      saveCfg(cfg);
+    }
     send(res, r && r.success ? 200 : 400, {
       ok: !!(r && r.success),
       added: bodies.length,
+      folder: folder || '',
       total: pages.length,
       truncated: pages.length > MAX,
       message: (r && r.message) || '',

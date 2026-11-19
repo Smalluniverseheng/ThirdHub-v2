@@ -475,6 +475,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords20.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-19 第二十一批：B 站沉浸刷视频 + 下载位置选择（4.81.68）。
+    i18nUiWords21.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

@@ -28,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bili_down_page.dart';
 import 'bili_feed_page.dart' show BiliPlayerPage;
+import 'bili_swipe_page.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -95,6 +96,11 @@ class _BiliModulePageState extends State<BiliModulePage>
       appBar: AppBar(
         title: Text(tr('哔哩哔哩')),
         actions: [
+          IconButton(
+            tooltip: tr('链接下载'),
+            icon: const Icon(Icons.link),
+            onPressed: () => openBiliLinkSheet(context, widget.ctx, ''),
+          ),
           IconButton(
             tooltip: tr('下载管理'),
             icon: const Icon(Icons.download_outlined),
@@ -223,6 +229,46 @@ Widget biliCover(BuildContext context, BiliCtx ctx, String raw,
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Icon(Icons.broken_image_outlined,
             color: Theme.of(context).colorScheme.outline),
+      ),
+    ),
+  );
+}
+
+/// 选择下载位置（媒体库目标：影视 / 音乐）。返回目标 id，取消返回 null。
+Future<String?> pickBiliTarget(BuildContext context, BiliCtx ctx) async {
+  final j = await biliGet(ctx, '/v1/bili/folders');
+  final targets = ((j == null ? null : j['targets'] as List?) ?? const [])
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .toList(growable: false);
+  if (!context.mounted) return null;
+  if (targets.isEmpty) return 'video';
+  return showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (c) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
+            child: Text(tr('选择下载位置'),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15)),
+          ),
+          for (final tg in targets)
+            ListTile(
+              leading: Icon('${tg['id']}' == 'music'
+                  ? Icons.music_note_outlined
+                  : Icons.movie_outlined),
+              title: Text(tr('${tg['name']}')),
+              subtitle: Text('${tg['id']}' == 'music'
+                  ? tr('放进去之后在「音乐」里能听')
+                  : tr('放进去之后在「影视」里能看')),
+              onTap: () => Navigator.of(c).pop('${tg['id']}'),
+            ),
+        ],
       ),
     ),
   );
@@ -372,7 +418,13 @@ class _BiliGridTabState extends State<_BiliGridTab>
           final play = biliPlays(it['play'] is num ? it['play'] as num : null);
           return InkWell(
             borderRadius: BorderRadius.circular(Radii.md),
-            onTap: () => openBiliVideo(context, widget.ctx, it),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => BiliSwipePage(
+                      ctx: widget.ctx,
+                      items: List<Map<String, dynamic>>.from(_items),
+                      initialIndex: i),
+                )),
+            onLongPress: () => openBiliVideo(context, widget.ctx, it),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -576,7 +628,15 @@ class _BiliSearchTabState extends State<_BiliSearchTab>
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(Radii.md)),
             ),
-            onSubmitted: (v) => setState(() => _query = v.trim()),
+            onSubmitted: (v) {
+              final s = v.trim();
+              if (s.isEmpty) return;
+              if (RegExp(r'(bilibili\.com|b23\.tv|BV1[a-zA-Z0-9]{9,})').hasMatch(s)) {
+                openBiliLinkSheet(context, widget.ctx, s);
+                return;
+              }
+              setState(() => _query = s);
+            },
           ),
         ),
         Expanded(
@@ -679,9 +739,12 @@ class _BiliDetailSheetState extends State<_BiliDetailSheet> {
   /// 单集下载：走 /v1/bili/add，url 里带 ?p=N，默认 1080P（后端自动回退）
   Future<void> _downloadOne(int index) async {
     if (_busy) return;
+    final target = await pickBiliTarget(context, widget.ctx);
+    if (target == null) return;
     setState(() => _busy = true);
     final j = await biliPost(widget.ctx, '/v1/bili/add', {
       'url': 'https://www.bilibili.com/video/${widget.bvid}/?p=${index + 1}',
+      'folder': target,
     });
     if (!mounted) return;
     setState(() => _busy = false);
@@ -738,8 +801,12 @@ class _BiliDetailSheetState extends State<_BiliDetailSheet> {
       fmt = picked;
     }
     setState(() => _busy = true);
+    final target = await pickBiliTarget(context, widget.ctx);
+    if (target == null || !context.mounted) return;
     final j = await biliPost(
-        widget.ctx, '/v1/bili/addall', {'bvid': widget.bvid, 'format': fmt},
+        widget.ctx,
+        '/v1/bili/addall',
+        {'bvid': widget.bvid, 'format': fmt, 'folder': target},
         sec: 240);
     if (!mounted) return;
     setState(() => _busy = false);
@@ -856,6 +923,213 @@ class _BiliDetailSheetState extends State<_BiliDetailSheet> {
                 },
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── 链接下载（粘贴即下，不用跳页面） ─────────────────────────
+
+/// 粘贴 B 站链接 / BV 号直接下载。initial 为空时弹输入框。
+Future<void> openBiliLinkSheet(BuildContext context, BiliCtx ctx,
+    [String initial = '']) async {
+  final input = initial.trim().isEmpty
+      ? await showDialog<String>(
+          context: context,
+          builder: (c) {
+            final ctrl = TextEditingController();
+            return AlertDialog(
+              title: Text(tr('链接下载')),
+              content: TextField(
+                controller: ctrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: tr('粘贴 B 站链接或 BV 号'),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(Radii.md)),
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(c).pop(),
+                    child: Text(tr('取消'))),
+                FilledButton(
+                    onPressed: () => Navigator.of(c).pop(ctrl.text.trim()),
+                    child: Text(tr('解析'))),
+              ],
+            );
+          },
+        )
+      : initial;
+  if (input == null || input.trim().isEmpty || !context.mounted) return;
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (c) => _BiliLinkSheet(ctx: ctx, input: input.trim()),
+  );
+}
+
+class _BiliLinkSheet extends StatefulWidget {
+  final BiliCtx ctx;
+  final String input;
+  const _BiliLinkSheet({required this.ctx, required this.input});
+
+  @override
+  State<_BiliLinkSheet> createState() => _BiliLinkSheetState();
+}
+
+class _BiliLinkSheetState extends State<_BiliLinkSheet> {
+  Map<String, dynamic>? _info;
+  String _err = '';
+  bool _busy = true;
+  bool _doing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _parse();
+  }
+
+  Future<void> _parse() async {
+    setState(() {
+      _busy = true;
+      _err = '';
+    });
+    final j = await biliGet(widget.ctx,
+        '/v1/bili/parse?url=${Uri.encodeQueryComponent(widget.input)}');
+    if (!mounted) return;
+    if (j == null || j['ok'] != true) {
+      setState(() {
+        _busy = false;
+        _err = (j == null || '${j['error'] ?? ''}'.trim().isEmpty)
+            ? tr('失败')
+            : '${j['error']}';
+      });
+      return;
+    }
+    setState(() {
+      _info = j;
+      _busy = false;
+    });
+  }
+
+  Future<void> _download({required bool all}) async {
+    final info = _info;
+    if (info == null || _doing) return;
+    final target = await pickBiliTarget(context, widget.ctx);
+    if (target == null || !mounted) return;
+    setState(() => _doing = true);
+    final pages = (info['pages'] as List?)?.length ?? 1;
+    final Map<String, dynamic>? j = all && pages > 1
+        ? await biliPost(widget.ctx, '/v1/bili/addall',
+            {'bvid': '${info['bvid']}', 'folder': target},
+            sec: 240)
+        : await biliPost(widget.ctx, '/v1/bili/add', {
+            'url': widget.input,
+            'folder': target,
+          });
+    if (!mounted) return;
+    setState(() => _doing = false);
+    final ok = j != null && j['ok'] == true;
+    final added = all && pages > 1
+        ? ((j == null || j['added'] is! num) ? 0 : (j['added'] as num).toInt())
+        : 1;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? (all && pages > 1
+                ? trf('共{n}个任务加入下载', {'n': added})
+                : tr('已加入下载队列'))
+            : ((j == null || '${j['error'] ?? j['message'] ?? ''}'.trim().isEmpty)
+                ? tr('失败')
+                : '${j['error'] ?? j['message']}'))));
+    if (ok && mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final info = _info;
+    final pages = (info == null ? null : info['pages'] as List?) ?? const [];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(Gap.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_busy) const LinearProgressIndicator(),
+            if (_err.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: Gap.md),
+                child: Text(_err, style: TextStyle(color: cs.error)),
+              ),
+            if (info != null) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 96,
+                    height: 60,
+                    child: biliCover(
+                        context, widget.ctx, '${info['cover'] ?? ''}',
+                        radius: Radii.sm),
+                  ),
+                  const SizedBox(width: Gap.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${info['title'] ?? ''}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if ('${info['owner'] ?? ''}'.isNotEmpty)
+                              '${info['owner']}',
+                            if (pages.length > 1)
+                              trf('共{n}集', {'n': pages.length}),
+                          ].join(' · '),
+                          style: TextStyle(fontSize: 12, color: cs.outline),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Gap.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _doing ? null : () => _download(all: false),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: Text(pages.length > 1
+                          ? tr('下载本集')
+                          : tr('下载')),
+                    ),
+                  ),
+                  if (pages.length > 1) ...[
+                    const SizedBox(width: Gap.sm),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _doing ? null : () => _download(all: true),
+                        icon: const Icon(Icons.download_for_offline_outlined,
+                            size: 18),
+                        label: Text(tr('整季下载')),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+            const SizedBox(height: Gap.sm),
           ],
         ),
       ),
