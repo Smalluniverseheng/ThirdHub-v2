@@ -543,6 +543,24 @@ function biliStream(u) {
   return mediaProxyBase() + '/thp/stream?u=' + encodeURIComponent(u) + '&r=' + encodeURIComponent(WEB_REF);
 }
 
+// 不带 cookie 的请求：详情/评论走这条（带 cookie 反而容易被判定异常）
+const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+async function webApiPlain(path, timeoutMs = 15000) {
+  const headers = {
+    'user-agent': MOBILE_UA,
+    referer: 'https://www.bilibili.com/',
+    accept: 'application/json,text/plain,*/*',
+    'accept-language': 'zh-CN,zh;q=0.9',
+  };
+  try {
+    const r = await fetch('https://api.bilibili.com' + path, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const s = await r.text();
+    try { return JSON.parse(s); } catch (e) { return { code: -1, message: '返回非 JSON: ' + s.slice(0, 60) }; }
+  } catch (e) {
+    return { code: -1, message: String(e && e.message || e) };
+  }
+}
+
 async function webApi(path, timeoutMs = 15000, ref) {
   const headers = {
     'user-agent': WEB_UA, referer: ref || WEB_REF, accept: 'application/json,text/plain,*/*',
@@ -811,49 +829,80 @@ async function handle(req, res, body, u, p) {
 
   // ── 浏览：视频详情（含分P）──
   if (op === 'view') {
-    const bvid = u.searchParams.get('bvid') || '';
-    if (!bvid) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
-    await ensureCookie();
-    let j = await webApi('/x/web-interface/view?bvid=' + encodeURIComponent(bvid));
-    if (j.code === -412) {
-      await ensureCookie(true);
-      j = await webApi('/x/web-interface/view?bvid=' + encodeURIComponent(bvid));
-    }
-    if (j.code !== 0) { send(res, 200, { ok: false, code: j.code, message: j.message || '取详情失败' }); return true; }
+    const bvid = String(u.searchParams.get('bvid') || '');
+    if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    let j = await webApiPlain('/x/web-interface/view?bvid=' + bvid);
+    if (j.code !== 0) j = await webApiPlain('/x/web-interface/view?bvid=' + bvid);
+    if (j.code !== 0) { send(res, 400, { ok: false, code: j.code, error: j.message || '取详情失败' }); return true; }
     const d = j.data || {};
+    const s = d.stat || {};
     send(res, 200, {
       ok: true,
-      data: {
-        bvid: d.bvid, aid: d.aid, title: d.title, desc: d.desc || '',
-        cover: d.pic ? '/v1/bili/cover?u=' + encodeURIComponent(d.pic) : '',
-        owner: (d.owner && d.owner.name) || '', duration: d.duration || 0,
-        stat: d.stat || {},
-        pages: (d.pages || []).map((p) => ({ cid: p.cid, page: p.page, part: p.part, duration: p.duration })),
-      },
+      bvid: d.bvid || bvid,
+      aid: d.aid,
+      title: d.title || '',
+      desc: d.desc || '',
+      pic: d.pic ? '/v1/bili/cover?u=' + encodeURIComponent(String(d.pic).replace(/^http:/, 'https:')) : '',
+      owner: { name: (d.owner && d.owner.name) || '', face: (d.owner && d.owner.face) ? '/v1/bili/cover?u=' + encodeURIComponent(String(d.owner.face)) : '' },
+      stat: { view: s.view || 0, danmaku: s.danmaku || 0, like: s.like || 0, coin: s.coin || 0, favorite: s.favorite || 0, share: s.share || 0, reply: s.reply || 0 },
+      pubdate: d.pubdate || 0,
+      duration: d.duration || 0,
+      videos: d.videos || 1,
+      pages: (d.pages || []).map((p) => ({ cid: p.cid, page: p.page, part: p.part || '', duration: p.duration || 0 })),
     });
     return true;
   }
 
-  // ── 播放：拿直链（免签名，最高 720P；够手机看，且不依赖 B 站登录）──
-  if (op === 'playurl') {
-    const bvid = u.searchParams.get('bvid') || '';
-    const cid = u.searchParams.get('cid') || '';
-    const qn = u.searchParams.get('qn') || '64';
-    if (!bvid || !cid) { send(res, 400, { ok: false, error: '缺少 bvid 或 cid' }); return true; }
-    const j = await webApi('/x/player/playurl?bvid=' + encodeURIComponent(bvid)
-      + '&cid=' + encodeURIComponent(cid) + '&fnval=1&qn=' + qn + '&platform=html5&high_quality=1');
-    if (j.code !== 0) { send(res, 200, { ok: false, code: j.code, message: j.message || '取播放地址失败' }); return true; }
+  // ── 评论区（pn 页 / sort 2=热门 0=时间）──
+  if (op === 'replies') {
+    const bvid = String(u.searchParams.get('bvid') || '');
+    const pn = parseInt(u.searchParams.get('pn') || '1', 10) || 1;
+    const ps = Math.min(30, parseInt(u.searchParams.get('ps') || '20', 10) || 20);
+    const sort = String(u.searchParams.get('sort') || '2');
+    if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    // 先取 aid（评论接口按 aid）
+    const v = await webApiPlain('/x/web-interface/view?bvid=' + bvid);
+    if (v.code !== 0) { send(res, 400, { ok: false, code: v.code, error: v.message || '取 aid 失败' }); return true; }
+    const aid = v.data && v.data.aid;
+    const j = await webApiPlain('/x/v2/reply?type=1&oid=' + aid + '&pn=' + pn + '&ps=' + ps + '&sort=' + sort);
+    if (j.code !== 0) { send(res, 400, { ok: false, code: j.code, error: j.message || '取评论失败' }); return true; }
     const d = j.data || {};
-    const durl = d.durl || [];
-    const first = durl[0] || {};
-    // 直链必须带 Referer → 一律过媒体代理
-    const url = biliStream(first.url || '');
+    const pg = d.page || {};
+    const mapOne = (r) => {
+      const m = r.member || {};
+      const ct = r.content || {};
+      return {
+        id: r.rpid_str || String(r.rpid || ''),
+        uname: m.uname || '匿名',
+        face: m.avatar ? '/v1/bili/cover?u=' + encodeURIComponent(String(m.avatar)) : '',
+        level: (m.level_info && m.level_info.current_level) || 0,
+        message: ct.message || '',
+        like: r.like || 0,
+        ctime: r.ctime || 0,
+        rcount: r.rcount || 0,
+        replies: (r.replies || []).slice(0, 3).map((x) => {
+          const mm = x.member || {};
+          return { uname: mm.uname || '匿名', message: (x.content || {}).message || '', like: x.like || 0 };
+        }),
+      };
+    };
     send(res, 200, {
-      ok: !!url, url, quality: d.quality || 0,
-      acceptQuality: d.accept_quality || [], acceptDesc: d.accept_description || [],
-      length: d.timelength || first.length || 0, size: first.size || 0,
-      segments: durl.map((x) => biliStream(x.url || '')),
+      ok: true,
+      total: pg.count || 0,
+      pn: pg.num || pn,
+      size: pg.size || ps,
+      items: (d.replies || d.top_replies || []).map(mapOne),
     });
+    return true;
+  }
+
+  // ── 相关推荐 ──
+  if (op === 'related') {
+    const bvid = String(u.searchParams.get('bvid') || '');
+    if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    const j = await webApiPlain('/x/web-interface/archive/related?bvid=' + bvid);
+    const list = ((j.data) || []).map(feedItem).filter((x) => x.bvid).slice(0, 20);
+    send(res, 200, { ok: true, items: list });
     return true;
   }
 

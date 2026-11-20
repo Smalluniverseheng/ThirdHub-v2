@@ -479,6 +479,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords21.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-20 第二十二批：B 站样式首页 + 视频详情/评论区（4.81.70）。
+    i18nUiWords22.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

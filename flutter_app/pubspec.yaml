@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.81.69+50740
+version: 4.81.70+50741
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
