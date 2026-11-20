@@ -156,7 +156,7 @@ class PlayResolver {
         return PlaySource._(
           origin: PlayOrigin.backend,
           fail: PlayFail.noSource,
-          error: r?.hint ?? '源站没有返回任何图片（图源可能已失效）',
+          error: r?.hint ?? '没有返回任何图片（来源可能已失效）',
         );
       }
       return PlaySource._(

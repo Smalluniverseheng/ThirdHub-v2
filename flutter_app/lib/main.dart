@@ -7958,7 +7958,7 @@ class _MPlay extends State<MusicPlayPage> {
             final r = await Api.get(
                 '/v1/music/url?sourceId=${Uri.encodeComponent(curSource)}&quality=$q&item=${Uri.encodeComponent(jsonEncode(cur))}');
             final u = (r['data']?['url'] as String? ?? '').trim();
-            return OnlineUrl(u, hint: u.isEmpty ? '音源没有给出播放地址' : null);
+            return OnlineUrl(u, hint: u.isEmpty ? '来源没有给出播放地址' : null);
           },
         );
         if (!ps.ok) {
@@ -16716,7 +16716,7 @@ class _Ei extends State<EngineItemPage> {
 /// 若塞进详情页的 setState 里，展开目录等任意动作都会把分页进度清掉。
 /// 引擎侧 commentsLoader/likeOrUnlikeComic 能力一直存在（Venera 模型自带），
 /// 只是 THP 此前没暴露端点 —— 引擎 1.10.10 起可用，旧引擎包返回
-/// 「未知端点」→ 这里落成「该图源不支持评论」的灰色提示，不报错弹栈。
+/// 「未知端点」→ 这里落成「该来源不支持评论」的灰色提示，不报错弹栈。
 class _EiComments extends StatefulWidget {
   final String type;
   final String id;
@@ -16782,7 +16782,7 @@ class _EiC extends State<_EiComments> {
                 msg.contains('UNSUPPORTED') ||
                 msg.contains('NOT_FOUND') ||
                 msg.contains('HTTP 404'))) {
-          unsupported = tr('该图源不支持评论');
+          unsupported = tr('该来源不支持评论');
           hasMore = false;
         }
       });

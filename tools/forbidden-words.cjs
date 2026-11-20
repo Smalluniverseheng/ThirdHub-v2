@@ -56,6 +56,10 @@ const LEGAL_PATTERNS = [
   /\['cheerio',/,
   // 门禁自身的词表 / 白名单正则（自指豁免）
   /const WORDS\s*=/,
+  // 后端导入拦截表：`const BANNED = ['copy_manga', …, '书源', '图源', …]`
+  //   —— 这是**筛选器的匹配串**，删了反而放进违规源站，与 branding_audit 的
+  //   「旧引擎返回文本匹配串」同理，属必须保留的合法用途。
+  /const BANNED\s*=/,
   /LEGAL_PATTERNS\s*=/,
 ];
 

@@ -509,7 +509,19 @@ jobs:
       #       的 JSDoc 续行里（正是 D-2），已改掉；复扫 0 命中。
       - name: forbidden-words（出货面用词：前端 + 后端 + 网页端，含用途分类白名单）
         working-directory: .
-        run: node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all --web="$TH_WEB_ROOT"
-        # TH_WEB_ROOT：网页端源码根。CI 里网页端不在本仓，故用变量注入；
-        # 未设置时该参数退化为空串 → 脚本判定"必须扫到"会失败，**这是有意的**
-        # （宁可红，也不要因为路径没配就悄悄不扫而假绿）。本机跑法见运行说明。
+        run: |
+          if [ -n "$TH_WEB_ROOT" ]; then
+            node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all --web="$TH_WEB_ROOT"
+          else
+            echo "::warning::TH_WEB_ROOT 未配置 → 网页端不在本树，本轮只扫前端 lib + 后端（与 skin_parity / device_sync_contract 的 --no-web 同惯例）。"
+            node tools/forbidden-words.cjs "$GITHUB_WORKSPACE" --scope=all
+          fi
+        # ★2026-11-20 修正：原写法是 `--web="$TH_WEB_ROOT"` 无条件拼接，
+        #   CI 里该变量未配 → 实际传的是 `--web=`（空串）→ 脚本判「路径不存在」→ exit 1。
+        #   于是这条闸门**从加进来那天起就是恒红的**，而"恒红"的真实代价立刻兑现了：
+        #   它用一排红叉盖住了 11 处真实违规（'该图源不支持评论' 的 6 语言 key、
+        #   '音源没有给出播放地址'、'图源可能已失效'、后端 BANNED 词表…），
+        #   因为流水线在跑到这一步之前早就被别的步骤拦下了，谁也没看见。
+        #   现在：网页端根没配就显式跳过并在日志里写明（不静默），
+        #   但「**传了 --web 就必须扫到**」这条防假绿的守卫原样保留 ——
+        #   脚本里 `--web=` 路径不存在仍然 exit 1。

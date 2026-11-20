@@ -36,7 +36,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'Like',
     '加载更多': 'Load more',
     '暂无评论': 'No comments yet',
-    '该图源不支持评论': 'This source has no comments',
+    '该来源不支持评论': 'This source has no comments',
   },
   'ja': <String, String>{
     '删除': '削除',
@@ -62,7 +62,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'いいね',
     '加载更多': 'さらに読み込む',
     '暂无评论': 'コメントはまだありません',
-    '该图源不支持评论': 'このソースにはコメントがありません',
+    '该来源不支持评论': 'このソースにはコメントがありません',
   },
   'fr': <String, String>{
     '删除': 'Supprimer',
@@ -88,7 +88,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'J’aime',
     '加载更多': 'Charger plus',
     '暂无评论': 'Aucun commentaire',
-    '该图源不支持评论': 'Cette source n’a pas de commentaires',
+    '该来源不支持评论': 'Cette source n’a pas de commentaires',
   },
   'ru': <String, String>{
     '删除': 'Удалить',
@@ -114,7 +114,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'Нравится',
     '加载更多': 'Загрузить ещё',
     '暂无评论': 'Комментариев пока нет',
-    '该图源不支持评论': 'У этого источника нет комментариев',
+    '该来源不支持评论': 'У этого источника нет комментариев',
   },
   'es': <String, String>{
     '删除': 'Eliminar',
@@ -140,7 +140,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'Me gusta',
     '加载更多': 'Cargar más',
     '暂无评论': 'Sin comentarios',
-    '该图源不支持评论': 'Esta fuente no tiene comentarios',
+    '该来源不支持评论': 'Esta fuente no tiene comentarios',
   },
   'ar': <String, String>{
     '删除': 'حذف',
@@ -166,7 +166,7 @@ const Map<String, Map<String, String>> i18nUiWords =
     '点赞': 'إعجاب',
     '加载更多': 'تحميل المزيد',
     '暂无评论': 'لا توجد تعليقات',
-    '该图源不支持评论': 'لا تعليقات في هذا المصدر',
+    '该来源不支持评论': 'لا تعليقات في هذا المصدر',
   },
 };
 
