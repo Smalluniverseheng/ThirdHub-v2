@@ -10,12 +10,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:video_player/video_player.dart';
 
+import 'bili_player.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -169,8 +168,22 @@ class _BiliFeedPageState extends State<BiliFeedPage> {
           .showSnackBar(SnackBar(content: Text(tr('播放失败'))));
       return;
     }
+    // ★4.81.74：改用 core/bili_player.dart 的新播放器 —— 带常驻弹幕、
+    //   弹幕设置面板与清晰度面板。cid 一并带过去，播放页才能按 cid 拉弹幕。
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => BiliPlayerPage(title: title, url: url),
+      builder: (_) => BiliPlayerPage(
+        title: title,
+        url: url,
+        apiBase: _base,
+        token: _token,
+        bvid: bvid,
+        cid: cid,
+        quality: (j?['quality'] as num?)?.toInt() ?? 0,
+        acceptQuality: ((j?['acceptQuality'] as List?) ?? const [])
+            .whereType<num>()
+            .map((e) => e.toInt())
+            .toList(),
+      ),
     ));
   }
 
@@ -355,81 +368,6 @@ class _BiliFeedPageState extends State<BiliFeedPage> {
           ),
         );
       },
-    );
-  }
-}
-
-class BiliPlayerPage extends StatefulWidget {
-  final String title;
-  final String url;
-  const BiliPlayerPage({required this.title, required this.url});
-
-  @override
-  State<BiliPlayerPage> createState() => _BiliPlayerPageState();
-}
-
-class _BiliPlayerPageState extends State<BiliPlayerPage> {
-  VideoPlayerController? _vp;
-  ChewieController? _chewie;
-  String _err = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      final tok = (p.getString('token') ?? '').trim();
-      _vp = VideoPlayerController.networkUrl(
-        Uri.parse(widget.url),
-        httpHeaders: tok.isEmpty ? const {} : {'x-th-token': tok},
-      );
-      await _vp!.initialize();
-      _chewie = ChewieController(
-        videoPlayerController: _vp!,
-        autoPlay: true,
-        looping: false,
-        allowFullScreen: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: Theme.of(context).colorScheme.primary,
-          handleColor: Theme.of(context).colorScheme.primary,
-        ),
-      );
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) setState(() => _err = '${tr('播放失败')}: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _chewie?.dispose();
-    _vp?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      backgroundColor: Colors.black,
-      body: Center(
-        child: _err.isNotEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(_err, style: const TextStyle(color: Colors.white70)),
-              )
-            : (_chewie == null
-                ? const CircularProgressIndicator()
-                : AspectRatio(
-                    aspectRatio:
-                        _vp!.value.aspectRatio == 0 ? 16 / 9 : _vp!.value.aspectRatio,
-                    child: Chewie(controller: _chewie!),
-                  )),
-      ),
     );
   }
 }
