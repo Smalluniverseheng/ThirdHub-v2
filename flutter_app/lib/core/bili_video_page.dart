@@ -11,7 +11,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'bili_module_page.dart'
-    show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget;
+    show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget,
+    biliHeaders;
+import 'bili_danmaku_layer.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -34,6 +36,11 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   ChewieController? _chewie;
   bool _playing = false;
   String _playErr = '';
+
+  // 弹幕
+  List<Map<String, dynamic>> _dm = const [];
+  bool _dmOn = true;
+  String _dmCid = '';
 
   final List<Map<String, dynamic>> _replies = [];
   int _replyPage = 1;
@@ -109,7 +116,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     }
     try {
       final vp = VideoPlayerController.networkUrl(Uri.parse(url),
-          httpHeaders: widget.ctx.h);
+          httpHeaders: biliHeaders(widget.ctx));
       await vp.initialize();
       if (!mounted) {
         vp.dispose();
@@ -126,6 +133,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         _chewie = chewie;
         _playing = true;
       });
+      if (cid != null) _loadDanmaku('$cid');
     } catch (e) {
       if (mounted) setState(() => _playErr = '${tr('播放失败')}：$e');
     }
@@ -172,6 +180,19 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             : '${j['error']}';
       }
     });
+  }
+
+  Future<void> _loadDanmaku(String cid) async {
+    if (_dmCid == cid && _dm.isNotEmpty) return;
+    _dmCid = cid;
+    final j = await biliGet(
+        widget.ctx, '/v1/bili/danmaku?cid=${Uri.encodeQueryComponent(cid)}');
+    if (!mounted) return;
+    final items = ((j == null ? null : j['items'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+    setState(() => _dm = items);
   }
 
   Future<void> _loadRelated() async {
@@ -232,6 +253,11 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             style: const TextStyle(fontSize: 15)),
         actions: [
           IconButton(
+            tooltip: tr('弹幕'),
+            icon: Icon(_dmOn ? Icons.subtitles : Icons.subtitles_off_outlined),
+            onPressed: () => setState(() => _dmOn = !_dmOn),
+          ),
+          IconButton(
             tooltip: tr('下载'),
             icon: const Icon(Icons.download_outlined),
             onPressed: () => _download(all: false),
@@ -253,7 +279,14 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             child: Container(
               color: Colors.black,
               child: _chewie != null && _vp != null
-                  ? Chewie(controller: _chewie!)
+                  ? Stack(fit: StackFit.expand, children: [
+                      Chewie(controller: _chewie!),
+                      BiliDanmaku(
+                        vp: _vp,
+                        items: _dm,
+                        enabled: _dmOn,
+                      ),
+                    ])
                   : Center(
                       child: _playErr.isNotEmpty
                           ? Column(

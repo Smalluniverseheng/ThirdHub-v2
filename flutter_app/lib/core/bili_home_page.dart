@@ -408,8 +408,18 @@ class _VideoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 封面
-          ClipRRect(
+          // 封面（投影让双列更有层次）
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Radii.md),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.10),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2)),
+              ],
+            ),
+            child: ClipRRect(
             borderRadius: BorderRadius.circular(Radii.md),
             child: Stack(
               children: [
@@ -435,6 +445,7 @@ class _VideoCard extends StatelessWidget {
                 ),
               ],
             ),
+          ),
           ),
           const SizedBox(height: 6),
           // 标题

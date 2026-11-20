@@ -2951,3 +2951,12 @@ const Map<String, Map<String, String>> i18nUiWords22 = {
     "直播区暂未开放": "البث المباشر غير متاح حالياً",
   },
 };
+
+const Map<String, Map<String, String>> i18nUiWords23 = {
+  'en': {"弹幕": "Danmaku", "弹幕设置": "Danmaku settings", "透明度": "Opacity", "字号": "Size"},
+  'ja': {"弹幕": "コメント", "弹幕设置": "コメント設定", "透明度": "透明度", "字号": "文字サイズ"},
+  'fr': {"弹幕": "Danmaku", "弹幕设置": "Réglages danmaku", "透明度": "Opacité", "字号": "Taille"},
+  'ru': {"弹幕": "Данмаку", "弹幕设置": "Настройки данмаку", "透明度": "Прозрачность", "字号": "Размер"},
+  'es': {"弹幕": "Danmaku", "弹幕设置": "Ajustes de danmaku", "透明度": "Opacidad", "字号": "Tamaño"},
+  'ar': {"弹幕": "دانماكو", "弹幕设置": "إعدادات الدانماكو", "透明度": "الشفافية", "字号": "الحجم"},
+};

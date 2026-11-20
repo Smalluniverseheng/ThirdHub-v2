@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'bili_down_page.dart';
 import 'bili_feed_page.dart' show BiliPlayerPage;
 import 'bili_swipe_page.dart';
+import 'bili_direct.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -153,17 +154,31 @@ class _BiliModulePageState extends State<BiliModulePage>
 
 // ───────────────────────── 通用请求 ─────────────────────────
 
+/// 通用 GET：**先走后端，后端不可达（或明确失败）就直连 B 站**。
+/// 这样 NAS 关机/断网时，浏览、搜索、详情、评论、弹幕全都还能用（下载除外）。
 Future<Map<String, dynamic>?> biliGet(BiliCtx ctx, String path,
     {int sec = 30}) async {
-  try {
-    final r = await http
-        .get(Uri.parse('${ctx.base}$path'), headers: ctx.h)
-        .timeout(Duration(seconds: sec));
-    final j = jsonDecode(utf8.decode(r.bodyBytes));
-    if (j is Map) return Map<String, dynamic>.from(j);
-  } catch (_) {}
-  return null;
+  if (ctx.base.isNotEmpty) {
+    try {
+      final r = await http
+          .get(Uri.parse('${ctx.base}$path'), headers: ctx.h)
+          .timeout(Duration(seconds: sec));
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is Map) {
+        final m = Map<String, dynamic>.from(j);
+        if (m['ok'] == true) return m;
+      }
+    } catch (_) {}
+  }
+  return biliDirect(path);
 }
+
+/// 播放/图片请求统一头：B 站 CDN 与图床都校验 Referer
+Map<String, String> biliHeaders(BiliCtx ctx) => <String, String>{
+      ...ctx.h,
+      'referer': biliReferer,
+      'user-agent': biliUA,
+    };
 
 Future<Map<String, dynamic>?> biliPost(
     BiliCtx ctx, String path, Map<String, dynamic> body,
@@ -223,7 +238,7 @@ Widget biliCover(BuildContext context, BiliCtx ctx, String raw,
     borderRadius: BorderRadius.circular(radius),
     child: Image.network(
       full,
-      headers: ctx.h,
+      headers: biliHeaders(ctx),
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) => Container(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,

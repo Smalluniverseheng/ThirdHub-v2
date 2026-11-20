@@ -483,6 +483,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords22.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-20 第二十三批：弹幕相关（4.81.71）。
+    i18nUiWords23.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

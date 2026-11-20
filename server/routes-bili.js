@@ -46,6 +46,8 @@ const FORMAT_LABEL = {
 //   飞牛媒体库扫的就是这两个；Media/ 下的同名目录不是库（2026-11-19 纠正）。
 const MEDIA_DIR = process.env.MEDIA_DIR || '/media';
 const BILI_DIR = process.env.BILI_DIR || (MEDIA_DIR + '/影视/B站');
+// 弹幕缓存（cid → {at, payload}），避免同一集反复拉 300KB XML
+const dmCache = new Map();
 const DL_TARGETS = [
   { id: 'video', name: '影视', path: BILI_DIR },
   { id: 'music', name: '音乐', path: MEDIA_DIR + '/音乐/B站' },
@@ -850,6 +852,51 @@ async function handle(req, res, body, u, p) {
       videos: d.videos || 1,
       pages: (d.pages || []).map((p) => ({ cid: p.cid, page: p.page, part: p.part || '', duration: p.duration || 0 })),
     });
+    return true;
+  }
+
+  // ── 弹幕（XML 接口，按 cid 取；10 分钟缓存）──
+  if (op === 'danmaku') {
+    const cid = String(u.searchParams.get('cid') || '');
+    if (!/^\d{4,}$/.test(cid)) { send(res, 400, { ok: false, error: '缺少 cid' }); return true; }
+    const now = Date.now();
+    const hit = dmCache.get(cid);
+    if (hit && now - hit.at < 10 * 60 * 1000) { send(res, 200, hit.payload); return true; }
+    const r = await fetch('https://api.bilibili.com/x/v1/dm/list.so?oid=' + cid, {
+      headers: { 'user-agent': MOBILE_UA, referer: 'https://www.bilibili.com/' },
+      signal: AbortSignal.timeout(20000),
+    });
+    const buf = Buffer.from(await r.arrayBuffer());
+    // 有时是 deflate 压缩，有时是明文 XML，两种都兜
+    let xml = '';
+    try { xml = buf.toString('utf8'); } catch (e) { xml = ''; }
+    if (!xml.includes('<d ')) {
+      try { xml = require('zlib').inflateSync(buf).toString('utf8'); } catch (e) { xml = ''; }
+    }
+    if (!xml.includes('<d ')) {
+      try { xml = require('zlib').inflateRawSync(buf).toString('utf8'); } catch (e) { xml = ''; }
+    }
+    if (!xml.includes('<d ')) { send(res, 400, { ok: false, error: '弹幕解析失败' }); return true; }
+    const items = [];
+    const re = /<d p="([^"]*)"[^>]*>([\s\S]*?)<\/d>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+      const p = m[1].split(',');
+      const tsec = parseFloat(p[0]) || 0;
+      const mode = parseInt(p[1] || '1', 10);
+      const size = parseInt(p[2] || '25', 10);
+      const color = parseInt(p[3] || '16777215', 10);
+      let text = m[2];
+      if (!text) continue;
+      text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      if (text.length > 80) text = text.slice(0, 80);
+      items.push({ t: Math.round(tsec * 100) / 100, m: mode, c: color, s: size, x: text });
+    }
+    items.sort((a, b) => a.t - b.t);
+    const payload = { ok: true, cid, total: items.length, items };
+    dmCache.set(cid, { at: now, payload });
+    if (dmCache.size > 60) { const k = dmCache.keys().next().value; dmCache.delete(k); }
+    send(res, 200, payload);
     return true;
   }
 
