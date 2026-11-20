@@ -623,11 +623,11 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                             borderRadius: Radii.pillAll)),
                   ),
                   Row(children: [
-                    const Text('弹幕设置',
-                        style: TextStyle(
+                    Text(tr('弹幕设置'),
+                        style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w700)),
                     const Spacer(),
-                    Text('共 $_dmCount 条',
+                    Text(trf('共 {n} 条', {'n': _dmCount}),
                         style:
                             const TextStyle(fontSize: 11, color: Colors.grey)),
                   ]),
@@ -635,7 +635,7 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                   SwitchListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('显示弹幕', style: TextStyle(fontSize: 13)),
+                    title: Text(tr('显示弹幕'), style: const TextStyle(fontSize: 13)),
                     value: _dmOn,
                     onChanged: (v) {
                       upd(() {
@@ -661,17 +661,17 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                   const Divider(height: Gap.lg),
                   Wrap(spacing: 8, runSpacing: 4, children: [
                     FilterChip(
-                      label: const Text('屏蔽顶部', style: TextStyle(fontSize: 12)),
+                      label: Text(tr('屏蔽顶部'), style: const TextStyle(fontSize: 12)),
                       selected: _hideTop,
                       onSelected: (v) => upd(() => _hideTop = v),
                     ),
                     FilterChip(
-                      label: const Text('屏蔽底部', style: TextStyle(fontSize: 12)),
+                      label: Text(tr('屏蔽底部'), style: const TextStyle(fontSize: 12)),
                       selected: _hideBottom,
                       onSelected: (v) => upd(() => _hideBottom = v),
                     ),
                     FilterChip(
-                      label: const Text('屏蔽滚动', style: TextStyle(fontSize: 12)),
+                      label: Text(tr('屏蔽滚动'), style: const TextStyle(fontSize: 12)),
                       selected: _hideScroll,
                       onSelected: (v) => upd(() => _hideScroll = v),
                     ),
@@ -724,9 +724,9 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('清晰度',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                Text(tr('清晰度'),
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700)),
                 const SizedBox(height: Gap.sm),
                 for (final q in sorted)
                   ListTile(
@@ -748,15 +748,15 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                                 ? FontWeight.w700
                                 : FontWeight.w400)),
                     subtitle: q == widget.quality
-                        ? const Text('当前播放',
-                            style:
-                                TextStyle(fontSize: 10.5, color: Colors.grey))
+                        ? Text(tr('当前播放'),
+                            style: const TextStyle(
+                                fontSize: 10.5, color: Colors.grey))
                         : null,
                     trailing: q == widget.quality
                         ? null
-                        : const Text('需 DASH',
-                            style:
-                                TextStyle(fontSize: 10.5, color: Colors.grey)),
+                        : Text(tr('需 DASH'),
+                            style: const TextStyle(
+                                fontSize: 10.5, color: Colors.grey)),
                     onTap: q == widget.quality
                         ? () => Navigator.pop(c)
                         : () {

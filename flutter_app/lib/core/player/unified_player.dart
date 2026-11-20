@@ -24,6 +24,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../main.dart' show AppSettings;
+import '../i18n.dart';
 import '../play_tag.dart';
 import 'media_probe.dart';
 import 'media_spec.dart';
@@ -407,7 +408,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
               const SizedBox(height: 18),
               FilledButton.tonal(
                 onPressed: () => _openMedia(autoplay: true),
-                child: const Text('重试'),
+                child: Text(tr('重试')),
               ),
             ],
           ),
@@ -512,7 +513,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
               // 只听音频：生态互通的入口
               if (_spec.allowAudioMode)
                 IconButton(
-                  tooltip: '只听音频（可继续在音乐里听）',
+                  tooltip: tr('只听音频（可继续在音乐里听）'),
                   icon: const Icon(Icons.headphones, color: Colors.white),
                   onPressed: () {
                     _armHide();
@@ -535,7 +536,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
       );
 
   Widget _speedBtn() => PopupMenuButton<double>(
-        tooltip: '倍速',
+        tooltip: tr('倍速'),
         icon: const Icon(Icons.speed, color: Colors.white),
         initialValue: _speed,
         onSelected: (v) {
@@ -663,7 +664,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
                     onPressed: () => unawaited(_toggleAudioMode()),
                     icon: const Icon(Icons.videocam_outlined,
                         color: Colors.white70, size: 18),
-                    label: const Text('看画面',
+                    label: Text(tr('看画面'),
                         style: TextStyle(color: Colors.white70, fontSize: 12)),
                   ),
               ],

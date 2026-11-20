@@ -2983,7 +2983,11 @@ class _Pf extends State<ProfilePage> {
                       // 重连失败要说清是"网络层没通"还是"地址没配"，
                       // 别只甩一句"失败"。
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text('仍连不上：${BackendHealth.lastError.isEmpty ? '地址清单没取到（可能没网）' : BackendHealth.lastError}'),
+                          content: Text(trf('仍连不上：{e}', {
+                            'e': BackendHealth.lastError.isEmpty
+                                ? tr('地址清单没取到（可能没网）')
+                                : BackendHealth.lastError
+                          })),
                           duration: const Duration(seconds: 4)));
                     }
                     setState(() {});

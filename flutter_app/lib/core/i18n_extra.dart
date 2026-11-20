@@ -22,6 +22,26 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '仍连不上：{e}': 'Toujours injoignable : {e}', '地址清单没取到（可能没网）': 'Liste d’adresses indisponible (pas de réseau ?)',
+
+    '显示弹幕': 'Afficher les danmaku',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': '{n} pages',
+    '上次启动轨迹': 'Trace du dernier démarrage',
+    '倍速': 'Vitesse',
+    '共 {n} 条': '{n} au total',
+    '只听音频（可继续在音乐里听）': 'Audio seul (continue dans Musique)',
+    '屏蔽底部': 'Masquer le bas',
+    '屏蔽滚动': 'Masquer les défilants',
+    '屏蔽顶部': 'Masquer le haut',
+    '应用没能启动': 'L’application n’a pas pu démarrer',
+    '弹幕设置': 'Réglages danmaku',
+    '当前播放': 'En lecture',
+    '第 {n} 页加载失败': 'Échec du chargement de la page {n}',
+    '看画面': 'Afficher la vidéo',
+    '需 DASH': 'DASH requis',
+
     // ── 4.81.78 补齐历史欠账（66 条）──
     'B 站下载': 'Téléchargement Bilibili',
     'B站': 'Bilibili',
@@ -268,6 +288,26 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '仍连不上：{e}': 'Всё ещё недоступно: {e}', '地址清单没取到（可能没网）': 'Список адресов не получен (нет сети?)',
+
+    '显示弹幕': 'Показать данмаку',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': 'Страниц: {n}',
+    '上次启动轨迹': 'Журнал прошлого запуска',
+    '倍速': 'Скорость',
+    '共 {n} 条': 'Всего: {n}',
+    '只听音频（可继续在音乐里听）': 'Только звук (продолжит в «Музыке»)',
+    '屏蔽底部': 'Скрыть низ',
+    '屏蔽滚动': 'Скрыть бегущие',
+    '屏蔽顶部': 'Скрыть верх',
+    '应用没能启动': 'Приложение не запустилось',
+    '弹幕设置': 'Настройки данмаку',
+    '当前播放': 'Сейчас играет',
+    '第 {n} 页加载失败': 'Не удалось загрузить страницу {n}',
+    '看画面': 'Показать видео',
+    '需 DASH': 'Нужен DASH',
+
     // ── 4.81.78 补齐历史欠账（66 条）──
     'B 站下载': 'Загрузка с Bilibili',
     'B站': 'Bilibili',
@@ -514,6 +554,26 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '仍连不上：{e}': 'Sigue sin conexión: {e}', '地址清单没取到（可能没网）': 'No se obtuvo la lista de direcciones (¿sin red?)',
+
+    '显示弹幕': 'Mostrar danmaku',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': '{n} páginas',
+    '上次启动轨迹': 'Traza del último arranque',
+    '倍速': 'Velocidad',
+    '共 {n} 条': '{n} en total',
+    '只听音频（可继续在音乐里听）': 'Solo audio (sigue en Música)',
+    '屏蔽底部': 'Ocultar abajo',
+    '屏蔽滚动': 'Ocultar desplazables',
+    '屏蔽顶部': 'Ocultar arriba',
+    '应用没能启动': 'La aplicación no pudo iniciarse',
+    '弹幕设置': 'Ajustes de danmaku',
+    '当前播放': 'Reproduciendo',
+    '第 {n} 页加载失败': 'Error al cargar la página {n}',
+    '看画面': 'Ver vídeo',
+    '需 DASH': 'Requiere DASH',
+
     // ── 4.81.78 补齐历史欠账（66 条）──
     'B 站下载': 'Descarga de Bilibili',
     'B站': 'Bilibili',
@@ -761,6 +821,26 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '仍连不上：{e}': 'لا يزال غير متاح: {e}', '地址清单没取到（可能没网）': 'تعذّر الحصول على قائمة العناوين (لا شبكة؟)',
+
+    '显示弹幕': 'إظهار التعليقات المتحركة',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': '{n} صفحة',
+    '上次启动轨迹': 'سجل آخر تشغيل',
+    '倍速': 'السرعة',
+    '共 {n} 条': 'الإجمالي {n}',
+    '只听音频（可继续在音乐里听）': 'الصوت فقط (يُكمل في الموسيقى)',
+    '屏蔽底部': 'إخفاء الأسفل',
+    '屏蔽滚动': 'إخفاء المتحركة',
+    '屏蔽顶部': 'إخفاء الأعلى',
+    '应用没能启动': 'تعذّر تشغيل التطبيق',
+    '弹幕设置': 'إعدادات التعليقات المتحركة',
+    '当前播放': 'قيد التشغيل',
+    '第 {n} 页加载失败': 'تعذّر تحميل الصفحة {n}',
+    '看画面': 'عرض الفيديو',
+    '需 DASH': 'يتطلب DASH',
+
     // ── 4.81.78 补齐历史欠账（66 条）──
     'B 站下载': 'تنزيل من Bilibili',
     'B站': 'Bilibili',
@@ -1007,6 +1087,26 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '仍连不上：{e}': 'Still unreachable: {e}', '地址清单没取到（可能没网）': 'Address list unavailable (no network?)',
+
+    '显示弹幕': 'Show danmaku',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': '{n} pages',
+    '上次启动轨迹': 'Last startup trace',
+    '倍速': 'Speed',
+    '共 {n} 条': '{n} total',
+    '只听音频（可继续在音乐里听）': 'Audio only (keeps playing in Music)',
+    '屏蔽底部': 'Hide bottom',
+    '屏蔽滚动': 'Hide scrolling',
+    '屏蔽顶部': 'Hide top',
+    '应用没能启动': 'The app could not start',
+    '弹幕设置': 'Danmaku settings',
+    '当前播放': 'Now playing',
+    '第 {n} 页加载失败': 'Page {n} failed to load',
+    '看画面': 'Show video',
+    '需 DASH': 'DASH required',
+
     // ── 4.81.78 补齐历史欠账（66 条）──
     'B 站下载': 'Bilibili download',
     'B站': 'Bilibili',
@@ -1161,6 +1261,26 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '仍连不上：{e}': 'まだ接続できません：{e}', '地址清单没取到（可能没网）': 'アドレス一覧を取得できません（ネットなし？）',
+
+    '显示弹幕': 'コメント表示',
+
+    // ── 4.81.78 弹幕/播放器/启动页文案收口 ──
+    '{n} 页': '{n} ページ',
+    '上次启动轨迹': '前回の起動ログ',
+    '倍速': '再生速度',
+    '共 {n} 条': '全 {n} 件',
+    '只听音频（可继续在音乐里听）': '音声のみ（音楽で続けて再生）',
+    '屏蔽底部': '下部を非表示',
+    '屏蔽滚动': '流れるを非表示',
+    '屏蔽顶部': '上部を非表示',
+    '应用没能启动': 'アプリを起動できませんでした',
+    '弹幕设置': 'コメント設定',
+    '当前播放': '再生中',
+    '第 {n} 页加载失败': '{n} ページ目の読み込みに失敗',
+    '看画面': '映像を表示',
+    '需 DASH': 'DASH が必要',
+
     '下载任务': 'ダウンロードタスク',
 
     // ── 4.81.78 补齐历史欠账（66 条）──

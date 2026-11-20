@@ -833,7 +833,7 @@ class _FreeComicReadPageState extends State<FreeComicReadPage> {
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(right: 12),
-                child: Text('${_pages.length} 页',
+                child: Text(trf('{n} 页', {'n': _pages.length}),
                     style: const TextStyle(fontSize: 12)),
               ),
             ),
@@ -882,7 +882,7 @@ class _FreeComicReadPageState extends State<FreeComicReadPage> {
                         },
                         errorBuilder: (_, __, ___) => Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Text('第 ${i + 1} 页加载失败',
+                          child: Text(trf('第 {n} 页加载失败', {'n': i + 1}),
                               style: const TextStyle(color: Colors.grey)),
                         ),
                       ),

@@ -24,6 +24,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'i18n.dart';
+
 /// 启动轨迹一步。
 class BootStep {
   const BootStep(this.name, {this.ok = true, this.error});
@@ -244,7 +246,7 @@ class _Bfa extends State<BootFailedApp> {
               const Icon(Icons.warning_amber_rounded,
                   size: 44, color: Color(0xFFFF9F43)),
               const SizedBox(height: 16),
-              const Text('应用没能启动',
+              Text(tr('应用没能启动'),
                   style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -260,7 +262,7 @@ class _Bfa extends State<BootFailedApp> {
               ),
               const SizedBox(height: 22),
               if (_trace.isNotEmpty) ...[
-                const Text('上次启动轨迹',
+                Text(tr('上次启动轨迹'),
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
