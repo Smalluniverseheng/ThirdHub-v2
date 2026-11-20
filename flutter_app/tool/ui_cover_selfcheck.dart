@@ -288,9 +288,16 @@ void main() {
         '${countOf(ucSrc, '0xFF')}');
     ck('兜底取首字按码点（不切坏 emoji/代理对）',
         ucSrc.contains('String.fromCharCodes(t.runes.take(1))'));
-    ck('CoverImage 强制带 loadingBuilder', ucSrc.contains('loadingBuilder:'));
-    ck('CoverImage 强制带 errorBuilder', ucSrc.contains('errorBuilder:'));
-    ck('空 URL 不发请求（先判空再 Image.network）',
+    // ★4.81.78：原来这两条断言 `CoverImage` 源码里出现 `loadingBuilder:` /
+    //   `errorBuilder:`。那是把"必须有兜底"这条**意图**绑死在了 `Image.network`
+    //   的具体 API 上 —— 换成自带占位/失败/重试的 `AppImage` 之后，
+    //   兜底一点没少（反而多了磁盘缓存和重试），自检却红了。
+    //   现在改为断言真正的意图：走 AppImage，且失败时回落到品牌化 CoverFallback。
+    ck('CoverImage 走 AppImage（自带占位 + 失败重试 + 磁盘缓存）',
+        ucSrc.contains('AppImage('));
+    ck('CoverImage 失败时回落 CoverFallback（与空 URL 同一套视觉）',
+        ucSrc.contains('onFail:'));
+    ck('空 URL 不发请求（先判空再取网络图）',
         ucSrc.contains('_empty ? _fallback(context) : _network(context)'));
   }
 
