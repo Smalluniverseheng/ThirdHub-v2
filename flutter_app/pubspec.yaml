@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.81.80+50751
+version: 4.81.81+50752
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -50,6 +50,11 @@ dependencies:
   #   'canvas_danmaku'"。纯 Dart 实现（CustomPainter 直绘），SDK 要求 >=3.0.0
   #   与本项目一致，无平台代码、无 minSdk 抬升。
   canvas_danmaku: ^0.3.4
+  # ★4.81.81 播放器重做：竖滑左半屏调亮度、右半屏调音量 —— 这是 YouTube /
+  #   B站 / Netflix 客户端都有的手势，缺了它玩家会觉得"不是正经播放器"。
+  #   两个包都是纯平台通道实现，minSdk 24 满足；失败一律 try/catch 静默降级。
+  screen_brightness: ^2.1.11
+  volume_controller: ^3.7.1
 
 dev_dependencies:
   flutter_test:

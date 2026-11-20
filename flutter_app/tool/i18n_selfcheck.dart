@@ -254,6 +254,11 @@ void main() {
     final miss = used.where((k) => dict[l]![k] == null).toList()..sort();
     if (miss.isNotEmpty) {
       print('  [$l] 缺 ${miss.length} 个键，例：${miss.take(8).join(' / ')}');
+      // 补齐译文时要知道**全部**缺失键，而不是只看这 8 个例子。
+      // 用环境变量开，默认不输出 —— CI 日志保持干净。
+      if (Platform.environment['I18N_LIST'] == '1') {
+        print('I18N_MISSING\t$l\t${miss.join('\t')}');
+      }
     }
     ck('$l 覆盖全部 ${used.length} 个 key', miss.isEmpty);
   }

@@ -9,7 +9,6 @@ import 'dart:ui' show PlatformDispatcher, ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -50,7 +49,6 @@ import 'core/bili_module_page.dart';
 import 'core/hongguo_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
-import 'core/api_keys_page.dart';
 import 'core/local_tools.dart';
 import 'core/manual_book.dart';
 import 'core/module_shell.dart';
@@ -85,7 +83,6 @@ import 'core/media_formats.dart';
 import 'core/local_import.dart';
 import 'core/discover.dart';
 import 'core/novel_reader.dart';
-import 'core/reader_fonts.dart';
 import 'core/i18n.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
@@ -104,10 +101,7 @@ import 'core/browser_page.dart';
 import 'core/notify.dart';
 import 'core/engine_direct.dart';
 import 'core/search_type_filter.dart';
-import 'core/public_data_sources.dart';
 import 'core/public_sources_page.dart';
-// 本机 Agent：把 DSH 的 Agent 内核搬到手机上跑（不依赖电脑端）
-import 'core/local_agent_page.dart';
 import 'core/engine_direct_page.dart';
 import 'core/module_drawer.dart';
 import 'core/gallery_page.dart';
@@ -133,14 +127,11 @@ import 'core/extensions_page.dart';
 import 'core/chat_v2_page.dart';
 import 'core/share_card.dart';
 import 'core/module_clog_page.dart';
-import 'core/tts_settings_page.dart';
-import 'core/asr_settings_page.dart';
 import 'core/offline_media_store.dart';
 import 'core/offline_media_plan.dart';
 import 'core/offline_store.dart';
 import 'core/offline_ui.dart';
 import 'core/download_queue.dart';
-import 'core/dialog_kit.dart';
 import 'core/playback_settings_page.dart';
 import 'core/advanced_playback_page.dart';
 import 'core/th_http.dart';
@@ -150,10 +141,13 @@ import 'core/play_resolver.dart';
 import 'core/free/free_center_page.dart';
 // ★4.81.78 启动轨迹 / 安全模式 / 兜底错误卡片。
 import 'core/boot.dart';
-// ★4.81.78 全局 UI 组件层（图片 / 骨架 / 空态 / 转场）。
-import 'core/ui/app_image.dart';
+// ★4.81.78 全局 UI 组件层（骨架屏）。
 import 'core/ui/app_skeleton.dart';
-import 'core/ui/app_transition.dart';
+// ★4.81.81 AI 控制总线：智能助手悬浮球 + 目标注册表。
+//   「AI 不触屏操控 App 做真机测试」的落点，协议见 core/agent/agent_protocol.dart。
+//   agent_bridge 由悬浮球自己持有，main 不需要直接引用。
+import 'core/agent/agent_orb.dart';
+import 'core/agent/agent_targets.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -1645,13 +1639,26 @@ class ConsentPage extends StatelessWidget {
 // 内置法律文档阅读页(打包进 assets, 离线可读, 无需联网)
 /// 全局「收键盘」观察者 —— 见 MaterialApp.navigatorObservers 的注释。
 class _DismissKeyboardObserver extends NavigatorObserver {
+  /// 根 Navigator 当前路由深度（含首路由）。
+  ///
+  /// 为什么要记：AI 控制总线的 `state` 要回答「点了返回到底有没有退」。
+  /// `Navigator.canPop()` 只能给 true/false，判断不出「点了两次只退了一层」。
+  static int depth = 0;
+
   void _blur() {
     final f = FocusManager.instance.primaryFocus;
     if (f != null && f.hasFocus) f.unfocus();
   }
 
   @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    depth++;
+    super.didPush(route, previousRoute);
+  }
+
+  @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (depth > 0) depth--;
     _blur();
     super.didPop(route, previousRoute);
   }
@@ -1664,6 +1671,7 @@ class _DismissKeyboardObserver extends NavigatorObserver {
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (depth > 0) depth--;
     _blur();
     super.didRemove(route, previousRoute);
   }
@@ -1815,6 +1823,16 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(
         title: 'ThirdHub',
         navigatorKey: IntentRouter.navKey,
+        // ★4.81.81 AI 控制总线：包一层 RepaintBoundary（截图起点）+ 悬浮球宿主。
+        //   放在 builder 里而不是每个页面里，是为了让它盖住**所有**路由 ——
+        //   包括全屏播放器和对话框，否则「AI 想看播放器的样子」永远截不到。
+        builder: (c, child) {
+          AgentTargets.screenSize = MediaQuery.sizeOf(c);
+          return RepaintBoundary(
+            key: AgentTargets.rootBoundaryKey,
+            child: AgentOrbHost(child: child ?? const SizedBox.shrink()),
+          );
+        },
         // ★2026-10-31 修「返回时莫名弹键盘」：任何页面 pop/替换时强制收掉焦点。
         //   成因：上一个页面的 TextField 在路由动画结束后重新拿到焦点，输入法被拉起。
         //   在导航层统一收口，比在每个页面写 willPopScope 可靠（不会漏页）。
@@ -3096,6 +3114,13 @@ class _Pf extends State<ProfilePage> {
                 page: const SystemCenterPage()),
             _sep(),
             entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
+            _sep(),
+            // ★4.81.81：AI 控制总线 —— 悬浮球 + 本地桥，让 AI 不触屏就能操控
+            //   本机做真机测试（切模块 / 左右滑 / 点控件 / 截图 / 跑用例）。
+            //   放在「设置」而不是藏进 AI 模块：它调的是"这台手机"，
+            //   和 DSH 遥控一样属于"设备连接"一类。
+            entry(Icons.smart_toy_outlined, tr('AI 控制（真机测试）'),
+                page: const AgentControlPage()),
           ]),
           _section('数据与诊断', [
             // ★4.81.76：离线内容此前**没有任何入口** —— `MediaOfflinePage`
@@ -8594,15 +8619,73 @@ class _Vs extends State<VideoSection> {
 
   @override
   void dispose() {
+    _agentGen++;
     _pc.dispose();
     super.dispose();
   }
 
+  /// 平台逻辑顺序（与 [_platforms] 一致，不含门禁过滤）。
+  /// 单独列一份的原因：`_platforms()` 返回的是 tr() 之后的展示名，
+  /// 切到英文后就是 "Hongguo"/"Bilibili"，AI 传中文名会匹配不上。
+  static const List<String> _agentPlatformOrder = [
+    '红果',
+    '哔哩哔哩',
+    '片库',
+    '历史',
+    '发现',
+    '搜索',
+  ];
+
+  static const Map<String, String> _agentPlatformAlias = {
+    '红果短剧': '红果', 'hongguo': '红果', '短剧': '红果', 'redfruit': '红果',
+    'b站': '哔哩哔哩', 'bilibili': '哔哩哔哩', 'bili': '哔哩哔哩', '哔哩': '哔哩哔哩',
+    '片库': '片库', 'library': '片库', 'shelf': '片库', '收藏': '片库',
+    '历史': '历史', 'history': '历史', '最近': '历史',
+    '发现': '发现', 'discover': '发现', '聚合': '发现',
+    '搜索': '搜索', 'search': '搜索',
+  };
+
+  int _agentGen = 0;
+
+  /// 把「横向切平台」暴露给 AI 控制总线（见 core/agent/agent_targets.dart）。
+  /// 走 [_goto] 而不是只改 sub：只改状态的话 PageView 不动，
+  /// 而 AI 截图看到的还是旧平台 —— 那才是"切了没反应"。
+  void _wireAgent() {
+    final mine = ++_agentGen;
+    AgentTargets.switchVideoPlatform = (name) async {
+      if (mine != _agentGen || !mounted) return false;
+      final thirdParty = currentGate().allowThirdPartyVideoSources;
+      final plats = _platforms(thirdParty);
+      final raw = name.trim();
+      // ① 数字 → 逻辑下标（"0"=红果 … "5"=搜索），比"第几个"更稳定：
+      //    第三方开关会裁掉后两项，用户嘴里的"第 3 个"会跟着变。
+      String want = raw;
+      final n = int.tryParse(raw);
+      if (n != null && n >= 0 && n < _agentPlatformOrder.length) {
+        want = _agentPlatformOrder[n];
+      }
+      // ② 别名（b站 / bilibili / 短剧 …）→ 逻辑名
+      want = _agentPlatformAlias[want.toLowerCase()] ?? want;
+      // ③ 逻辑名 → 当前列表下标（plats 里的 name 已过 tr()）
+      var i = plats.indexWhere((p) => p.name.contains(want));
+      if (i < 0) {
+        i = plats.indexWhere(
+            (p) => p.name.contains(raw) || raw.contains(p.name));
+      }
+      if (i < 0 || i >= plats.length) return false;
+      _goto(i);
+      return true;
+    };
+  }
+
   void _goto(int i) {
     if (i < 0) return;
-    _pc.animateToPage(i,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic);
+    // 没 attach 时 animateToPage 会断言失败（AI 在首帧就发 platform 指令时会踩到）
+    if (_pc.hasClients) {
+      _pc.animateToPage(i,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic);
+    }
     setState(() => sub = i);
   }
 
@@ -8610,6 +8693,7 @@ class _Vs extends State<VideoSection> {
   void initState() {
     super.initState();
     sub = _initialPage;
+    _wireAgent(); // 平台横切交给 AI 控制总线（仅本页可见时生效）
   }
 
   @override
@@ -9864,6 +9948,37 @@ const List<String> kDefaultNav = <String>[
 ];
 
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
+/// AI 控制总线的模块别名表。
+///
+/// 用户（和 AI）嘴里说的是「B 站」「听歌」「看电影」，导航键却是「视频」「音乐」。
+/// 不做映射的话 `{"op":"nav","module":"bilibili"}` 会返回"模块不存在"——
+/// 而这种失败看起来像"App 压根没做这个模块"，是最容易误判的一类错误。
+/// 值必须是 [kModules] 里真实存在的键。
+const Map<String, String> agentModuleAlias = {
+  // 视频 / 影视
+  '影视': '视频', '电影': '视频', 'video': '视频', 'movie': '视频', 'film': '视频',
+  'b站': '视频', 'bilibili': '视频', '哔哩哔哩': '视频', '红果': '视频',
+  '短剧': '短剧', 'drama': '短剧',
+  // 阅读
+  'novel': '小说', 'book': '小说', '阅读': '小说', '看书': '小说', '小说': '小说',
+  'comic': '漫画', 'manga': '漫画', '漫画': '漫画',
+  // 听
+  'music': '音乐', '听歌': '音乐', 'audio': '音乐', '音乐': '音乐',
+  'podcast': '播客', '播客': '播客',
+  // 通用
+  'ai': 'AI', '助手': 'AI', 'assistant': 'AI',
+  'chat': '聊天', '聊天': '聊天',
+  'search': '搜索', '搜索': '搜索', 'home': '搜索', '首页': '搜索',
+  'me': '我的', 'profile': '我的', 'settings': '我的', '设置': '我的', '我的': '我的',
+  'gallery': '相册', 'photos': '相册', '相册': '相册',
+  'files': '文件', '文件': '文件',
+  'community': '社区', '社区': '社区',
+  'live': '直播', '直播': '直播',
+  'browser': '浏览器', 'web': '浏览器', '浏览器': '浏览器',
+  'free': '开放源', '开放源': '开放源',
+  'tools': '工具箱', '工具箱': '工具箱',
+};
+
 final Map<String, ModuleDef> kModules = {
   '搜索': ModuleDef(tr('搜索'), Icons.search, () => (const SearchSection())),
   // ★4.81.77 开放源：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书，
@@ -10293,6 +10408,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     BrowserHooks.openModules = (c) =>
         NavOrb.showModuleGrid(c, enabled, idx, (i) => _go(i, animate: false));
     _wireLocalHooks(); // ★4.44.0 上下文注入 + 前端控制能力
+    _wireAgent(); // ★4.81.81 AI 控制总线（切模块 / 状态快照）
     unawaited(_bootPeers()); // ★4.44.0 端网：接入 + 定时心跳（无后端时自动退化为直连模式）
     // ★2026-11-02：设置自动同步（网页端 ⇄ 本机）。
     //
@@ -10633,8 +10749,86 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
+  // ═══ AI 控制总线接线 (4.81.81) ═══
+  //
+  // 为什么要写在这里而不是 core/agent 里：enabled / idx / _go 都是本类的私有状态，
+  // 只有本文件能安全读写。AgentTargets 只留一个函数指针，方向是 core → main 的
+  // 反向依赖，所以 core/agent 不需要 import main.dart。
+  //
+  // _agentGen 是"代次"：模块页会被反复创建销毁，旧实例残留的闭包如果还能动导航，
+  // 就会出现「AI 说切了、界面没动」这种最难查的假成功。每次 _wireAgent 自增一代，
+  // 旧闭包里的 live() 立刻变 false。
+  int _agentGen = 0;
+
+  void _wireAgent() {
+    final mine = ++_agentGen;
+    bool live() => mine == _agentGen && mounted;
+
+    AgentTargets.navigatorKey = IntentRouter.navKey;
+
+    AgentTargets.openModule = (m) async {
+      if (!live()) return false;
+      var key = m.trim();
+      if (!kModules.containsKey(key)) {
+        final hit = agentModuleAlias[key.toLowerCase()];
+        if (hit != null) key = hit;
+      }
+      if (!kModules.containsKey(key)) {
+        // 再退一步：按中文名模糊匹配（"小红书"→ 无，"B站"→ 视频 走上面的别名表）
+        for (final k in kModules.keys) {
+          if (k.contains(key) || key.contains(k)) {
+            key = k;
+            break;
+          }
+        }
+      }
+      if (!kModules.containsKey(key)) return false;
+      // 走 proOpenModule 而不是 _go：它会自动把未启用的模块加进导航栏并落盘，
+      // 这正是"AI 让我打开视频，结果导航栏里根本没有视频"的解法。
+      proOpenModule.value = key;
+      return true;
+    };
+
+    AgentTargets.switchModule = (arg) async {
+      if (!live()) return false;
+      final n = int.tryParse(arg.trim());
+      int i;
+      if (n != null) {
+        i = n;
+      } else {
+        final a = arg.trim();
+        i = enabled.indexOf(a);
+        if (i < 0) {
+          i = enabled.indexWhere((e) => e.contains(a) || a.contains(e));
+        }
+        if (i < 0) {
+          final alias = agentModuleAlias[a.toLowerCase()];
+          if (alias != null) i = enabled.indexOf(alias);
+        }
+      }
+      if (i < 0 || i >= enabled.length) return false;
+      _go(i, animate: false);
+      return true;
+    };
+
+    AgentTargets.stateProvider = () {
+      return {
+        'module': RootNav.currentModuleKey,
+        'moduleIndex': idx,
+        'tabs': List<String>.from(enabled),
+        'routeDepth': _DismissKeyboardObserver.depth,
+        'fullscreen': RootNav.fullscreen.value,
+        'loggedIn': Cloud.loggedIn,
+        'backend': Api.base,
+        'locale': I18n.instance.locale,
+        'actions': AgentTargets.actions.keys.toList(),
+      };
+    };
+  }
+
   @override
   void dispose() {
+    _agentGen++; // 让本实例注册给 AI 控制总线的闭包立即失效
     RootNav.navTick.removeListener(_onNavChanged);
     RootNav.fullscreen.removeListener(_onFs);
     proOpenModule.removeListener(_onProOpen);

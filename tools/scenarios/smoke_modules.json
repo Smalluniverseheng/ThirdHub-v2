@@ -1,0 +1,22 @@
+{
+  "name": "五大板块 · 冒烟",
+  "note": "每个板块进去、断言 state.module 对、再退出来。跑得慢但能一次证明「模块能打开」这件事没有退化 —— 这是之前最常出现的假完成（入口在，点了白屏）。",
+  "steps": [
+    { "op": "nav", "module": "小说" },
+    { "op": "wait", "ms": 800 },
+    { "op": "assert", "module": "小说" },
+    { "op": "nav", "module": "漫画" },
+    { "op": "wait", "ms": 800 },
+    { "op": "assert", "module": "漫画" },
+    { "op": "nav", "module": "视频" },
+    { "op": "wait", "ms": 800 },
+    { "op": "assert", "module": "视频" },
+    { "op": "nav", "module": "音乐" },
+    { "op": "wait", "ms": 800 },
+    { "op": "assert", "module": "音乐" },
+    { "op": "nav", "module": "我的" },
+    { "op": "wait", "ms": 800 },
+    { "op": "assert", "module": "我的" },
+    { "op": "tree", "limit": 40, "note": "最后把可点的东西打出来，便于下一步写用例" }
+  ]
+}

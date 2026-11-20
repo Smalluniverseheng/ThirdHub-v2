@@ -1,0 +1,16 @@
+{
+  "name": "视频页 · 左右切平台",
+  "note": "验证用户最在意的那条：视频页里左右滑能不能换红果 / B 站。断言用 state.module，不依赖具体平台的展示文字（换语言也不会假红）。",
+  "steps": [
+    { "op": "nav", "module": "视频", "note": "打开视频模块" },
+    { "op": "wait", "ms": 900 },
+    { "op": "assert", "module": "视频", "note": "确实停在视频模块" },
+    { "op": "platform", "name": "红果", "note": "先回红果（逻辑下标 0）" },
+    { "op": "wait", "ms": 500 },
+    { "op": "swipe", "dir": "left", "note": "左滑 → B 站" },
+    { "op": "swipe", "dir": "right", "note": "右滑 → 回红果" },
+    { "op": "platform", "name": "bilibili", "note": "用别名再切一次 B 站" },
+    { "op": "platform", "name": "片库", "note": "切片库" },
+    { "op": "state", "note": "输出最终状态，人工核对平台" }
+  ]
+}

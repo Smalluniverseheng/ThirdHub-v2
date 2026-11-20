@@ -114,6 +114,14 @@ jobs:
           echo "ABI_TAG=$ABI_TAG" >> "$GITHUB_ENV"
           echo "target-platform = $TARGET_PLATFORMS  →  ABI_TAG = $ABI_TAG"
 
+      # ★4.81.81 AI 控制总线的单测：协议解析 + 真实手势注入（点控件 / 滑 PageView）。
+      #   为什么要进 CI：这条链路是「AI 用它判断功能好坏」的唯一通道 ——
+      #   它自己错了，后续所有"验证通过"都是假的，比没有验证更糟。
+      #   纯 widget test，不依赖设备与网络，约 10 秒。
+      - name: test (AI 控制总线)
+        working-directory: flutter_app
+        run: flutter test test/agent_bus_test.dart
+
       - name: build APK (${{ env.TARGET_PLATFORMS }})
         working-directory: flutter_app/android
         env:
