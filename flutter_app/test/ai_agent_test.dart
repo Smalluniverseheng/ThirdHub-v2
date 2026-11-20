@@ -263,10 +263,17 @@ void main() {
       await AiMemory.load();
     }
 
-    test('空配置时栈为空, 不产生噪声 system', () async {
+    // ★2026-11-20 修正：这一段早就不是空的 —— AiContext 恒定会注入第 0 段
+    //   「输出格式 + 本机离线能力」（见 core/ai_agent.dart 的注释：这是被
+    //   tool/agent_selfcheck.dart 锁定的契约）。旧断言 expect(stack, isEmpty)
+    //   从那次改动起就一直是红的，只是没人跑到它。这里改成断言**真正的契约**：
+    //   无任何注入时恰好 1 段，且这一段必须是输出格式声明。
+    test('空配置时只剩输出格式那一段, 不产生噪声 system', () async {
       await reset();
       final stack = await AiContext.systemStack();
-      expect(stack, isEmpty);
+      expect(stack.length, 1);
+      expect(stack.single['content'], contains('【输出格式】'));
+      expect(stack.single['content'], contains('【本机离线能力】'));
     });
 
     test('人格→智能体→技能→记忆→钉注→工具清单 顺序装配', () async {
@@ -283,14 +290,17 @@ void main() {
           {'serverId': 'local', 'name': 'local_web_search', 'description': '联网搜索', 'inputSchema': {}},
         ],
       );
-      expect(stack.length, 6);
-      expect(stack[0]['content'], contains('对话风格'));
-      expect(stack[0]['content'], contains('区分事实'));
-      expect(stack[1]['content'], contains('研究员'));
-      expect(stack[2]['content'], contains('专业翻译'));
-      expect(stack[3]['content'], contains('GMT+8'));
-      expect(stack[4]['content'], contains('本次只回答中文'));
-      expect(stack[5]['content'], contains('local_web_search'));
+      // 第 0 段固定是「输出格式 + 本机离线能力」，其余按 人格 → 智能体 →
+      // 技能 → 记忆 → 钉注 → 工具清单 的顺序排在后面。
+      expect(stack.length, 7);
+      expect(stack[0]['content'], contains('【输出格式】'));
+      expect(stack[1]['content'], contains('对话风格'));
+      expect(stack[1]['content'], contains('区分事实'));
+      expect(stack[2]['content'], contains('研究员'));
+      expect(stack[3]['content'], contains('专业翻译'));
+      expect(stack[4]['content'], contains('GMT+8'));
+      expect(stack[5]['content'], contains('本次只回答中文'));
+      expect(stack[6]['content'], contains('local_web_search'));
       for (final m in stack) {
         expect(m['role'], 'system');
         expect(m['content'], isNotEmpty);
@@ -300,7 +310,8 @@ void main() {
     test('toolManifest=true 但没有工具时, 不注入空清单', () async {
       await reset();
       final stack = await AiContext.systemStack(toolManifest: true, tools: const []);
-      expect(stack, isEmpty);
+      // 只剩固定的第 0 段；空清单不能被注入（空「可用工具：」会骗模型以为有工具）
+      expect(stack.length, 1);
       for (final m in stack) { expect(m['content'], isNot(contains('可用工具'))); }
     });
   });

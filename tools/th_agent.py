@@ -244,6 +244,14 @@ def cmd_nav(c, args):
     return nonzero(r)
 
 
+def cmd_link(c, args):
+    """按 thirdhub:// 深链直达。比连续 nav+tap 更稳：解析在 App 内只有一份。"""
+    url = " ".join(args.url)
+    r = c.exec({"op": "deeplink", "url": url})
+    pj(r)
+    return nonzero(r)
+
+
 def cmd_tab(c, args):
     arg = args.index[0] if args.index else ""
     cmd = {"op": "tab"}
@@ -415,6 +423,9 @@ def main():
 
     p = sub.add_parser("tab")
     p.add_argument("index", nargs="?")
+
+    p = sub.add_parser("link")
+    p.add_argument("url", nargs="+", help="thirdhub://video?platform=hongguo 这类深链")
 
     p = sub.add_parser("platform")
     p.add_argument("name", nargs="+")

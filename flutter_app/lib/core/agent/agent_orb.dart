@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n.dart';
+import 'agent_auto_page.dart';
 import 'agent_bridge.dart';
 import 'agent_protocol.dart';
 
@@ -373,9 +374,15 @@ class _Acp extends State<AgentControlPage> {
   final List<String> _lines = [];
   bool _busy = false;
 
+  /// 本机在局域网里的 IPv4。给「复制连接信息」用：
+  /// 用户要发给别人（或发给 AI）的是一条能直接粘进终端的字符串，
+  /// 而不是「去设置里找 IP」。找不到就留空，界面退回 127.0.0.1。
+  String _lanIp = '';
+
   @override
   void initState() {
     super.initState();
+    _probeIp();
     SharedPreferences.getInstance().then((p) {
       if (!mounted) return;
       setState(() {
@@ -389,6 +396,36 @@ class _Acp extends State<AgentControlPage> {
   void dispose() {
     _port.dispose();
     super.dispose();
+  }
+
+  Future<void> _probeIp() async {
+    try {
+      final list = await NetworkInterface.list(
+          type: InternetAddressType.IPv4, includeLoopback: false);
+      for (final ni in list) {
+        for (final a in ni.addresses) {
+          final ip = a.address;
+          if (ip.startsWith('192.168.') ||
+              ip.startsWith('10.') ||
+              RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(ip)) {
+            if (!mounted) return;
+            setState(() => _lanIp = ip);
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// 整条连接信息一次复制：host + 端口 + 令牌。少一次手工拼错的机会。
+  Future<void> _copyConn() async {
+    final b = AgentBridge.I;
+    final host = _lanIp.isEmpty ? '127.0.0.1' : _lanIp;
+    await Clipboard.setData(ClipboardData(
+        text: 'TH_AGENT_HOST=$host\nTH_AGENT_PORT=${b.port}\nTH_AGENT_TOKEN=${b.token}'));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(tr('已复制，可直接发给我'))));
   }
 
   void _say(String s) => setState(() => _lines.insert(0, s));
@@ -457,6 +494,20 @@ class _Acp extends State<AgentControlPage> {
     return Scaffold(
       appBar: AppBar(title: Text(tr('AI 控制'))),
       body: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
+        // ★4.81.82 两条通道的分工，必须写在最前面，否则用户会以为只做了一个：
+        //   本页 = 电脑/我这边驱动；下面那条 = 手机自己跑。
+        ListTile(
+          leading: Icon(Icons.auto_awesome_outlined, color: cs.primary),
+          title: Text(tr('让手机自己跑（填 API 密钥）')),
+          subtitle: Text(
+            tr('模型在手机里看截图、自己点，不需要电脑。出门在外也能让它自测一遍。'),
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AgentAutoPage())),
+        ),
+        const Divider(),
         SwitchListTile(
           value: orb,
           onChanged: _toggle,
@@ -468,7 +519,7 @@ class _Acp extends State<AgentControlPage> {
           title: Text(tr('监听端口')),
           subtitle: Text(
             b.running.value
-                ? 'http://127.0.0.1:${b.port}  已就绪'
+                ? 'http://${_lanIp.isEmpty ? '127.0.0.1' : _lanIp}:${b.port}  已就绪'
                 : (b.lastError.isEmpty ? tr('未开启') : trf('失败：{e}', {'e': b.lastError})),
             style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
           ),
@@ -500,6 +551,17 @@ class _Acp extends State<AgentControlPage> {
                 ? null
                 : () => Clipboard.setData(ClipboardData(text: b.token)),
           ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.terminal, size: 18),
+          title: Text(tr('复制连接')),
+          subtitle: Text(
+            'TH_AGENT_HOST=$_lanIp\nTH_AGENT_TOKEN=${b.token}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: cs.onSurfaceVariant),
+          ),
+          onTap: b.token.isEmpty ? null : _copyConn,
         ),
         const Divider(),
         Padding(

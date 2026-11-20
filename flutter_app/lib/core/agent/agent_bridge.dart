@@ -29,6 +29,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
+import 'agent_deeplink.dart';
 import 'agent_protocol.dart';
 import 'agent_targets.dart';
 
@@ -325,7 +326,33 @@ class AgentBridge {
             : AgentResult.err('module "$m" not opened',
                 hint: '模块名要与底部导航一致；也可能是当前平台门禁不允许该模块');
 
+      case 'deeplink':
+        // 深链展开：thirdhub://video?platform=hongguo → [nav, platform]
+        // 为什么走这里而不是让调用方自己拆：解析器只有一份（agent_deeplink.dart），
+        // 外部意图、AI、宿主脚本三条路必须落到同一组动作上。
+        final url = c.str('url') ?? c.str('uri');
+        if (url == null || url.isEmpty) {
+          return AgentResult.err('deeplink needs url',
+              hint: '{"op":"deeplink","url":"thirdhub://video?platform=hongguo"}');
+        }
+        final steps = AgentDeeplink.parse(url);
+        if (steps.isEmpty) {
+          return AgentResult.err('unrecognized deeplink "$url"',
+              hint: '支持：thirdhub://video?platform=… / novel?q=… / open?module=… / do?action=…');
+        }
+        final outs = <Map<String, dynamic>>[];
+        for (final s in steps) {
+          final r = await exec(AgentCmd.fromJson(s));
+          outs.add({'op': s['op'], ...r.toJson()});
+          if (!r.ok) {
+            return AgentResult.err('deeplink step ${outs.length} failed: ${r.error}',
+                hint: '${r.hint ?? ''} 已执行 ${outs.length}/${steps.length} 步');
+          }
+        }
+        return AgentResult.ok({'url': url, 'steps': outs});
+
       case 'tab':
+
         final f = AgentTargets.switchModule;
         if (f == null) return AgentResult.err('switchModule not wired');
         final name = c.str('name') ?? c.str('module') ?? '${c.integer('index') ?? 0}';

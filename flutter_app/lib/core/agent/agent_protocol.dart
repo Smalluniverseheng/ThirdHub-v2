@@ -150,6 +150,7 @@ const Set<String> agentOps = {
   'state', // 应用状态快照
   'tree', // 当前可见控件树（可寻址者）
   'nav', // 打开模块
+  'deeplink', // 按 thirdhub:// 深链直达（内部展开成多条指令）
   'tab', // 切根导航下标/名字
   'platform', // 视频页平台横切
   'subtab', // 模块内子页签

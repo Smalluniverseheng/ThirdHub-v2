@@ -73,6 +73,16 @@
                 <data android:scheme="http"/>
                 <data android:scheme="https"/>
             </intent-filter>
+            <!-- ★4.81.82 深链指令：thirdhub://video?platform=hongguo
+                 一条链接直达某个模块/平台/搜索。
+                 注意 autoVerify=false：不声明 App Links，避免系统去
+                 校验我们对 thirdhub 这个自定义 scheme 的所有权（不存在的域名）。 -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="thirdhub"/>
+            </intent-filter>
             <!-- 打开方式: TXT/文本 -> 小说阅读器 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

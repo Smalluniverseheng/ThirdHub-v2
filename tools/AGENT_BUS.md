@@ -116,3 +116,70 @@ flutter test test/agent_bus_test.dart
 
 覆盖：协议解析、参数收敛、op 白名单、结果序列化、**真实手势点中控件**、
 **滑动驱动 PageView 翻页**。最后两条是"不碰屏幕也能操控"的地基证据。
+
+---
+
+# 附：应用内自驱动（4.81.82）
+
+上面那条是**电脑驱动手机**。还有一个反方向的：**手机自己跑**。
+
+入口：我的 → 设置 → AI 控制（真机测试）→「让手机自己跑（填 API 密钥）」。
+
+它不是另一套东西，而是复用同一条指令通道 —— 只是把「谁来做决定」
+从电脑换成了用户自己配的视觉模型：
+
+```
+截图 ──► 视觉模型（用户自填 Key）──► 一条指令 ──► 桥执行 ──► 再截图
+          ▲                                                │
+          └──────────────── 循环，直到 done / fail ─────────┘
+```
+
+模型可用的指令就是本文档 §2 那张表（外加 `deeplink`）。三层代码：
+
+| 文件 | 职责 |
+|---|---|
+| `core/agent/agent_llm.dart` | 多模态请求体组装 + 决策 JSON 解析（openai / anthropic 两种形状） |
+| `core/agent/agent_runner.dart` | 循环、防死循环、可中止、每步留截图 |
+| `core/agent/agent_auto_page.dart` | 配置 / 目标 / 运行 / 逐步看图和结论 |
+
+## 为什么不用 adb / 不用电脑
+
+- adb 只看像素，读不到"现在停在第 2 个平台"；本通道知道全部内部状态。
+- adb 要连电脑、开调试；这条通道只要 App 自己开着，出门在外也能跑。
+- 模型是用户自己的（自己的 Key、自己的账单），App 不代付、不中转。
+
+## 深链（thirdhub://）
+
+一条字符串直接落到某个功能，比让模型连点三下稳。解析器只有一份：
+`core/agent/agent_deeplink.dart`（纯 Dart，有单测）。三个消费方共用：
+
+1. 外部点链接（Android VIEW intent → `IntentRouter`）
+2. AI 指令 `{"op":"deeplink","url":"…"}`
+3. 宿主脚本 `python3 tools/th_agent.py link "thirdhub://video?platform=hongguo"`
+
+| 写法 | 落点 |
+|---|---|
+| `thirdhub://video` | 视频 |
+| `thirdhub://video?platform=hongguo` | 视频 + 红果 |
+| `thirdhub://bili` | 视频 + 哔哩哔哩 |
+| `thirdhub://video/hongguo` | 同上（平台写在路径里） |
+| `thirdhub://bili?sub=番剧` | 视频 + B 站 + 番剧栏目 |
+| `thirdhub://novel?q=斗破苍穹` | 小说 + 搜索 |
+| `thirdhub://search?q=周杰伦&kind=music` | 搜索页，限定音乐类型 |
+| `thirdhub://open?module=漫画` | 指定模块 |
+| `thirdhub://do?action=名字&k=v` | 调前端注册的具名动作 |
+
+不认识的宿主/模块返回空（不猜），调用方据此报错而不是静默跳到错地方。
+
+## 单测
+
+```bash
+flutter test test/agent_auto_test.dart   # 26 项：决策解析 / 请求体 / 深链
+flutter test test/agent_bus_test.dart    # 11 项：协议 / 手势注入
+```
+
+## 已知边界（这版还没做）
+
+- 直播弹幕（WebSocket）没接。
+- 模型说 done 时，App 只信"它给的最后一张图"，不做二次校验 —— 图会摆在结果里让人自己看一眼。
+- 完全离线的模型（本地 gguf）没接，只支持走 HTTP 的 OpenAI/Claude 兼容接口。

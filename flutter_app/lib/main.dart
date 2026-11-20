@@ -145,9 +145,12 @@ import 'core/boot.dart';
 import 'core/ui/app_skeleton.dart';
 // ★4.81.81 AI 控制总线：智能助手悬浮球 + 目标注册表。
 //   「AI 不触屏操控 App 做真机测试」的落点，协议见 core/agent/agent_protocol.dart。
-//   agent_bridge 由悬浮球自己持有，main 不需要直接引用。
 import 'core/agent/agent_orb.dart';
 import 'core/agent/agent_targets.dart';
+// ★4.81.82 应用内 AI 自驱动（自带 API Key 看截图下指令）+ 深链指令跳转。
+import 'core/agent/agent_bridge.dart';
+import 'core/agent/agent_protocol.dart';
+import 'core/agent/agent_deeplink.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -188,6 +191,12 @@ class IntentRouter {
     final uri = p['uri'] as String?;
     final text = p['text'] as String?;
     try {
+      // ★4.81.82 thirdhub:// 深链：一条指令直达某个功能（模块 / 平台 / 搜索…）。
+      //   放在最前面判，因为深链可能带 http 风格的 query，不能被下面的链接分支抢走。
+      if (uri != null && AgentDeeplink.looksLike(uri)) {
+        await _runDeeplink(uri);
+        return;
+      }
       // 纯文本分享 / 链接
       if (text != null && text.isNotEmpty) {
         final m = RegExp(r'https?://\S+').firstMatch(text);
@@ -241,8 +250,21 @@ class IntentRouter {
     } catch (_) {}
   }
 
-  static void _openBrowser(String url) {
-    final nav = navKey.currentState;
+  /// 执行一条 thirdhub:// 深链。
+  ///
+  /// 走控制总线而不是在这里另写一套导航：解析器（agent_deeplink.dart）只有一份，
+  /// 外部点链接、AI 下指令、电脑脚本调接口三条路必须落到同一组动作上 ——
+  /// 否则「网页说能跳到这里，AI 却跳到别处」这种不一致会永远查不清。
+  static Future<void> _runDeeplink(String url) async {
+    final steps = AgentDeeplink.parse(url);
+    if (steps.isEmpty) return;
+    for (final s in steps) {
+      final r = await AgentBridge.I.exec(AgentCmd.fromJson(s));
+      if (!r.ok) break;
+    }
+  }
+
+  static void _openBrowser(String url) {    final nav = navKey.currentState;
     if (nav == null) return;
     nav.push(MaterialPageRoute(builder: (_) => BrowserPage(initialUrl: url)));
   }
@@ -4719,10 +4741,39 @@ class _Home extends State<SearchSection> {
     // ★订阅连接状态：旧版只在 build 时读一次静态字段 →「连上了还显示未连接 / 变化特别慢」
     EngineDirect.state.addListener(_onConn);
     _scroll.addListener(_maybeMore);
+    _wireAgentSearch();
+  }
+
+  /// 把「搜索」暴露成 AI 控制总线的具名动作。
+  ///
+  /// 为什么不让 AI 去点搜索框：搜索框在页面顶部，用户滚到结果中间时它已经不在
+  /// 屏幕内了，按文字点会被判"点不到"。而这里直接调 go()，任何时刻都有效。
+  /// 这也是深链 `thirdhub://search?q=…` 落到的那一跳。
+  void _wireAgentSearch() {
+    AgentTargets.actions['search'] = (args) async {
+      final q = '${args['q'] ?? args['keyword'] ?? args['query'] ?? ''}'.trim();
+      if (q.isEmpty) return false;
+      final kind = '${args['kind'] ?? ''}'.trim().toLowerCase();
+      const kindIdx = {
+        'all': 0,
+        'novel': 1,
+        'comic': 2,
+        'video': 3,
+        'music': 4,
+      };
+      final want = kindIdx[kind];
+      if (want != null && _typeIdx.contains(want) && want != typeFilter) {
+        setState(() => typeFilter = want);
+      }
+      ctrl.text = q;
+      await go();
+      return true;
+    };
   }
 
   @override
   void dispose() {
+    AgentTargets.actions.remove('search');
     EngineDirect.state.removeListener(_onConn);
     // ★必须显式取消流：不断开的话引擎侧会一直往这条连接推（直到自身超时），
     //   既浪费电也浪费那台机器的扫描时间片。
