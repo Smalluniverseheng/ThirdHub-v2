@@ -32,6 +32,27 @@ const URLMAP_FILE = path.join(DATA, 'thp-urlmap.json');
 let engine = null;
 try { engine = require('./engine.js'); } catch (e) { engine = null; }
 
+// ★4.81.84 / 后端 0.8.9：9528 媒体代理从「无鉴权开放代理」收口成「只转发自己下发过的地址」。
+//   与 index.js 共用同一个 data/secret（同一个目录下的同一个文件，不另起一套密钥）。
+const mediaSign = require('./media-sign.js');
+let ssrfGuard = null;
+try { ssrfGuard = require('./ssrf-guard.js'); } catch (e) { ssrfGuard = null; }
+
+function mediaSecret() {
+  // 环境变量优先：便于多实例部署共用一套密钥，也让端到端测试能直接注入。
+  const fromEnv = String(process.env.TH_MEDIA_SECRET || '').trim();
+  if (fromEnv) return fromEnv;
+  const f = path.join(DATA, 'secret');
+  try {
+    const s = fs.readFileSync(f, 'utf8').trim();
+    if (s) return s;
+  } catch (e) {}
+  // 走到这里说明 index.js 还没生成 secret（极早期 / 单文件模式顺序不同）：
+  // 进程内临时值即可 —— 此时还没人拿到过签名地址，重启失效无害。
+  return 'tmp_' + process.pid + '_' + (MEDIA_SECRET_CACHE || (MEDIA_SECRET_CACHE = require('crypto').randomBytes(16).toString('hex')));
+}
+let MEDIA_SECRET_CACHE = '';
+
 // ─────────────────────────────────────────────────────────────
 // 媒体反向代理（2026-11-14 加）
 //
@@ -59,13 +80,37 @@ function mediaBase() {
 /** 把一个可播放地址包成走本机代理的地址 */
 function wrapMedia(u, referer) {
   if (!u || !/^https?:\/\//i.test(u)) return u;
+  if (!MEDIA_SIGN_ON) {
+    // 逃生阀：极少数人把 9528 反代到公网又没能力改客户端，可显式关签名。
+    // 默认必须是开的 —— 安全默认值必须落在安全的那一侧。
+    let plain = mediaBase() + '/thp/stream?u=' + encodeURIComponent(u);
+    if (referer) plain += '&r=' + encodeURIComponent(referer);
+    return plain;
+  }
+  const sig = mediaSign.sign(u, referer || '', mediaSecret());
   let out = mediaBase() + '/thp/stream?u=' + encodeURIComponent(u);
   if (referer) out += '&r=' + encodeURIComponent(referer);
-  return out;
+  return out + '&e=' + encodeURIComponent(sig.e) + '&s=' + encodeURIComponent(sig.s);
 }
+
+/** 签名开关（TH_MEDIA_SIGN=0 显式关闭；其余一律开启）。 */
+const MEDIA_SIGN_ON = String(process.env.TH_MEDIA_SIGN || '1') !== '0';
+/** 媒体源是否需要过公网准入（源站规则可能写内网时用 TH_SSRF_ALLOW_PRIVATE=1 放行）。 */
+const MEDIA_ALLOW_PRIVATE = String(process.env.TH_SSRF_ALLOW_PRIVATE || '') === '1';
+/** 在途上限：正常播放（含拖动）远达不到；被当免费 CDN 刷时立刻生效。 */
+const MEDIA_MAX_INFLIGHT = parseInt(process.env.TH_MEDIA_MAX_INFLIGHT || '256', 10);
+const MEDIA_MAX_PER_IP = parseInt(process.env.TH_MEDIA_MAX_PER_IP || '24', 10);
 
 function startMediaProxy() {
   const http = require('http');
+  // 在途计数：全局 + 每 IP。被当免费 CDN / 被扫的时候立刻能挡住，
+  // 正常播放（一个播放器同时在途 2~6 个分片）永远碰不到上限。
+  let inflight = 0;
+  const perIp = new Map();
+  const ipOf = (req) => String(
+    (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+    (req.socket && req.socket.remoteAddress) || '?').replace(/^::ffff:/, '');
+
   const srv = http.createServer(async (req, res) => {
     const cors = {
       'Access-Control-Allow-Origin': '*',
@@ -82,22 +127,81 @@ function startMediaProxy() {
     const ref = args.searchParams.get('r') || '';
     if (!/^https?:\/\//i.test(target)) { res.writeHead(400, cors); res.end('bad target'); return; }
 
+    // ── ① 签名：只转发我们自己的 /thp/play 下发过的地址 ──
+    //   这一步挡掉的是「任何人构造 ?u=http://10.x.x.x/ 拿这台 NAS 当内网跳板」。
+    if (MEDIA_SIGN_ON) {
+      const v = mediaSign.verify(
+        { u: target, r: ref, e: args.searchParams.get('e') || '', s: args.searchParams.get('s') || '' },
+        mediaSecret());
+      if (!v.ok) {
+        res.writeHead(403, { ...cors, 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('forbidden: media url not signed or expired (' + v.reason + ')');
+        return;
+      }
+    }
+
+    // ── ② 并发：先占坑再干活，任何提前 return 都必须归还 ──
+    const ip = ipOf(req);
+    const cur = perIp.get(ip) || 0;
+    if (cur >= MEDIA_MAX_PER_IP || inflight >= MEDIA_MAX_INFLIGHT) {
+      res.writeHead(429, { ...cors, 'Content-Type': 'text/plain', 'Retry-After': '2' });
+      res.end('too many requests');
+      return;
+    }
+    perIp.set(ip, cur + 1); inflight++;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      inflight = Math.max(0, inflight - 1);
+      const n = (perIp.get(ip) || 1) - 1;
+      if (n <= 0) perIp.delete(ip); else perIp.set(ip, n);
+    };
+    res.on('close', release);
+    res.on('finish', release);
+
     const headers = { 'User-Agent': PROXY_UA, 'Accept': '*/*', 'Accept-Language': 'zh-CN,zh;q=0.9' };
+    // ★4.81.84：必须显式要 identity。
+    //   为什么：Node 的 fetch 会自动解 gzip/br，但下面又把上游的
+    //   `Content-Length`（**压缩后**的长度）原样吐给客户端 —— 两边对不上，
+    //   客户端会一直等剩下的字节，表现是「播放卡住不动 / 一直转圈」。
+    //   媒体分片（ts/mp4/jpg）本来就不压缩，要 identity 没有任何代价。
+    //   （这是这次端到端测试才暴露的老 bug，不是新引入的。）
+    headers['Accept-Encoding'] = 'identity';
     if (ref) headers['Referer'] = ref;
     if (req.headers.range) headers['Range'] = req.headers.range;
 
     let up;
     try {
-      up = await fetch(target, { headers, signal: AbortSignal.timeout(30000), redirect: 'follow' });
+      // ── ③ 准入：即便签名对，也不允许把内网/回环/元数据地址当源站 ──
+      //   走 safeFetch 而不是裸 fetch：它逐跳校验（redirect: manual），
+      //   防止源站回一个 302 指向 127.0.0.1 把校验绕过去。
+      const fetchImpl = (ssrfGuard && ssrfGuard.safeFetch) ? ssrfGuard.safeFetch : fetch;
+      const opts = { headers, timeoutMs: 30000, allowPrivate: MEDIA_ALLOW_PRIVATE };
+      up = ssrfGuard ? await fetchImpl(target, opts)
+                     : await fetch(target, { headers, redirect: 'manual', signal: AbortSignal.timeout(30000) });
     } catch (e) {
-      res.writeHead(502, { ...cors, 'Content-Type': 'text/plain' }); res.end('upstream error: ' + String(e.message || e)); return;
+      release();
+      const blocked = ssrfGuard && ssrfGuard.isSsrfBlocked && ssrfGuard.isSsrfBlocked(e);
+      res.writeHead(blocked ? 403 : 502, { ...cors, 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end((blocked ? 'forbidden: ' : 'upstream error: ') + String(e.message || e));
+      return;
     }
 
     const ctype = String(up.headers.get('content-type') || '');
     const isPlaylist = /mpegurl/i.test(ctype) || /\.m3u8(\?|$)/i.test(target);
 
     if (isPlaylist) {
-      const text = await up.text();
+      // 读清单失败也要把坑还回去，否则连着错几次就把 429 打满（自伤）
+      let text = '';
+      try {
+        text = await up.text();
+      } catch (e) {
+        release();
+        res.writeHead(502, { ...cors, 'Content-Type': 'text/plain' });
+        res.end('upstream playlist error');
+        return;
+      }
       const baseUrl = target;             // 相对地址按清单自身位置解析
       const out = [];
       for (const rawLine of text.split(/\r?\n/)) {
@@ -135,6 +239,14 @@ function startMediaProxy() {
     for (const k of ['content-length', 'content-range', 'etag', 'last-modified']) {
       const v = up.headers.get(k);
       if (v) h[k.replace(/(^|-)([a-z])/g, (m, a, b) => a + b.toUpperCase())] = v;
+    }
+    // 兜底：上游硬塞了压缩编码（少数 CDN 无视 Accept-Encoding）时，
+    //   长度已经不是明文长度 —— 删掉 Content-Length 改用 chunked，宁可少一次
+    //   精确 seek 也不要卡住。同时删掉 Content-Encoding（body 已被 fetch 解开）。
+    const enc = up.headers.get('content-encoding');
+    if (enc && enc !== 'identity') {
+      delete h['Content-Length'];
+      h['Content-Encoding'] = 'identity';
     }
     res.writeHead(up.status, h);
     if (!up.body) { res.end(); return; }
@@ -845,4 +957,4 @@ async function handle(req, res, body, u, p, send) {
   return false;
 }
 
-module.exports = { handle, resolveSource, sources };
+module.exports = { handle, resolveSource, sources, startMediaProxy, wrapMedia, mediaBase, MEDIA_SIGN_ON };
