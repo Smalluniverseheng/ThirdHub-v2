@@ -1,0 +1,795 @@
+// B 站播放器（4.81.74 重做）—— 自绘控制层 + 常驻弹幕 + 清晰度面板
+//
+// ── 为什么另起一个文件，而不是改原来的 BiliPlayerPage ──
+//   原实现是一层 Chewie。Chewie 的全屏是**另建一条路由**（内部再包一个 Scaffold），
+//   弹幕层叠在外层根本进不去全屏 —— 而「弹幕」和「全屏」恰恰是 B 站场景的两个核心诉求。
+//   这里改用 video_player 自绘控制层：全屏 = 转横屏 + 隐藏系统栏，
+//   播放器实例和弹幕层都不重建，进度与弹幕位置天然连续。
+//
+// ── 弹幕 ──
+//   渲染用 canvas_danmaku（CustomPainter 直绘，组件树里不产生成百上千个 Widget）。
+//   数据来自后端 GET /v1/bili/danmaku?cid=（后端已做 XML→JSON、deflate 兜底、10 分钟缓存）。
+//   App 端只负责：按播放进度投放、暂停/续播联动、seek 后重排。
+//
+// ── 清晰度 ──
+//   后端 playurl 用 fnval=1 走 durl 单文件，只能拿到 360P（有音有画、支持拖动）。
+//   1080P 必须走 DASH（音视频分离，播放器要同时喂两条流并保持同步），是独立一块工程。
+//   所以这里**如实呈现**：把 accept_quality 全列出来，当前可播的高亮，
+//   其余明确标注「需 DASH」，而不是装作能切。
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:canvas_danmaku/canvas_danmaku.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
+
+import 'design_tokens.dart';
+import 'i18n.dart';
+
+/// 清晰度码 → 人话（与后端 / bili_down_page 的 FORMAT_LABEL 对齐）
+String biliQualityLabel(int q) => switch (q) {
+      6 => '240P',
+      16 => '360P',
+      32 => '480P',
+      64 => '720P',
+      74 => '720P60',
+      80 => '1080P',
+      112 => '1080P+',
+      116 => '1080P60',
+      120 => '4K',
+      125 => 'HDR',
+      126 => '杜比视界',
+      _ => q > 0 ? '${q}P' : '自动',
+    };
+
+class BiliPlayerPage extends StatefulWidget {
+  const BiliPlayerPage({
+    super.key,
+    required this.title,
+    required this.url,
+    required this.apiBase,
+    this.token = '',
+    this.bvid = '',
+    this.cid = '',
+    this.quality = 0,
+    this.acceptQuality = const <int>[],
+  });
+
+  final String title;
+
+  /// 播放直链（后端已包过媒体代理，带 Referer）
+  final String url;
+
+  /// 后端地址；为空则不拉弹幕（播放仍可继续）
+  final String apiBase;
+  final String token;
+  final String bvid;
+
+  /// 弹幕按 cid 取
+  final String cid;
+
+  /// 当前实际拿到的清晰度码
+  final int quality;
+
+  /// 该视频可选的清晰度码（后端 accept_quality）
+  final List<int> acceptQuality;
+
+  @override
+  State<BiliPlayerPage> createState() => _BiliPlayerPageState();
+}
+
+class _BiliPlayerPageState extends State<BiliPlayerPage> {
+  VideoPlayerController? _vp;
+  DanmakuController<int>? _dm;
+  String _err = '';
+
+  // ── 弹幕数据与投放 ──
+  List<_DmItem> _dmList = const [];
+  int _dmIdx = 0;
+  double _lastPos = 0;
+  bool _dmRunning = true;
+  int _dmCount = 0; // 总条数（面板上显示）
+
+  // ── 弹幕外观设置（持久化）──
+  bool _dmOn = true;
+  double _dmOpacity = 0.9;
+  double _dmFontSize = 16;
+  double _dmDuration = 8;
+  double _dmArea = 1.0;
+  bool _hideTop = false;
+  bool _hideBottom = false;
+  bool _hideScroll = false;
+
+  // ── 控制层 ──
+  bool _ctrl = true;
+  bool _fullscreen = false;
+  Timer? _ctrlTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+    _init();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _dmOn = p.getBool('bili_dm_on') ?? true;
+      _dmOpacity = (p.getDouble('bili_dm_opacity') ?? 0.9).clamp(0.1, 1.0);
+      _dmFontSize = (p.getDouble('bili_dm_font') ?? 16).clamp(11, 30);
+      _dmDuration = (p.getDouble('bili_dm_dur') ?? 8).clamp(3, 16);
+      _dmArea = (p.getDouble('bili_dm_area') ?? 1.0).clamp(0.2, 1.0);
+      _hideTop = p.getBool('bili_dm_hide_top') ?? false;
+      _hideBottom = p.getBool('bili_dm_hide_bottom') ?? false;
+      _hideScroll = p.getBool('bili_dm_hide_scroll') ?? false;
+    });
+  }
+
+  Future<void> _savePrefs() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('bili_dm_on', _dmOn);
+    await p.setDouble('bili_dm_opacity', _dmOpacity);
+    await p.setDouble('bili_dm_font', _dmFontSize);
+    await p.setDouble('bili_dm_dur', _dmDuration);
+    await p.setDouble('bili_dm_area', _dmArea);
+    await p.setBool('bili_dm_hide_top', _hideTop);
+    await p.setBool('bili_dm_hide_bottom', _hideBottom);
+    await p.setBool('bili_dm_hide_scroll', _hideScroll);
+  }
+
+  Future<void> _init() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final tok = (p.getString('token') ?? '').trim();
+      final headers = <String, String>{
+        if (tok.isNotEmpty) 'x-th-token': tok,
+        if (widget.token.isNotEmpty) 'x-th-token': widget.token,
+      };
+      _vp = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+        httpHeaders: headers,
+      );
+      await _vp!.initialize();
+      _vp!.addListener(_tick);
+      await _vp!.play();
+      if (mounted) setState(() {});
+      unawaited(_loadDanmaku());
+    } catch (e) {
+      if (mounted) setState(() => _err = '${tr('播放失败')}: $e');
+    }
+  }
+
+  /// 拉弹幕。失败**不阻断播放** —— 弹幕是增强，不是前提。
+  Future<void> _loadDanmaku() async {
+    final cid = widget.cid.trim();
+    final base = widget.apiBase.trim();
+    if (cid.isEmpty || base.isEmpty) return;
+    try {
+      final r = await http.get(
+        Uri.parse('$base/v1/bili/danmaku?cid=${Uri.encodeComponent(cid)}'),
+        headers: widget.token.isEmpty ? const {} : {'x-th-token': widget.token},
+      ).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) return;
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is! Map || j['ok'] != true) return;
+      final raw = (j['items'] as List?) ?? const [];
+      final list = <_DmItem>[];
+      for (final e in raw) {
+        if (e is! Map) continue;
+        final t = (e['t'] as num?)?.toDouble() ?? 0;
+        final mode = (e['m'] as num?)?.toInt() ?? 1;
+        final color = (e['c'] as num?)?.toInt() ?? 0xFFFFFF;
+        final text = '${e['x'] ?? ''}';
+        if (text.isEmpty) continue;
+        // 7/8 是高级弹幕与代码弹幕（带定位与脚本），本播放器不执行，直接跳过
+        if (mode == 7 || mode == 8) continue;
+        list.add(_DmItem(t, mode, Color(0xFF000000 | (color & 0xFFFFFF)), text));
+      }
+      if (!mounted) return;
+      setState(() {
+        _dmList = list;
+        _dmCount = list.length;
+        _dmIdx = 0;
+      });
+      _replayFrom(_currentPos());
+    } catch (_) {
+      // 静默：弹幕拉不到不影响观看
+    }
+  }
+
+  double _currentPos() =>
+      (_vp?.value.position.inMilliseconds ?? 0) / 1000.0;
+
+  /// 从指定秒数重新铺弹幕（seek 后调用）
+  void _replayFrom(double pos) {
+    _dm?.clear();
+    // 二分找到第一个 t >= pos 的条目
+    var lo = 0, hi = _dmList.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (_dmList[mid].t < pos) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    _dmIdx = lo;
+  }
+
+  void _emit(_DmItem it) {
+    final ctl = _dm;
+    if (ctl == null) return;
+    ctl.addDanmaku(DanmakuContentItem<int>(
+      it.text,
+      color: it.color,
+      type: switch (it.mode) {
+        4 => DanmakuItemType.bottom,
+        5 => DanmakuItemType.top,
+        _ => DanmakuItemType.scroll,
+      },
+      extra: it.mode,
+    ));
+  }
+
+  /// 播放器每帧回调：驱动弹幕投放 + 暂停联动 + seek 检测
+  void _tick() {
+    final vp = _vp;
+    if (vp == null || !vp.value.isInitialized) return;
+    final v = vp.value;
+    final pos = v.position.inMilliseconds / 1000.0;
+
+    // 播放/暂停联动弹幕动画
+    if (v.isPlaying != _dmRunning) {
+      _dmRunning = v.isPlaying;
+      if (v.isPlaying) {
+        _dm?.resume();
+      } else {
+        _dm?.pause();
+      }
+    }
+
+    // 后退超过 1 秒 → 视为 seek，重排弹幕
+    if (pos < _lastPos - 1.0) _replayFrom(pos);
+
+    if (_dmOn) {
+      // 提前 0.3s 投放，让弹幕从右侧滑入而不是"突然出现"
+      while (_dmIdx < _dmList.length && _dmList[_dmIdx].t <= pos + 0.3) {
+        final it = _dmList[_dmIdx++];
+        // 跳过已经离屏太久的（快进时）
+        if (it.t >= pos - 1.5) _emit(it);
+      }
+    } else if (_dmIdx < _dmList.length) {
+      // 关闭弹幕时只推进游标，不绘制
+      while (_dmIdx < _dmList.length && _dmList[_dmIdx].t <= pos) {
+        _dmIdx++;
+      }
+    }
+    _lastPos = pos;
+  }
+
+  // ── 控制层显示 ──
+  void _toggleCtrl() {
+    setState(() => _ctrl = !_ctrl);
+    if (_ctrl) _armHide();
+  }
+
+  void _armHide() {
+    _ctrlTimer?.cancel();
+    if (!_ctrl || !(_vp?.value.isPlaying ?? false)) return;
+    _ctrlTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _ctrl = false);
+    });
+  }
+
+  Future<void> _togglePlay() async {
+    final vp = _vp;
+    if (vp == null) return;
+    if (vp.value.isPlaying) {
+      await vp.pause();
+    } else {
+      await vp.play();
+    }
+    _armHide();
+  }
+
+  Future<void> _seekTo(double sec) async {
+    final vp = _vp;
+    if (vp == null) return;
+    final d = vp.value.duration;
+    final target = Duration(milliseconds: (sec * 1000).round());
+    await vp.seekTo(target > d ? d : target);
+    _replayFrom(sec);
+  }
+
+  Future<void> _toggleFullscreen() async {
+    final on = !_fullscreen;
+    setState(() => _fullscreen = on);
+    if (on) {
+      await SystemChrome.setPreferredOrientations(
+          [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+    _armHide();
+  }
+
+  void _applyDmOption() {
+    _dm?.updateOption(DanmakuOption(
+      fontSize: _dmFontSize,
+      opacity: _dmOpacity,
+      duration: _dmDuration,
+      area: _dmArea,
+      hideTop: _hideTop,
+      hideBottom: _hideBottom,
+      hideScroll: _hideScroll,
+      strokeWidth: 1.5,
+      lineHeight: 1.6,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _ctrlTimer?.cancel();
+    _dm = null; // 弹幕控制器随 DanmakuScreen 一起销毁，先断开引用
+    _vp?.removeListener(_tick);
+    _vp?.dispose();
+    // 恢复屏幕方向与系统栏，避免退出播放器后整个 App 停在横屏
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vp = _vp;
+    final ar = (vp != null && vp.value.isInitialized && vp.value.aspectRatio > 0)
+        ? vp.value.aspectRatio
+        : 16 / 9;
+
+    // 不用 PopScope：它的回调签名在 Flutter 3.22 / 3.24 之间改过名
+    // （onPopInvoked → onPopInvokedWithResult），写哪个都可能在另一版编译不过。
+    // 退出时恢复横竖屏/系统栏已由 dispose() 兜住，覆盖返回键、手势返回、
+    // 以及外部 push 覆盖等所有销毁路径。
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: _err.isNotEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(Gap.lg),
+                child:
+                    Text(_err, style: const TextStyle(color: Colors.white70)),
+              ),
+            )
+          : (vp == null || !vp.value.isInitialized
+              ? const Center(child: CircularProgressIndicator())
+              : Stack(children: [
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: ar,
+                      child: Stack(children: [
+                        VideoPlayer(vp),
+                        // 弹幕层贴在**视频画面**内，黑边上不出现弹幕
+                        if (_dmOn)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: DanmakuScreen<int>(
+                                createdController: (e) {
+                                  _dm = e;
+                                  _applyDmOption();
+                                  _replayFrom(_currentPos());
+                                },
+                                option: DanmakuOption(
+                                  fontSize: _dmFontSize,
+                                  opacity: _dmOpacity,
+                                  duration: _dmDuration,
+                                  area: _dmArea,
+                                  hideTop: _hideTop,
+                                  hideBottom: _hideBottom,
+                                  hideScroll: _hideScroll,
+                                  strokeWidth: 1.5,
+                                  lineHeight: 1.6,
+                                ),
+                              ),
+                            ),
+                          ),
+                        // 单击显示/隐藏控制层；双击播放暂停
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: _toggleCtrl,
+                            onDoubleTap: _togglePlay,
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  if (!_fullscreen) _topBar(),
+                  if (_ctrl) _bottomBar(),
+                ])),
+    );
+  }
+
+  Widget _topBar() => Positioned(
+        left: 0,
+        right: 0,
+        top: 0,
+        child: SafeArea(
+          bottom: false,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+            color: Colors.black.withValues(alpha: 0.35),
+            child: Row(children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                tooltip: tr('返回'),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _bottomBar() {
+    final vp = _vp!;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(Gap.sm, Gap.xs, Gap.sm,
+            Gap.sm + MediaQuery.of(context).padding.bottom),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.72),
+            ],
+          ),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // ── 进度条 ──
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: vp,
+            builder: (_, v, __) {
+              final total = v.duration.inMilliseconds.toDouble();
+              final cur = v.position.inMilliseconds.toDouble();
+              return Row(children: [
+                Text(_mmss(v.position),
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 11)),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 2.5,
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 5),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      value: total <= 0 ? 0 : cur.clamp(0, total),
+                      max: total <= 0 ? 1 : total,
+                      onChanged: (x) => _seekTo(x / 1000),
+                    ),
+                  ),
+                ),
+                Text(_mmss(v.duration),
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 11)),
+              ]);
+            },
+          ),
+          // ── 按钮行 ──
+          Row(children: [
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: vp,
+              builder: (_, v, __) => IconButton(
+                icon: Icon(
+                    v.isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white),
+                iconSize: 30,
+                onPressed: _togglePlay,
+              ),
+            ),
+            // 弹幕开关
+            _pill(
+              icon: _dmOn
+                  ? Icons.subtitles
+                  : Icons.subtitles_off_outlined,
+              label: _dmOn ? tr('弹幕开') : tr('弹幕关'),
+              on: _dmOn,
+              onTap: () {
+                setState(() {
+                  _dmOn = !_dmOn;
+                  // 关闭时 DanmakuScreen 会被移除、它的 State 随之销毁，
+                  // 手里的 controller 立刻失效 —— 必须置空，否则下一次
+                  // _replayFrom() 的 clear() 会打在已销毁的对象上。
+                  if (!_dmOn) _dm = null;
+                });
+                _savePrefs();
+                if (_dmOn) _replayFrom(_currentPos());
+                _armHide();
+              },
+            ),
+            // 弹幕设置
+            _pill(
+              icon: Icons.tune,
+              label: tr('弹幕设置'),
+              on: false,
+              onTap: _openDanmakuSheet,
+            ),
+            const Spacer(),
+            // 清晰度
+            _pill(
+              icon: Icons.high_quality_outlined,
+              label: biliQualityLabel(widget.quality),
+              on: false,
+              onTap: _openQualitySheet,
+            ),
+            IconButton(
+              icon: Icon(
+                  _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                  color: Colors.white),
+              onPressed: _toggleFullscreen,
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _pill({
+    required IconData icon,
+    required String label,
+    required bool on,
+    required VoidCallback onTap,
+  }) =>
+      InkWell(
+        borderRadius: Radii.smAll,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon,
+                size: 16,
+                color: on ? Theme.of(context).colorScheme.primary : Colors.white70),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    color:
+                        on ? Theme.of(context).colorScheme.primary : Colors.white70)),
+          ]),
+        ),
+      );
+
+  static String _mmss(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  // ── 弹幕设置 ──
+  void _openDanmakuSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.lg))),
+      builder: (c) => StatefulBuilder(builder: (c, setSheet) {
+        void upd(VoidCallback fn) {
+          setSheet(fn);
+          setState(fn);
+          _applyDmOption();
+          _savePrefs();
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(Gap.md, Gap.xs, Gap.md,
+                Gap.md + MediaQuery.of(c).viewInsets.bottom),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: Gap.md),
+                        decoration: BoxDecoration(
+                            color: Theme.of(c).dividerColor,
+                            borderRadius: Radii.pillAll)),
+                  ),
+                  Row(children: [
+                    const Text('弹幕设置',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Text('共 $_dmCount 条',
+                        style:
+                            const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ]),
+                  const SizedBox(height: Gap.sm),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('显示弹幕', style: TextStyle(fontSize: 13)),
+                    value: _dmOn,
+                    onChanged: (v) {
+                      upd(() {
+                        _dmOn = v;
+                        if (!v) _dm = null; // 同上：弹幕层移除后控制器即失效
+                      });
+                      if (v) _replayFrom(_currentPos());
+                    },
+                  ),
+                  _sliderRow(c, '透明度', _dmOpacity, 0.1, 1.0, (v) {
+                    upd(() => _dmOpacity = v);
+                  }, _dmOpacity.toStringAsFixed(1)),
+                  _sliderRow(c, '字号', _dmFontSize, 11, 30, (v) {
+                    upd(() => _dmFontSize = v);
+                  }, _dmFontSize.round().toString()),
+                  _sliderRow(c, '滚动速度', 16 - _dmDuration, 0, 13, (v) {
+                    // 面板上"数值越大越快"，内部 duration 越小越快
+                    upd(() => _dmDuration = 16 - v);
+                  }, (16 - _dmDuration).round().toString()),
+                  _sliderRow(c, '显示区域', _dmArea, 0.2, 1.0, (v) {
+                    upd(() => _dmArea = v);
+                  }, '${(_dmArea * 100).round()}%'),
+                  const Divider(height: Gap.lg),
+                  Wrap(spacing: 8, runSpacing: 4, children: [
+                    FilterChip(
+                      label: const Text('屏蔽顶部', style: TextStyle(fontSize: 12)),
+                      selected: _hideTop,
+                      onSelected: (v) => upd(() => _hideTop = v),
+                    ),
+                    FilterChip(
+                      label: const Text('屏蔽底部', style: TextStyle(fontSize: 12)),
+                      selected: _hideBottom,
+                      onSelected: (v) => upd(() => _hideBottom = v),
+                    ),
+                    FilterChip(
+                      label: const Text('屏蔽滚动', style: TextStyle(fontSize: 12)),
+                      selected: _hideScroll,
+                      onSelected: (v) => upd(() => _hideScroll = v),
+                    ),
+                  ]),
+                  const SizedBox(height: Gap.md),
+                ]),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _sliderRow(BuildContext c, String label, double value, double min,
+          double max, ValueChanged<double> onChanged, String shown) =>
+      Row(children: [
+        SizedBox(
+            width: 64,
+            child: Text(label,
+                style: const TextStyle(fontSize: 12, color: Colors.grey))),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+            width: 44,
+            child: Text(shown,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 12))),
+      ]);
+
+  // ── 清晰度 ──
+  void _openQualitySheet() {
+    final list = widget.acceptQuality.isEmpty
+        ? <int>[if (widget.quality > 0) widget.quality]
+        : widget.acceptQuality;
+    final sorted = [...list]..sort((a, b) => b.compareTo(a));
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.lg))),
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.md, Gap.md),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('清晰度',
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                const SizedBox(height: Gap.sm),
+                for (final q in sorted)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      q == widget.quality
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: q == widget.quality
+                          ? Theme.of(c).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                    title: Text(biliQualityLabel(q),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: q == widget.quality
+                                ? FontWeight.w700
+                                : FontWeight.w400)),
+                    subtitle: q == widget.quality
+                        ? const Text('当前播放',
+                            style:
+                                TextStyle(fontSize: 10.5, color: Colors.grey))
+                        : null,
+                    trailing: q == widget.quality
+                        ? null
+                        : const Text('需 DASH',
+                            style:
+                                TextStyle(fontSize: 10.5, color: Colors.grey)),
+                    onTap: q == widget.quality
+                        ? () => Navigator.pop(c)
+                        : () {
+                            Navigator.pop(c);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                duration: Duration(seconds: 4),
+                                content: Text(
+                                    '1080P 及以上需要 DASH（音视频分离），当前后端走 durl 单文件，只能提供 360P'),
+                              ),
+                            );
+                          },
+                  ),
+                const SizedBox(height: Gap.sm),
+                Text(
+                  '说明：durl 单文件（有音有画、可拖动）最高 360P。'
+                  '要 1080P 必须改走 DASH，播放器需同时喂音视频两条流并保持同步，属独立工程。',
+                  style: TextStyle(
+                      fontSize: 11,
+                      height: 1.5,
+                      color: Theme.of(c).hintColor),
+                ),
+              ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _DmItem {
+  _DmItem(this.t, this.mode, this.color, this.text);
+  final double t; // 秒
+  final int mode; // B 站弹幕模式：1/2/3 滚动，4 底部，5 顶部
+  final Color color;
+  final String text;
+}
