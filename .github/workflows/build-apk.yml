@@ -120,7 +120,12 @@ jobs:
       #   纯 widget test，不依赖设备与网络，约 10 秒。
       - name: test (AI 控制总线)
         working-directory: flutter_app
-        run: flutter test test/agent_bus_test.dart
+        run: |
+          flutter test test/agent_bus_test.dart
+          # ★4.81.82 应用内自驱动的两个纯函数层：决策 JSON 解析 + 深链解析。
+          #   这两个错了的后果是"AI 乱点用户手机"和"链接跳到错地方"，
+          #   比功能缺失更难发现，必须进 CI。
+          flutter test test/agent_auto_test.dart
 
       - name: build APK (${{ env.TARGET_PLATFORMS }})
         working-directory: flutter_app/android
