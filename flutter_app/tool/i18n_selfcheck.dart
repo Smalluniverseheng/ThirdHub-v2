@@ -208,10 +208,33 @@ void main() {
   //   它同样要进字典、同样要 6 语言齐全 —— 不纳入收集等于放它一条活路，
   //   而它恰恰是"切了语言还是中文"最容易复发的一类（插值文案）。
   final trRe = RegExp(r"""\b(?:trf|tr|t)\(\s*'((?:[^'\\]|\\.)*)'""");
+  // ★4.81.78：含 `$` 的提取结果**不是字典 key**，单独收起来报告，不进 used。
+  //
+  //   病根：上面的正则只认 "tr(  + 单引号串"，于是
+  //     `subtitle: Text('${tg['id']}' == 'music' …)`
+  //   这种"插值里再嵌一层引号"的写法会被从 `xt('` 处误判成一次 tr 调用，
+  //   提取出半截模板 `${tg[`。它不可能是字典 key —— Dart 字符串里的 `$` 是
+  //   **插值**，而真正的插值文案走 trf()，占位符是 `{n}` 不是 `$`。
+  //
+  //   为什么必须修：这条噪音键让「6 语言各缺 1 个键」的红叉持续了四个版本
+  //   （4.81.74 起），把真正的 67 个缺键完全淹没了 —— 检查器自己的假阳性
+  //   比漏报更贵，因为它让所有人学会了无视这条红叉。
+  final idioms = <String>[];
   for (final e in Directory('lib').listSync(recursive: true)) {
     if (e is! File || !e.path.endsWith('.dart')) continue;
     for (final m in trRe.allMatches(e.readAsStringSync())) {
-      used.add(m.group(1)!.replaceAllMapped(RegExp(r'\\(.)'), (x) => _unesc(x.group(1)!)));
+      final k = m.group(1)!.replaceAllMapped(RegExp(r'\\(.)'), (x) => _unesc(x.group(1)!));
+      if (k.contains(r'$')) {
+        idioms.add('$k  ← ${e.path}');
+        continue;
+      }
+      used.add(k);
+    }
+  }
+  if (idioms.isNotEmpty) {
+    print('  ⚠ ${idioms.length} 处提取结果含 \$ 插值，已排除（不是字典 key）：');
+    for (final s in idioms.take(8)) {
+      print('     · $s');
     }
   }
   ck('收集到 tr() 用到的 key：${used.length} 个（须 > 0）', used.isNotEmpty);
