@@ -318,7 +318,30 @@ Future<void> main() async {
     ck('[9] README.md versionCode 与唯一来源一致', readme.contains('versionCode $c'));
     ck('[9] changelog.latest 与唯一来源一致', changelog.contains('"latest": "$v"'));
     ck('[9] changelog 首条 v 与唯一来源一致', changelog.contains('"v": "$v"'));
-    ck('[9] 台账 since 与唯一来源一致', manifest.contains('"since": "$v"'));
+    // ★4.81.78：原来是
+    //     ck('台账 since 与唯一来源一致', manifest.contains('"since": "$v"'))
+    //   语义上等价于"每个版本都必须往 vendor 台账里加一条 since"。
+    //   但 since 记录的是**第三方代码被引入时的版本**，不是发版版本 ——
+    //   没动 vendor 就不该加。这条断言导致它从 4.81.47 之后一直恒红
+    //   （台账里最新 since 停在 4.81.47），每次发版都被迫面对一条无意义的红叉。
+    //   改成真正该守的：台账里不许出现**超前于当前版本**的 since（防手误写错）。
+    final sinceVer = RegExp(r'"since":\s*"([0-9][0-9.]*)"')
+        .allMatches(manifest)
+        .map((m) => m.group(1)!)
+        .toList();
+    int cmpVer(String a, String b) {
+      final x = a.split('.').map(int.tryParse).map((e) => e ?? 0).toList();
+      final y = b.split('.').map(int.tryParse).map((e) => e ?? 0).toList();
+      for (var i = 0; i < (x.length > y.length ? x.length : y.length); i++) {
+        final xi = i < x.length ? x[i] : 0;
+        final yi = i < y.length ? y[i] : 0;
+        if (xi != yi) return xi.compareTo(yi);
+      }
+      return 0;
+    }
+
+    ck('[9] 台账 since 不超前于当前版本（$v）',
+        sinceVer.isNotEmpty && sinceVer.every((s) => cmpVer(s, v) <= 0));
   }
 
   // ── §10 changelog 历史只增不改 ─────────────────────────────────
