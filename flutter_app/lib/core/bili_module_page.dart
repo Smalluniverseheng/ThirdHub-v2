@@ -1,7 +1,9 @@
-// B 站独立模块（4.81.67）
+// B 站独立模块（4.81.67 / 栏目可配置 4.81.79）
 //
-// 定位：影视模块里的一个完整 B 站客户端 —— 推荐 / 热门 / 排行榜 / 分区 / 搜索
-//       五个栏目，视频详情里可以逐集播放、逐集下载、一键整季下载，
+// 定位：影视模块里的一个完整 B 站客户端。栏目不再是写死的五个 ——
+//       推荐 / 热门 / 排行榜 / 分区 / **直播** / **番剧** / 搜索 七个里
+//       用户自己勾选、自己拖动排序（偏好存 bili_tabs），默认全开。
+//       视频详情里可以逐集播放、逐集下载、一键整季下载，
 //       下载走 NAS 上的 bilidown（落盘 /vol1/1000/Media/影视/B站），
 //       管理入口在右上角（跳 bili_down_page.dart）。
 //
@@ -15,8 +17,11 @@
 //   GET  /v1/bili/partitions                           频道常量表
 //   GET  /v1/bili/search?q=&pn=                        搜索
 //   GET  /v1/bili/pages?bvid=                          分P
-//   GET  /v1/bili/playurl?bvid=&cid=                   播放直链（已过媒体代理）
+//   GET  /v1/bili/playurl?bvid=&cid=&qn=               播放直链（qn 可选清晰度）
 //   GET  /v1/bili/parse?url=                           解析（拿可选清晰度）
+//   GET  /v1/bili/live?page=&ps=                       直播推荐流（4.81.79 新增）
+//   GET  /v1/bili/live/play?room_id=                   直播拉流（4.81.79 新增）
+//   GET  /v1/bili/bangumi?before=&after=               番剧时间表（4.81.79 新增）
 //   POST /v1/bili/add        {url, format}             单集下载（url 里带 ?p=N）
 //   POST /v1/bili/addall     {bvid, format}            整季/全 P 批量下载
 import 'dart:async';
@@ -30,6 +35,7 @@ import 'bili_down_page.dart';
 import 'bili_player.dart';
 import 'bili_swipe_page.dart';
 import 'bili_direct.dart';
+import 'bili_live_page.dart';
 import 'ui/app_skeleton.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
@@ -57,9 +63,49 @@ class BiliModulePage extends StatefulWidget {
   State<BiliModulePage> createState() => _BiliModulePageState();
 }
 
+/// B 站模块里一个可配置的栏目。
+///
+/// 为什么做成「可配置」：原来 5 个栏目是写死在 TabBar 里的 —— 不看排行的人
+/// 每次都得划过它才够到搜索，新加的直播/番剧更是永远挤不进来。用户说的
+/// 「想自由选择都没办法选择」就是这个。现在栏目顺序与显隐都归用户。
+class BiliTabDef {
+  const BiliTabDef(this.id, this.label, this.icon);
+  final String id;
+  final String label;
+  final IconData icon;
+}
+
+const List<BiliTabDef> kBiliTabDefs = [
+  BiliTabDef('recommend', '推荐', Icons.explore_outlined),
+  BiliTabDef('popular', '热门', Icons.local_fire_department_outlined),
+  BiliTabDef('rank', '排行榜', Icons.leaderboard_outlined),
+  BiliTabDef('region', '分区', Icons.grid_view_outlined),
+  BiliTabDef('live', '直播', Icons.live_tv_outlined),
+  BiliTabDef('bangumi', '番剧', Icons.movie_filter_outlined),
+  BiliTabDef('search', '搜索', Icons.search),
+];
+
+const List<String> kBiliTabDefault = [
+  'recommend',
+  'popular',
+  'rank',
+  'region',
+  'live',
+  'bangumi',
+  'search',
+];
+
+BiliTabDef? biliTabDefOf(String id) {
+  for (final d in kBiliTabDefs) {
+    if (d.id == id) return d;
+  }
+  return null;
+}
+
 class _BiliModulePageState extends State<BiliModulePage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab;
+  late TabController _tab;
+  List<String> _tabIds = kBiliTabDefault;
   String _base = '';
   String _token = '';
   bool _ready = false;
@@ -67,7 +113,7 @@ class _BiliModulePageState extends State<BiliModulePage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: kBiliTabDefault.length, vsync: this);
     _boot();
   }
 
@@ -80,11 +126,191 @@ class _BiliModulePageState extends State<BiliModulePage>
   Future<void> _boot() async {
     final p = await SharedPreferences.getInstance();
     if (!mounted) return;
+    // 只保留认识的 id，顺序按用户存的来；一个都不剩就回落默认
+    final saved = p.getStringList('bili_tabs') ?? const <String>[];
+    final ids = saved.where((e) => biliTabDefOf(e) != null).toList();
+    final use = ids.isEmpty ? kBiliTabDefault : ids;
+    final old = _tab;
     setState(() {
       _base = (p.getString('base') ?? '').trim();
       _token = (p.getString('token') ?? '').trim();
+      _tabIds = List<String>.from(use);
+      _tab = TabController(length: use.length, vsync: this);
       _ready = true;
     });
+    // 旧 controller 等这一帧过去再销毁：它可能刚被 TabBar 引用过
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+  }
+
+  /// 应用新的栏目顺序/显隐（会重建 TabController —— 长度变了，旧的不能复用）
+  Future<void> _applyTabIds(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final old = _tab;
+    setState(() {
+      _tabIds = List<String>.from(ids);
+      _tab = TabController(length: ids.length, vsync: this);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList('bili_tabs', _tabIds);
+  }
+
+  /// 栏目本体。id 与 kBiliTabDefs 对应，未知 id 给个说明页而不是崩。
+  Widget _tabBody(String id, BiliCtx ctx) {
+    switch (id) {
+      case 'recommend':
+        return _BiliGridTab(
+          ctx: ctx,
+          pathBuilder: (pn) => '/v1/bili/feed?type=recommend&ps=20&pn=$pn',
+        );
+      case 'popular':
+        return _BiliGridTab(
+          ctx: ctx,
+          pathBuilder: (pn) => '/v1/bili/feed?type=popular&ps=20&pn=$pn',
+        );
+      case 'rank':
+        return _BiliChipsTab(
+          ctx: ctx,
+          chipsPath: '/v1/bili/partitions',
+          pathBuilder: (rid, pn) => '/v1/bili/rank?rid=$rid',
+          rankBadge: true,
+        );
+      case 'region':
+        return _BiliChipsTab(
+          ctx: ctx,
+          chipsPath: '/v1/bili/partitions',
+          pathBuilder: (rid, pn) => '/v1/bili/region?rid=$rid&ps=20&pn=$pn',
+        );
+      case 'live':
+        return BiliLiveTab(ctx: ctx);
+      case 'bangumi':
+        return BiliBangumiTab(ctx: ctx);
+      case 'search':
+        return _BiliSearchTab(ctx: ctx);
+      default:
+        return Center(child: Text(tr('这个栏目暂不可用')));
+    }
+  }
+
+  /// 栏目设置：拖动排序 + 开关显隐
+  void _openTabSheet() {
+    final draft = List<String>.from(_tabIds);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.lg))),
+      builder: (c) => StatefulBuilder(builder: (c, setSheet) {
+        // 必须在这里算：外层算的不会随 setSheet 重建而更新，
+        // 结果就是「移掉的栏目不会出现在未显示区」。
+        final hidden = kBiliTabDefs
+            .map((e) => e.id)
+            .where((id) => !draft.contains(id))
+            .toList();
+
+        void commit(List<String> ids) {
+          setSheet(() {
+            draft
+              ..clear()
+              ..addAll(ids);
+          });
+          unawaited(_applyTabIds(ids));
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+                Gap.md, Gap.sm, Gap.md, Gap.md + MediaQuery.of(c).viewInsets.bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Text(tr('栏目'),
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => commit(List<String>.from(kBiliTabDefault)),
+                    child: Text(tr('恢复默认')),
+                  ),
+                ]),
+                Text(
+                  tr('拖动可以调顺序，关掉就不显示。至少留一个。'),
+                  style: TextStyle(
+                      fontSize: 11,
+                      height: 1.5,
+                      color: Theme.of(c).hintColor),
+                ),
+                const SizedBox(height: Gap.sm),
+                // 固定高度：bottom sheet 里 Column 的高度约束是无界的，
+                // Flexible + shrinkWrap 会报 "non-zero flex but unbounded height"
+                SizedBox(
+                  height: 320,
+                  child: ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const ClampingScrollPhysics(),
+                    buildDefaultDragHandles: true,
+                    itemCount: draft.length,
+                    onReorder: (from, to) {
+                      final ids = List<String>.from(draft);
+                      if (to > from) to -= 1;
+                      final moved = ids.removeAt(from);
+                      ids.insert(to, moved);
+                      commit(ids);
+                    },
+                    itemBuilder: (c, i) {
+                      final d = biliTabDefOf(draft[i])!;
+                      return ListTile(
+                        key: ValueKey(d.id),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(d.icon, size: 18),
+                        title: Text(tr(d.label),
+                            style: const TextStyle(fontSize: 13.5)),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (draft.length > 1)
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: tr('不显示'),
+                              icon: const Icon(Icons.close, size: 16),
+                              onPressed: () {
+                                final ids = List<String>.from(draft)
+                                  ..remove(d.id);
+                                commit(ids);
+                              },
+                            ),
+                          const Icon(Icons.drag_handle, size: 18),
+                        ]),
+                      );
+                    },
+                  ),
+                ),
+                if (hidden.isNotEmpty) ...[
+                  const Divider(height: Gap.lg),
+                  Text(tr('未显示'),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(c).hintColor)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    for (final id in hidden)
+                      ActionChip(
+                        avatar: Icon(biliTabDefOf(id)!.icon, size: 14),
+                        label: Text(tr(biliTabDefOf(id)!.label),
+                            style: const TextStyle(fontSize: 11.5)),
+                        onPressed: () => commit([...draft, id]),
+                      ),
+                  ]),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   @override
@@ -97,49 +323,32 @@ class _BiliModulePageState extends State<BiliModulePage>
           Center(child: Text(tr('还没连上后端，请先到「我的后端」完成连接'))));
     }
     final ctx = BiliCtx(_base, _token);
+    // 栏目顺序与显隐来自用户偏好（_tabIds），不再写死 5 个
+    final ids = _tabIds.isEmpty ? kBiliTabDefault : _tabIds;
     final tabs = TabBar(
       controller: _tab,
       isScrollable: true,
       tabs: [
-        Tab(text: tr('推荐')),
-        Tab(text: tr('热门')),
-        Tab(text: tr('排行榜')),
-        Tab(text: tr('分区')),
-        Tab(text: tr('搜索')),
+        for (final id in ids) Tab(text: tr(biliTabDefOf(id)?.label ?? id)),
       ],
     );
-    // Tab 文案一律走 tr()：独立页与嵌入态共用同一份，不复制两套。
     final view = TabBarView(
       controller: _tab,
-      children: [
-        _BiliGridTab(
-          ctx: ctx,
-          pathBuilder: (pn) => '/v1/bili/feed?type=recommend&ps=20&pn=$pn',
-        ),
-        _BiliGridTab(
-          ctx: ctx,
-          pathBuilder: (pn) => '/v1/bili/feed?type=popular&ps=20&pn=$pn',
-        ),
-        _BiliChipsTab(
-          ctx: ctx,
-          chipsPath: '/v1/bili/partitions',
-          pathBuilder: (rid, pn) => '/v1/bili/rank?rid=$rid',
-          rankBadge: true,
-        ),
-        _BiliChipsTab(
-          ctx: ctx,
-          chipsPath: '/v1/bili/partitions',
-          pathBuilder: (rid, pn) => '/v1/bili/region?rid=$rid&ps=20&pn=$pn',
-        ),
-        _BiliSearchTab(ctx: ctx),
-      ],
+      children: [for (final id in ids) _tabBody(id, ctx)],
+    );
+    final tabBtn = IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: tr('栏目'),
+      icon: const Icon(Icons.tune, size: 20),
+      onPressed: _openTabSheet,
     );
     if (widget.embedded) {
       return Column(children: [
-        // 独立页时这两个入口在 AppBar 的 actions 里；嵌进来以后没有 AppBar 了，
-        // 但「链接下载」「下载管理」不能因此消失 —— 挪成 tab 右侧的小按钮。
+        // 独立页时这几个入口在 AppBar 的 actions 里；嵌进来以后没有 AppBar 了，
+        // 但「栏目」「链接下载」「下载管理」不能因此消失 —— 挪成 tab 右侧的小按钮。
         Row(children: [
           Expanded(child: tabs),
+          tabBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: tr('链接下载'),
@@ -162,6 +371,7 @@ class _BiliModulePageState extends State<BiliModulePage>
       appBar: AppBar(
         title: Text(tr('哔哩哔哩')),
         actions: [
+          tabBtn,
           IconButton(
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link),

@@ -15,7 +15,8 @@
 //   后端 playurl 用 fnval=1 走 durl 单文件，只能拿到 360P（有音有画、支持拖动）。
 //   1080P 必须走 DASH（音视频分离，播放器要同时喂两条流并保持同步），是独立一块工程。
 //   所以这里**如实呈现**：把 accept_quality 全列出来，当前可播的高亮，
-//   其余明确标注「需 DASH」，而不是装作能切。
+//   ★2026-11-20 起「能切」是真的能切：点哪档就按 qn 重新取流（后端 fnval=0
+//   免登录到 720P，登录后更高），进度保留。以前的「需 DASH」提示是过度保守。
 import 'dart:async';
 import 'dart:convert';
 
@@ -86,6 +87,20 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   DanmakuController<int>? _dm;
   String _err = '';
 
+  /// 当前播放地址 / 清晰度 / 可选档位。
+  /// ★2026-11-20：以前直接读 widget.url / widget.quality，等于「打开时定死」，
+  ///   面板里点别的档位只能弹一句「需 DASH」—— 用户说的「想选都没法选」就是这个。
+  ///   现在改成可变状态，点哪档就真的换哪档。
+  late String _url = widget.url;
+  late int _quality = widget.quality;
+  late List<int> _accept = widget.acceptQuality;
+  bool _switching = false;
+  Map<String, String> _hdrs = const {};
+
+  /// 弹幕拉取失败的原因。空串 = 正常（或还没拉）。
+  /// 以前这里 `catch (_) {}` 静默吞掉，弹幕不出来用户完全不知道是没拉到还是关着。
+  String _dmErr = '';
+
   // ── 弹幕数据与投放 ──
   List<_DmItem> _dmList = const [];
   int _dmIdx = 0;
@@ -146,21 +161,94 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
     try {
       final p = await SharedPreferences.getInstance();
       final tok = (p.getString('token') ?? '').trim();
-      final headers = <String, String>{
+      _hdrs = <String, String>{
         if (tok.isNotEmpty) 'x-th-token': tok,
         if (widget.token.isNotEmpty) 'x-th-token': widget.token,
       };
-      _vp = VideoPlayerController.networkUrl(
-        Uri.parse(widget.url),
-        httpHeaders: headers,
-      );
-      await _vp!.initialize();
-      _vp!.addListener(_tick);
-      await _vp!.play();
-      if (mounted) setState(() {});
+      await _attach(_url);
       unawaited(_loadDanmaku());
     } catch (e) {
       if (mounted) setState(() => _err = '${tr('播放失败')}: $e');
+    }
+  }
+
+  /// 换地址重挂播放器（首次播放、切清晰度都走这里）
+  Future<void> _attach(String url, {Duration? startAt}) async {
+    final old = _vp;
+    if (old != null) {
+      old.removeListener(_tick);
+      await old.dispose();
+    }
+    _vp = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: _hdrs,
+    );
+    await _vp!.initialize();
+    if (startAt != null && startAt > Duration.zero) {
+      final total = _vp!.value.duration;
+      // 超出新时长就不 seek（不同档位时长偶尔差几十毫秒）
+      if (total <= Duration.zero || startAt < total) {
+        await _vp!.seekTo(startAt);
+      }
+    }
+    _vp!.addListener(_tick);
+    await _vp!.play();
+    if (mounted) setState(() => _err = '');
+  }
+
+  /// 真切一档清晰度：向后台按 qn 重新取流，成功才换源。
+  Future<void> _switchQuality(int qn) async {
+    if (_switching) return;
+    final base = widget.apiBase.trim();
+    if (base.isEmpty || widget.bvid.isEmpty || widget.cid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('没连后端，换不了清晰度'))));
+      return;
+    }
+    if (qn == _quality) return;
+    final keep = _vp?.value.position ?? Duration.zero;
+    final wasPlaying = _vp?.value.isPlaying ?? true;
+    setState(() => _switching = true);
+    try {
+      final r = await http
+          .get(
+            Uri.parse('$base/v1/bili/playurl'
+                '?bvid=${Uri.encodeQueryComponent(widget.bvid)}'
+                '&cid=${Uri.encodeQueryComponent(widget.cid)}'
+                '&qn=$qn'),
+            headers: _hdrs,
+          )
+          .timeout(const Duration(seconds: 25));
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final u = (j is Map) ? '${j['url'] ?? ''}' : '';
+      if (u.isEmpty) {
+        final msg = (j is Map) ? '${j['error'] ?? ''}' : '';
+        throw Exception(msg.isEmpty ? tr('这个清晰度拿不到地址') : msg);
+      }
+      if (!mounted) return;
+      final aq = (j is Map) ? j['acceptQuality'] : null;
+      setState(() {
+        _url = u;
+        _quality = (j is Map ? (j['quality'] as num?)?.toInt() : null) ?? qn;
+        if (aq is List && aq.isNotEmpty) {
+          _accept = aq.whereType<num>().map((e) => e.toInt()).toList();
+        }
+      });
+      await _attach(u, startAt: keep);
+      if (!wasPlaying) await _vp?.pause();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(trf('已切到 {q}', {'q': biliQualityLabel(_quality)})),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${tr('切换清晰度失败')}：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _switching = false);
     }
   }
 
@@ -174,9 +262,20 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
         Uri.parse('$base/v1/bili/danmaku?cid=${Uri.encodeComponent(cid)}'),
         headers: widget.token.isEmpty ? const {} : {'x-th-token': widget.token},
       ).timeout(const Duration(seconds: 20));
-      if (r.statusCode != 200) return;
+      if (r.statusCode != 200) {
+        if (mounted) {
+          setState(() => _dmErr = trf('弹幕接口返回 {c}（不影响播放）', {'c': '${r.statusCode}'}));
+        }
+        return;
+      }
       final j = jsonDecode(utf8.decode(r.bodyBytes));
-      if (j is! Map || j['ok'] != true) return;
+      if (j is! Map || j['ok'] != true) {
+        if (mounted) {
+          final m = (j is Map) ? '${j['error'] ?? ''}' : '';
+          setState(() => _dmErr = m.isEmpty ? tr('这个视频没有弹幕') : m);
+        }
+        return;
+      }
       final raw = (j['items'] as List?) ?? const [];
       final list = <_DmItem>[];
       for (final e in raw) {
@@ -195,10 +294,14 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
         _dmList = list;
         _dmCount = list.length;
         _dmIdx = 0;
+        _dmErr = list.isEmpty ? tr('这个视频没有弹幕') : '';
       });
       _replayFrom(_currentPos());
-    } catch (_) {
-      // 静默：弹幕拉不到不影响观看
+    } catch (e) {
+      // 弹幕失败不阻断播放，但要让用户知道为什么没有弹幕
+      if (mounted) {
+        setState(() => _dmErr = trf('弹幕拉取失败：{e}', {'e': '$e'}));
+      }
     }
   }
 
@@ -539,7 +642,7 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
             // 清晰度
             _pill(
               icon: Icons.high_quality_outlined,
-              label: biliQualityLabel(widget.quality),
+              label: biliQualityLabel(_quality),
               on: false,
               onTap: _openQualitySheet,
             ),
@@ -627,9 +730,13 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                         style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w700)),
                     const Spacer(),
-                    Text(trf('共 {n} 条', {'n': _dmCount}),
-                        style:
-                            const TextStyle(fontSize: 11, color: Colors.grey)),
+                    Text(_dmErr.isEmpty ? trf('共 {n} 条', {'n': _dmCount}) : _dmErr,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: _dmErr.isEmpty
+                                ? Colors.grey
+                                : Theme.of(c).colorScheme.error)),
                   ]),
                   const SizedBox(height: Gap.sm),
                   SwitchListTile(
@@ -708,9 +815,9 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
 
   // ── 清晰度 ──
   void _openQualitySheet() {
-    final list = widget.acceptQuality.isEmpty
-        ? <int>[if (widget.quality > 0) widget.quality]
-        : widget.acceptQuality;
+    final list = _accept.isEmpty
+        ? <int>[if (_quality > 0) _quality]
+        : _accept;
     final sorted = [...list]..sort((a, b) => b.compareTo(a));
     showModalBottomSheet<void>(
       context: context,
@@ -733,47 +840,39 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
-                      q == widget.quality
+                      q == _quality
                           ? Icons.radio_button_checked
                           : Icons.radio_button_unchecked,
                       size: 18,
-                      color: q == widget.quality
+                      color: q == _quality
                           ? Theme.of(c).colorScheme.primary
                           : Colors.grey,
                     ),
                     title: Text(biliQualityLabel(q),
                         style: TextStyle(
                             fontSize: 13,
-                            fontWeight: q == widget.quality
+                            fontWeight: q == _quality
                                 ? FontWeight.w700
                                 : FontWeight.w400)),
-                    subtitle: q == widget.quality
+                    subtitle: q == _quality
                         ? Text(tr('当前播放'),
                             style: const TextStyle(
                                 fontSize: 10.5, color: Colors.grey))
                         : null,
-                    trailing: q == widget.quality
-                        ? null
-                        : Text(tr('需 DASH'),
-                            style: const TextStyle(
-                                fontSize: 10.5, color: Colors.grey)),
-                    onTap: q == widget.quality
-                        ? () => Navigator.pop(c)
-                        : () {
-                            Navigator.pop(c);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                duration: Duration(seconds: 4),
-                                content: Text(
-                                    '1080P 及以上需要 DASH（音视频分离），当前后端走 durl 单文件，只能提供 360P'),
-                              ),
-                            );
-                          },
+                    trailing: (q != _quality && _switching)
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : null,
+                    onTap: () {
+                      Navigator.pop(c);
+                      if (q != _quality) unawaited(_switchQuality(q));
+                    },
                   ),
                 const SizedBox(height: Gap.sm),
                 Text(
-                  '说明：durl 单文件（有音有画、可拖动）最高 360P。'
-                  '要 1080P 必须改走 DASH，播放器需同时喂音视频两条流并保持同步，属独立工程。',
+                  tr('档位由 B 站按当前登录态给出：没登录通常到 720P，登录后更多。切档会重新取流，进度保留。'),
                   style: TextStyle(
                       fontSize: 11,
                       height: 1.5,

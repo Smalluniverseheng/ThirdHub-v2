@@ -635,6 +635,27 @@ async function webApiPlain(path, timeoutMs = 15000) {
   }
 }
 
+// 任意域名 + 任意 Referer 的 JSON 拉取（直播/番剧走 live.bilibili.com、pgc 接口）
+//   webApi 把域名写死成 api.bilibili.com，直播得用这个。
+async function fetchJson(url, ref, timeoutMs = 15000) {
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'user-agent': WEB_UA,
+        referer: ref || WEB_REF,
+        accept: 'application/json,text/plain,*/*',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        origin: 'https://www.bilibili.com',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const t = await r.text();
+    try { return JSON.parse(t); } catch (e) { return { code: -1, message: '返回非 JSON: ' + t.slice(0, 60) }; }
+  } catch (e) {
+    return { code: -1, message: String((e && e.message) || e) };
+  }
+}
+
 async function webApi(path, timeoutMs = 15000, ref) {
   const headers = {
     'user-agent': WEB_UA, referer: ref || WEB_REF, accept: 'application/json,text/plain,*/*',
@@ -847,11 +868,31 @@ async function handle(req, res, body, u, p) {
       cidUse = String((((v.data || {}).pages || [])[0] || {}).cid || '');
     }
     if (!cidUse) { send(res, 400, { ok: false, error: '取不到 cid' }); return true; }
-    let j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse + '&fnval=1&platform=html5&high_quality=1');
-    if (j.code !== 0) {
-      j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse + '&fnval=1');
+    // ★2026-11-20 清晰度修复：原来固定用 platform=html5，而 B 站对 html5 一律只给
+    //   360P（quality=16）—— App 的清晰度面板列出来的其实只有一档，点哪个都一样，
+    //   「没法自由选择」就是这么来的。
+    //   改成 PC 口径 fnval=0 + qn：免登录实测能拿到 720P（quality=64，
+    //   accept_quality=[64,16]）；带登录 cookie 时档位更多。
+    //   qn 传 0/不传 = 让 B 站自己挑最高可用。
+    const qnWant = parseInt(u.searchParams.get('qn') || '0', 10) || 0;
+    await ensureCookie();
+    const qUrl = '/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse
+      + '&fnval=0&fourk=1&qn=' + (qnWant > 0 ? qnWant : 64);
+    let j = await webApi(qUrl);
+    let d = j.data || {};
+    let via = 'pc';
+    if (!((d.durl || []).length)) {
+      // 回落 HTML5（360P，但基本保证有图可出）
+      j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse
+        + '&fnval=1&platform=html5&high_quality=1');
+      d = j.data || {};
+      via = 'html5';
+      if (!((d.durl || []).length)) {
+        j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse + '&fnval=1');
+        d = j.data || {};
+        via = 'html5-plain';
+      }
     }
-    const d = j.data || {};
     const durl = d.durl || [];
     if (!durl.length) { send(res, 400, { ok: false, code: j.code, error: j.message || '没有可播放地址' }); return true; }
     const raw = String(durl[0].url || '');
@@ -863,7 +904,129 @@ async function handle(req, res, body, u, p) {
       format: d.format || 'mp4',
       size: durl[0].size || 0,
       acceptQuality: d.accept_quality || [],
+      // 分段数 >1 时播放器要知道（本播放器只播第一段，前端据此提示）
+      segments: durl.length,
+      cid: cidUse,
+      via,
     });
+    return true;
+  }
+
+  // ── 直播推荐流（★2026-11-20 新增）──
+  //   B 站新版 /xlive/web-interface/v1/second/getList 要 wbi 签名（-352），
+  //   旧版 /room/v1/room/get_user_recommend 免签名仍可用 → 用它。
+  //   字段归一化后给 App，别让它去猜 B 站的大小写混排。
+  if (op === 'live') {
+    const page = Math.max(1, parseInt(u.searchParams.get('page') || '1', 10) || 1);
+    const ps = Math.min(50, Math.max(1, parseInt(u.searchParams.get('ps') || '20', 10) || 20));
+    const j = await fetchJson('https://api.live.bilibili.com/room/v1/room/get_user_recommend?page='
+      + page + '&page_size=' + ps, 'https://live.bilibili.com/');
+    const raw = Array.isArray(j.data) ? j.data : [];
+    const items = raw.map((v) => {
+      const cover = String(v.system_cover || v.user_cover || v.cover || '');
+      const ws = v.watched_show || {};
+      return {
+        roomId: v.roomid || 0,
+        title: v.title || '',
+        uname: v.uname || '',
+        face: v.face ? '/v1/bili/cover?u=' + encodeURIComponent(String(v.face).replace(/^http:/, 'https:')) : '',
+        cover: cover ? '/v1/bili/cover?u=' + encodeURIComponent(cover.replace(/^http:/, 'https:')) : '',
+        online: v.online || 0,
+        watched: (ws.text_large || ws.text_small || ''),
+        area: v.areaName || '',
+        uid: v.uid || 0,
+      };
+    }).filter((x) => x.roomId);
+    send(res, 200, { ok: j.code === 0 || items.length > 0, code: j.code, page, items,
+      hasMore: items.length >= ps, message: j.message || '' });
+    return true;
+  }
+
+  // ── 直播拉流（★2026-11-20 新增）──
+  //   优先 HLS(fmp4/ts) + AVC：手机端 video_player/ExoPlayer 对 HLS 支持最好；
+  //   flv 需要额外扩展，放最后。统一包媒体代理（bilivideo 校验 Referer）。
+  if (op === 'live/play') {
+    const roomId = String(u.searchParams.get('room_id') || '').trim();
+    if (!/^\d{1,12}$/.test(roomId)) { send(res, 400, { ok: false, error: '缺少 room_id' }); return true; }
+    const j = await fetchJson('https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo'
+      + '?room_id=' + roomId + '&protocol=0,1&format=0,1,2&codec=0,1&qn=10000&platform=web&ptype=8',
+      'https://live.bilibili.com/');
+    const dd = j.data || {};
+    const pd = dd.playurl_info;
+    if (!pd) {
+      send(res, dd.live_status === 2 ? 409 : 502, {
+        ok: false, liveStatus: dd.live_status || 0,
+        error: dd.live_status === 2 ? '主播还没开播' : (j.message || '拿不到播放地址'),
+      });
+      return true;
+    }
+    // 候选按「HLS + AVC」优先级排序
+    const cands = [];
+    for (const s of ((pd.playurl || {}).stream || [])) {
+      const proto = String(s.protocol_name || '');
+      for (const f of (s.format || [])) {
+        const fmt = String(f.format_name || '');
+        for (const c of (f.codec || [])) {
+          const ui = (c.url_info || [])[0];
+          if (!ui || !ui.host) continue;
+          const url = ui.host + (c.base_url || '') + (ui.extra || '');
+          const codec = String(c.codec_name || '');
+          let rank = 99;
+          if (proto === 'http_hls' && fmt === 'fmp4' && codec === 'avc') rank = 0;
+          else if (proto === 'http_hls' && fmt === 'ts' && codec === 'avc') rank = 1;
+          else if (proto === 'http_stream' && fmt === 'flv' && codec === 'avc') rank = 2;
+          else if (proto === 'http_hls' && fmt === 'fmp4') rank = 3;
+          else if (proto === 'http_hls') rank = 4;
+          cands.push({ rank, proto, fmt, codec, qn: c.current_qn || 0, url });
+        }
+      }
+    }
+    cands.sort((a, b) => a.rank - b.rank);
+    if (!cands.length) { send(res, 502, { ok: false, error: '这个直播间没有可用的播放地址' }); return true; }
+    const best = cands[0];
+    // ★ HLS 必须直连：m3u8 里的分片是独立请求，走 9528 单文件代理只能转 playlist
+    //   本身、转不了分片（分片同样校验 Referer）→ 客户端必须自己带 Referer 直连。
+    //   所以 url 给直链；proxiedUrl 只作兜底（FLV/单文件场景可用）。
+    send(res, 200, {
+      ok: true,
+      roomId,
+      liveStatus: dd.live_status || 1,
+      url: best.url,
+      proxiedUrl: biliStream(best.url),
+      protocol: best.proto,
+      format: best.fmt,
+      codec: best.codec,
+      quality: best.qn,
+      referer: 'https://live.bilibili.com/',
+      // 让 App 能列「原画 / 流畅」这类选项（同房间不同协议/编码）
+      options: cands.map((c) => ({
+        protocol: c.proto, format: c.fmt, codec: c.codec, qn: c.qn, url: c.url,
+      })),
+    });
+    return true;
+  }
+
+  // ── 番剧时间表（★2026-11-20 新增）──
+  if (op === 'bangumi') {
+    const before = Math.min(7, Math.max(0, parseInt(u.searchParams.get('before') || '0', 10) || 0));
+    const after = Math.min(7, Math.max(1, parseInt(u.searchParams.get('after') || '6', 10) || 6));
+    const j = await fetchJson('https://api.bilibili.com/pgc/web/timeline?types=1&before='
+      + before + '&after=' + after, WEB_REF);
+    const days = Array.isArray(j.result) ? j.result : [];
+    const out = days.map((day) => ({
+      date: day.date || '',
+      items: (day.episodes || []).map((e) => ({
+        title: e.title || '',
+        cover: e.cover ? '/v1/bili/cover?u=' + encodeURIComponent(String(e.cover).replace(/^http:/, 'https:')) : '',
+        ep: e.pub_index || '',
+        pubTs: e.pub_ts || 0,
+        url: e.url || '',
+        seasonId: e.season_id || 0,
+        episodeId: e.episode_id || 0,
+        follow: e.follow || 0,
+      })),
+    })).filter((d) => d.items.length);
+    send(res, 200, { ok: j.code === 0, code: j.code, days: out, message: j.message || '' });
     return true;
   }
 
