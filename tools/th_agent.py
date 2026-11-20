@@ -182,7 +182,24 @@ def cmd_health(c, args):
 
 
 def cmd_state(c, args):
-    return nonzero(c.exec({"op": "state"}))
+    r = c.exec({"op": "state"})
+    if not r.get("ok"):
+        return nonzero(r)
+    d = r.get("data") or {}
+    if args.as_json:
+        pj(d)
+        return 0
+    print(
+        f"模块 {d.get('module')}（第 {d.get('moduleIndex')} 个）"
+        f"  路由深度 {d.get('routeDepth')}  语言 {d.get('locale')}"
+    )
+    tabs = d.get("tabs") or []
+    if tabs:
+        print("  导航：" + " · ".join(tabs))
+    acts = d.get("actions") or []
+    if acts:
+        print("  可调动作：" + ", ".join(acts))
+    return 0
 
 
 def cmd_tree(c, args):
@@ -298,8 +315,14 @@ def cmd_run(c, args):
     if not path.exists():
         sys.exit(f"找不到用例：{path}")
     spec = json.loads(path.read_text("utf-8"))
-    steps = spec.get("steps") or spec if isinstance(spec, list) else []
-    name = spec.get("name") if isinstance(spec, dict) else path.stem
+    if isinstance(spec, dict):
+        steps = spec.get("steps") or []
+        name = spec.get("name") or path.stem
+    elif isinstance(spec, list):
+        steps = spec
+        name = path.stem
+    else:
+        sys.exit("用例必须是 {name, steps:[…]} 或直接一个指令数组")
     print(f"▶ {name}（{len(steps)} 步）")
     shot_dir = pathlib.Path(args.shots) if args.shots else None
     if shot_dir:
@@ -372,7 +395,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd")
 
     sub.add_parser("health")
-    sub.add_parser("state")
+    p_state = sub.add_parser("state")
+    p_state.add_argument("--json", dest="as_json", action="store_true")
     sub.add_parser("macros")
 
     p = sub.add_parser("tree")
