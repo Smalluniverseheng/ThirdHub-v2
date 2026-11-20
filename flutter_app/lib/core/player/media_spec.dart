@@ -61,6 +61,23 @@ class MediaSpec {
   /// 内容来源标识（板块/源名），用于播放历史与"从哪来"的展示。
   final String sourceTag;
 
+  /// 队列懒解析：`queue` 里没有第 index 条时，播放器按需向调用方要。
+  ///
+  /// 为什么需要（4.81.79）：红果短剧一季 60~120 集，影视长剧更多。
+  /// 旧模型要求 `queue` 里每一条都**已经带好播放地址**，于是「下一集」
+  /// 要么只能预解析全部（95 集 = 95 次请求，进播放页先转半分钟），
+  /// 要么干脆不给（用户每看完一集都要退回列表点下一次）。
+  /// 懒解析把这两条路合并：按钮一直可用，只在用户**真的**点下去（或当前集播完）
+  /// 时才发这一次请求。
+  ///
+  /// 约定：
+  ///   · 返回 null 表示"没有这一集了"（播放器会提示"已经是最后一集"）；
+  ///   · 返回的 spec 请自行填好 `index`，否则再往后的翻页会算错。
+  final Future<MediaSpec?> Function(int index)? resolveAt;
+
+  /// 懒解析队列的总条数（可选）。给不出就由 resolveAt 返回 null 兜底。
+  final int? total;
+
   const MediaSpec({
     required this.url,
     required this.title,
@@ -77,17 +94,26 @@ class MediaSpec {
     this.index = 0,
     this.allowAudioMode = true,
     this.sourceTag = '',
+    this.resolveAt,
+    this.total,
   });
 
   /// 最终的播放形态。
   MediaKind get kind => kindOverride ?? MediaProbe.kindOf(url, headers: headers);
 
-  /// 当前队列里的下一条（无则 null）。
+  /// 当前队列里的下一条（无则 null）。懒解析队列请用 `resolveAt` 判断是否还有。
   MediaSpec? get next =>
       (index + 1 < queue.length) ? queue[index + 1] : null;
 
   /// 当前队列里的上一条（无则 null）。
   MediaSpec? get prev => (index > 0) ? queue[index - 1] : null;
+
+  /// 是否**可能**还有下一条：静态队列之外还要考虑懒解析。
+  bool get hasNext => next != null || resolveAt != null;
+
+  /// 是否**可能**还有上一条（懒解析同样适用于往前翻）。
+  bool get hasPrev => prev != null || (resolveAt != null && index > 0);
+
 
   MediaSpec copyWith({
     String? url,
@@ -105,6 +131,8 @@ class MediaSpec {
     int? index,
     bool? allowAudioMode,
     String? sourceTag,
+    Future<MediaSpec?> Function(int index)? resolveAt,
+    int? total,
   }) =>
       MediaSpec(
         url: url ?? this.url,
@@ -122,5 +150,7 @@ class MediaSpec {
         index: index ?? this.index,
         allowAudioMode: allowAudioMode ?? this.allowAudioMode,
         sourceTag: sourceTag ?? this.sourceTag,
+        resolveAt: resolveAt ?? this.resolveAt,
+        total: total ?? this.total,
       );
 }

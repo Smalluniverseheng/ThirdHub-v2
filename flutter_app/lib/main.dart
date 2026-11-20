@@ -47,6 +47,7 @@ import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/bili_module_page.dart';
+import 'core/hongguo_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
@@ -8561,16 +8562,66 @@ class VideoSection extends StatefulWidget {
 class _Vs extends State<VideoSection> {
   /// 模块抽屉（左上角按钮 / 边缘右滑拉出）
   final _dk = GlobalKey<ModuleDrawerHostState>();
-  // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
-  //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
-  int sub = EngineDirect.connected ? 2 : 0;
+
+  /// 平台横切用的 PageView 控制器 —— 左右滑 = 换平台。
+  late final PageController _pc = PageController(initialPage: _initialPage);
+
+  /// 当前平台索引。平台顺序固定，见 [_platforms]。
+  int sub = 0;
+
+  /// 首屏停在哪个平台。
+  ///
+  /// ★ 旧逻辑是「引擎在线就进发现，否则进片库」。改平台横切后这条推理仍然成立，
+  ///   只是落点变了：**有内容平台可看就停在第一个平台**（红果），
+  ///   否则停在片库。目的不变 —— 别让用户一进来看到一片空白。
+  int get _initialPage => currentGate().allowThirdPartyVideoSources ? 0 : 2;
+
+  /// 平台清单（顺序 = 左右滑动的顺序）。
+  ///
+  /// 为什么这样排：左边放"内容平台"（红果、B 站），右边放"自己的东西"
+  /// （片库、历史）和聚合入口（发现、搜索）。用户横向滑动时先看到平台，
+  /// 与自己无关的聚合能力放在最后，不会挡路。
+  // 这里**不用 const**：文案一律走 tr()，切语言时抽屉与切换条才会跟着变
+  // （旧写法是裸中文字面量，切到英文后这两处仍是中文 —— 属于"做了一半"）。
+  List<_VideoPlatform> _platforms(bool thirdParty) => [
+        _VideoPlatform(tr('红果短剧'), Icons.theaters_outlined, tr('竖屏短剧 · 推荐与搜索')),
+        _VideoPlatform(tr('哔哩哔哩'), Icons.live_tv_outlined, tr('推荐、热门、排行、分区')),
+        _VideoPlatform(tr('片库'), Icons.video_library_outlined, tr('收藏与在看')),
+        _VideoPlatform(tr('历史'), Icons.history, tr('最近看过')),
+        if (thirdParty) _VideoPlatform(tr('发现'), Icons.explore_outlined, tr('各来源推荐')),
+        if (thirdParty) _VideoPlatform(tr('搜索'), Icons.search, tr('跨来源检索')),
+      ];
+
+  @override
+  void dispose() {
+    _pc.dispose();
+    super.dispose();
+  }
+
+  void _goto(int i) {
+    if (i < 0) return;
+    _pc.animateToPage(i,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic);
+    setState(() => sub = i);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    sub = _initialPage;
+  }
+
   @override
   Widget build(BuildContext c) {
     // ★ 5.2.3 / §5.3（iOS）：第三方影视聚合的「发现/搜索」入口关闭，
     //   只留用户自有的片库/历史。判定收口在 core/apple_gate.dart
     //   （allowThirdPartyVideoSources），这里只执行。
     final thirdParty = currentGate().allowThirdPartyVideoSources;
+    final plats = _platforms(thirdParty);
     final pages = <Widget>[
+      const HongguoPage(embedded: true),
+      const BiliModulePage(embedded: true),
       const ShelfPage(kind: 'video', builder: _videoDetail),
       HistoryPage(kind: 'video', builder: _videoDetail),
       if (thirdParty)
@@ -8582,12 +8633,6 @@ class _Vs extends State<VideoSection> {
                     builder: (_) => EngineItemPage(type: 'video', item: it)))),
       if (thirdParty) const ModuleSearchTab(tab: 3),
     ];
-    final segs = <ButtonSegment<int>>[
-      ButtonSegment(value: 0, label: segLabel('片库')),
-      ButtonSegment(value: 1, label: segLabel('历史')),
-      if (thirdParty) ButtonSegment(value: 2, label: segLabel('发现')),
-      if (thirdParty) ButtonSegment(value: 3, label: segLabel('搜索')),
-    ];
     final cur = sub.clamp(0, pages.length - 1);
     return ModuleDrawerHost(
         key: _dk,
@@ -8595,20 +8640,9 @@ class _Vs extends State<VideoSection> {
         moduleIcon: Icons.movie_outlined,
         currentTab: cur,
         actions: [
-          ModuleAction(Icons.video_library_outlined, '片库',
-              sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
-          ModuleAction(Icons.history, '历史',
-              sub: '最近看过', onTap: () => setState(() => sub = 1)),
-          ModuleAction(Icons.live_tv_outlined, tr('哔哩哔哩'),
-              sub: tr('推荐、热门、排行、分区、下载'),
-              onTap: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const BiliModulePage()))),
-          if (thirdParty)
-            ModuleAction(Icons.explore_outlined, '发现',
-                sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
-          if (thirdParty)
-            ModuleAction(Icons.search, tr('搜索'),
-                sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
+          for (var i = 0; i < plats.length; i++)
+            ModuleAction(plats[i].icon, plats[i].name,
+                sub: plats[i].sub, onTap: () => _goto(i)),
           ModuleAction(Icons.folder_special_outlined, '本地库',
               sub: '离线内容 · 存储占用',
               onTap: () => Navigator.push(c,
@@ -8633,18 +8667,67 @@ class _Vs extends State<VideoSection> {
                     icon: const Icon(Icons.menu, size: 20),
                     tooltip: tr('快捷面板'),
                     onPressed: () => _dk.currentState?.animateTo(true))),
-            Expanded(
-                child: Center(
-                    child: SegmentedButton<int>(
-                        segments: segs,
-                        selected: {cur},
-                        onSelectionChanged: (s) =>
-                            setState(() => sub = s.first)))),
+            // 平台条：横向滚动，点即切；底下的 PageView 左右滑也切同一份状态。
+            // ★ 没有这一条时，用户根本不知道右边还有平台 —— 所以它必须常在，
+            //   不能像旧版那样把平台入口藏在抽屉里。
+            Expanded(child: _platformBar(c, plats, cur)),
             SizedBox(width: 40, child: modMenuBtn(c))
           ]),
-          Expanded(child: pages[cur]),
+          Expanded(
+            child: PageView(
+              controller: _pc,
+              onPageChanged: (i) => setState(() => sub = i),
+              children: pages,
+            ),
+          ),
         ]));
   }
+
+  /// 平台切换条。用 ChoiceChip 而不是 SegmentedButton：
+  /// 平台数量会随门禁/后续接入变化，SegmentedButton 等分宽度会把文字挤成省略号。
+  Widget _platformBar(BuildContext c, List<_VideoPlatform> plats, int cur) {
+    final cs = Theme.of(c).colorScheme;
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        itemCount: plats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (ctx, i) {
+          final on = i == cur;
+          return ChoiceChip(
+            label: Text(plats[i].name,
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                    color: on ? cs.onSecondaryContainer : cs.onSurfaceVariant)),
+            selected: on,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+            selectedColor: cs.secondaryContainer,
+            onSelected: (_) {
+              Haptic.tap();
+              _goto(i);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 视频板块的一个「平台」。
+///
+/// 存在理由很朴素：平台清单要同时驱动三处 —— 顶部切换条、PageView 的页序、
+/// 抽屉里的快捷入口。三处各写一份字符串，迟早出现"抽屉点进去是另一个平台"。
+class _VideoPlatform {
+  final String name;
+  final IconData icon;
+  final String sub;
+  const _VideoPlatform(this.name, this.icon, this.sub);
 }
 
 // 直播: drpy直播源搜索频道→直接播放(m3u8直播流)

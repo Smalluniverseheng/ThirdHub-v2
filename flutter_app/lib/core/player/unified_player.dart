@@ -296,39 +296,63 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
     await _seekTo(clamped);
   }
 
-  void _onEnded() {
-    final n = _spec.next;
-    if (n != null) {
+  /// 取第 i 条：先看静态队列，没有再问调用方的懒解析。
+  ///
+  /// ★4.81.79：切集原本是「三处各写一遍 _spec = _spec.next」——
+  ///   `_onEnded` / `_playNext` / `_playPrev` 各复制一份 setState 逻辑，
+  ///   而且都**只认静态队列**。统一到这一个入口后，懒解析自动对三个入口生效。
+  Future<MediaSpec?> _specAt(int i) async {
+    if (i < 0) return null;
+    final q = _spec.queue;
+    if (i < q.length) return q[i];
+    final f = _spec.resolveAt;
+    if (f == null) return null;
+    final total = _spec.total;
+    if (total != null && i >= total) return null;
+    try {
+      return await f(i);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(trf('取不到这一集：{e}', {'e': '$e'}))));
+      }
+      return null;
+    }
+  }
+
+  Future<void> _jumpTo(int i, {bool notifyIfNone = false}) async {
+    if (_jumping) return;
+    _jumping = true;
+    try {
+      final n = await _specAt(i);
+      if (n == null) {
+        if (notifyIfNone && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(tr('已经是最后一集'))));
+        }
+        return;
+      }
+      if (!mounted) return;
       setState(() {
         _spec = n;
         _kind = n.kind;
         _audioMode = n.kind == MediaKind.audio;
       });
       unawaited(_openMedia(autoplay: true));
+    } finally {
+      _jumping = false;
     }
   }
 
-  void _playNext() {
-    final n = _spec.next;
-    if (n == null) return;
-    setState(() {
-      _spec = n;
-      _kind = n.kind;
-      _audioMode = n.kind == MediaKind.audio;
-    });
-    unawaited(_openMedia(autoplay: true));
+  bool _jumping = false;
+
+  void _onEnded() {
+    unawaited(_jumpTo(_spec.index + 1));
   }
 
-  void _playPrev() {
-    final p = _spec.prev;
-    if (p == null) return;
-    setState(() {
-      _spec = p;
-      _kind = p.kind;
-      _audioMode = p.kind == MediaKind.audio;
-    });
-    unawaited(_openMedia(autoplay: true));
-  }
+  void _playNext() => unawaited(_jumpTo(_spec.index + 1, notifyIfNone: true));
+
+  void _playPrev() => unawaited(_jumpTo(_spec.index - 1, notifyIfNone: true));
 
   Future<void> _setSpeed(double s) async {
     setState(() => _speed = s);
@@ -573,12 +597,12 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
                         color: Colors.white, size: 26),
                     onPressed: () => unawaited(_togglePlay()),
                   ),
-                  if (_spec.prev != null)
+                  if (_spec.hasPrev)
                     IconButton(
                       icon: const Icon(Icons.skip_previous, color: Colors.white),
                       onPressed: _playPrev,
                     ),
-                  if (_spec.next != null)
+                  if (_spec.hasNext)
                     IconButton(
                       icon: const Icon(Icons.skip_next, color: Colors.white),
                       onPressed: _playNext,
@@ -723,7 +747,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
                 IconButton(
                   iconSize: 34,
                   icon: const Icon(Icons.skip_previous, color: Colors.white),
-                  onPressed: _spec.prev == null ? null : _playPrev,
+                  onPressed: _spec.hasPrev ? _playPrev : null,
                 ),
                 const SizedBox(width: 20),
                 if (_aBuffering)
@@ -746,7 +770,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
                 IconButton(
                   iconSize: 34,
                   icon: const Icon(Icons.skip_next, color: Colors.white),
-                  onPressed: _spec.next == null ? null : _playNext,
+                  onPressed: _spec.hasNext ? _playNext : null,
                 ),
               ],
             ),

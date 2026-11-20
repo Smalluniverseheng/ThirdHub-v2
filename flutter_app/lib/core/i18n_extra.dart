@@ -22,6 +22,31 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    // ── 4.81.79 视频平台横切（23 条）──
+    '{n} 集': '{n} ép.',
+    '从第 1 集开始': 'Depuis l’épisode 1',
+    '共 {n} 集': '{n} épisodes au total',
+    '取不到这一集：{e}': 'Impossible de charger cet épisode : {e}',
+    '各来源推荐': 'Recommandations par source',
+    '后端响应太慢，稍后再试': 'Le serveur répond trop lentement. Réessayez plus tard.',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'Le serveur a refusé la requête (clé peut-être expirée — reconnectez-vous dans « Mon serveur »).',
+    '已经是最后一集': 'C’est le dernier épisode',
+    '推荐、热门、排行、分区': 'Recommandé, populaire, classements, catégories',
+    '推荐给你': 'Recommandé pour vous',
+    '搜短剧名，如「总裁」': 'Chercher une série courte, ex. « PDG »',
+    '搜索结果': 'Résultats',
+    '收藏与在看': 'Enregistrés et en cours',
+    '最近看过': 'Vus récemment',
+    '竖屏短剧 · 推荐与搜索': 'Séries verticales · découverte et recherche',
+    '红果没有返回播放信息': 'Hongguo n’a renvoyé aucune info de lecture',
+    '红果没给出可播地址（可能已下架）': 'Hongguo n’a donné aucune URL lisible (peut-être retiré)',
+    '红果短剧': 'Hongguo – séries courtes',
+    '跨来源检索': 'Recherche multi-sources',
+    '还没有推荐内容': 'Aucune recommandation pour l’instant',
+    '这一集没有可播地址': 'Aucune URL lisible pour cet épisode',
+    '这部剧暂时没有可播的集': 'Aucun épisode lisible pour cette série',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'Serveur injoignable (vérifiez que le téléphone et le NAS sont sur le même réseau)',
+
     '仍连不上：{e}': 'Toujours injoignable : {e}', '地址清单没取到（可能没网）': 'Liste d’adresses indisponible (pas de réseau ?)',
 
     '显示弹幕': 'Afficher les danmaku',
@@ -288,6 +313,31 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    // ── 4.81.79 视频平台横切（23 条）──
+    '{n} 集': '{n} сер.',
+    '从第 1 集开始': 'С 1-й серии',
+    '共 {n} 集': 'Всего {n} серий',
+    '取不到这一集：{e}': 'Не удалось получить эту серию: {e}',
+    '各来源推荐': 'Рекомендации по источникам',
+    '后端响应太慢，稍后再试': 'Сервер отвечает слишком медленно. Повторите позже.',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'Сервер отклонил запрос (возможно, ключ истёк — переподключитесь в «Мой сервер»).',
+    '已经是最后一集': 'Это последняя серия',
+    '推荐、热门、排行、分区': 'Рекомендации, популярное, рейтинги, категории',
+    '推荐给你': 'Рекомендуем вам',
+    '搜短剧名，如「总裁」': 'Поиск короткой драмы, напр. «Босс»',
+    '搜索结果': 'Результаты поиска',
+    '收藏与在看': 'Избранное и начатое',
+    '最近看过': 'Недавно просмотренные',
+    '竖屏短剧 · 推荐与搜索': 'Вертикальные короткие драмы · подборки и поиск',
+    '红果没有返回播放信息': 'Hongguo не вернул данные воспроизведения',
+    '红果没给出可播地址（可能已下架）': 'Hongguo не дал доступного адреса (возможно, снято с показа)',
+    '红果短剧': 'Hongguo — короткие драмы',
+    '跨来源检索': 'Поиск по всем источникам',
+    '还没有推荐内容': 'Пока нет рекомендаций',
+    '这一集没有可播地址': 'Нет доступного адреса для этой серии',
+    '这部剧暂时没有可播的集': 'У этой драмы пока нет доступных серий',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'Сервер недоступен (проверьте, что телефон и NAS в одной локальной сети)',
+
     '仍连不上：{e}': 'Всё ещё недоступно: {e}', '地址清单没取到（可能没网）': 'Список адресов не получен (нет сети?)',
 
     '显示弹幕': 'Показать данмаку',
@@ -554,6 +604,31 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    // ── 4.81.79 视频平台横切（23 条）──
+    '{n} 集': '{n} ep.',
+    '从第 1 集开始': 'Desde el episodio 1',
+    '共 {n} 集': '{n} episodios en total',
+    '取不到这一集：{e}': 'No se pudo cargar este episodio: {e}',
+    '各来源推荐': 'Recomendaciones por fuente',
+    '后端响应太慢，稍后再试': 'El servidor tarda demasiado. Inténtalo más tarde.',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'El servidor rechazó la petición (la clave puede haber caducado: reconecta en «Mi servidor»).',
+    '已经是最后一集': 'Es el último episodio',
+    '推荐、热门、排行、分区': 'Recomendado, popular, rankings, categorías',
+    '推荐给你': 'Recomendado para ti',
+    '搜短剧名，如「总裁」': 'Busca una serie corta, p. ej. «CEO»',
+    '搜索结果': 'Resultados',
+    '收藏与在看': 'Guardados y en curso',
+    '最近看过': 'Vistos recientemente',
+    '竖屏短剧 · 推荐与搜索': 'Series verticales · descubrir y buscar',
+    '红果没有返回播放信息': 'Hongguo no devolvió información de reproducción',
+    '红果没给出可播地址（可能已下架）': 'Hongguo no dio ninguna URL reproducible (puede que se retirara)',
+    '红果短剧': 'Hongguo – series cortas',
+    '跨来源检索': 'Búsqueda en todas las fuentes',
+    '还没有推荐内容': 'Aún no hay recomendaciones',
+    '这一集没有可播地址': 'No hay URL reproducible para este episodio',
+    '这部剧暂时没有可播的集': 'Esta serie aún no tiene episodios reproducibles',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'No se puede acceder al servidor (comprueba que el móvil y el NAS están en la misma red)',
+
     '仍连不上：{e}': 'Sigue sin conexión: {e}', '地址清单没取到（可能没网）': 'No se obtuvo la lista de direcciones (¿sin red?)',
 
     '显示弹幕': 'Mostrar danmaku',
@@ -821,6 +896,31 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    // ── 4.81.79 视频平台横切（23 条）──
+    '{n} 集': '{n} حلقة',
+    '从第 1 集开始': 'ابدأ من الحلقة 1',
+    '共 {n} 集': 'الإجمالي {n} حلقة',
+    '取不到这一集：{e}': 'تعذّر تحميل هذه الحلقة: {e}',
+    '各来源推荐': 'توصيات حسب المصدر',
+    '后端响应太慢，稍后再试': 'استجابة الخادم بطيئة. أعد المحاولة لاحقًا.',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'رفض الخادم الطلب (قد تكون المفتاح منتهيًا — أعد الاتصال من «خادمي»).',
+    '已经是最后一集': 'هذه آخر حلقة',
+    '推荐、热门、排行、分区': 'موصى به، شائع، التصنيفات، الأقسام',
+    '推荐给你': 'مقترح لك',
+    '搜短剧名，如「总裁」': 'ابحث عن مسلسل قصير، مثل «الرئيس»',
+    '搜索结果': 'نتائج البحث',
+    '收藏与在看': 'المحفوظة وقيد المشاهدة',
+    '最近看过': 'شوهد مؤخرًا',
+    '竖屏短剧 · 推荐与搜索': 'مسلسلات قصيرة عمودية · اكتشاف وبحث',
+    '红果没有返回播放信息': 'لم يُرجع Hongguo معلومات التشغيل',
+    '红果没给出可播地址（可能已下架）': 'لم يقدّم Hongguo رابطًا قابلًا للتشغيل (ربما أُزيل)',
+    '红果短剧': 'Hongguo — مسلسلات قصيرة',
+    '跨来源检索': 'بحث عبر المصادر',
+    '还没有推荐内容': 'لا توجد توصيات بعد',
+    '这一集没有可播地址': 'لا يوجد رابط قابل للتشغيل لهذه الحلقة',
+    '这部剧暂时没有可播的集': 'لا توجد حلقات قابلة للتشغيل لهذا المسلسل',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'تعذّر الوصول إلى الخادم (تأكد أن الهاتف و NAS على الشبكة المحلية نفسها)',
+
     '仍连不上：{e}': 'لا يزال غير متاح: {e}', '地址清单没取到（可能没网）': 'تعذّر الحصول على قائمة العناوين (لا شبكة؟)',
 
     '显示弹幕': 'إظهار التعليقات المتحركة',
@@ -1087,6 +1187,31 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    // ── 4.81.79 视频平台横切（23 条）──
+    '{n} 集': '{n} eps',
+    '从第 1 集开始': 'Start from episode 1',
+    '共 {n} 集': '{n} episodes in total',
+    '取不到这一集：{e}': 'Could not load this episode: {e}',
+    '各来源推荐': 'Recommendations by source',
+    '后端响应太慢，稍后再试': 'The backend is slow to respond. Try again later.',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'The backend rejected this request (the key may have expired — reconnect in "My backend").',
+    '已经是最后一集': 'This is the last episode',
+    '推荐、热门、排行、分区': 'Recommended, popular, rankings, categories',
+    '推荐给你': 'Recommended for you',
+    '搜短剧名，如「总裁」': 'Search a short drama, e.g. "CEO"',
+    '搜索结果': 'Search results',
+    '收藏与在看': 'Saved and in progress',
+    '最近看过': 'Recently watched',
+    '竖屏短剧 · 推荐与搜索': 'Vertical short dramas · discover and search',
+    '红果没有返回播放信息': 'Hongguo returned no playback info',
+    '红果没给出可播地址（可能已下架）': 'Hongguo gave no playable URL (it may have been taken down)',
+    '红果短剧': 'Hongguo Short Drama',
+    '跨来源检索': 'Search across sources',
+    '还没有推荐内容': 'Nothing recommended yet',
+    '这一集没有可播地址': 'No playable URL for this episode',
+    '这部剧暂时没有可播的集': 'This drama has no playable episodes yet',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'Cannot reach the backend (check that the phone and NAS are on the same LAN)',
+
     '仍连不上：{e}': 'Still unreachable: {e}', '地址清单没取到（可能没网）': 'Address list unavailable (no network?)',
 
     '显示弹幕': 'Show danmaku',
@@ -1261,6 +1386,33 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    // ── 4.81.79 视频平台横切（25 条）──
+    '{n} 集': '全{n}話',
+    '从第 1 集开始': '第1話から再生',
+    '共 {n} 集': '全{n}話',
+    '取不到这一集：{e}': 'この話を取得できません：{e}',
+    '各来源推荐': 'ソース別おすすめ',
+    '后端响应太慢，稍后再试': 'サーバーの応答が遅いです。後で再試行してください。',
+    '后端拒绝了这次请求（密钥可能过期，去「我的后端」重新连接）': 'サーバーがリクエストを拒否しました（キーの有効期限切れの可能性。「マイサーバー」で再接続してください）。',
+    '已经是最后一集': '最後の話です',
+    '推荐、热门、排行、分区': 'おすすめ・人気・ランキング・カテゴリ',
+    '推荐给你': 'あなたへのおすすめ',
+    '搜短剧名，如「总裁」': 'ショートドラマ名を検索（例：「総裁」）',
+    '搜索结果': '検索結果',
+    '收藏与在看': 'お気に入りと視聴中',
+    '最近看过': '最近見た',
+    '竖屏短剧 · 推荐与搜索': '縦型ショートドラマ・おすすめと検索',
+    '红果没有返回播放信息': '紅果が再生情報を返しませんでした',
+    '红果没给出可播地址（可能已下架）': '紅果が再生可能な URL を返しません（配信終了の可能性）',
+    '红果短剧': '紅果ショートドラマ',
+    '跨来源检索': 'ソース横断検索',
+    '还没有推荐内容': 'おすすめはまだありません',
+    '这一集没有可播地址': 'この話に再生可能な URL がありません',
+    '这部剧暂时没有可播的集': 'この作品には再生できる話がありません',
+    '连不上后端（检查手机和 NAS 是否在同一个局域网）': 'サーバーに接続できません（スマホと NAS が同じ LAN にあるか確認してください）',
+    '发现': '発見',
+    '片库': 'ライブラリ',
+
     '仍连不上：{e}': 'まだ接続できません：{e}', '地址清单没取到（可能没网）': 'アドレス一覧を取得できません（ネットなし？）',
 
     '显示弹幕': 'コメント表示',

@@ -30,6 +30,7 @@ import 'bili_down_page.dart';
 import 'bili_player.dart';
 import 'bili_swipe_page.dart';
 import 'bili_direct.dart';
+import 'ui/app_skeleton.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -45,7 +46,12 @@ class BiliCtx {
 }
 
 class BiliModulePage extends StatefulWidget {
-  const BiliModulePage({super.key});
+  const BiliModulePage({super.key, this.embedded = false});
+
+  /// true = 被嵌进视频板块的平台横切页：不画自己的 Scaffold/AppBar，
+  /// 只交出一行工具按钮 + TabBar + 内容，外层负责标题与平台切换条。
+  /// 这样"B 站"就不再是一个要点进去的二级页，而是视频页里可以左右滑到的一栏。
+  final bool embedded;
 
   @override
   State<BiliModulePage> createState() => _BiliModulePageState();
@@ -84,15 +90,74 @@ class _BiliModulePageState extends State<BiliModulePage>
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return _shell(const Center(child: AppLoading()));
     }
     if (_base.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: Text(tr('哔哩哔哩'))),
-        body: Center(child: Text(tr('还没连上后端，请先到「我的后端」完成连接'))),
-      );
+      return _shell(
+          Center(child: Text(tr('还没连上后端，请先到「我的后端」完成连接'))));
     }
     final ctx = BiliCtx(_base, _token);
+    final tabs = TabBar(
+      controller: _tab,
+      isScrollable: true,
+      tabs: [
+        Tab(text: tr('推荐')),
+        Tab(text: tr('热门')),
+        Tab(text: tr('排行榜')),
+        Tab(text: tr('分区')),
+        Tab(text: tr('搜索')),
+      ],
+    );
+    // Tab 文案一律走 tr()：独立页与嵌入态共用同一份，不复制两套。
+    final view = TabBarView(
+      controller: _tab,
+      children: [
+        _BiliGridTab(
+          ctx: ctx,
+          pathBuilder: (pn) => '/v1/bili/feed?type=recommend&ps=20&pn=$pn',
+        ),
+        _BiliGridTab(
+          ctx: ctx,
+          pathBuilder: (pn) => '/v1/bili/feed?type=popular&ps=20&pn=$pn',
+        ),
+        _BiliChipsTab(
+          ctx: ctx,
+          chipsPath: '/v1/bili/partitions',
+          pathBuilder: (rid, pn) => '/v1/bili/rank?rid=$rid',
+          rankBadge: true,
+        ),
+        _BiliChipsTab(
+          ctx: ctx,
+          chipsPath: '/v1/bili/partitions',
+          pathBuilder: (rid, pn) => '/v1/bili/region?rid=$rid&ps=20&pn=$pn',
+        ),
+        _BiliSearchTab(ctx: ctx),
+      ],
+    );
+    if (widget.embedded) {
+      return Column(children: [
+        // 独立页时这两个入口在 AppBar 的 actions 里；嵌进来以后没有 AppBar 了，
+        // 但「链接下载」「下载管理」不能因此消失 —— 挪成 tab 右侧的小按钮。
+        Row(children: [
+          Expanded(child: tabs),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: tr('链接下载'),
+            icon: const Icon(Icons.link, size: 20),
+            onPressed: () => openBiliLinkSheet(context, ctx, ''),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: tr('下载管理'),
+            icon: const Icon(Icons.download_outlined, size: 20),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BiliDownPage()),
+            ),
+          ),
+        ]),
+        Expanded(child: view),
+      ]);
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(tr('哔哩哔哩')),
@@ -110,46 +175,16 @@ class _BiliModulePageState extends State<BiliModulePage>
             ),
           ),
         ],
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabs: [
-            Tab(text: tr('推荐')),
-            Tab(text: tr('热门')),
-            Tab(text: tr('排行榜')),
-            Tab(text: tr('分区')),
-            Tab(text: tr('搜索')),
-          ],
-        ),
+        bottom: tabs,
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _BiliGridTab(
-            ctx: ctx,
-            pathBuilder: (pn) => '/v1/bili/feed?type=recommend&ps=20&pn=$pn',
-          ),
-          _BiliGridTab(
-            ctx: ctx,
-            pathBuilder: (pn) => '/v1/bili/feed?type=popular&ps=20&pn=$pn',
-          ),
-          _BiliChipsTab(
-            ctx: ctx,
-            chipsPath: '/v1/bili/partitions',
-            pathBuilder: (rid, pn) => '/v1/bili/rank?rid=$rid',
-            rankBadge: true,
-          ),
-          _BiliChipsTab(
-            ctx: ctx,
-            chipsPath: '/v1/bili/partitions',
-            pathBuilder: (rid, pn) =>
-                '/v1/bili/region?rid=$rid&ps=20&pn=$pn',
-          ),
-          _BiliSearchTab(ctx: ctx),
-        ],
-      ),
+      body: view,
     );
   }
+
+  /// 统一外壳：独立页给 Scaffold，嵌入态直接交 body。
+  Widget _shell(Widget body) => widget.embedded
+      ? body
+      : Scaffold(appBar: AppBar(title: Text(tr('哔哩哔哩'))), body: body);
 }
 
 // ───────────────────────── 通用请求 ─────────────────────────
@@ -301,7 +336,11 @@ Future<String?> pickBiliTarget(BuildContext context, BiliCtx ctx) async {
               leading: Icon('${tg['id']}' == 'music'
                   ? Icons.music_note_outlined
                   : Icons.movie_outlined),
-              title: Text(tr('${tg['name']}')),
+              // ★4.81.76：不能把插值包进 tr 的**字符串字面量**里（tr 后跟一对单引号
+              //   再插值）—— 那不是「翻译这个名字」，而是把插值结果当成一个字面 key
+              //   去查表：永远查不到，还会把半截字符串喂进 i18n 自检的 key 集合，
+              //   长期污染统计。要翻译的是运行时的值本身，所以直接传值。
+              title: Text(tr(tg['name'].toString())),
               subtitle: Text('${tg['id']}' == 'music'
                   ? tr('放进去之后在「音乐」里能听')
                   : tr('放进去之后在「影视」里能看')),
