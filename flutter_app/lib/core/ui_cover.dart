@@ -10,6 +10,7 @@
 
 import 'package:flutter/material.dart';
 
+import 'ui/app_image.dart';
 import 'cover_spec.dart';
 
 // 调用方只需 `import 'ui_cover.dart'` 就能同时拿到 CoverKind/CoverSpec 与组件
@@ -68,35 +69,32 @@ class CoverImage extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius), child: img);
   }
 
-  Widget _network(BuildContext context) => Image.network(
+  /// 网络封面。
+  ///
+  /// ★4.81.78：从 `Image.network` 换成 `AppImage`。三件事一次解决：
+  ///   ① **磁盘缓存**：`Image.network` 只有内存 ImageCache，杀进程就没了；
+  ///      同一本书的封面每次冷启都要重下（弱网下尤其难受）。
+  ///   ② **渐显**：图下完不再"啪"一下出现，滚动列表时也不再闪。
+  ///   ③ **失败可重试**：以前 errorBuilder 直接跳兜底，用户没有第二次机会。
+  ///
+  /// 关键点：**改这里等于全库生效**。`CoverImage` 是项目里早就建好的统一封面层，
+  /// 各处书架/搜索结果/图墙都在用它 —— 问题从来不是"没有统一组件"，
+  /// 而是这个组件本身还不够好。补强它，比再造一个新组件再挨个替换要划算得多。
+  Widget _network(BuildContext context) => AppImage(
         url!,
         headers: headers,
         fit: fit,
         width: width,
         height: height,
-        // 列表滚动/翻页时避免"闪白重载"
-        gaplessPlayback: true,
-        loadingBuilder: (c, child, p) =>
-            p == null ? child : _skeleton(context, p),
-        errorBuilder: (_, __, ___) => _fallback(context),
+        radius: 0, // 圆角由外层 ClipRRect 统一处理，避免圆角套圆角
+        placeholderIcon: fallbackIcon,
+        backgroundColor:
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+        // 列表里的小图不显示重试按钮（点不动还碍事），大封面才给
+        showRetryOnFail: (width ?? 0) >= 96 || (height ?? 0) >= 96,
+        onFail: () => _fallback(context),
       );
 
-  /// 加载骨架：低透明底色 + 细进度环（进度未知时不显示百分比，避免闪动的假数字）。
-  Widget _skeleton(BuildContext context, ImageChunkEvent p) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: width,
-      height: height,
-      color: cs.primary.withValues(alpha: 0.08),
-      alignment: Alignment.center,
-      child: SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(
-            strokeWidth: 2, color: cs.primary.withValues(alpha: 0.45)),
-      ),
-    );
-  }
 
   /// 失败/未填 URL 的兜底。
   ///

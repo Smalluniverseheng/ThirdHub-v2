@@ -33,6 +33,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'kv.dart';
+import 'th_http.dart';
 
 /// 探测 / 校验失败的原因码。UI 侧按码取 tr()，规则层不写中文。
 class DshErr {
@@ -244,7 +245,7 @@ class DshRemote {
     final c = HttpClient();
     c.connectionTimeout = Duration(milliseconds: timeoutMs);
     // 局域网自签 HTTPS（用户自己反代时）也放行 —— 与 tts_presets 同款做法
-    c.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+    c.badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     return c;
   }
 

@@ -9,6 +9,7 @@ import 'module_registry.dart';
 import 'app_log.dart';
 import 'member_levels.dart';
 import 'device_sync_contract.dart' as dsc;
+import 'net_guard.dart';
 
 class Cloud {
   static const String base = 'https://onhmosehcwyrqgxadjvb.supabase.co';
@@ -53,7 +54,7 @@ class Cloud {
   //   `AppLog` 要落盘（SharedPreferences + 文件），await 它会把"点一下要等多久"
   //   变成不可控。日志是旁路，不能拖慢主流程；丢了最多少一条记录。
   static Future<void> signIn(String mail, String password) async {
-    final r = await http.post(Uri.parse('$base/auth/v1/token?grant_type=password'),
+    final r = await thPost(Uri.parse('$base/auth/v1/token?grant_type=password'),
       headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
     final j = jsonDecode(r.body);
     if (r.statusCode != 200) {
@@ -73,7 +74,7 @@ class Cloud {
   }
 
   static Future<void> signUp(String mail, String password) async {
-    final r = await http.post(Uri.parse('$base/auth/v1/signup'),
+    final r = await thPost(Uri.parse('$base/auth/v1/signup'),
       headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
     final j = jsonDecode(r.body);
     if (r.statusCode != 200) {
@@ -97,7 +98,7 @@ class Cloud {
   }
 
   static Future<void> refresh() async {
-    final r = await http.post(Uri.parse('$base/auth/v1/token?grant_type=refresh_token'),
+    final r = await thPost(Uri.parse('$base/auth/v1/token?grant_type=refresh_token'),
       headers: _authHeaders, body: jsonEncode({'refresh_token': refreshToken}));
     if (r.statusCode == 200) {
       final j = jsonDecode(r.body);
@@ -132,7 +133,7 @@ class Cloud {
   static Future<void> deleteAccount() async {
     if (!loggedIn) throw Exception('尚未登录，无号可删');
     final uid = userId;
-    final r = await http.post(Uri.parse('$base/rest/v1/rpc/th_delete_account'),
+    final r = await thPost(Uri.parse('$base/rest/v1/rpc/th_delete_account'),
         headers: _authHeaders);
     // 函数 returns void → PostgREST 常回 204/空体；200 也算成功
     if (r.statusCode != 200 && r.statusCode != 204) {
@@ -159,7 +160,7 @@ class Cloud {
     // agent_code 那套），th_profiles 才是网页端当前在读写的那张（nickname/avatar/level/
     // uid12/handle）。此前这里读的是旧表 → 用户在网页端改了昵称/头像，手机上看不到，
     // 就是「两端资料不同步」的直接原因。
-    final r = await http.get(Uri.parse('$base/rest/v1/th_profiles?id=eq.$userId&select=*'), headers: _authHeaders);
+    final r = await thGet(Uri.parse('$base/rest/v1/th_profiles?id=eq.$userId&select=*'), headers: _authHeaders);
     if (r.statusCode == 200) {
       final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
       if (list.isNotEmpty) {
@@ -184,7 +185,7 @@ class Cloud {
   static Future<void> saveBackendUrl(String url) async {
     if (!loggedIn || url.isEmpty) return;
     try {
-      await http.patch(
+      await thPatch(
         Uri.parse('$base/rest/v1/th_profiles?id=eq.$userId'),
         headers: { ..._authHeaders, 'Prefer': 'return=minimal' },
         body: jsonEncode({'backend_url': url}),
@@ -198,7 +199,7 @@ class Cloud {
   static Future<Map<String, dynamic>?> backendBinding() async {
     if (!loggedIn) return null;
     try {
-      final r = await http.get(
+      final r = await thGet(
         Uri.parse('$base/rest/v1/th_shared?user_id=eq.$userId&kind=eq.backend&name=eq.main&select=payload'),
         headers: _authHeaders,
       ).timeout(const Duration(seconds: 8));
@@ -325,7 +326,7 @@ class Cloud {
       if (!(j is Map && j['object'] == 'meta')) return false;
       final tk = (token ?? '').trim();
       if (tk.isEmpty) return true;
-      final r2 = await http.get(
+      final r2 = await thGet(
         Uri.parse('$b/v1/status'),
         headers: {'x-th-token': tk},
       ).timeout(const Duration(seconds: 5));
@@ -338,7 +339,7 @@ class Cloud {
   static Future<void> updateProfile(Map<String, dynamic> fields) async {
     if (!loggedIn) return;
     // 同上：写 th_profiles，网页端读的就是这张。
-    await http.post(Uri.parse('$base/rest/v1/th_profiles'),
+    await thPost(Uri.parse('$base/rest/v1/th_profiles'),
       headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
       body: jsonEncode({'id': userId, ...fields}));
     await profile();
@@ -347,7 +348,7 @@ class Cloud {
   // 设备配对: 后端注册(地址+密钥), 前端拉取后自动连接
   static Future<List<dynamic>> devices() async {
     if (!loggedIn) return [];
-    final r = await http.get(Uri.parse('$base/rest/v1/th_devices?user_id=eq.$userId&select=*'), headers: _authHeaders);
+    final r = await thGet(Uri.parse('$base/rest/v1/th_devices?user_id=eq.$userId&select=*'), headers: _authHeaders);
     if (r.statusCode == 200) return jsonDecode(r.body) as List;
     return [];
   }
@@ -355,7 +356,7 @@ class Cloud {
   // 更新清单(公共桶)
   static Future<Map<String, dynamic>?> latestManifest(String channel) async {
     try {
-      final r = await http.get(Uri.parse('$base/storage/v1/object/public/downloads/thirdhub/latest-$channel.json'));
+      final r = await thGet(Uri.parse('$base/storage/v1/object/public/downloads/thirdhub/latest-$channel.json'));
       if (r.statusCode == 200) return jsonDecode(utf8.decode(r.bodyBytes));
     } catch (_) {}
     return null;
@@ -370,7 +371,7 @@ class Cloud {
   static Future<bool> syncUp(String kind, String name, Map<String, dynamic> payload) async {
     if (!loggedIn) return false;
     try {
-      final r = await http.post(Uri.parse('$base/rest/v1/th_shared'),
+      final r = await thPost(Uri.parse('$base/rest/v1/th_shared'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
         body: jsonEncode({'user_id': userId, 'kind': kind, 'name': name,
           'payload': payload, 'updated_at': DateTime.now().toUtc().toIso8601String()}));
@@ -381,7 +382,7 @@ class Cloud {
   static Future<List<Map<String, dynamic>>> syncDown(String kind) async {
     if (!loggedIn) return [];
     try {
-      final r = await http.get(Uri.parse('$base/rest/v1/th_shared?user_id=eq.$userId&kind=eq.$kind&select=name,payload,updated_at'),
+      final r = await thGet(Uri.parse('$base/rest/v1/th_shared?user_id=eq.$userId&kind=eq.$kind&select=name,payload,updated_at'),
         headers: _authHeaders);
       if (r.statusCode == 200) {
         return [for (final e in jsonDecode(utf8.decode(r.bodyBytes)) as List) Map<String, dynamic>.from(e)];
@@ -494,7 +495,7 @@ class Cloud {
   static Future<bool> tableUp(String table, String id, Object data) async {
     if (!loggedIn || !canSyncTable(table)) return false;
     try {
-      final r = await http.post(Uri.parse('$base/rest/v1/$table'),
+      final r = await thPost(Uri.parse('$base/rest/v1/$table'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
         body: jsonEncode({
           'user_id': userId, 'id': id, 'data': data,
@@ -512,7 +513,7 @@ class Cloud {
   static Future<bool> tableDelete(String table, String id) async {
     if (!loggedIn || !canSyncTable(table) || id.isEmpty) return false;
     try {
-      final r = await http.delete(
+      final r = await thDelete(
           Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&id=eq.${Uri.encodeQueryComponent(id)}'),
           headers: _authHeaders);
       return r.statusCode >= 200 && r.statusCode < 300;
@@ -529,7 +530,7 @@ class Cloud {
   static Future<bool> rowUp(String table, Map<String, dynamic> row) async {
     if (!loggedIn || !communityTables.contains(table)) return false;
     try {
-      final r = await http.post(Uri.parse('$base/rest/v1/$table'),
+      final r = await thPost(Uri.parse('$base/rest/v1/$table'),
           headers: {..._authHeaders, 'Prefer': 'return=minimal'},
           body: jsonEncode(row));
       return r.statusCode >= 200 && r.statusCode < 300;
@@ -540,7 +541,7 @@ class Cloud {
   static Future<List<Map<String, dynamic>>> rowDown(String table, {String query = 'select=*', int limit = 50}) async {
     if (!loggedIn || !communityTables.contains(table)) return const <Map<String, dynamic>>[];
     try {
-      final r = await http.get(
+      final r = await thGet(
           Uri.parse('$base/rest/v1/$table?$query&limit=$limit'), headers: _authHeaders);
       if (r.statusCode == 200) {
         return <Map<String, dynamic>>[
@@ -556,7 +557,7 @@ class Cloud {
   static Future<bool> rowPatch(String table, String id, Map<String, dynamic> patch) async {
     if (!loggedIn || !communityTables.contains(table) || id.isEmpty) return false;
     try {
-      final r = await http.patch(
+      final r = await thPatch(
           Uri.parse('$base/rest/v1/$table?id=eq.${Uri.encodeQueryComponent(id)}'),
           headers: {..._authHeaders, 'Prefer': 'return=minimal'},
           body: jsonEncode(patch));
@@ -568,7 +569,7 @@ class Cloud {
   static Future<bool> rowDelete(String table, String id) async {
     if (!loggedIn || !communityTables.contains(table) || id.isEmpty) return false;
     try {
-      final r = await http.delete(
+      final r = await thDelete(
           Uri.parse('$base/rest/v1/$table?id=eq.${Uri.encodeQueryComponent(id)}'),
           headers: _authHeaders);
       return r.statusCode >= 200 && r.statusCode < 300;
@@ -586,7 +587,7 @@ class Cloud {
       return CloudTableStat(table, 0, 0, false);
     }
     try {
-      final r = await http.get(
+      final r = await thGet(
           Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&select=*'),
           headers: _authHeaders);
       if (r.statusCode != 200) return CloudTableStat(table, 0, 0, false);
@@ -602,7 +603,7 @@ class Cloud {
   static Future<CloudTableStat> settingsStat() async {
     if (!loggedIn) return const CloudTableStat('th_settings', 0, 0, false);
     try {
-      final r = await http.get(
+      final r = await thGet(
           Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=id,data,updated_at'),
           headers: _authHeaders);
       if (r.statusCode != 200) return const CloudTableStat('th_settings', 0, 0, false);
@@ -632,7 +633,7 @@ class Cloud {
   static Future<List<Map<String, dynamic>>> tableDown(String table) async {
     if (!loggedIn || !canSyncTable(table)) return [];
     try {
-      final r = await http.get(Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&select=*'), headers: _authHeaders);
+      final r = await thGet(Uri.parse('$base/rest/v1/$table?user_id=eq.$userId&select=*'), headers: _authHeaders);
       if (r.statusCode == 200) {
         return [for (final e in jsonDecode(utf8.decode(r.bodyBytes)) as List) Map<String, dynamic>.from(e)];
       }
@@ -660,7 +661,7 @@ class Cloud {
     if (!loggedIn) return null;
     try {
       // select 必须带 `id` —— 没有它就没法在 pickSettingsRow 里把设置行认出来
-      final r = await http.get(
+      final r = await thGet(
         Uri.parse('$base/rest/v1/th_settings?user_id=eq.$userId&select=id,data,updated_at'),
         headers: _authHeaders);
       if (r.statusCode != 200) return null;
@@ -723,7 +724,7 @@ class Cloud {
       }
 
       final now = DateTime.now().millisecondsSinceEpoch;
-      final r = await http.post(Uri.parse('$base/rest/v1/th_settings'),
+      final r = await thPost(Uri.parse('$base/rest/v1/th_settings'),
         headers: {..._authHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
         body: jsonEncode({
           'id': userId, 'user_id': userId,

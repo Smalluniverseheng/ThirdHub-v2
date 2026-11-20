@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'native_net.dart';
+import 'th_http.dart';
 
 class ThpDevice {
   final String host; final int port; final List<String> caps; DateTime seen;
@@ -330,7 +331,7 @@ class ThpDiscovery {
     final uri = Uri.parse('$scheme://$host:$port/thp/meta');
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 3)
-      ..badCertificateCallback = (_, __, ___) => true;
+      ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     try {
       final req = await client.getUrl(uri).timeout(const Duration(seconds: 4));
       final res = await req.close().timeout(const Duration(seconds: 4));

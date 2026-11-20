@@ -16,6 +16,7 @@ import 'local_tools_logic.dart';
 // 飞牛 NAS（fnOS）工具：调官方 fnos-cli 管理 EVO4（MIT，见 vendor/MANIFEST.json）
 import 'fnos_cli.dart';
 import 'peer_hub.dart';
+import 'th_http.dart';
 
 // 让调用方（main.dart / prompt 构建）只 import 本文件就能用上零依赖能力层
 export 'local_tools_logic.dart';
@@ -244,7 +245,7 @@ class LocalTools {
       final code = '${a['code'] ?? ''}';
       if (code.trim().isEmpty) return 'code 不能为空';
       try {
-        final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+        final c = HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
         final req = await c.postUrl(Uri.parse('${TtsBackend.base}/v1/py')).timeout(const Duration(seconds: 10));
         req.headers.set('X-TH-Token', TtsBackend.token);
         req.headers.set('Content-Type', 'application/json; charset=utf-8');

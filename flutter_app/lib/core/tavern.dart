@@ -48,6 +48,7 @@ import 'png_text.dart';
 import 'tavern_card_codec.dart';
 import 'tavern_context.dart';
 import 'zip_reader.dart';
+import 'th_http.dart';
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
@@ -484,7 +485,7 @@ class TavernStore {
     HttpClient? cli;
     try {
       cli = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-      cli.badCertificateCallback = (_, __, ___) => true;
+      cli.badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       final res = await (await cli.getUrl(Uri.parse(url)))
           .close()
           .timeout(const Duration(seconds: 8));

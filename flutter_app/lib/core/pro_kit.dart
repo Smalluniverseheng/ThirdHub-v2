@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_version.dart';
 import 'ai.dart';
 import 'i18n.dart';
+import 'th_http.dart';
 
 /// 全批次共用的 AI 调用入口(网页翻译 / 摘要 / 语义提取 / 定时 Agent 都用它)。
 class ProAi {
@@ -75,7 +76,7 @@ class ProKit {
   static bool lastOnline = false;
 
   static http.Client _client() {
-    final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+    final c = HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     return IOClient(c);
   }
 

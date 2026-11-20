@@ -147,6 +147,12 @@ import 'core/backend_health.dart';
 import 'core/play_resolver.dart';
 // ★4.81.77「开放源」：直连公网正规站点的独立内容通路，不经过 Api/base。
 import 'core/free/free_center_page.dart';
+// ★4.81.78 启动轨迹 / 安全模式 / 兜底错误卡片。
+import 'core/boot.dart';
+// ★4.81.78 全局 UI 组件层（图片 / 骨架 / 空态 / 转场）。
+import 'core/ui/app_image.dart';
+import 'core/ui/app_skeleton.dart';
+import 'core/ui/app_transition.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -305,17 +311,27 @@ class IntentRouter {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // ★2026-11-11：放行自签名证书（NAS 后端证书是 CN=ThirdHub 自签，
-  //   不挂这个全局 overrides，Android 会拒绝握手 → 探活全失败 → 永远连不上）。
-  //   实现在 core/th_http.dart：那边只 import dart:io，
-  //   避开 webview_flutter 也导出 X509Certificate 造成的名字冲突。
+
+  // ══ ★4.81.78 启动加固：根治「装完打开就黑屏」══════════════════════════
+  //  旧写法的致命结构是：`await` 串行跑完最后一步才 runApp(主界面)。
+  //  中间任何一步 hang 住或抛异常，用户就永久停在开屏页 —— 而深色模式下
+  //  开屏底色是 #0E1016，看上去就是"黑屏"，并且**没有任何痕迹可查**。
+  //  新结构三条铁律：
+  //    ① 能画就先画：runApp 提前，绝不等异步初始化完成；
+  //    ② 每一步都有超时，失败只记一笔、不阻断下一步；
+  //    ③ 有看门狗：最坏 10 秒也一定把用户送进主界面。
+  //  配套 core/boot.dart 把每一步落盘 → 下次再出问题能直接看到卡在哪。
+
+  // release 下默认 ErrorWidget 是一块灰砖，用户只会说"坏了"。
+  // 换成带错误摘要的卡片，至少用户截图就能定位。
+  ErrorWidget.builder = (d) => BootErrorCard(d);
+
+  // 放行自签名证书（NAS 后端证书是 CN=ThirdHub 自签）。
+  // 实现在 core/th_http.dart：只 import dart:io，避开 webview_flutter
+  // 也导出 X509Certificate 造成的名字冲突。注意它只放行私网/自签域名，
+  // 不是无条件开关（见 th_http.dart 的判据）。
   HttpOverrides.global = ThirdHubHttpOverrides();
-  // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
-  installAiStorePrefs();
-  await AppSettings.init();
-  // ★2026-10-17：读触觉反馈开关（用户可关；所有震动走 Haptic 层）
-  unawaited(Haptic.init());
-  // 报错中心: 全局捕获 Flutter 框架异常 → 日志中心（release 下灰屏类崩溃也能回看）
+
   FlutterError.onError = (d) {
     AppLog.error('Flutter 框架异常', err: d.exception, st: d.stack);
     FlutterError.presentError(d);
@@ -324,62 +340,126 @@ Future<void> main() async {
     AppLog.error('未捕获异常', err: e, st: st);
     return true;
   };
-  // 加载式开屏: 仅展示初始化过程, 完成即被替换, 不固定占用时长; 关闭动画则白屏加载
+
   IntentRouter.init();
-  // ★2026-10-18 开屏重做：广告位 + 右下角「转圈 → 5 秒倒计时跳过」
-  //   bootDone 通知开屏「初始化完了」；splashDone 等开屏「倒计时完 / 被点跳过」。
+
   final bootDone = ValueNotifier<bool>(false);
   final splashDone = Completer<void>();
-  runApp(SplashApp(
-      anim: AppSettings.splashAnim,
-      bootDone: bootDone,
-      onFinish: () {
-        if (!splashDone.isCompleted) splashDone.complete();
-      }));
-  await Cloud.init();
-  // ★2026-11-08：启动就自动连 NAS 后端（不管登不登录）。
-  //   以前连接只在「登录后」或「进后端管理页」才发生 —— 于是没登录的机器
-  //   永远是空 base，搜索走不到后端，表现就是「装了新版还是什么都没有」。
-  //   这里最多等 6 秒：连上就立刻可用；连不上（比如在外面没 IPv6）也不拖死启动。
+  void finishSplash() {
+    if (!splashDone.isCompleted) splashDone.complete();
+  }
+
+  // 开屏动画开关要先读盘，但最多等 1.5 秒 —— 这一步不能成为新卡点。
+  var anim = true;
   try {
-    await Cloud.resolveBackend().timeout(const Duration(seconds: 6));
+    final p0 = await SharedPreferences.getInstance()
+        .timeout(const Duration(milliseconds: 1500));
+    anim = p0.getBool('splash_anim') ?? true;
   } catch (_) {}
-  // ★2026-10-30 远端配置中心：先用本地缓存（同步就绪、不阻塞），云端返回后覆盖。
-  //   目的：第三方 API / 地图 / 语音 / 源模板 / 资源库后端地址都在后台一键替换，不写死在包里。
+
+  runApp(SplashApp(anim: anim, bootDone: bootDone, onFinish: finishSplash));
+
+  // 看门狗：不管初始化卡在哪，10 秒后强制放行（开屏转圈 → 「进入」）。
+  final watchdog = Timer(const Duration(seconds: 10), () {
+    if (!bootDone.value) {
+      Boot.step('看门狗强制放行');
+      bootDone.value = true;
+    }
+  });
+
+  // ── 启动自检：连续 3 次没走到「启动完成」→ 安全模式 ──
+  //   只清界面类配置（导航布局/皮肤/主题/动效），账号与内容一律不动。
+  final safeMode = await Boot.guard<bool>('启动自检',
+          () => Boot.begin(kAppVersion),
+          timeout: const Duration(seconds: 3)) ??
+      false;
+  if (safeMode) {
+    final cleared = await Boot.guard<List<String>>('安全模式自愈', Boot.heal);
+    Boot.step('安全模式：重置了 ${cleared?.length ?? 0} 项界面配置');
+  }
+
+  // TH-Agent 的智能体/指令/记忆/钉注统一落盘到 shared_preferences
+  installAiStorePrefs();
+
+  // 设置是所有页面读盘的入口 —— 它挂了整个 App 都不正常，失败重试一次。
+  for (var i = 0; i < 2; i++) {
+    final ok = await Boot.guard<bool>(
+        i == 0 ? '读取设置' : '读取设置(重试)',
+        () async {
+          await AppSettings.init();
+          return true;
+        },
+        timeout: const Duration(seconds: 4));
+    if (ok == true) break;
+  }
+  // 读触觉反馈开关（用户可关；所有震动统一走 Haptic 层）
+  unawaited(Haptic.init());
+
+  // 云端账号：有 token 时会拉 profile / refresh。
+  // **必须给超时** —— 旧代码这里既无 try 也无 timeout，
+  // 国内网络下这是最常见的"卡在开屏"来源之一。
+  await Boot.guard('云端账号', Cloud.init,
+      timeout: const Duration(seconds: 5));
+
+  // 启动就自动连 NAS 后端（不管登不登录）。连不上也不拖死启动。
+  await Boot.guard('连接后端', Cloud.resolveBackend,
+      timeout: const Duration(seconds: 6));
+
+  // 远端配置中心：先用本地缓存，云端返回后覆盖。都不阻塞启动。
   unawaited(RemoteConfig.init());
   unawaited(AiRegistry.init());
   unawaited(EngineDirect.init());
-  // ★M1：下载队列 —— 注入执行器 + 持久化 + 恢复上次未完成任务。
+  // 下载队列：注入执行器 + 持久化 + 恢复上次未完成任务
   _initDownloadQueue();
-  // 通知栏音乐控制(锁屏/通知栏播放键)
-  try {
-    await JustAudioBackground.init(
-        androidNotificationChannelId: 'com.thirdhub.app.audio',
-        androidNotificationChannelName: '音乐播放',
-        androidNotificationOngoing: true);
-  } catch (_) {}
+
+  // 通知栏音乐控制（锁屏 / 通知栏播放键）
+  await Boot.guard(
+      '媒体通知',
+      () => JustAudioBackground.init(
+          androidNotificationChannelId: 'com.thirdhub.app.audio',
+          androidNotificationChannelName: '音乐播放',
+          androidNotificationOngoing: true));
+
   unawaited(Notify.init());
   unawaited(Notify.checkAnnouncements());
-  final prefs = await SharedPreferences.getInstance();
+
+  // ★最后一次读盘。拿不到就**不要硬着头皮进主界面** —— 那只会让每个页面
+  //   各自炸一次。这里直接换成「启动失败」说明页，把真实原因摆给用户。
+  SharedPreferences? prefs;
+  try {
+    prefs = await SharedPreferences.getInstance()
+        .timeout(const Duration(seconds: 3));
+  } catch (_) {}
+  if (prefs == null) {
+    Boot.step('读取存储失败', error: '最后一道读盘也超时');
+    watchdog.cancel();
+    runApp(const BootFailedApp());
+    return;
+  }
   final pin = prefs.getString('app_pin') ?? '';
   final onboarded = prefs.getBool('first_run') ?? false;
-  // v4.40.0: 注册进阶功能桥(系统页要动导航/主题/字体; 浏览器译文要交给阅读器)
-  registerProBridges();
-  // ★告诉开屏「加载完成」→ 它开始 5 秒倒计时；等它结束（或用户点跳过）再进主界面。
-  bootDone.value = true;
-  await splashDone.future;
 
-  // 2026-11-06：判定「数据存在自己的设备上」还是「存在官方云端」。
-  //   自建后端（会员自己的 EXE / NAS）地址长这样：http://192.168.x.x:9527、
-  //   http://[2408:...]:9527、https://nas.xxx.com —— 都不是 supabase.co 域名。
-  //   这个判断决定内容表（书架/进度/收藏/历史）要不要受会员等级限制：
-  //   用自己的后端不该受限，因为数据根本不经过官方服务器。
-  final _selfBase = prefs.getString('base') ?? '';
-  Cloud.selfHosted = _selfBase.isNotEmpty && !_selfBase.contains('supabase.co');
+  // v4.40.0: 注册进阶功能桥（系统页要动导航/主题/字体；浏览器译文要交给阅读器）
+  await Boot.guard('功能桥', () async => registerProBridges());
+
+  // 告诉开屏「加载完成」→ 它开始 5 秒倒计时；等它结束（或用户点跳过）再进主界面。
+  bootDone.value = true;
+  // 开屏若因任何原因没起来，这里也不能无限等。
+  await splashDone.future.timeout(const Duration(seconds: 12),
+      onTimeout: () {});
+  watchdog.cancel();
+
+  // 判定「数据存在自己的设备上」还是「存在官方云端」。
+  // 自建后端地址（http://192.168.x.x:9527 / https://nas.xxx.com）都不是 supabase.co，
+  // 这个判断决定内容表要不要受会员等级限制：用自己的后端不该受限。
+  final selfBase = prefs.getString('base') ?? '';
+  Cloud.selfHosted = selfBase.isNotEmpty && !selfBase.contains('supabase.co');
+
+  await Boot.done();
 
   runApp(ThApp(
-      ready: (prefs.getString('base') ?? '').isNotEmpty,
-      base: prefs.getString('base') ?? '',
+      ready: selfBase.isNotEmpty,
+      base: selfBase,
       token: prefs.getString('token') ?? '',
       locked: pin.isNotEmpty,
       fresh: !onboarded));
@@ -430,11 +510,10 @@ class Api {
     return _shared ??= () {
       final c = HttpClient()
         ..connectionTimeout = const Duration(seconds: 10)
-        ..badCertificateCallback = (cert, host, port) {
-          if (isPrivateHost(host)) return true;
-          final dn = '${cert.subject}|${cert.issuer}';
-          return dn.contains('CN=ThirdHub') || dn.contains('CN = ThirdHub');
-        };
+        // ★4.81.78：判据收口到 ThirdHubHttpOverrides.trustCert。
+        //   这里和内联写法原本是一样的，但两份拷贝会漂移 ——
+        //   收紧一条边界就得记得改两处，而"忘了一处"正是这个项目反复踩的坑。
+        ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       return IOClient(c);
     }();
   }
@@ -1293,7 +1372,7 @@ class _Rb extends State<RecycleBinPage> {
               }),
       ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : items.isEmpty
               ? const Center(
                   child: Text('回收站为空', style: TextStyle(color: Colors.grey)))
@@ -1611,7 +1690,7 @@ class LegalDocPage extends StatelessWidget {
           future: rootBundle.loadString(asset),
           builder: (c2, s) {
             if (!s.hasData)
-              return const Center(child: CircularProgressIndicator());
+              return const AppLoading();
             final dark = Theme.of(c2).brightness == Brightness.dark;
             final base = Theme.of(c2).textTheme.bodyMedium ?? const TextStyle();
             return Markdown(
@@ -1761,10 +1840,9 @@ class _Ob extends State<OnboardingPage> {
   int step = 0;
   final ctrl = PageController();
   // ★默认只显示核心模块（不再 67 个全开），其余收进「导航设置」按需开启
-  static const _coreMods = <String>{
-    '搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI',
-    '聊天', '社区', '相册', '工具箱', '我的',
-  };
+  // ★4.81.78 改为引用全局常量：以前这里和 `_load()` 兜底、`RootNav` 首帧
+  //   各写一份 12 项列表，加模块要改三处 —— 这就是「引导页选了、装完却没有」的来源。
+  static final Set<String> _coreMods = kDefaultNav.toSet();
   final Set<String> _mods = _coreMods.toSet();
   // ★第十六轮：这两行以前是 `const` 中文字面量，**整页不过 tr()**。后果在模拟器上
   // 一眼可见：选了 Français，标题还写「选择语言」、按钮还写「下一步」——
@@ -3843,7 +3921,7 @@ class _Nd extends State<NetDiskPage> {
           ? Center(child: Text(err!))
           : Stack(children: [
               if (ctrl != null) WebViewWidget(controller: ctrl!),
-              if (loading) const Center(child: CircularProgressIndicator())
+              if (loading) const AppLoading()
             ]));
 }
 
@@ -3995,7 +4073,7 @@ class _Eng extends State<EnginesPage> {
       ]));
   @override
   Widget build(BuildContext c) => loading && builtin.isEmpty && network.isEmpty
-      ? const Center(child: CircularProgressIndicator())
+      ? const AppLoading()
       : RefreshIndicator(
           onRefresh: load,
           child: ListView(children: [
@@ -5881,7 +5959,7 @@ class _Hp extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext c) => loading
-      ? const Center(child: CircularProgressIndicator())
+      ? const AppLoading()
       : items.isEmpty
           ? const Center(
               child: Text('还没有阅读记录\n打开任意一本小说，阅读时长会自动记在这里',
@@ -6201,7 +6279,7 @@ class _Sh extends State<ShelfPage> {
   Widget build(BuildContext c) {
     final mOff = manual != null ? 1 : 0; // 说明书占第一格
     final list = loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const SkeletonGrid(count: 9, crossAxisCount: 3)
         : (mOff == 0 && items.isEmpty && local.isEmpty)
             ? Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -6749,7 +6827,7 @@ class _T extends State<TocPage> {
               style: const TextStyle(color: Colors.grey))
         ]),
         body: loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SkeletonList(count: 10)
             : (err != null && chapters.isEmpty)
                 ? Center(
                     child: SingleChildScrollView(
@@ -7150,7 +7228,7 @@ class _Cd extends State<ComicDetailPage> {
             style: const TextStyle(color: Colors.grey))
       ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(count: 8)
           : err != null
               ? Center(
                   child: Text(err!, style: const TextStyle(color: Colors.red)))
@@ -7284,7 +7362,7 @@ class _Cr extends State<ComicReaderPage> {
         body: Column(children: [
           Expanded(
               child: loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AppLoading()
                   : err != null
                       ? Center(
                           child: Text(err!,
@@ -7459,7 +7537,7 @@ class _MpList extends State<_MusicPlaylist> {
 
   @override
   Widget build(BuildContext c) => loading
-      ? const Center(child: CircularProgressIndicator())
+      ? const AppLoading()
       : (items.isEmpty && local.isEmpty)
           ? const Center(
               child: Text('歌单为空\n播放过的歌自动入单 · 本地导入的歌也在这里',
@@ -8929,7 +9007,7 @@ class _Vd extends State<VideoDetailPage> {
   Widget build(BuildContext c) => Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(count: 8)
           : err != null
               ? Center(
                   child: Column(
@@ -9555,7 +9633,7 @@ class _Vp extends State<VideoPlayPage> {
               child:
                   Text('播放错误: $err', style: const TextStyle(color: Colors.red)))
           : loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const AppLoading()
               : Column(children: [
                   // ★M4a：画面区手势（横滑调进度 / 双击 ±10s）。
                   //   只包画面区 —— 下方选集条的横滑在它自己的区域里，互不干扰。
@@ -9687,6 +9765,16 @@ class ModuleDef {
   /// 构造后缓存复用，切走再回来 State 不重建（与 _KeepAlivePage 语义一致）。
   Widget get page => _cached ??= _build();
 }
+
+/// 默认导航栏（首次安装 / 兜底恢复共用）。
+///
+/// ★4.81.78 抽出常量：这份列表原来在 `_Ob._coreMods`、`_load()` 兜底、
+/// `RootNav` 首帧三处各写一遍，加一个模块要改三处、漏一处就出现
+/// 「引导页选了、装完没有」。现在只有这一处。
+const List<String> kDefaultNav = <String>[
+  '搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI',
+  '聊天', '社区', '相册', '工具箱', '我的',
+];
 
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
@@ -10540,8 +10628,9 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     final p = await SharedPreferences.getInstance();
     final saved = p.getStringList('nav_modules');
     if (saved == null || saved.isEmpty) {
+      if (!mounted) return;
       setState(() {
-        enabled = ['搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI', '聊天', '社区', '相册', '工具箱', '我的'];
+        enabled = List<String>.from(kDefaultNav);
         if (idx >= enabled.length) idx = 0;
       });
       return;
@@ -10582,6 +10671,12 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     }
     final visible =
         migrated.where((k) => currentGate().allowModule(k)).toList();
+    // ★4.81.78：全被平台门拦掉 = 界面成了空壳（后续 build 里 enabled[idx] 直接崩）。
+    //  「我的」是唯一无条件的入口，必须留住 —— 用户才有地方去改回来。
+    if (visible.isEmpty) visible.add('我的');
+    // _load() 是 async 的（中间有几次 await 读盘），回来时 State 可能已经没了
+    // （切换 root / 退出登录后重建导航层）。这里不判 mounted 就会在 setState 抛。
+    if (!mounted) return;
     setState(() {
       enabled = visible;
       if (idx >= enabled.length) idx = 0;
@@ -10680,7 +10775,11 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   ///   下一次返回取出的就是 C，用户在 B/C 之间来回弹，永远退不出去。
   ///   返回动作是**消费**历史，不是产生历史，所以必须显式关掉记录。
   void _goNow(int i, {bool animate = false, bool recordHistory = true}) {
-    HapticFeedback.selectionClick(); // 切换模块轻微震动
+    // ★4.81.78：越界直接忽略。以前 enabled[i] / RootNav.currentModuleKey = enabled[i]
+    //  在中文键被迁移/云端布局变更的瞬间会踩到 RangeError，进而整棵树 build 失败。
+    if (i < 0 || i >= enabled.length) return;
+    // 震动统一走 Haptic 层（用户关掉开关时这里也要静音，裸调 HapticFeedback 会漏掉）
+    Haptic.tap();
     if (i == idx) return;
     // 记模块访问历史（供侧滑返回"回到上一个模块"用）。放在 setState 之前：
     // 一旦这里抛异常也不该把"历史已写、idx 未变"这种自相矛盾的状态留下来。
@@ -10782,8 +10881,63 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
   /// 「宽屏 NavigationRail / 悬浮球 / 折叠细条 / 普通底栏」四条分支上，
   /// 逐个补右括号极易漏掉一个 —— **漏掉的那条分支就会退化成原来的
   /// "侧滑直接退掉整个 App"**。改成"只有一个出口"，从结构上就不可能漏。
+  /// 导航栏被清空时的兜底页。
+  ///
+  /// ★4.81.78：这是"黑屏"的最后一道兜底。不静默、不假装正常 ——
+  /// 告诉用户发生了什么，并给一个立刻能走出去的按钮。
+  Widget _emptyNavFallback(BuildContext c) {
+    final cs = Theme.of(c).colorScheme;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.view_carousel_outlined,
+                    size: 40, color: cs.onSurface.withValues(alpha: 0.35)),
+                const SizedBox(height: 18),
+                Text(tr('导航栏是空的'),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface)),
+                const SizedBox(height: 8),
+                Text(
+                  tr('可能是云端布局被清空了，或者所有模块都被平台限制隐藏了。'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 12.5, height: 1.6, color: cs.onSurface.withValues(alpha: 0.6)),
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () async {
+                    try {
+                      await saveNavModules(kDefaultNav);
+                    } catch (_) {}
+                    if (mounted) await _load();
+                  },
+                  icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                  label: Text(tr('恢复默认导航')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildScaffold(BuildContext c) {
     ScreenFit.update(c);
+    // ★4.81.78：这里是「黑屏」的最后一道闸门。
+    //  enabled 有两条途径会变成空：① 云端布局被清空 / ② 所有模块都被平台门
+    //  （currentGate）拦掉。旧代码在此直接 `enabled[idx]`，空表或越界就抛
+    //  RangeError —— build 失败 → release 下整棵树画不出来 → 用户看到黑屏。
+    //  现在：空表给"恢复默认导航"的兜底页，越界就地归零。
+    if (enabled.isEmpty) return _emptyNavFallback(c);
+    if (idx < 0 || idx >= enabled.length) idx = 0;
     final key = enabled[idx];
     final fs = RootNav.fullscreen.value;
     final hideBar = _noAppBarModules.contains(key); // 沉浸: 该模块自带页头, 不补状态栏留白
@@ -13207,7 +13361,7 @@ class _Ln extends State<LocalNovelsPage> {
                       })
                 ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : items.isEmpty
               ? const Center(
                   child: Text('还没有本地小说\n点右上角 + 导入 txt / epub',
@@ -13518,7 +13672,7 @@ class _Lv extends State<LocalVideosPage> {
             })
       ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : items.isEmpty
               ? const Center(
                   child: Text('还没有本地视频\n点右上角 + 导入 mp4 等',
@@ -14051,7 +14205,7 @@ class _Lm extends State<LocalMusicsPage> {
             })
       ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : items.isEmpty
               ? const Center(
                   child: Text('还没有本地音乐\n点右上角 + 导入 mp3 等',
@@ -14116,7 +14270,7 @@ class _Lc extends State<LocalComicsPage> {
             })
       ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : items.isEmpty
               ? const Center(
                   child: Text('还没有本地漫画\n点右上角 + 导入图片或 zip/cbz',
@@ -16026,7 +16180,7 @@ class _Ei extends State<EngineItemPage> {
                     future: EngineDirect.search(widget.type, q),
                     builder: (c2, snap) {
                       if (snap.connectionState != ConnectionState.done) {
-                        return const Center(child: CircularProgressIndicator());
+                        return const AppLoading();
                       }
                       if (snap.hasError) {
                         return Center(
@@ -16270,7 +16424,7 @@ class _Ei extends State<EngineItemPage> {
                   onPressed: _downloadAllChapters),
           ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : err.isNotEmpty
               ? Center(
                   child: Padding(
@@ -17132,7 +17286,7 @@ class _Ecr extends State<EngineComicReader>
                   }),
           ]),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoading()
           : err.isNotEmpty
               ? Center(
                   child: Padding(

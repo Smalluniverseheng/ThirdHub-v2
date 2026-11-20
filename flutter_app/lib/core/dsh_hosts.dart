@@ -22,6 +22,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'th_http.dart';
 
 /// 一个 DSH Host。
 class DshHost {
@@ -177,7 +178,7 @@ class DshHosts {
     try {
       final c = HttpClient()
         ..connectionTimeout = const Duration(seconds: 4)
-        ..badCertificateCallback = (_, __, ___) => true;
+        ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       final req = await c.getUrl(Uri.parse('${h.base}/agent/health'));
       if (h.token.isNotEmpty) req.headers.set('X-TH-Token', h.token);
       final r = await req.close().timeout(const Duration(seconds: 5));
@@ -235,7 +236,7 @@ class DshHosts {
       try {
         final c = HttpClient()
           ..connectionTimeout = const Duration(seconds: 4)
-          ..badCertificateCallback = (_, __, ___) => true;
+          ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
         final req = await c.getUrl(
             Uri.parse('${h.base}/agent/sessions?limit=30'));
         if (h.token.isNotEmpty) req.headers.set('X-TH-Token', h.token);
@@ -323,7 +324,7 @@ class DshHosts {
     try {
       final c = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5)
-        ..badCertificateCallback = (_, __, ___) => true;
+        ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       final req = await c.getUrl(Uri.parse('${h.base}$path'));
       if (h.token.isNotEmpty) req.headers.set('X-TH-Token', h.token);
       final r = await req.close().timeout(const Duration(seconds: 10));
@@ -342,7 +343,7 @@ class DshHosts {
     try {
       final c = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5)
-        ..badCertificateCallback = (_, __, ___) => true;
+        ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       final req = await c.postUrl(Uri.parse('${h.base}$path'));
       req.headers.contentType = ContentType.json;
       if (h.token.isNotEmpty) req.headers.set('X-TH-Token', h.token);

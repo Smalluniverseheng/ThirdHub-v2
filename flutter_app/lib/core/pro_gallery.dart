@@ -19,6 +19,7 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'pro_kit.dart';
 import 'photo_map.dart';
 import 'i18n.dart';
+import 'th_http.dart';
 
 // ══════════════════════════════════════════════════════════════
 // F-2 哈希(SHA-256) 工具
@@ -52,7 +53,7 @@ class HashX {
 // ══════════════════════════════════════════════════════════════
 class BlobApi {
   static HttpClient _c() =>
-      HttpClient()..badCertificateCallback = (_, __, ___) => true;
+      HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
 
   /// 已经存过这个 hash 吗(秒传判定)
   static Future<int?> has(String hash) async {

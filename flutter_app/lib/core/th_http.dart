@@ -30,15 +30,27 @@ class ThirdHubHttpOverrides extends HttpOverrides {
   // 子类声明 const 构造会报 "A constant constructor can't call a non-constant super constructor"。
   ThirdHubHttpOverrides();
 
+  /// 给任意 `HttpClient` 挂上同一套判据。
+  ///
+  /// ★4.81.78：全库原有 20 处写成 `badCertificateCallback = (_, __, ___) => true`
+  /// —— **无条件放行**。那是真的在裸奔：AI 厂商（OpenAI/DeepSeek/…）、
+  /// TTS 厂商、酒馆第三方接口全走这些 client，中间人拿一张自签证书
+  /// 就能把 API Key 收走，而客户端毫无察觉。
+  ///
+  /// 判据与全局 override 完全一致（见下方 isPrivateHost + CN=ThirdHub），
+  /// 所以「自建后端能连」这件事一点没变，变的是「公网也照单全收」。
+  ///
+  /// 用法：`c.badCertificateCallback = ThirdHubHttpOverrides.trustCert;`
+  static bool trustCert(X509Certificate cert, String host, int port) {
+    if (isPrivateHost(host)) return true;
+    final dn = '${cert.subject}|${cert.issuer}';
+    return dn.contains('CN=ThirdHub') || dn.contains('CN = ThirdHub');
+  }
+
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     final client = super.createHttpClient(context);
-    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
-      if (isPrivateHost(host)) return true;
-      final dn = '${cert.subject}|${cert.issuer}';
-      if (dn.contains('CN=ThirdHub') || dn.contains('CN = ThirdHub')) return true;
-      return false;
-    };
+    client.badCertificateCallback = trustCert;
     return client;
   }
 }

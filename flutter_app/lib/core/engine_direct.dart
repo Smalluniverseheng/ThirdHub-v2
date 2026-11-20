@@ -34,6 +34,7 @@ import 'discover.dart';
 import 'app_log.dart';
 import 'apple_gate.dart';
 import 'engine_fanout.dart';
+import 'th_http.dart';
 
 /// 连到的是「资源库」而不是「引擎」。
 ///
@@ -276,7 +277,7 @@ class EngineDirect {
 
   static http.Client _client() {
     // 局域网资源库 :9527 用自签证书，需放行；引擎 :1234 是明文(靠 manifest 放行)
-    final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+    final c = HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     c.connectionTimeout = const Duration(seconds: 8);
     return IOClient(c);
   }

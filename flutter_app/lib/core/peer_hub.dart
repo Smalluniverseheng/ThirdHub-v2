@@ -24,6 +24,7 @@ import 'dart:io';
 //   现在统一走 `kv.dart` 的 AiStore 抽象（App 启动时注入 prefs 实现）。
 import 'kv.dart';
 import 'peer_hub_logic.dart';
+import 'th_http.dart';
 
 export 'peer_hub_logic.dart';
 
@@ -50,7 +51,7 @@ class _Http {
       ..connectionTimeout = const Duration(seconds: 6)
       ..idleTimeout = const Duration(seconds: 20)
       // 家庭后端起的是自签证书 —— 与 AgentDshClient 同样的放行策略。
-      ..badCertificateCallback = (_, __, ___) => true;
+      ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     _c = n;
     return n;
   }

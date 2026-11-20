@@ -28,6 +28,7 @@ import 'nas_services_page.dart';
 import 'bili_down_page.dart';
 import 'bili_module_page.dart';
 import 'dsh_hosts.dart';
+import 'th_http.dart';
 
 /// 下载与文档地址。桶里的后端包由发版流程上传，版本号要跟着 server/package.json 走。
 class SelfHostedLinks {
@@ -145,7 +146,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
       try {
         final c = HttpClient()
           ..connectionTimeout = const Duration(seconds: 6)
-          ..badCertificateCallback = (cert, host, port) => true;
+          ..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
         final req = await c.getUrl(Uri.parse('$base$path'));
         req.headers.set('Accept', 'application/json');
         final tok = _code.text.trim();

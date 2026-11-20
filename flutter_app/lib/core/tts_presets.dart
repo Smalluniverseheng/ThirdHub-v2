@@ -11,6 +11,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'th_http.dart';
 
 class TtsPreset {
   final String id, name, base, defaultModel;
@@ -54,7 +55,7 @@ class TtsBackend {
   static Future<Map<String, dynamic>?> cap() async {
     if (!available) return null;
     try {
-      final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+      final c = HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
       final req = await c.getUrl(Uri.parse('$base/v1/tts/cap'))
           .timeout(const Duration(seconds: 8));
       req.headers.set('X-TH-Token', token);
@@ -71,7 +72,7 @@ class TtsBackend {
   /// 合成一段文本 → 音频文件路径（已写临时目录）。失败抛异常（调用方负责降级/提示）。
   static Future<String> synthesize(String text, {String engine = 'auto', String voice = 'zh-CN-XiaoxiaoNeural'}) async {
     if (!available) throw Exception('未连接后端');
-    final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+    final c = HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     final req = await c.postUrl(Uri.parse('$base/v1/tts')).timeout(const Duration(seconds: 10));
     req.headers.set('X-TH-Token', token);
     req.headers.set('Content-Type', 'application/json');

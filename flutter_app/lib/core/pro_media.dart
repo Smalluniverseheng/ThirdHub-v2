@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'pro_kit.dart';
+import 'th_http.dart';
 
 // ══════════════════════════════════════════════════════════════
 // M-5 投屏: DLNA/UPnP MediaRenderer
@@ -26,7 +27,7 @@ class DlnaDevice {
 
 class Dlna {
   static HttpClient _hc() =>
-      HttpClient()..badCertificateCallback = (_, __, ___) => true;
+      HttpClient()..badCertificateCallback = ThirdHubHttpOverrides.trustCert;
 
   /// SSDP 发现(默认 4 秒)。局域网没有响应就返回空表, 不抛异常。
   static Future<List<DlnaDevice>> discover(

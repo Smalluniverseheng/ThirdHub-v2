@@ -21,6 +21,7 @@ import 'peer_hub.dart';
 
 import 'agent_models.dart';
 import 'agent_policy.dart';
+import 'th_http.dart';
 
 class AgentDshClient {
   /// 后端根地址（如 https://192.168.1.5:9527），由 main.dart 写入
@@ -113,7 +114,7 @@ class AgentDshClient {
   // 编译器会报 "The setter 'b' isn't defined for the type 'bool'"。老老实实写块体。
   static HttpClient _client() {
     final c = HttpClient();
-    c.badCertificateCallback = (_, __, ___) => true;
+    c.badCertificateCallback = ThirdHubHttpOverrides.trustCert;
     c.connectionTimeout = const Duration(seconds: 8);
     return c;
   }

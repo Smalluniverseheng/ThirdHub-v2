@@ -22,6 +22,7 @@ import 'agent_dsh_client.dart';
 import 'ai.dart';
 import 'api_keys_store.dart';
 import 'app_log.dart';
+import 'boot.dart';
 import 'engine_direct.dart';
 import 'haptic.dart';
 
@@ -193,6 +194,30 @@ class _Lc extends State<LogCenterPage> {
     // ⑤ 近期错误计数
     final errN = _all.where((e) => e['lv'] == 'error').length;
     if (errN > 0) issues.add('日志里有 $errN 条错误 —— 下方「运行日志」可看原文（错误已置顶高亮）。');
+
+    // ⑥ 上次启动是否走完
+    //   ★4.81.78 新增。用户报「打开是黑屏」时，这一项是第一现场：
+    //   最后一次启动如果停在某一步（比如"云端账号 超时 5s"），
+    //   光看这一行就知道卡在哪里，不用再让用户复现。
+    try {
+      final trace = await Boot.lastTrace();
+      final done = trace.isNotEmpty && trace.last.contains('启动完成');
+      final safe = await Boot.lastSafeFlag();
+      items.add(HealthItem(
+        Icons.rocket_launch_outlined,
+        '上次启动',
+        trace.isEmpty
+            ? '无记录'
+            : (done ? (safe ? '正常（曾进安全模式）' : '正常') : '未走完'),
+        trace.isEmpty
+            ? HealthState.unknown
+            : (done ? HealthState.ok : HealthState.bad),
+        detail: trace.isEmpty ? null : trace.reversed.take(6).toList().reversed.join(' → '),
+      ));
+      if (trace.isNotEmpty && !done) {
+        issues.add('上次启动没有走完（最后一步：${trace.last}）。这就是「打开黑屏/一直转圈」的直接证据。');
+      }
+    } catch (_) {}
 
     if (!mounted) return;
     setState(() {
