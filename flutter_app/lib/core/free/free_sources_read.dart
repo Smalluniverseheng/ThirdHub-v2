@@ -51,18 +51,32 @@ class MangaDexSource {
     return _list(await FreeHttp.json(b.toString()));
   }
 
-  /// 热门中文作品（无关键词时的首屏）。
+  /// 热门作品（无关键词时的首屏）。
+  ///
+  /// ★实测教训：`/manga` 端点**不接受 `translatedLanguage`** —— 带上它直接
+  ///   400 `validation_exception: The property translatedLanguage is not defined`。
+  ///   该参数只对 `/manga/{id}/feed` 有效。所以这里不筛语言，改成取回后
+  ///   **本地把标题含中日文的排前面**：有中文标题基本就等于有中文版，
+  ///   这样既不触发 400，也不会让首屏全是英文标题。
   static Future<List<FreeItem>> popularZh({int limit = 20}) async {
     final b = StringBuffer('$_api/manga?limit=$limit');
     b.write('&includes%5B%5D=cover_art');
-    b.write('&translatedLanguage%5B%5D=zh');
     b.write('&hasAvailableChapters=true');
     for (final r in _ratings) {
       b.write('&contentRating%5B%5D=$r');
     }
     b.write('&order%5BfollowedCount%5D=desc');
-    return _list(await FreeHttp.json(b.toString()));
+    final list = _list(await FreeHttp.json(b.toString()));
+    final cjk = <FreeItem>[];
+    final rest = <FreeItem>[];
+    for (final e in list) {
+      (_hasCjk(e.title) ? cjk : rest).add(e);
+    }
+    return [...cjk, ...rest];
   }
+
+  /// 标题里是否含中日文字符（用来把中文作品排到首屏前面）。
+  static bool _hasCjk(String s) => RegExp(r'[\u3040-\u30ff\u4e00-\u9fff]').hasMatch(s);
 
   /// 章节列表。中文优先，没有中文就退回全部语言（至少能看）。
   static Future<List<FreeItem>> chapters(FreeItem manga,
@@ -380,25 +394,54 @@ class GutenbergAuSource {
     if (url == null) return const [];
     final html = await FreeHttp.text(url,
         timeout: const Duration(seconds: 30), maxBytes: 6 * 1024 * 1024);
+
+    // ★索引页的真实结构（2026-11-20 抓下来逐块核对过）：
+    //     <li>书名 (作者)--<a href="/ebooks13/1300291h.html">HTML</a></li>
+    //   「书名」在 <li> 的**文本**里，`<a>HTML</a>` 只是格式标记。
+    //   第一版错误地拿 <a> 的锚文本当书名，结果 2752 条全叫 “HTML”。
+    //   现在的做法：按 <li> 切块 → 块内取第一个 /ebooks 链接 → 书名取块文本。
+    //
+    // 另外两件必须做的事：
+    //   ① 先剥 HTML 注释 —— 索引页里有一大段被注释掉的 <li>（已下架的书），
+    //      不剥会把它们当有效书目列出来；
+    //   ② txt 与 html 都要收 —— 部分书只有纯文本，且纯文本解析更省事。
+    final body = html.replaceAll(RegExp(r'<!--[\s\S]*?-->'), ' ');
     final out = <FreeItem>[];
-    final re = RegExp(
-        r'''<a\s[^>]*href\s*=\s*["']([^"']*ebooks[^"']*\.html?)["'][^>]*>([\s\S]{1,200}?)</a>''',
-        caseSensitive: false);
     final seen = <String>{};
-    for (final m in re.allMatches(html)) {
-      final href = m.group(1) ?? '';
-      final label = stripHtml(m.group(2) ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (href.isEmpty || label.isEmpty || label.length < 2) continue;
-      final full = href.startsWith('http') ? href : '$_base/${href.replaceFirst(RegExp(r'^/'), '')}';
-      if (!seen.add(full)) continue;
+    final liRe = RegExp(r'<li[^>]*>([\s\S]*?)</li>', caseSensitive: false);
+    final hrefRe =
+        RegExp(r'''href\s*=\s*"(/ebooks[^"]+?\.(?:html?|txt))"''',
+            caseSensitive: false);
+
+    for (final m in liRe.allMatches(body)) {
+      final block = m.group(1) ?? '';
+      final hm = hrefRe.firstMatch(block);
+      if (hm == null) continue; // 站外链接（如 Roy Glashan's Library）跳过
+      final href = hm.group(1)!;
+      if (!seen.add(href)) continue;
+
+      final rawLabel = stripHtml(block);
+      // 书名 = 第一个「--」之前的部分；尾部还有可能粘着 -HTML / Text 这类格式词。
+      var label = rawLabel.split(RegExp(r'\s*-{2,}\s*')).first.trim();
+      label = label.replaceFirst(
+          RegExp(r'''[\s\-–—]*(HTML|Text|PDF|Word|EPUB)\s*$''',
+              caseSensitive: false),
+          '').trim();
+      label = label.replaceFirst(RegExp(r'[\s\-–—]+$'), '').trim();
+      if (label.length < 3) label = rawLabel.trim();
+      if (label.length < 3) continue;
+
+      final full = href.startsWith('http') ? href : '$_base$href';
+      final isTxt = full.toLowerCase().endsWith('.txt');
       out.add(FreeItem(
         id: full,
         source: id,
         kind: FreeKind.book,
         title: label,
-        subtitle: 'Project Gutenberg Australia · 公版',
+        subtitle:
+            'Project Gutenberg Australia · ${isTxt ? '纯文本' : 'HTML'}',
         drill: false,
-        raw: {'url': full},
+        raw: {'url': full, 'txt': isTxt},
       ));
     }
     _cache[bucket] = out;
@@ -414,10 +457,24 @@ class GutenbergAuSource {
   }
 
   /// 读全文。
+  ///
+  /// ★txt 不能走 stripHtml：纯文本正文里出现 `<` 会被当标签删掉。
+  ///   索引里约三分之一的条目只有 .txt，走错这条路就是「书打开是空的」。
   static Future<String> read(String url) async {
-    final html = await FreeHttp.text(url,
+    final raw = await FreeHttp.text(url,
         timeout: const Duration(seconds: 30), maxBytes: 12 * 1024 * 1024);
-    final text = stripHtml(html);
+    if (url.toLowerCase().endsWith('.txt')) {
+      final t = raw
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n')
+          .replaceAll(RegExp(r'\n{4,}'), '\n\n\n')
+          .trim();
+      if (t.length < 200) {
+        throw const FreeNetException('这本书的文本文件是空的或过短');
+      }
+      return t;
+    }
+    final text = stripHtml(raw);
     if (text.length < 200) {
       throw const FreeNetException('这本书的页面没有解析出正文');
     }
