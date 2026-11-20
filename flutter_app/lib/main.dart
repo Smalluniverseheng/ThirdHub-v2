@@ -43,6 +43,7 @@ import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/bili_module_page.dart';
+import 'core/announce_page.dart';
 import 'core/bili_home_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
@@ -2855,6 +2856,10 @@ class _Pf extends State<ProfilePage> {
                 value: '文字+截图，直达管理后台', page: const FeedbackPage()),
             _sep(),
             entry(Icons.info_outline, '关于 ThirdHub', page: const AboutPage()),
+            _sep(),
+            entry(Icons.campaign_outlined, tr('更新公告'),
+                value: tr('版本说明 · 账号公告'),
+                page: AnnouncePage(accountBuilder: (c) => const CloudPage())),
             _sep(),
             entry(Icons.system_update_alt, '检查更新',
                 value: 'v${Updater.currentVersion}',

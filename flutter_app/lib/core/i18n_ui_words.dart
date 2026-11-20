@@ -2960,3 +2960,12 @@ const Map<String, Map<String, String>> i18nUiWords23 = {
   'es': {"弹幕": "Danmaku", "弹幕设置": "Ajustes de danmaku", "透明度": "Opacidad", "字号": "Tamaño"},
   'ar': {"弹幕": "دانماكو", "弹幕设置": "إعدادات الدانماكو", "透明度": "الشفافية", "字号": "الحجم"},
 };
+
+const Map<String, Map<String, String>> i18nUiWords24 = {
+  'en': {"更新公告": "Announcements", "版本说明 · 账号公告": "Release notes & account news", "暂无公告": "No announcements", "展开全文": "Read more", "收起": "Collapse", "去登录 / 注册": "Sign in / Sign up"},
+  'ja': {"更新公告": "お知らせ", "版本说明 · 账号公告": "更新情報・アカウント", "暂无公告": "お知らせはありません", "展开全文": "全文を読む", "收起": "閉じる", "去登录 / 注册": "ログイン / 登録"},
+  'fr': {"更新公告": "Annonces", "版本说明 · 账号公告": "Notes de version et compte", "暂无公告": "Aucune annonce", "展开全文": "Lire la suite", "收起": "Réduire", "去登录 / 注册": "Connexion / Inscription"},
+  'ru': {"更新公告": "Объявления", "版本说明 · 账号公告": "Обновления и аккаунт", "暂无公告": "Объявлений нет", "展开全文": "Читать далее", "收起": "Свернуть", "去登录 / 注册": "Вход / Регистрация"},
+  'es': {"更新公告": "Anuncios", "版本说明 · 账号公告": "Notas y cuenta", "暂无公告": "Sin anuncios", "展开全文": "Leer más", "收起": "Contraer", "去登录 / 注册": "Entrar / Registrarse"},
+  'ar': {"更新公告": "الإعلانات", "版本说明 · 账号公告": "ملاحظات الإصدار والحساب", "暂无公告": "لا إعلانات", "展开全文": "اقرأ المزيد", "收起": "طي", "去登录 / 注册": "دخول / تسجيل"},
+};
