@@ -286,7 +286,7 @@ class _ChannelGridState extends State<_ChannelGrid>
       });
       return;
     }
-    final j = await biliGet(_ctx, path);
+    final j = await biliGet(widget.ctx, path);
     if (!mounted) return;
     final list = (j == null) ? <Map<String, dynamic>>[] : biliItems(j);
     setState(() {
@@ -303,7 +303,7 @@ class _ChannelGridState extends State<_ChannelGrid>
     if (_loading || _nomore) return;
     setState(() => _loading = true);
     final next = _pn + 1;
-    final j = await biliGet(_ctx, _path(next));
+    final j = await biliGet(widget.ctx, _path(next));
     if (!mounted) return;
     final list = (j == null) ? <Map<String, dynamic>>[] : biliItems(j);
     setState(() {
@@ -368,10 +368,10 @@ class _ChannelGridState extends State<_ChannelGrid>
             }
             final it = _items[i];
             return _VideoCard(
-              ctx: _ctx,
+              ctx: widget.ctx,
               item: it,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => BiliVideoPage(ctx: _ctx, item: it),
+                builder: (_) => BiliVideoPage(ctx: widget.ctx, item: it),
               )),
             );
           },
