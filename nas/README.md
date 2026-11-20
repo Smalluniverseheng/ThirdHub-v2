@@ -49,7 +49,7 @@
 cd nas
 
 # 2) 改一下 IP / 路径（不填 IP 会自动探测默认路由的出口地址）
-export TH_LAN_HOST=192.168.31.156        # 新 NAS 的局域网 IP（有线口）
+export TH_LAN_HOST=192.168.1.100        # 新 NAS 的局域网 IP（有线口）
 export TH_ROOT=/vol1/docker              # 编排文件放哪
 export TH_DATA=/vol1/1000/Media/_配置     # 数据/配置放哪（建议外接盘）
 
@@ -135,7 +135,7 @@ cd /vol1/docker/thirdhub && sudo docker compose up -d --force-recreate
 6. **DSH 插件依赖要自愈**：插件 import `@deepseek-ai/dsh-tools` 解析不到会被 cordis **静默跳过**
    （不报错、就是没工具）。`scripts/dsh-start.sh` 里有 5.4 段做软链。
 7. `data/` 里的 `secret` 泄露等于把后端交出去 —— **本目录不含 secret**，由首次启动生成。
-8. **端口不要绑具体 IP**（`192.168.31.200:8098:8098` 这种写法）。换 NAS 后宿主机没有这个地址，
+8. **端口不要绑具体 IP**（`192.168.1.100:8098:8098` 这种写法）。换 NAS 后宿主机没有这个地址，
    docker 绑不上，容器直接 `Exited(255)`，日志里只有一行 `listening on :8098` 看着像成功。
    统一写 `8098:8098`（0.0.0.0），有线无线两个网卡都能进。
 9. **本机有两块网卡时**（有线 `enp5s0` + 无线 `wlp6s0`，两个 IP 都能连），

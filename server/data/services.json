@@ -17,7 +17,7 @@
       "name": "影视库",
       "kind": "movie",
       "adapter": "jellyfin",
-      "baseUrl": "http://192.168.31.200:8097",
+      "baseUrl": "http://192.168.1.100:8097",
       "auth": { "apiKey": "", "username": "", "password": "" },
       "enabled": true,
       "note": "飞牛应用中心自带，端口被改成 8097（非默认 8096）"
@@ -27,7 +27,7 @@
       "name": "下载器",
       "kind": "download",
       "adapter": "qbittorrent",
-      "baseUrl": "http://192.168.31.200:8085",
+      "baseUrl": "http://192.168.1.100:8085",
       "auth": { "username": "", "password": "" },
       "enabled": true,
       "note": "飞牛应用中心自带，WebUI 8085；首次需在网页里设账号"
@@ -37,7 +37,7 @@
       "name": "音乐库",
       "kind": "music",
       "adapter": "navidrome",
-      "baseUrl": "http://192.168.31.200:4533",
+      "baseUrl": "http://192.168.1.100:4533",
       "auth": { "username": "", "password": "" },
       "enabled": true,
       "note": "Subsonic API，第三方客户端通用"
@@ -47,7 +47,7 @@
       "name": "漫画与电子书",
       "kind": "comic",
       "adapter": "kavita",
-      "baseUrl": "http://192.168.31.200:5000",
+      "baseUrl": "http://192.168.1.100:5000",
       "auth": { "apiKey": "" },
       "enabled": true,
       "note": "漫画 + 电子书 + 轻小说，OPDS 可用"
@@ -57,7 +57,7 @@
       "name": "文件中枢",
       "kind": "storage",
       "adapter": "alist",
-      "baseUrl": "http://192.168.31.200:5244",
+      "baseUrl": "http://192.168.1.100:5244",
       "auth": { "token": "" },
       "enabled": true,
       "note": "挂几十种网盘，ThirdHub 的文件后端；账号 admin"
@@ -67,7 +67,7 @@
       "name": "资讯源",
       "kind": "info",
       "adapter": "rsshub",
-      "baseUrl": "http://192.168.31.200:1200",
+      "baseUrl": "http://192.168.1.100:1200",
       "auth": {},
       "enabled": true,
       "note": "万物皆可 RSS，免认证"
@@ -77,7 +77,7 @@
       "name": "RSS 阅读",
       "kind": "info",
       "adapter": "freshrss",
-      "baseUrl": "http://192.168.31.200:8081",
+      "baseUrl": "http://192.168.1.100:8081",
       "auth": { "username": "", "password": "" },
       "enabled": true,
       "note": "资讯落地方，ThirdHub 负责展示"
@@ -87,7 +87,7 @@
       "name": "有声书",
       "kind": "music",
       "adapter": "audiobookshelf",
-      "baseUrl": "http://192.168.31.200:13378",
+      "baseUrl": "http://192.168.1.100:13378",
       "auth": { "token": "" },
       "enabled": false,
       "note": "容器尚未启动，启动后把 enabled 改 true"
@@ -97,7 +97,7 @@
       "name": "影视订阅",
       "kind": "movie",
       "adapter": "moviepilot",
-      "baseUrl": "http://192.168.31.200:3000",
+      "baseUrl": "http://192.168.1.100:3000",
       "auth": { "apiKey": "" },
       "enabled": false,
       "note": "容器尚未启动"

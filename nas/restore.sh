@@ -17,7 +17,7 @@
 #   · 失败即停 —— set -euo pipefail，不要"看起来跑完了其实没起"
 set -euo pipefail
 
-# ★ 2026-11-14：原来默认写死 192.168.31.200，换 NAS 后忘了改就全线连不上。
+# ★ 2026-11-14：原来默认写死 192.168.1.100，换 NAS 后忘了改就全线连不上。
 #   现在没指定就自己探测（默认路由的源地址 = 有线口的地址）。
 if [ -z "${TH_LAN_HOST:-}" ]; then
   TH_LAN_HOST=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
@@ -26,7 +26,7 @@ HOST="${TH_LAN_HOST:?无法自动探测局域网 IP，请显式指定 TH_LAN_HOS
 ROOT="${TH_ROOT:-/vol1/docker}"
 DATA="${TH_DATA:-/vol1/1000/Media/_配置}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-OLD_IPS="192.168.31.200 192.168.31.156 192.168.31.170"
+OLD_IPS="192.168.1.100 192.168.1.100 192.168.1.100"
 
 say() { printf '\n\033[1;36m[restore]\033[0m %s\n' "$*"; }
 die() { printf '\n\033[1;31m[restore] 失败：\033[0m %s\n' "$*" >&2; exit 1; }
