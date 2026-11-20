@@ -834,6 +834,39 @@ async function handle(req, res, body, u, p) {
     return true;
   }
 
+  // ── 在线播放地址（★2026-11-20 补：之前根本没有这个 op，详情页拿不到地址 → 黑屏）──
+  //   用 fnval=1 + platform=html5 拿 durl（音视频已合并的 mp4，360p），
+  //   再用媒体代理包一层（B 站 CDN 校验 Referer，手机播放器带不了）。
+  if (op === 'playurl') {
+    const bvid = String(u.searchParams.get('bvid') || '');
+    const cid = String(u.searchParams.get('cid') || '');
+    if (!/^BV1[a-zA-Z0-9]{9,}$/.test(bvid)) { send(res, 400, { ok: false, error: '缺少 bvid' }); return true; }
+    let cidUse = cid;
+    if (!cidUse) {
+      const v = await webApiPlain('/x/web-interface/view?bvid=' + bvid);
+      cidUse = String((((v.data || {}).pages || [])[0] || {}).cid || '');
+    }
+    if (!cidUse) { send(res, 400, { ok: false, error: '取不到 cid' }); return true; }
+    let j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse + '&fnval=1&platform=html5&high_quality=1');
+    if (j.code !== 0) {
+      j = await webApiPlain('/x/player/playurl?bvid=' + bvid + '&cid=' + cidUse + '&fnval=1');
+    }
+    const d = j.data || {};
+    const durl = d.durl || [];
+    if (!durl.length) { send(res, 400, { ok: false, code: j.code, error: j.message || '没有可播放地址' }); return true; }
+    const raw = String(durl[0].url || '');
+    send(res, 200, {
+      ok: true,
+      url: raw ? biliStream(raw) : '',
+      rawUrl: raw,
+      quality: d.quality || 0,
+      format: d.format || 'mp4',
+      size: durl[0].size || 0,
+      acceptQuality: d.accept_quality || [],
+    });
+    return true;
+  }
+
   if (op === 'cover') {
     proxyCover(res, u.searchParams.get('u') || '');
     return true;
