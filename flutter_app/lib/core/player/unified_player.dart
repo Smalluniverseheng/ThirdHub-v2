@@ -288,13 +288,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage> {
     setState(() {});
   }
 
-  Future<void> _seekBy(Duration delta) async {
-    final target = _pos + delta;
-    final clamped = target < Duration.zero
-        ? Duration.zero
-        : (target > _dur ? _dur : target);
-    await _seekTo(clamped);
-  }
+
 
   /// 取第 i 条：先看静态队列，没有再问调用方的懒解析。
   ///
