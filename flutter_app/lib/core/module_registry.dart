@@ -47,6 +47,11 @@ const List<ModuleRegEntry> kModuleRegistry = <ModuleRegEntry>[
   // ── 双端共通（一一对应）──
   ModuleRegEntry('ai', 'AI', ['AI'], 'ai'),
   ModuleRegEntry('search', '搜索', ['搜索'], 'search'),
+  // ★4.81.77 开放源：App 独有模块（网页端 BOARDS 没有对应板块，webBoard=null）。
+  //   必须登记在这里，否则 cloud.dart 的 applyNavIds 投影时会把它丢掉 ——
+  //   表现为「云同步一次，导航栏里的开放源就消失」。
+  //   网页端如果要对齐，需在 js/module-registry.js 的表体同一位置补同样一行。
+  ModuleRegEntry('opensource', '开放源', ['开放源'], null),
   ModuleRegEntry('novel', '小说', [], 'novel'),
   ModuleRegEntry('comic', '漫画', [], 'comic'),
   ModuleRegEntry('music', '音乐', [], 'music'),

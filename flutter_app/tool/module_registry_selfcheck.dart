@@ -57,7 +57,7 @@ void main() {
   for (final i in issues) {
     print('    $i');
   }
-  ck('条目数 = 75', kModuleRegistry.length == 75);
+  ck('条目数 = 76', kModuleRegistry.length == 76);
   ck(
       'id 全部唯一',
       kModuleRegistry.map((e) => e.id).toSet().length ==

@@ -22,6 +22,8 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'Sources ouvertes', '电台': 'Radio', '书': 'Livres', '重新探测': 'Revérifier', '没有结果': 'Aucun résultat', '重试': 'Réessayer', '搜索（留空看推荐）': 'Rechercher (vide = sélection)', '这本还没有可看的章节': 'Pas encore de chapitres lisibles', '这些源直连公网站点，不需要你的服务器在线': 'Connexion directe aux sites publics — serveur non requis', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'Sans serveur : musique / radio / podcasts / BD / vidéos / livres du domaine public', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': '{n} est inaccessible — peut-être bloqué sur ce réseau',
     '搜索': 'Rechercher', '书架': 'Bibliothèque', '小说': 'Romans', '漫画': 'BD',
     '视频': 'Vidéos', '音乐': 'Musique', '资源库': 'Bibliothèque centrale', '我的': 'Moi',
     '后端': 'Serveur', '源': 'Sources', '导入': 'Importer', '取消': 'Annuler',
@@ -198,6 +200,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'Открытые источники', '电台': 'Радио', '书': 'Книги', '重新探测': 'Проверить снова', '没有结果': 'Ничего не найдено', '重试': 'Повторить', '搜索（留空看推荐）': 'Поиск (пусто = подборка)', '这本还没有可看的章节': 'Доступных глав пока нет', '这些源直连公网站点，不需要你的服务器在线': 'Прямое подключение к публичным сайтам — сервер не нужен', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'Без сервера: музыка / радио / подкасты / комиксы / видео / книги в общественном достоянии', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': '{n} недоступен — возможно, заблокирован в этой сети',
     '搜索': 'Поиск', '书架': 'Полка', '小说': 'Романы', '漫画': 'Комиксы',
     '视频': 'Видео', '音乐': 'Музыка', '资源库': 'Библиотека', '我的': 'Профиль',
     '后端': 'Сервер', '源': 'каталоги', '导入': 'Импорт', '取消': 'Отмена',
@@ -374,6 +378,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'Fuentes abiertas', '电台': 'Radio', '书': 'Libros', '重新探测': 'Volver a comprobar', '没有结果': 'Sin resultados', '重试': 'Reintentar', '搜索（留空看推荐）': 'Buscar (vacío = destacados)', '这本还没有可看的章节': 'Aún no hay capítulos disponibles', '这些源直连公网站点，不需要你的服务器在线': 'Directo desde sitios públicos — no hace falta tu servidor', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'Sin servidor: música / radio / pódcasts / cómics / vídeo / libros de dominio público', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': '{n} no está accesible — puede estar bloqueado en esta red',
     '搜索': 'Buscar', '书架': 'Estantería', '小说': 'Novelas', '漫画': 'Cómics',
     '视频': 'Vídeos', '音乐': 'Música', '资源库': 'Biblioteca', '我的': 'Yo',
     '后端': 'Servidor', '源': 'Fuentes', '导入': 'Importar', '取消': 'Cancelar',
@@ -551,6 +557,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'مصادر مفتوحة', '电台': 'راديو', '书': 'كتب', '重新探测': 'إعادة الفحص', '没有结果': 'لا نتائج', '重试': 'إعادة المحاولة', '搜索（留空看推荐）': 'بحث (اتركه فارغًا للمقترحات)', '这本还没有可看的章节': 'لا فصول متاحة بعد', '这些源直连公网站点，不需要你的服务器在线': 'اتصال مباشر بالمواقع العامة — لا حاجة للخادم', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'بدون خادم: موسيقى / راديو / بودكاست / قصص مصورة / فيديو / كتب ملكية عامة', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': 'يتعذر الوصول إلى {n} — قد يكون محجوبًا على هذه الشبكة',
     '搜索': 'بحث', '书架': 'الرف', '小说': 'روايات', '漫画': 'مانغا',
     '视频': 'فيديو', '音乐': 'موسيقى', '资源库': 'المكتبة', '我的': 'أنا',
     '后端': 'الخادم', '源': 'المصادر', '导入': 'استيراد', '取消': 'إلغاء',
@@ -727,6 +735,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'Open Sources', '电台': 'Radio', '播客': 'Podcasts', '书': 'Books', '重新探测': 'Re-check', '没有结果': 'No results', '重试': 'Retry', '搜索（留空看推荐）': 'Search (leave empty for featured)', '这本还没有可看的章节': 'No readable chapters yet', '这些源直连公网站点，不需要你的服务器在线': 'Fetched directly from public sites — your server is not required', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'No server needed: music / radio / podcasts / comics / video / public-domain books', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': '{n} is unreachable — it may be blocked on this network. Switch network or retry later',
     '选择语言': 'Choose language',
     '选择你的语言': 'Choose your language',
     '外观偏好': 'Appearance preferences',
@@ -811,6 +821,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    // ── 4.81.77「开放源」──
+    '开放源': 'オープンソース', '电台': 'ラジオ', '播客': 'ポッドキャスト', '书': '書籍', '重新探测': '再チェック', '没有结果': '結果なし', '重试': '再試行', '搜索（留空看推荐）': '検索（空欄でおすすめ）', '这本还没有可看的章节': '読める話がまだありません', '这些源直连公网站点，不需要你的服务器在线': '公開サイトに直接接続します（サーバー不要）', '不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书': 'サーバー不要：音楽 / ラジオ / ポッドキャスト / 漫画 / 動画 / パブリックドメイン書籍', '{n} 当前不可达，可能被网络阻断，换网或稍后重试': '{n} に接続できません。ネットワークで遮断されている可能性があります',
     '选择语言': '言語を選択',
     '选择你的语言': 'あなたの言語を選択',
     '外观偏好': '外観設定',

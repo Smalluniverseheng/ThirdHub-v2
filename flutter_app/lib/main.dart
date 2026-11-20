@@ -145,6 +145,8 @@ import 'core/advanced_playback_page.dart';
 import 'core/th_http.dart';
 import 'core/backend_health.dart';
 import 'core/play_resolver.dart';
+// ★4.81.77「开放源」：直连公网正规站点的独立内容通路，不经过 Api/base。
+import 'core/free/free_center_page.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -1760,7 +1762,7 @@ class _Ob extends State<OnboardingPage> {
   final ctrl = PageController();
   // ★默认只显示核心模块（不再 67 个全开），其余收进「导航设置」按需开启
   static const _coreMods = <String>{
-    '搜索', '小说', '漫画', '视频', '音乐', 'AI',
+    '搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI',
     '聊天', '社区', '相册', '工具箱', '我的',
   };
   final Set<String> _mods = _coreMods.toSet();
@@ -2940,6 +2942,13 @@ class _Pf extends State<ProfilePage> {
                 page: const ProfileSubPage()),
             _sep(),
             entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
+            _sep(),
+            // ★4.81.77：放在身份/云端旁边，而不是塞进「数据与诊断」——
+            //   它是能看能听的内容通路，不是诊断工具。
+            //   语义上也正好接上顶上那条后端状态条：后端不可达时，这里还有内容。
+            entry(Icons.public, tr('开放源'),
+                value: tr('不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书'),
+                page: const FreeSourcePage()),
           ]),
           _section('设置', [
             entry(Icons.notifications_none, '通知',
@@ -9682,6 +9691,11 @@ class ModuleDef {
 // 前端=纯播放器: 不含任何源/引擎管理(那些只在后端与引擎上)
 final Map<String, ModuleDef> kModules = {
   '搜索': ModuleDef(tr('搜索'), Icons.search, () => (const SearchSection())),
+  // ★4.81.77 开放源：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书，
+  //   全部直连公网正规接口，**不经过后端**。
+  //   这是「既能用后端，也能脱离后端」的落点：NAS 关机或断网时，
+  //   这六个板块依然有内容可看可听 —— 而原有五大板块此时是空白。
+  '开放源': ModuleDef('开放源', Icons.public, () => (const FreeSourcePage())),
   '小说': ModuleDef('小说', Icons.menu_book, () => (const NovelSection()),
       localKind: 'novel'),
   '漫画': ModuleDef('漫画', Icons.photo_library, () => (const ComicSection()),
@@ -10527,7 +10541,7 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     final saved = p.getStringList('nav_modules');
     if (saved == null || saved.isEmpty) {
       setState(() {
-        enabled = ['搜索', '小说', '漫画', '视频', '音乐', 'AI', '聊天', '社区', '相册', '工具箱', '我的'];
+        enabled = ['搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI', '聊天', '社区', '相册', '工具箱', '我的'];
         if (idx >= enabled.length) idx = 0;
       });
       return;
@@ -10554,6 +10568,18 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     // ★ 5.2.3/§5.3（iOS）：第三方采集类模块整体不进导航（如「直播」）。
     //   只滤**显示**，回写仍用 migrated 全量 —— 平台门不该改写用户的模块意愿，
     //   否则 iOS 端一启动就把「直播」从共享布局里抹掉，Android 端跟着丢。
+    // ★4.81.77：新增模块对**老用户默认不可见** —— `nav_modules` 早在盘里存着，
+    //   新键不在其中就不会出现在导航栏。用户升级后只会觉得"根本没做"，
+    //   这正是「模块被藏起来」这个抱怨的机械成因之一。
+    //   这里一次性把「开放源」补到末尾；打过标记就不再补，
+    //   否则用户主动移除它之后，每次启动都会被强行塞回来。
+    if (!(p.getBool('_freeSrcMigrated') ?? false)) {
+      if (!migrated.contains('开放源') && kModules.containsKey('开放源')) {
+        migrated.add('开放源');
+        await p.setStringList('nav_modules', migrated);
+      }
+      await p.setBool('_freeSrcMigrated', true);
+    }
     final visible =
         migrated.where((k) => currentGate().allowModule(k)).toList();
     setState(() {
