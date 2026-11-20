@@ -494,6 +494,8 @@ const rtThp = require('./routes-thp');
 const rtBili = require('./routes-bili');
 // ★2026-11-19 安装包分发：局域网内从 NAS 直接下 APK（云端只留一份，见 routes-dl.js）
 const rtDl = require('./routes-dl');
+// ★2026-11-20 邮箱验证码（Supabase 内置邮件 504，自己发）
+const rtMail = require('./routes-mail');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
 // 全盘升级 #202：三端统一账号绑定与设备互通同步契约。
@@ -575,6 +577,11 @@ async function handle(req, res, body) {
   //   免鉴权：更新发生在登录之前，且文件本身是公开安装包。
   if (p === '/v1/dl' || p.startsWith('/v1/dl/')) {
     if (rtDl.handle(req, res, u, p)) return;
+  }
+
+  // ── 邮箱验证码（★2026-11-20）──
+  if (p === '/v1/auth' || p.startsWith('/v1/auth/')) {
+    if (await rtMail.handle(req, res, body, u, p)) return;
   }
 
   // ── PH/1 端间互通中枢(端/插件注册 · 跨端调用 · 密钥统一) ──
@@ -1310,9 +1317,11 @@ async function handle(req, res, body) {
     // B 站下载：自己的 NAS、自己的下载队列，公开令牌也放行（含 POST add/del）
     const biliOk = p === '/v1/bili' || p.startsWith('/v1/bili/');
     const dlOk = p === '/v1/dl' || p.startsWith('/v1/dl/');
+    const mailOk = p === '/v1/auth' || p.startsWith('/v1/auth/');
     const publicOk =
       biliOk ||
       dlOk ||
+      mailOk ||
       req.method === 'GET' && (
         p === '/v1/status' || p === '/v1/meta' ||
         p.startsWith('/v1/search') ||
