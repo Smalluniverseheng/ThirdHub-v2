@@ -492,9 +492,11 @@ const rtLibrary = require('./routes-library');
 const rtThp = require('./routes-thp');
 // ★2026-11-14 B 站下载：把 NAS 上的 bilidown 包成 App 能直接调的接口
 const rtBili = require('./routes-bili');
+const rtFanqie = require('./routes-fanqie');
+const rtHongguo = require('./routes-hongguo');
 // ★2026-11-19 安装包分发：局域网内从 NAS 直接下 APK（云端只留一份，见 routes-dl.js）
 const rtDl = require('./routes-dl');
-// ★2026-11-20 邮箱验证码（Supabase 内置邮件 504，自己发）
+// ★2026-11-20 邮箱验证码：Supabase 内置邮件发不出去（recover 504），自己发
 const rtMail = require('./routes-mail');
 const rtAgent = require('./routes-agent');
 const rtDataSources = require('./routes-data-sources');
@@ -573,6 +575,20 @@ async function handle(req, res, body) {
     if (await rtBili.handle(req, res, body, u, p)) return;
   }
 
+  // ── 番茄小说源（★4.81.75）──
+  //   签名与匿名设备档案由 openfanqie 处理，通用书源引擎跑不动这类站点，
+  //   所以单开一路。走正常鉴权（不在 publicOk 白名单里）。
+  if (p === '/v1/fanqie' || p.startsWith('/v1/fanqie/')) {
+    if (await rtFanqie.handle(req, res, body, u, p)) return;
+  }
+
+  // ── 红果短剧源（★4.81.75）──
+  //   实测流是明文 mp4（详见 routes-hongguo.js 顶部说明），
+  //   所以直接把地址交给 App 的统一播放器，不需要解密代理。
+  if (p === '/v1/hongguo' || p.startsWith('/v1/hongguo/')) {
+    if (await rtHongguo.handle(req, res, body, u, p)) return;
+  }
+
   // ── 安装包分发（★2026-11-19）──
   //   免鉴权：更新发生在登录之前，且文件本身是公开安装包。
   if (p === '/v1/dl' || p.startsWith('/v1/dl/')) {
@@ -580,6 +596,7 @@ async function handle(req, res, body) {
   }
 
   // ── 邮箱验证码（★2026-11-20）──
+  //   注册/找回发生在登录之前，必须免令牌。
   if (p === '/v1/auth' || p.startsWith('/v1/auth/')) {
     if (await rtMail.handle(req, res, body, u, p)) return;
   }
@@ -1628,7 +1645,7 @@ process.on('SIGINT', thpShutdown);
 process.on('SIGTERM', thpShutdown);
 
 // 双栈监听: '::' 同时接受 IPv6 与 IPv4-mapped 连接（纯 IPv6 网络可用）
-server.listen(9527, '::', () => {
+server.listen(Number(process.env.TH_LISTEN_PORT) || Number(process.env.TH_PORT) || 9527, '::', () => {
   const os = require('os');
   const nets = Object.values(os.networkInterfaces()).flat().filter(n => n && !n.internal);
   console.log('════════════════════════════════════');
