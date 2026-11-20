@@ -935,12 +935,14 @@ async function handle(req, res, body) {
     // ★镜像一份到 Supabase th_logs（后台直接查，避开浏览器连不到本机后端的限制）
     //   失败不影响本地落盘 —— 本地永远是主副本。
     try {
-      // ★从工作区 .env 读（后端不加载 process.env，只认这个文件）
+      // ★优先读环境变量（容器部署已注入）；本地开发才从 .env 文件兜底。
+      //   文件路径由 TH_ENV_FILE 指定 —— 代码里不写死任何个人/内网路径。
       let U = process.env.SUPABASE2_URL || '';
       let K = process.env.SUPABASE2_SERVICE_ROLE_KEY || '';
-      if (!U || !K) {
+      const envFile = process.env.TH_ENV_FILE || '';
+      if ((!U || !K) && envFile) {
         try {
-          const t = fs.readFileSync('C:/Users/英莉/WorkBuddy/第三方聚合平台/.env', 'utf8');
+          const t = fs.readFileSync(envFile, 'utf8');
           const g = (k) => (t.match(new RegExp('^' + k + '\\s*=\\s*(.+)$', 'm')) || [])[1]?.trim().replace(/^["']|["']$/g, '') || '';
           U = U || g('SUPABASE2_URL');
           K = K || g('SUPABASE2_SERVICE_ROLE_KEY');
