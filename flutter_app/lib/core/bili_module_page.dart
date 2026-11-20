@@ -221,9 +221,26 @@ List<Map<String, dynamic>> biliItems(Map<String, dynamic> j) =>
         .toList(growable: false);
 
 /// 封面：B 站图床有防盗链，走后端 /v1/bili/cover 代理
+/// 从「后端代理地址」里解出真实图床地址。
+/// 为什么这么做：Image.network 走 9527 时，自签证书 + 自定义 header 容易失败，
+/// 表现为「所有封面都是破图」。B 站图床直连不需要任何 header（实测 200），
+/// 所以优先直连，失败再由 errorBuilder 回落到后端代理。
+String biliRealCover(String raw) {
+  var s = raw.trim();
+  if (s.isEmpty) return '';
+  if (s.contains('/v1/bili/cover?u=')) {
+    try {
+      final i = s.indexOf('u=');
+      s = Uri.decodeComponent(s.substring(i + 2));
+    } catch (_) {}
+  }
+  if (s.startsWith('http://')) s = s.replaceFirst('http://', 'https://');
+  return s;
+}
+
 Widget biliCover(BuildContext context, BiliCtx ctx, String raw,
     {required double radius}) {
-  final u = raw.trim();
+  final u = biliRealCover(raw);
   if (u.isEmpty) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
@@ -238,12 +255,19 @@ Widget biliCover(BuildContext context, BiliCtx ctx, String raw,
     borderRadius: BorderRadius.circular(radius),
     child: Image.network(
       full,
-      headers: biliHeaders(ctx),
+      headers: full.startsWith('http') && !full.contains('/v1/bili/cover')
+          ? const <String, String>{}
+          : biliHeaders(ctx),
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, __, ___) => Image.network(
+        '${ctx.base}/v1/bili/cover?u=${Uri.encodeQueryComponent(u)}',
+        headers: biliHeaders(ctx),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Icon(Icons.broken_image_outlined,
-            color: Theme.of(context).colorScheme.outline),
+          child: Icon(Icons.broken_image_outlined,
+              color: Theme.of(context).colorScheme.outline),
+        ),
       ),
     ),
   );

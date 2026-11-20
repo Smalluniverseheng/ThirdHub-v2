@@ -24,11 +24,18 @@ import 'haptic.dart';
 
 /// 一个快捷入口（书架/历史/发现/搜索…）。
 class ModuleAction {
-  const ModuleAction(this.icon, this.title, {this.sub = '', this.onTap});
+  const ModuleAction(this.icon, this.title,
+      {this.sub = '', this.onTap, this.tabIndex = -1});
+
   final IconData icon;
   final String title;
   final String sub;
   final VoidCallback? onTap;
+
+  /// 对应的页签下标（-1 = 不是页签，比如「哔哩哔哩」这种跳转项）。
+  /// ★2026-11-20 修：原来按数组下标标「当前」，中途插入一个跳转项就会串位，
+  /// 表现是「人在影视页，抽屉却把哔哩哔哩标成当前」。
+  final int tabIndex;
 }
 
 /// 模块抽屉宿主：包住模块主体，提供「左上角按钮 + 边缘右滑拉出」。
@@ -249,7 +256,9 @@ class ModuleDrawerHostState extends State<ModuleDrawerHost>
                       color: cs.onSurface.withValues(alpha: 0.5))),
             ),
             for (var i = 0; i < widget.actions.length; i++)
-              _actionCard(c, cs, accent, widget.actions[i], i == widget.currentTab),
+              _actionCard(c, cs, accent, widget.actions[i],
+                  widget.actions[i].tabIndex >= 0 &&
+                      widget.actions[i].tabIndex == widget.currentTab),
             const SizedBox(height: 14),
           ],
           // ── 设置区 ──

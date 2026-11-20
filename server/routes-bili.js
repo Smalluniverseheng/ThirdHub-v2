@@ -45,7 +45,9 @@ const FORMAT_LABEL = {
 // ★ 真库在 /vol1/1000/ 根级（与 Media 同级）：/vol1/1000/影视、/vol1/1000/音乐
 //   飞牛媒体库扫的就是这两个；Media/ 下的同名目录不是库（2026-11-19 纠正）。
 const MEDIA_DIR = process.env.MEDIA_DIR || '/media';
-const BILI_DIR = process.env.BILI_DIR || (MEDIA_DIR + '/影视/B站');
+// MEDIA_DIR 在容器里可能没配（实测为空）→ 统一兜底到 /media（容器把 /vol1/1000 挂到这里）
+const MEDIA_ROOT = (process.env.MEDIA_DIR || process.env.TH_MEDIA_DIR || '/media').trim() || '/media';
+const BILI_DIR = process.env.BILI_DIR || (MEDIA_ROOT + '/影视/B站');
 // 弹幕缓存（cid → {at, payload}），避免同一集反复拉 300KB XML
 const dmCache = new Map();
 const DL_TARGETS = [
@@ -522,6 +524,76 @@ function proxyFile(res, req, id) {
   r2.end();
 }
 
+/**
+ * 按下载任务标题在媒体库里找文件并流式返回。
+ * 返回 true = 已经处理（含 404）；false = 让调用方回落到 bilidown。
+ */
+async function playFromLibrary(req, res, id) {
+  const n = parseInt(id, 10);
+  if (!n || n <= 0) return false;
+  let task = null;
+  try {
+    const j = await new Promise((resolve) => {
+      const b = new URL(biliBase());
+      const rq = http.request({ hostname: b.hostname, port: b.port || 80, path: '/api/tasks', method: 'GET', timeout: 8000 }, (r) => {
+        let s = '';
+        r.on('data', (d) => { s += d; });
+        r.on('end', () => { try { resolve(JSON.parse(s)); } catch (e) { resolve(null); } });
+      });
+      rq.on('error', () => resolve(null));
+      rq.on('timeout', () => { try { rq.destroy(); } catch (e) {} resolve(null); });
+      rq.end();
+    });
+    const items = (j && (j.items || (j.data && j.data.items) || j.data)) || [];
+    task = (Array.isArray(items) ? items : []).find((x) => String(x && x.id) === String(n));
+  } catch (e) { task = null; }
+  if (!task) return false;
+
+  const rawTitle = String(task.title || '').trim();
+  if (!rawTitle) return false;
+  let files = [];
+  try { files = fs.readdirSync(BILI_DIR); } catch (e) { return false; }
+
+  // 标题里有 / \ : * ? " < > | 等非法字符时只取前 12 个「干净」字来比
+  const key = rawTitle.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  const keyHead = key.slice(0, 12);
+  const cands = files
+    .filter((f) => /\.(mp4|mkv|flv|m4a|webm)$/i.test(f))
+    .filter((f) => keyHead.length >= 6 ? f.includes(keyHead) : f.includes(key.slice(0, 6)))
+    .map((f) => {
+      const st = fs.statSync(path.join(BILI_DIR, f));
+      return { f, size: st.size, mtime: st.mtimeMs };
+    })
+    .sort((a, b) => b.size - a.size);
+  if (!cands.length) return false;
+
+  const file = path.join(BILI_DIR, cands[0].f);
+  const st = fs.statSync(file);
+  const headers = {
+    'content-type': /\.(mp4|m4a)$/i.test(file) ? 'video/mp4' : 'application/octet-stream',
+    'accept-ranges': 'bytes',
+    'cache-control': 'no-cache',
+  };
+  const range = req.headers.range;
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    if (m) {
+      const start = m[1] ? parseInt(m[1], 10) : 0;
+      const end = m[2] ? Math.min(parseInt(m[2], 10), st.size - 1) : st.size - 1;
+      if (start >= st.size || end < start) { res.writeHead(416, { 'content-range': 'bytes */' + st.size }); res.end(); return true; }
+      headers['content-range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+      headers['content-length'] = end - start + 1;
+      res.writeHead(206, headers);
+      fs.createReadStream(file, { start, end }).pipe(res);
+      return true;
+    }
+  }
+  headers['content-length'] = st.size;
+  res.writeHead(200, headers);
+  fs.createReadStream(file).pipe(res);
+  return true;
+}
+
 // ─────────────────────────────────────────────────────────────
 // B 站网页接口（浏览 / 播放用，不走 bilidown 那个下载器）
 //
@@ -754,7 +826,11 @@ async function handle(req, res, body, u, p) {
   }
 
   if (op === 'play') {
-    proxyFile(res, req, u.searchParams.get('id') || '');
+    // ★2026-11-20 修「下载的视频播放不出来」：
+    //   bilidown 任务里 video/audio 字段常为空（合并完成后清空），它的 /api/downloadVideo 直接 502。
+    //   所以先按任务标题在自己媒体库里找同名文件，找不到再回落到 bilidown。
+    const ok = await playFromLibrary(req, res, u.searchParams.get('id') || '');
+    if (!ok) proxyFile(res, req, u.searchParams.get('id') || '');
     return true;
   }
 

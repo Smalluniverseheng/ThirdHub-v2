@@ -100,11 +100,17 @@ class _BiliHomePageState extends State<BiliHomePage>
                 padding: const EdgeInsets.fromLTRB(Gap.md, 6, Gap.md, 4),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: cs.primaryContainer,
-                      child: Icon(Icons.person_outline,
-                          size: 18, color: cs.onPrimaryContainer),
+                    // ★2026-11-20：原来这里是死的（点了没反应）。
+                    //   现在点它去「B 站账号」页 —— 扫码登录后下载高清/查看自己的收藏都靠它。
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => openBiliDownloads(context, _ctx),
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: cs.primaryContainer,
+                        child: Icon(Icons.person_outline,
+                            size: 18, color: cs.onPrimaryContainer),
+                      ),
                     ),
                     const SizedBox(width: Gap.sm),
                     Expanded(
