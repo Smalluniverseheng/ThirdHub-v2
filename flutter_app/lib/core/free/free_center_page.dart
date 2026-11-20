@@ -85,9 +85,16 @@ List<FreeSource> sourcesOf(FreeKind k) {
 }
 
 class FreeSourcePage extends StatefulWidget {
-  const FreeSourcePage({super.key, this.initialKind = FreeKind.music});
+  const FreeSourcePage({
+    super.key,
+    this.initialKind = FreeKind.music,
+    this.initialQuery = '',
+  });
 
   final FreeKind initialKind;
+
+  /// 从别的板块「未连接」空态带过来的搜索词：进去即自动搜，不用再输一遍。
+  final String initialQuery;
 
   @override
   State<FreeSourcePage> createState() => _FreeSourcePageState();
@@ -115,6 +122,7 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialQuery.isNotEmpty) _q.text = widget.initialQuery;
     _probe();
     _load();
     if (_kind == FreeKind.book) _loadPoem();

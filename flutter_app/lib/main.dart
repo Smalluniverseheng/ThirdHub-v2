@@ -146,6 +146,7 @@ import 'core/backend_health.dart';
 import 'core/play_resolver.dart';
 // ★4.81.77「开放源」：直连公网正规站点的独立内容通路，不经过 Api/base。
 import 'core/free/free_center_page.dart';
+import 'core/free/free_models.dart';
 // ★4.81.78 启动轨迹 / 安全模式 / 兜底错误卡片。
 import 'core/boot.dart';
 // ★4.81.78 全局 UI 组件层（骨架屏）。
@@ -5730,11 +5731,7 @@ class _Home extends State<SearchSection> {
             //   资源库明明有结果也顶着一句「没有找到相关内容」（engItems 在 go() 里
             //   恒被置成 []）。
             if (agg == null && engItems!.isEmpty && !loading)
-              Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                      child: Text(tr('没有找到相关内容'),
-                          style: const TextStyle(color: Colors.grey)))),
+              _openSourceFallback(c, ctrl.text.trim()),
             for (final t in const ['novel', 'comic', 'video', 'music'])
               ..._engGroup(c, t),
             // 加载更多: 先画本地已拿到的(零网络)，本地画完了才向引擎翻页(引擎侧有缓存，秒回)
@@ -5838,11 +5835,7 @@ class _Home extends State<SearchSection> {
           //   不再一次性 for 全渲染几千条。分组头只在它那组有条目露出来时才画。
           if (agg != null) ...[
             if (_aggRowCount == 0 && !loading)
-              Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                      child: Text(tr('没有找到相关内容'),
-                          style: const TextStyle(color: Colors.grey)))),
+              _openSourceFallback(c, ctrl.text.trim()),
             for (final r in _aggRows().take(_shown))
               if (r.isHead)
                 Padding(
@@ -6104,6 +6097,7 @@ Widget searchEmptyState({
   required List<String> listKeys,
   required String kind,
   VoidCallback? onFix,
+  VoidCallback? onFree,
 }) {
   if (loading) return const SizedBox.shrink();
   final hasAny = groups
@@ -6116,14 +6110,40 @@ Widget searchEmptyState({
   if (needConn) {
     return _searchEmptyBox(
         Icons.link_off, '还没连上内容来源', '「$kind」的内容由资料库应用或家庭后端提供，两者任连其一即可开始搜索。',
-        onFix: onFix);
+        onFix: onFix, onFree: onFree);
   }
   return _searchEmptyBox(Icons.search_off, '没有找到相关$kind',
       '已经连上来源，但这一条确实没有命中。常见原因是资料库还没有导入可用的源，换一个关键词也可以再试试。');
 }
 
+/// 总搜索页「一条都没搜到」时的出口：别只留一行灰字死胡同，
+/// 直接给一个「去开放内容搜同名词」的按钮 —— 后端没连/源空时也能出东西。
+Widget _openSourceFallback(BuildContext context, String query) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(tr('没有找到相关内容'),
+              style: const TextStyle(color: Colors.grey)),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => FreeSourcePage(
+                        initialKind: freeKindForBoard('全部'),
+                        initialQuery: query))),
+            icon: const Icon(Icons.public, size: 16),
+            label: Text(tr('用开放内容搜索')),
+          ),
+        ],
+      ),
+    );
+
 Widget _searchEmptyBox(IconData icon, String title, String sub,
-        {VoidCallback? onFix, String fixLabel = '去连接资料库'}) =>
+        {VoidCallback? onFix,
+        String fixLabel = '去连接资料库',
+        VoidCallback? onFree}) =>
     Padding(
       padding: const EdgeInsets.fromLTRB(28, 44, 28, 28),
       child: Column(children: [
@@ -6140,6 +6160,14 @@ Widget _searchEmptyBox(IconData icon, String title, String sub,
         if (onFix != null) ...[
           const SizedBox(height: 14),
           FilledButton.tonal(onPressed: onFix, child: Text(fixLabel)),
+        ],
+        if (onFree != null) ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: onFree,
+            icon: const Icon(Icons.public, size: 16),
+            label: Text(tr('用开放内容搜索')),
+          ),
         ],
       ]),
     );
@@ -6300,7 +6328,12 @@ class _NSR extends State<NovelSearchResults> {
               listKeys: const ['books'],
               kind: '书籍',
               onFix: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
+                  MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+              onFree: () => Navigator.push(c,
+                  MaterialPageRoute(
+                      builder: (_) => FreeSourcePage(
+                          initialKind: freeKindForBoard('书籍'),
+                          initialQuery: widget.query)))),
         ])),
       ]);
 }
@@ -7283,7 +7316,12 @@ class _CSR extends State<ComicSearchResults> {
               listKeys: const ['items'],
               kind: '漫画',
               onFix: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
+                  MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+              onFree: () => Navigator.push(c,
+                  MaterialPageRoute(
+                      builder: (_) => FreeSourcePage(
+                          initialKind: freeKindForBoard('漫画'),
+                          initialQuery: widget.query)))),
         ])),
       ]);
 }
@@ -7862,7 +7900,12 @@ class _MSR extends State<MusicSearchResults> {
               listKeys: const ['items'],
               kind: '音乐',
               onFix: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
+                  MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+              onFree: () => Navigator.push(c,
+                  MaterialPageRoute(
+                      builder: (_) => FreeSourcePage(
+                          initialKind: freeKindForBoard('音乐'),
+                          initialQuery: widget.query)))),
         ])),
       ]);
 }
@@ -9233,7 +9276,12 @@ class _VSR extends State<VideoSearchResults> {
               listKeys: const ['items'],
               kind: '视频',
               onFix: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const EngineDirectPage()))),
+                  MaterialPageRoute(builder: (_) => const EngineDirectPage())),
+              onFree: () => Navigator.push(c,
+                  MaterialPageRoute(
+                      builder: (_) => FreeSourcePage(
+                          initialKind: freeKindForBoard('视频'),
+                          initialQuery: widget.query)))),
         ])),
       ]);
 }

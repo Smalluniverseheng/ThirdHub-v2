@@ -22,6 +22,7 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '用开放内容搜索': "Rechercher dans les sources ouvertes",
     '音量': "Volume",
     '亮度': "Luminosité",
     '锁定': "Verrouiller",
@@ -469,6 +470,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '用开放内容搜索': "Поиск в открытых источниках",
     '音量': "Громкость",
     '亮度': "Яркость",
     '锁定': "Заблокировать",
@@ -916,6 +918,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '用开放内容搜索': "Buscar en fuentes abiertas",
     '音量': "Volumen",
     '亮度': "Brillo",
     '锁定': "Bloquear",
@@ -1364,6 +1367,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '用开放内容搜索': "البحث في المصادر المفتوحة",
     '音量': "مستوى الصوت",
     '亮度': "السطوع",
     '锁定': "قفل",
@@ -1811,6 +1815,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '用开放内容搜索': "Search in open sources",
     '音量': "Volume",
     '亮度': "Brightness",
     '锁定': "Lock",
@@ -2166,6 +2171,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '用开放内容搜索': "オープンソースで検索",
     '音量': "音量",
     '亮度': "明るさ",
     '锁定': "ロック",

@@ -165,3 +165,33 @@ class _ReachEntry {
   final DateTime at;
   const _ReachEntry(this.ok, this.at);
 }
+
+/// 主板块名 → 开放源页该落在哪个 tab。
+///
+/// 用户从「小说/漫画/视频/音乐」的「未连接」空态点「用开放内容搜索」时，
+/// 不能一律丢到默认的音乐 tab —— 搜漫画却进了音乐页是很糟的体验。
+/// 这里集中映射，调用点与单测共用同一份规则。
+FreeKind freeKindForBoard(String board) {
+  switch (board) {
+    case '小说':
+    case '书籍':
+    case 'novel':
+    case 'book':
+      return FreeKind.book;
+    case '漫画':
+    case 'comic':
+      return FreeKind.comic;
+    case '视频':
+    case '影视':
+    case 'video':
+      return FreeKind.video;
+    case '音乐':
+    case 'music':
+    case '播客':
+      return FreeKind.music;
+    default:
+      // 总搜索页 / 未知板块：音乐 tab 里的源最全（含电台、播客），
+      // 作为兜底最不容易出现「一个源都没有」的白页。
+      return FreeKind.music;
+  }
+}
