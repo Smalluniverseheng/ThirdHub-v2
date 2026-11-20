@@ -22,6 +22,10 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'core/player/media_probe.dart';
+import 'core/player/media_spec.dart';
+import 'core/player/unified_player.dart';
+import 'core/in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -43,8 +47,6 @@ import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/bili_module_page.dart';
-import 'core/announce_page.dart';
-import 'core/bili_home_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
 import 'core/api_keys_page.dart';
@@ -2857,10 +2859,6 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             entry(Icons.info_outline, '关于 ThirdHub', page: const AboutPage()),
             _sep(),
-            entry(Icons.campaign_outlined, tr('更新公告'),
-                value: tr('版本说明 · 账号公告'),
-                page: AnnouncePage(accountBuilder: (c) => const CloudPage())),
-            _sep(),
             entry(Icons.system_update_alt, '检查更新',
                 value: 'v${Updater.currentVersion}',
                 onTap: () => Updater.check(context, manual: true)),
@@ -3002,10 +3000,8 @@ class HelpPage extends StatelessWidget {
                   c,
                   Icons.menu_book_outlined,
                   '使用文档',
-                  () => launchUrl(
-                      Uri.parse(
-                          'https://github.com/Smalluniverseheng/ThirdHub-v2'),
-                      mode: LaunchMode.externalApplication)),
+                  () => InAppOpen.url(
+                      c, 'https://github.com/Smalluniverseheng/ThirdHub-v2')),
               const Divider(height: 1, indent: 52),
               _row(
                   c,
@@ -8329,19 +8325,19 @@ class _Vs extends State<VideoSection> {
         currentTab: cur,
         actions: [
           ModuleAction(Icons.video_library_outlined, '片库',
-              sub: '收藏与在看', tabIndex: 0, onTap: () => setState(() => sub = 0)),
+              sub: '收藏与在看', onTap: () => setState(() => sub = 0)),
           ModuleAction(Icons.history, '历史',
-              sub: '最近看过', tabIndex: 1, onTap: () => setState(() => sub = 1)),
-          ModuleAction(Icons.live_tv_outlined, tr('哔哩哔哩'), tabIndex: -1,
-              sub: tr('推荐、热门、排行、分区、评论、下载'),
+              sub: '最近看过', onTap: () => setState(() => sub = 1)),
+          ModuleAction(Icons.live_tv_outlined, tr('哔哩哔哩'),
+              sub: tr('推荐、热门、排行、分区、下载'),
               onTap: () => Navigator.push(c,
-                  MaterialPageRoute(builder: (_) => const BiliHomePage()))),
+                  MaterialPageRoute(builder: (_) => const BiliModulePage()))),
           if (thirdParty)
             ModuleAction(Icons.explore_outlined, '发现',
-                sub: '各片单推荐', tabIndex: 2, onTap: () => setState(() => sub = 2)),
+                sub: '各片单推荐', onTap: () => setState(() => sub = 2)),
           if (thirdParty)
             ModuleAction(Icons.search, tr('搜索'),
-                sub: '跨片单检索', tabIndex: 3, onTap: () => setState(() => sub = 3)),
+                sub: '跨片单检索', onTap: () => setState(() => sub = 3)),
           ModuleAction(Icons.folder_special_outlined, '本地库',
               sub: '离线内容 · 存储占用',
               onTap: () => Navigator.push(c,
@@ -10382,19 +10378,9 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     //   否则 iOS 端一启动就把「直播」从共享布局里抹掉，Android 端跟着丢。
     final visible =
         migrated.where((k) => currentGate().allowModule(k)).toList();
-    // ★2026-11-20 恢复上次所在模块（用户反馈「每次进来都重新刷新到最左边」）。
-    //
-    //   此前这里只有 `if (idx >= enabled.length) idx = 0;` —— 即**只做越界归零，
-    //   从不恢复**。所以无论用户上次停在哪，冷启动一律回到第 0 个模块。
-    //
-    //   按**模块 key** 存与取，不按 index：用户改过导航顺序 / 增删过模块之后，
-    //   同一个 index 指向的是另一个模块 —— 那样会把用户送到不相干的地方。
-    //   找不到（模块被删/被平台门过滤）就退回 0，不要硬跳。
-    final lastKey = p.getString('nav_last') ?? '';
-    final lastIdx = lastKey.isEmpty ? -1 : visible.indexOf(lastKey);
     setState(() {
       enabled = visible;
-      idx = lastIdx >= 0 ? lastIdx : (idx >= enabled.length ? 0 : idx);
+      if (idx >= enabled.length) idx = 0;
     });
     // 迁移结果回写，避免每次启动都重算（也避免旧键一直在盘里）
     if (migrated.join('\u0001') != saved.join('\u0001')) {
@@ -10504,9 +10490,6 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     });
     _fsSuppressed = false; // 切模块 = 一次操作，重新允许自动全屏计时
     AppLog.module('打开模块', d: {'module': enabled[i]});
-    // ★2026-11-20：记住当前所在模块，下次冷启动回到这里（配合 _load() 的恢复）。
-    //   存 key 不存 index —— 见 _load() 里的说明。写失败不影响任何交互，故不 await。
-    unawaited(AppSettings.p.setString('nav_last', enabled[i]));
     // ★R17 切模块时把模块栈收回到底：否则「AI 调 goto_module 切模块」之类的
     //   程序化切换会把上一个模块里 push 的子页面留在栈上，新模块的首页被压在
     //   它下面 —— 用户看到的是"切过去了但页面还是旧的"。
@@ -11022,41 +11005,6 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
                           ])))));
     }
 
-    /// 「模块」宫格：常驻在「我的」左边。
-    ///
-    /// ★2026-11-20 加这个按钮的原因：模块面板此前只有三个入口 ——
-    ///   底栏**长按**、折叠态**点一下**、模块菜单里的「切换模块」。
-    ///   前两个都是"暗号式"交互，用户不知道要长按；第三个要先找到 ⋯。
-    ///   结果就是用户反馈的「根本不知道哪些模块被藏到哪里去了」。
-    ///   这里给一个**一眼可见、点一下就开**的入口，不占用拖拽排序的语义。
-    Widget gridBtn(double width) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          HapticFeedback.selectionClick();
-          NavOrb.showModuleGrid(
-              context, enabled, idx, (i) => _go(i, animate: false));
-        },
-        child: SizedBox(
-            width: width,
-            height: barH,
-            child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.apps_rounded,
-                          size: collapsed ? 19 : 21, color: p.sub),
-                      if (!collapsed) ...[
-                        const SizedBox(height: 3),
-                        Text(tr('模块'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 10, color: p.sub)),
-                      ],
-                    ]))));
-
     return GestureDetector(
       // 收起态: 点按细条恢复完整底栏; 任意状态: 长按弹出模块抽屉
       onTap: collapsed ? () => setState(() => _navCollapsed = false) : null,
@@ -11090,25 +11038,19 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
                     final cap =
                         (box.maxWidth / ideal).floor().clamp(2, 8); // 一屏最多放几个槽
                     final total = enabled.length;
-                    // 注意 +1：右侧固定项有「模块」宫格和「我的」两格，
-                    // 所以"放得下"的判定要按 total + 1 算，否则 total == cap 时
-                    // 会被硬塞进 cap 个槽 → 每格窄一圈。
-                    if (total + 1 <= cap) {
-                      // 模块少：全部等分铺满（含「我的」与「模块」宫格），每项严格等宽
-                      final w = box.maxWidth / (total + 1);
+                    if (total <= cap) {
+                      // 模块少：全部等分铺满（含"我的"），每项严格等宽
+                      final w = box.maxWidth / (total == 0 ? 1 : total);
                       return Row(children: [
                         for (final i in scrollKeys)
                           SizedBox(width: w, child: item(i)),
-                        SizedBox(width: w, child: gridBtn(w)),
                         if (mineIdx >= 0)
                           SizedBox(width: w, child: item(mineIdx)),
                       ]);
                     }
-                    // 模块多：左区横向滑动（每项恒等于槽宽，末项不再被压扁），
-                    // 「模块」宫格 +「我的」固定在右侧且同宽
+                    // 模块多：左区横向滑动（每项恒等于槽宽，末项不再被压扁），"我的"固定最右且同宽
                     final w = box.maxWidth / cap;
-                    // 固定项占 2 格（宫格 + 我的）；至少留 1 格给滚动区，否则极窄屏会算出 0 宽
-                    final slots = (mineIdx >= 0 ? cap - 2 : cap - 1).clamp(1, cap);
+                    final slots = mineIdx >= 0 ? cap - 1 : cap;
                     return Row(children: [
                       SizedBox(
                           width: slots * w,
@@ -11118,7 +11060,6 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
                               itemCount: scrollKeys.length,
                               itemBuilder: (_, n) => SizedBox(
                                   width: w, child: item(scrollKeys[n])))),
-                      SizedBox(width: w, child: gridBtn(w)),
                       if (mineIdx >= 0)
                         SizedBox(width: w, child: item(mineIdx)),
                     ]);
@@ -12319,8 +12260,8 @@ class ProductDetailPage extends StatelessWidget {
                       icon: const Icon(Icons.open_in_new),
                       label: Text(
                           url.contains('pages.dev') ? '打开网页版' : '获取(浏览器打开/下载)'),
-                      onPressed: () => launchUrl(Uri.parse(url),
-                          mode: LaunchMode.externalApplication)))));
+                      // ★4.81.75：内置浏览器打开，不再外跳
+                      onPressed: () => InAppOpen.url(c, url))));
 }
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
@@ -16059,14 +16000,32 @@ class _Ei extends State<EngineItemPage> {
                       'lyric': d['lyric'] ?? ''
                     })));
       } else {
+        // ★4.81.75 生态互通：视频板块里那些「其实是音乐」的内容
+        //   （B 站上大量"一张图 + 一首歌"、纯音乐 / 伴奏 / OST / 官方音频），
+        //   不再一律丢进视频播放器。判定为音乐就直接以**音频形态**播放，
+        //   套封面、带续播，听感和音乐模块一致 —— 这就是用户要的
+        //   「纯音乐视频弄到音乐模块去播」的最小闭环。
+        final vUrl = '${d['url'] ?? ''}';
+        final vHeaders =
+            Map<String, String>.from(d['headers'] ?? d['header'] ?? {});
+        final asMusic = MediaProbe.looksLikeMusic(title);
+        AppLog.module('播放分流', d: {
+          'title': title,
+          'kind': asMusic ? 'music' : 'video',
+          'score': MediaProbe.musicScore(title).toStringAsFixed(2),
+        });
         Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => UrlVideoPlayer(
-                    url: '${d['url'] ?? ''}',
-                    title: title,
-                    headers: Map<String, String>.from(
-                        d['headers'] ?? d['header'] ?? {}))));
+                builder: (_) => UnifiedPlayerPage(
+                    spec: MediaSpec(
+                        url: vUrl,
+                        title: title,
+                        headers: vHeaders,
+                        cover: cover,
+                        artist: asMusic ? authorS : null,
+                        kindOverride: asMusic ? MediaKind.audio : null,
+                        sourceTag: sourceName))));
       }
     } catch (e) {
       if (mounted)
@@ -16590,8 +16549,12 @@ class _EiC extends State<_EiComments> {
   }
 }
 
-// 直链视频播放器(引擎直连内容用)
-class UrlVideoPlayer extends StatefulWidget {
+// 直链视频播放器（引擎直连内容用）。
+//
+// ★4.81.75：这里原本是**第 7 套**独立播放器实现（自管加载、进度、全屏、错误）。
+// 现改为 core/player 统一播放器的薄壳：调用方签名一字未改，但进度条 / 全屏 /
+// 倍速 / 续播 / 上下集 全部与影视、音乐共用同一套逻辑，不再各自长歪。
+class UrlVideoPlayer extends StatelessWidget {
   final String url, title;
   final Map<String, String> headers;
   const UrlVideoPlayer(
@@ -16600,82 +16563,9 @@ class UrlVideoPlayer extends StatefulWidget {
       required this.title,
       this.headers = const {}});
   @override
-  State<UrlVideoPlayer> createState() => _Uvp();
-}
-
-class _Uvp extends State<UrlVideoPlayer> {
-  VideoPlayerController? vc;
-  ChewieController? cc;
-  String err = '';
-  Timer? _posTimer;
-  String get _posKey => 'vpos_${widget.url}';
-  @override
-  void initState() {
-    super.initState();
-    _boot();
-  }
-
-  Future<void> _boot() async {
-    try {
-      vc = VideoPlayerController.networkUrl(Uri.parse(widget.url),
-          httpHeaders: widget.headers);
-      await vc!.initialize();
-      // 断点续播: 恢复上次进度(>10s 且未到结尾)
-      final s = AppSettings.p.getInt(_posKey) ?? 0;
-      final dur = vc!.value.duration;
-      final startAt =
-          (s > 10 && s < dur.inSeconds - 10) ? Duration(seconds: s) : null;
-      cc = ChewieController(
-          videoPlayerController: vc!,
-          autoPlay: true,
-          allowFullScreen: true,
-          startAt: startAt,
-          playbackSpeeds: const [0.5, 1.0, 1.25, 1.5, 2.0, 3.0]);
-      if (startAt != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                '已从 ${startAt.inMinutes.toString().padLeft(2, '0')}:${(startAt.inSeconds % 60).toString().padLeft(2, '0')} 继续播放'),
-            duration: const Duration(seconds: 2)));
-      }
-      _posTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-        if (vc != null &&
-            vc!.value.isPlaying &&
-            vc!.value.position.inSeconds > 5) {
-          AppSettings.p.setInt(_posKey, vc!.value.position.inSeconds);
-        }
-      });
-    } catch (e) {
-      err = '$e';
-    }
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _posTimer?.cancel();
-    if (vc != null && vc!.value.position.inSeconds > 5)
-      AppSettings.p.setInt(_posKey, vc!.value.position.inSeconds);
-    cc?.dispose();
-    vc?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext c) => Scaffold(
-      appBar: AppBar(
-          title:
-              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
-      body: Center(
-          child: err.isNotEmpty
-              ? Text('播放失败: $err',
-                  style: const TextStyle(color: Colors.redAccent))
-              : cc == null
-                  ? const CircularProgressIndicator()
-                  : AspectRatio(
-                      aspectRatio: vc!.value.aspectRatio > 0
-                          ? vc!.value.aspectRatio
-                          : 16 / 9,
-                      child: Chewie(controller: cc!))));
+  Widget build(BuildContext c) => UnifiedPlayerPage(
+        spec: MediaSpec(url: url, title: title, headers: headers),
+      );
 }
 
 // 引擎直连漫画阅读器(条漫滚动/翻页, 图片来源 THP /thp/content images)
@@ -17321,21 +17211,6 @@ class _ModulePanelState extends State<_ModulePanel> {
   ///   其它 = 分类名 → 右侧列出该分类**全部**模块（含未启用的），可一键加入导航。
   String _rail = '已启用';
 
-  /// ★2026-11-20 搜索：用户反馈「根本不知道哪些模块被藏到哪里去了」。
-  ///   55 个模块分 7 类，要找一个得逐类翻一遍。这里给一个跨分类的即时过滤，
-  ///   输入即搜（匹配中文名 / 译文名 / 分类名），不用点任何按钮。
-  final TextEditingController _qc = TextEditingController();
-  String _kw = '';
-
-  /// 全部顶层模块（搜索与「全部」分类共用，避免每帧重算）
-  List<String> get _allTop => topModuleKeys(kModules.keys).toList();
-
-  @override
-  void dispose() {
-    _qc.dispose();
-    super.dispose();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -17353,35 +17228,12 @@ class _ModulePanelState extends State<_ModulePanel> {
   // ★4.58.0 归并：分类树里也只列顶层 —— 否则点开「效率」还是看到
   //   工具箱 + 翻译 + 扫描仪 + 二维码… 一长串，归并等于没做。
   List<String> _modulesOf(String cat) => [
-        for (final k in _allTop)
+        for (final k in topModuleKeys(kModules.keys))
           if (moduleCat(k) == cat) k
       ];
 
-  /// 是否处于搜索态（搜索时左侧分类栏的选中状态不参与过滤）
-  bool get _searching => _kw.trim().isNotEmpty;
-
-  /// 右侧要渲染的模块列表。搜索 > 「全部」> 「已启用」> 具体分类。
-  List<String> _listFor() {
-    final q = _kw.trim().toLowerCase();
-    if (q.isNotEmpty) {
-      // 同时匹配中文原名、译文名、分类名 —— 用户记不住"记忆卡"在哪一类，
-      // 但记得住"卡"这个字；也有人在英文界面里直接打 "note"。
-      return [
-        for (final k in _allTop)
-          if (k.toLowerCase().contains(q) ||
-              tr(k).toLowerCase().contains(q) ||
-              moduleCat(k).toLowerCase().contains(q))
-            k
-      ];
-    }
-    if (_rail == '全部') return _allTop;
-    if (_rail == '已启用') return order;
-    return _modulesOf(_rail);
-  }
-
   static IconData _catIcon(String cat) => switch (cat) {
         '已启用' => Icons.apps,
-        '全部' => Icons.grid_view_rounded,
         '核心' => Icons.star_outline,
         '内容' => Icons.play_circle_outline,
         '生活' => Icons.coffee_outlined,
@@ -17620,9 +17472,7 @@ class _ModulePanelState extends State<_ModulePanel> {
     final contentW = w - 16 - railW - 8 - 16; // 左内边距 + 栏宽 + 间隔 + 右内边距
     final cols = (contentW / 88).floor().clamp(2, 8);
     final tileW = (contentW - gap * (cols - 1)) / cols;
-    final list = _listFor();
-
-    // 当前该渲染什么列表，见 _listFor()：搜索 > 「全部」> 「已启用」> 具体分类。
+    final list = _rail == '已启用' ? order : _modulesOf(_rail);
     return Container(
         decoration: BoxDecoration(
             color: Theme.of(c).colorScheme.surface,
@@ -17646,13 +17496,9 @@ class _ModulePanelState extends State<_ModulePanel> {
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(
-                        _searching
-                            ? '搜索「${_kw.trim()}」· ${list.length} 个结果'
-                            : _rail == '已启用'
-                                ? '长按某格可拖动排序 · 共 ${order.length} 个'
-                                : _rail == '全部'
-                                    ? '全部 ${list.length} 个模块 · 点 ⊕ 加入导航'
-                                    : '$_rail · ${list.length} 个模块 · 点右上角 ⊕ 加入导航',
+                        _rail == '已启用'
+                            ? '长按某格可拖动排序 · 共 ${order.length} 个'
+                            : '$_rail · ${list.length} 个模块 · 点右上角 ⊕ 加入导航',
                         style:
                             const TextStyle(fontSize: 10, color: Colors.grey),
                         maxLines: 1,
@@ -17668,48 +17514,6 @@ class _ModulePanelState extends State<_ModulePanel> {
                       showNavSettings(nav.context);
                     }),
               ])),
-          // ── 搜索框：输入即过滤，跨分类。用户不用先知道模块属于哪一类 ──
-          Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-              child: SizedBox(
-                  height: 38,
-                  child: TextField(
-                      controller: _qc,
-                      onChanged: (v) => setState(() => _kw = v),
-                      textInputAction: TextInputAction.search,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                          isDense: true,
-                          hintText: tr('搜索模块…'),
-                          hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 18),
-                          prefixIconConstraints: const BoxConstraints(
-                              minWidth: 34, minHeight: 34),
-                          suffixIcon: _searching
-                              ? IconButton(
-                                  icon: const Icon(Icons.close, size: 16),
-                                  visualDensity: VisualDensity.compact,
-                                  tooltip: tr('清空'),
-                                  onPressed: () {
-                                    _qc.clear();
-                                    setState(() => _kw = '');
-                                  })
-                              : null,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(
-                                  color: Theme.of(context).dividerColor)),
-                          enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(
-                                  color: Theme.of(context).dividerColor)),
-                          filled: true,
-                          fillColor: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.35))))),
           const SizedBox(height: 4),
           Expanded(
               child: Row(
@@ -17726,7 +17530,6 @@ class _ModulePanelState extends State<_ModulePanel> {
                               _railItem('已启用'),
                               const Divider(
                                   height: 14, indent: 4, endIndent: 4),
-                              _railItem('全部'),
                               for (final cat in _cats) _railItem(cat),
                             ]))),
                 const VerticalDivider(width: 1, thickness: 1),
@@ -17737,10 +17540,7 @@ class _ModulePanelState extends State<_ModulePanel> {
                         padding: EdgeInsets.fromLTRB(
                             8, 4, 16, 16 + MediaQuery.of(c).viewPadding.bottom),
                         child: Wrap(spacing: gap, runSpacing: gap, children: [
-                          // 「已启用」且未搜索时才用可拖动的 _tile；
-                          // 搜索结果 / 「全部」/ 分类列表一律用 _catTile ——
-                          // 它自带"是否在导航"的底色与 ⊕/− 按钮，搜索时也能一键加进导航。
-                          if (_rail == '已启用' && !_searching)
+                          if (_rail == '已启用')
                             for (var i = 0; i < order.length; i++)
                               SizedBox(
                                   width: tileW, height: 84, child: _tile(i))
@@ -17748,16 +17548,6 @@ class _ModulePanelState extends State<_ModulePanel> {
                             for (final k in list)
                               SizedBox(
                                   width: tileW, height: 84, child: _catTile(k)),
-                          if (list.isEmpty)
-                            Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 24),
-                                child: Text(
-                                    _searching
-                                        ? tr('没有匹配的模块')
-                                        : tr('这个分类下暂无模块'),
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey))),
                         ]))),
               ])),
         ]));

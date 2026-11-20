@@ -37,6 +37,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:speech_to_text/speech_to_text.dart';
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'i18n.dart';
 
@@ -746,7 +747,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                       [...md.ExtensionSet.gitHubWeb.blockSyntaxes, LatexBlockSyntax()],
                       [...md.ExtensionSet.gitHubWeb.inlineSyntaxes, LatexInlineSyntax()],
                     ),
-                    onTapLink: (t, h, _) { if (h != null) launchUrl(Uri.parse(h), mode: LaunchMode.externalApplication); })));
+                    onTapLink: (t, h, _) { if (h != null) InAppOpen.url(c, h); })));
           final avatar = CircleAvatar(radius: 14,
             backgroundColor: me ? accent.withValues(alpha: 0.15) : const Color(0xFFEDE9FE),
             child: Icon(me ? Icons.person_outline : Icons.smart_toy_outlined, size: 15,

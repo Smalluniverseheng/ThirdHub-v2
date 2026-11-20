@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.81.74+50745
+version: 4.81.69+50740
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -13,9 +13,6 @@ dependencies:
   shared_preferences: ^2.2.2
   video_player: ^2.9.1
   chewie: ^1.8.5
-  # ★4.81.74 弹幕渲染：CustomPainter 直绘，组件树里不产生成百上千个 Widget。
-  #   纯 Dart、无平台代码，SDK 约束 >=3.0.0 与本项目一致（已核对包源码）。
-  canvas_danmaku: ^0.3.4
   just_audio: ^0.9.40
   flutter_tts: ^4.2.0
   photo_manager: ^3.2.0

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'notify.dart';
 import 'i18n.dart';
@@ -309,7 +310,7 @@ class _Wea extends State<WeatherPage> {
           onPressed: () {
             final no = expressC.text.trim();
             if (no.isEmpty) return;
-            launchUrl(Uri.parse('https://www.kuaidi100.com/chaxun?nu=$no'), mode: LaunchMode.externalApplication);
+            InAppOpen.url(c, 'https://www.kuaidi100.com/chaxun?nu=$no');
           }),
       ]))),
       // ── 地震速报(公共 API) ──

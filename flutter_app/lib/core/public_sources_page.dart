@@ -8,6 +8,7 @@
 // 沿用 api_keys.dart 的厂商归一化（一把 Key 全模块复用）。
 
 import 'package:flutter/material.dart';
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_keys_page.dart';
@@ -31,12 +32,8 @@ class PublicSourcesPage extends StatelessWidget {
   Future<void> _open(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // 打不开就让系统自己报错，不额外弹一层；避免把异常吞成"点了没反应"。
-      rethrow;
-    }
+    // ★4.81.75：改走内置浏览器，不再把用户踢到系统浏览器。
+    await InAppOpen.url(context, uri.toString());
   }
 
   @override

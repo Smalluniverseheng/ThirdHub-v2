@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'i18n.dart';
 
@@ -254,7 +255,7 @@ class _News extends State<NewsPage> {
             subtitle: Text(a['desc'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 10, color: Colors.grey)),
             trailing: const Icon(Icons.open_in_new, size: 14, color: Colors.grey),
-            onTap: () => launchUrl(Uri.parse(a['link'] ?? ''), mode: LaunchMode.externalApplication));
+            onTap: () => InAppOpen.url(c, a['link'] ?? ''));
         })),
   ]);
 }

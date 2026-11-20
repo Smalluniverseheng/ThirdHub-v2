@@ -6,6 +6,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tts.dart';
@@ -199,9 +200,8 @@ class LocalTools {
       await TtsManager.speak('${a['text'] ?? ''}'); return '已开始朗读';
     }),
     LocalTool('open_url', '在浏览器中打开链接', _obj({'url': '完整网址(https://...)'}, ['url']), (a) async {
-      final u = Uri.tryParse('${a['url'] ?? ''}');
-      if (u == null) return '无效网址';
-      final ok = await launchUrl(u, mode: LaunchMode.externalApplication);
+      // 工具调用发生在无 context 的后台逻辑里，InAppOpen 会自动退化为外部浏览器
+      final ok = await InAppOpen.url(null, '${a['url'] ?? ''}');
       return ok ? '已打开' : '打开失败';
     }),
     LocalTool('share_text', '调起系统分享, 把文本分享给其他 App', _obj({'text': '要分享的内容'}, ['text']), (a) async {

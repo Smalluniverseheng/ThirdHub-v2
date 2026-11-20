@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'in_app_open.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_log.dart';
@@ -60,8 +61,8 @@ class _TtsEnginesPageState extends State<TtsEnginesPage> {
   }
 
   Future<void> _openHome(TtsEngineProject p) async {
-    final ok = await launchUrl(Uri.parse(p.home),
-        mode: LaunchMode.externalApplication);
+    // ★4.81.75：走内置浏览器（不再外跳）
+    final ok = await InAppOpen.url(context, p.home);
     if (!ok && mounted) {
       // 打不开浏览器要说出来，并给出可复制的地址（静默失败 = 用户点了一动不动）
       ProUI.toast(context, '打不开浏览器。地址已复制，可手动粘贴：${p.home}');
