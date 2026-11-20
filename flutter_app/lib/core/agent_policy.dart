@@ -78,7 +78,12 @@ class AgentPolicy {
       //   agent_proto 自检红了 6 个版本没人发现。别只改 server 侧。）
       'engine.status',
       'engine.discover',
-      'book.recent'
+      'book.recent',
+      // ★4.81.83：App 内跳转（app_map / app_open）。
+      //   为什么算只读：它只改变"用户当前在看哪一页"，不写入、不删除、
+      //   不产生外部副作用 —— 把它判成 danger 的话，默认档位下
+      //   "让 AI 打开红果" 会直接不可用，等于这个能力白做。
+      'app.nav'
     ],
     AgentRisk.write: [
       'note.save',
@@ -125,6 +130,9 @@ class AgentPolicy {
     'engine_discover': 'engine.discover',
     'open_item': 'browser.open',
     'recent_history': 'book.recent',
+    // ★4.81.83 模块地图 / 一步直达（详见 core/agent/agent_map.dart）
+    'app_map': 'app.nav',
+    'app_open': 'app.nav',
   };
 
   /// 把 Flutter 本机工具名（可带 `local_` 前缀）翻成策略工具名。

@@ -8727,6 +8727,29 @@ class _Vs extends State<VideoSection> {
       _goto(i);
       return true;
     };
+    // ★4.81.83 子页签接线（以前这里**根本没接**，但提示词里却在推销 subtab，
+    //   于是模型一下发就拿到 "switchSubTab not wired" —— 典型的"承诺了没实现"）。
+    //   目前真正有子页签语义的只有视频页的 B 站七栏目，其它页面老实返回 false。
+    AgentTargets.switchSubTab = (page, tab) async {
+      if (mine != _agentGen || !mounted) return false;
+      final p = page.trim();
+      final pl = p.toLowerCase();
+      final isVideo = p.isEmpty ||
+          p.contains('视频') ||
+          pl.contains('bili') ||
+          pl.contains('哔哩') ||
+          p == '片库';
+      if (!isVideo) return false;
+      // 栏目 Tab 只存在于 B 站页里 —— 先把平台切过去，等它 build 完再切栏目
+      if (p != '片库') {
+        await AgentTargets.switchVideoPlatform?.call('哔哩哔哩');
+        await AgentTargets.settle(420);
+      }
+      if (BiliNav.jump(tab)) return true;
+      // 首帧可能还没把 BiliModulePage 挂上，给一次重试再判死
+      await AgentTargets.settle(400);
+      return BiliNav.jump(tab);
+    };
   }
 
   void _goto(int i) {

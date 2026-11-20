@@ -22,6 +22,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'agent_protocol.dart';
+import 'agent_map.dart';
 
 /// 模型的一次决策。
 class AgentDecision {
@@ -178,8 +179,25 @@ class AgentDecision {
   }
 }
 
+/// 「谁来做决策」的抽象。
+///
+/// 存在的唯一理由：让 [AgentRunner] 能在**没有模型、没有网络**的情况下被测试。
+/// 一个只会调真接口的循环，测起来就只能靠真机 + 真 Key，等于没测 ——
+/// 而这个循环错了的后果是「AI 在用户手机上乱点」，必须能在 CI 里跑。
+abstract class AgentBrain {
+  bool get ready;
+
+  Future<AgentDecision> decide({
+    required String goal,
+    required String trace,
+    required Uint8List? png,
+    required Map<String, dynamic> state,
+    required List<Map<String, dynamic>> nodes,
+  });
+}
+
 /// 模型连接配置。
-class AgentLlm {
+class AgentLlm implements AgentBrain {
   final String providerId;
   final String model;
   final String base;
@@ -196,7 +214,9 @@ class AgentLlm {
     this.kind = 'openai',
   });
 
-  bool get ready => model.trim().isNotEmpty && base.trim().isNotEmpty && apiKey.trim().isNotEmpty;
+  @override
+  bool get ready =>
+      model.trim().isNotEmpty && base.trim().isNotEmpty && apiKey.trim().isNotEmpty;
 
   static const Duration _timeout = Duration(seconds: 75);
 
@@ -204,6 +224,7 @@ class AgentLlm {
   ///
   /// [trace] 是已经做过的事（纯文本，不含历史截图）：只带当前这一张图，
   /// 一是省 token，二是避免模型拿几张旧图"回忆"出一个已经不存在的界面。
+  @override
   Future<AgentDecision> decide({
     required String goal,
     required String trace,
@@ -375,6 +396,10 @@ class AgentLlm {
   // ── 提示词 ──
 
   /// 系统提示词。改它等于改模型的行为边界，谨慎。
+  ///
+  /// ★4.81.83：末尾拼一张**模块地图**。用户原话是"给每个模块写清楚能跳到哪、
+  ///   页面里有什么，AI 读了就不用识别屏幕"。地图比截图便宜得多，
+  ///   而且不会把"加载中"看成"已打开"—— 能用 deeplink 就别连点。
   static String buildSystemPrompt() => '''
 你是「ThirdHub」这款手机 App 的自动测试操作员。你的任务：看着 App 的截图，一步一步把它操作到用户要求的目标状态，并如实报告结果。
 
@@ -406,6 +431,10 @@ class AgentLlm {
 5. 判定"能不能用"时以截图为准：空白页、转圈、"加载失败"都是**失败**，不要说成功。
 6. 目标做不到就 {"op":"fail"}，并写清卡在哪一步、屏幕上显示了什么。不要编造成功。
 7. 安全：不要点广告、不要进支付、不要授权敏感权限；遇到就记下来并 fail。
+8. **能跳就别点**：下面这张地图里的链接是确定的，一步到位。连点三下才到的地方，
+   用 deeplink 一下就到，而且不会因为栏目顺序变了点空。
+
+${AgentMap.compact()}
 ''';
 
   /// 每步的用户消息正文（不含图片，图片单独塞 content 数组）。

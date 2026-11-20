@@ -14,6 +14,7 @@
 import 'dart:convert';
 
 import 'agent_dsh_client.dart';
+import 'agent/agent_map.dart';
 import 'agent_models.dart';
 import 'agent_policy.dart';
 import 'kv.dart';
@@ -392,6 +393,10 @@ class AiContext {
           '② open_item(type, id, title) 真的打开它 —— App 会切到对应模块并跳转详情页。'
           '目标唯一、用户懒得挑时，直接用 search_and_open(type, query)（等于搜索 + 打开第一条）。'
           '要让用户换模块也走 goto_module，不要只说"你可以去 xx 模块看看"。'
+          // ★4.81.83：把「模块地图」塞进同一段（不新起段 —— 段数契约锁死）。
+          //   用户原话：「给每个模块写清楚干嘛的、能跳到哪、页面里有什么，
+          //   AI 读了就不用再识别屏幕」。app_open 就是那条直达通道。
+          '\n\n${AgentMap.prompt()}'
     });
     final base = AiInstruct.build();
     if (base.isNotEmpty) out.add({'role': 'system', 'content': base});
@@ -521,12 +526,28 @@ class AiCompress {
   static const int defaultBudget = 30000;
   static const int keepTail = 12;
 
-  static int sizeOf(List<Map<String, String>> msgs) =>
-    msgs.fold(0, (a, m) => a + ('${m['content'] ?? ''}').length);
+  /// content 可能是 String（纯文本）或 List（多模态：text + image_url）。
+  /// 取纯文字这个动作在压缩/统计里到处都要用，所以收敛成一个函数 ——
+  /// 直接把数组 toString 会得到 "[{type: text, ...}]" 这种垃圾摘要。
+  static String textOf(Object? content) {
+    if (content == null) return '';
+    if (content is String) return content;
+    if (content is List) {
+      final sb = StringBuffer();
+      for (final p in content) {
+        if (p is Map && '${p['type']}' == 'text') sb.write(p['text'] ?? '');
+      }
+      return sb.toString();
+    }
+    return '$content';
+  }
+
+  static int sizeOf(List<Map<String, dynamic>> msgs) =>
+    msgs.fold(0, (a, m) => a + textOf(m['content']).length);
 
   /// 超预算时把"早期消息"折叠成一条摘要 system, 保留最近 keepTail 条原文。
   /// 纯本地启发式: 不额外消耗 token, 结果确定可测。
-  static List<Map<String, String>> compress(List<Map<String, String>> msgs,
+  static List<Map<String, dynamic>> compress(List<Map<String, dynamic>> msgs,
       {int budget = defaultBudget, int tail = keepTail}) {
     if (sizeOf(msgs) <= budget) return msgs;
     final sys = [for (final m in msgs) if (m['role'] == 'system') m];
@@ -537,7 +558,7 @@ class AiCompress {
     final buf = StringBuffer(
       '【早期对话摘要】本次会话前 ${head.length} 条消息已自动压缩(原文省略)，要点如下：\n');
     for (final m in head) {
-      var c = '${m['content'] ?? ''}'.replaceAll(RegExp(r'\s+'), ' ').trim();
+      var c = textOf(m['content']).replaceAll(RegExp(r'\s+'), ' ').trim();
       if (c.isEmpty) continue;
       if (c.length > 140) c = '${c.substring(0, 140)}…';
       buf.writeln('- ${m['role'] == 'user' ? '用户' : '助手'}: $c');

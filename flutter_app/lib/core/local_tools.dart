@@ -13,6 +13,10 @@ import 'tts.dart';
 import 'tts_presets.dart';
 import 'ai.dart';
 import 'local_tools_logic.dart';
+import 'agent/agent_bridge.dart';
+import 'agent/agent_deeplink.dart';
+import 'agent/agent_map.dart';
+import 'agent/agent_protocol.dart';
 // 飞牛 NAS（fnOS）工具：调官方 fnos-cli 管理 EVO4（MIT，见 vendor/MANIFEST.json）
 import 'fnos_cli.dart';
 import 'peer_hub.dart';
@@ -183,6 +187,60 @@ class LocalTools {
       if (f == null) return '业务钩子未注入（App 未就绪）';
       final n = int.tryParse((a['limit'] ?? '10').toString()) ?? 10;
       return f(n.clamp(1, 50));
+    }),
+    // ══ ★4.81.83 模块地图 + 一步直达 ══════════════════════════════════
+    // 存在的理由（用户原话）：「给每个模块写清楚能跳到哪个页面、页面里有什么，
+    // AI 读了就不用再识别屏幕，直接就能跳」。
+    // 这两个工具就是那条"读地图 → 直接跳"的通道：
+    //   app_map  → 读出 App 的结构（模块/页面/深链）
+    //   app_open → 按深链一步到位，不需要连点、不需要截图
+    LocalTool('app_map', '读取本 App 的模块地图：每个模块是干什么的、有哪些页面、页面里有什么、对应的直达链接。'
+        '不知道某个功能在哪儿时先调它，比截图猜测快得多。',
+        _obj({
+          'module': '只看某个模块（可选，留空返回全部）',
+          'detail': '是否要页面级细节：1 要（默认）/ 0 只要模块和链接',
+        }), (a) async {
+      final q = (a['module'] ?? '').toString().trim();
+      if (q.isNotEmpty) {
+        final m = AgentMap.find(q);
+        if (m == null) {
+          return '没有名为「$q」的模块。现有模块：${AgentMap.keys.join(' / ')}';
+        }
+        final sb = StringBuffer('- ${m.key}  ${m.deeplink}  ${m.what}\n');
+        for (final p in m.pages) {
+          sb.writeln('  · ${p.name}｜入口：${p.how}｜内容：${p.what}');
+        }
+        return sb.toString().trimRight();
+      }
+      final detail = (a['detail'] ?? '1').toString() != '0';
+      return AgentMap.prompt(detailed: detail);
+    }),
+    LocalTool('app_open', '在 App 里一步跳到某个页面或功能（模块 / 平台 / 搜索）。'
+        '能跳过去就不要用连点；打开内容条目请先用 engine_search 拿 id，再用 open_item。',
+        _obj({
+          'url': '深链，如 thirdhub://video?platform=hongguo；也可以只填模块名走 module',
+          'module': '模块名（url 留空时用），如 小说 / 视频 / 音乐',
+          'q': '可选，跳过去顺便搜这个词',
+          'platform': '可选，视频页要切的平台：hongguo / bili / library / history / discover',
+        }), (a) async {
+      var url = (a['url'] ?? '').toString().trim();
+      if (url.isEmpty) {
+        final mod = (a['module'] ?? '').toString().trim();
+        if (mod.isEmpty) return '需要 url 或 module';
+        final qp = <String>[];
+        final term = (a['q'] ?? '').toString().trim();
+        if (term.isNotEmpty) qp.add('q=${Uri.encodeQueryComponent(term)}');
+        final plat = (a['platform'] ?? '').toString().trim();
+        if (plat.isNotEmpty) qp.add('platform=${Uri.encodeQueryComponent(plat)}');
+        url = '${AgentDeeplink.scheme}://$mod${qp.isEmpty ? '' : '?${qp.join('&')}'}';
+      }
+      final r = await AgentBridge.I.exec(AgentCmd('deeplink', {'url': url}));
+      if (!r.ok) {
+        return '跳转失败：${r.error}${r.hint == null ? '' : '（${r.hint}）'}';
+      }
+      final steps = (r.data is Map) ? (r.data as Map)['steps'] : null;
+      final n = steps is List ? steps.length : 0;
+      return '已跳到：$url（执行 $n 步）';
     }),
 
     LocalTool('get_device_info', '获取手机设备信息(品牌/型号/系统版本)', _obj({}), (_) async {

@@ -1,9 +1,9 @@
 // AI 模块: 厂商/模型注册表(从 thirdhub.pages.dev 拉取, 快照兜底) + OpenAI 兼容对话
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ai_attach.dart';
 import 'ai_snapshot.dart';
 import 'ai_agent.dart';
 import 'agent_policy.dart';
@@ -160,19 +160,51 @@ typedef AiToolExecutor = Future<String> Function(String serverId, String name, M
 // TH-Harness v1: 统一工具循环(MCP+本机工具), 多轮 plan-act-observe, 思考链(reasoning_content)解析
 // TH-Harness v2: 轮数上限由智能体授权决定 + 不支持原生 function-calling 的厂商走文本工具协议兜底
 class AiChat {
+  /// 复用连接：一次会话里十几次请求不该握手十几次。
+  static final http.Client _client = http.Client();
+
+  /// 错误正文萃取：很多厂商把真正的错因塞在很深的 JSON 里，
+  /// 只截前 200 字符会只剩 `{"error":{"code":...`，等于没告诉用户任何事。
+  static String _errText(String body, int code) {
+    String detail = body;
+    try {
+      final j = jsonDecode(body);
+      if (j is Map) {
+        final e = j['error'];
+        if (e is Map) {
+          detail = '${e['message'] ?? e['msg'] ?? e}';
+        } else if (e != null) {
+          detail = '$e';
+        } else if (j['message'] != null) {
+          detail = '${j['message']}';
+        }
+      }
+    } catch (_) {}
+    detail = detail.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (detail.length > 220) detail = '${detail.substring(0, 220)}…';
+    return 'HTTP $code: $detail';
+  }
+
   // onDelta: 正文增量; onReasoning: 思考链增量; mcpTools: 统一工具表(MCP+本机); toolExecutor: 统一工具执行
   // maxRounds: 工具循环轮数上限(来自智能体); textToolFallback: 原生 tools 不可用时退化到 <tool_call> 文本协议
+  /// ★4.81.83：messages 放宽成 Map<String, dynamic>。
+  /// 为什么：多模态消息的 `content` 是**数组**（text + image_url），
+  /// Map<String,String> 存不下，硬塞会把图片链路和纯文本链路绑死在一起。
+  /// 纯文本调用方（tavern / local_agent / pro_kit …）传 Map<String,String>
+  /// 依然兼容（Dart 泛型协变），无需改动。
   static Future<String> chat({required AiProvider provider, required String model,
-      required List<Map<String, String>> messages, required void Function(String delta) onDelta,
+      required List<Map<String, dynamic>> messages, required void Function(String delta) onDelta,
       List<Map<String, dynamic>>? mcpTools, void Function(String toolName)? onToolCall,
       void Function(String reasoning)? onReasoning, AiToolExecutor? toolExecutor, Map<String, dynamic>? extraBody,
       int maxRounds = 8, bool textToolFallback = false,
       void Function()? onToolsUnsupported}) async {
     final key = await AiRegistry.keyOf(provider.id);
     if (key.isEmpty) throw Exception('请先填写 ${provider.name} 的 API Key');
+    // 拷一份再动：调用方传进来的可能是只读/定长视图，直接 add 会炸
+    final msgsIn = [for (final m in messages) Map<String, dynamic>.from(m)];
     // Harness 工具循环: 非流式带 tools → 有 tool_calls 就执行并追问(最多 maxRounds 轮) → 最终走流式回答
     if (mcpTools != null && mcpTools.isNotEmpty && provider.type != 'anthropic') {
-      final msgs = messages.map((m) => Map<String, dynamic>.from(m)).toList();
+      final msgs = [for (final m in msgsIn) Map<String, dynamic>.from(m)];
       final tools = [ for (final t in mcpTools) {'type': 'function', 'function': {
         'name': t['name'], 'description': t['description'] ?? '',
         'parameters': t['inputSchema'] ?? {'type': 'object', 'properties': {}}}} ];
@@ -240,48 +272,93 @@ class AiChat {
       }
     }
     if (provider.type == 'anthropic') {
-      final r = await http.post(Uri.parse('${provider.base}/messages'),
-        headers: {'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json'},
-        body: jsonEncode({'model': model, 'max_tokens': 4096,
-          'messages': messages.where((m) => m['role'] != 'system').toList(),
-          if (messages.any((m) => m['role'] == 'system'))
-            'system': messages.firstWhere((m) => m['role'] == 'system')['content']}));
-      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
+      // ★4.81.83 多模态适配：Claude 不认 OpenAI 的 content 形状
+      //   （image_url / data URI），必须换成 {type:image, source:{type:base64}}。
+      //   以前这里把 messages 原样丢过去 —— 发图必 400，而且报错看不出来是格式问题。
+      final sysText = msgsIn
+          .where((m) => m['role'] == 'system')
+          .map((m) => AiAttach.textOf(m['content']))
+          .join('\n');
+      final body = <String, dynamic>{
+        'model': model,
+        'max_tokens': 4096,
+        'messages': [
+          for (final m in msgsIn)
+            if (m['role'] != 'system')
+              {
+                'role': m['role'],
+                'content': m['content'] is List
+                    ? AiAttach.openaiToAnthropic(m['content'])
+                    : '${m['content'] ?? ''}',
+              }
+        ],
+        if (sysText.trim().isNotEmpty) 'system': sysText,
+        ...?extraBody,
+      };
+      final r = await http
+          .post(Uri.parse('${provider.base}/messages'),
+              headers: {'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json'},
+              body: jsonEncode(body))
+          .timeout(const Duration(seconds: 120));
+      if (r.statusCode != 200) {
+        throw Exception(_errText(r.body, r.statusCode));
+      }
       final j = jsonDecode(utf8.decode(r.bodyBytes));
       final text = ((j['content'] as List?)?.map((e) => e['text'] ?? '').join() ?? '');
       onDelta(text); return text;
     }
     final req = http.Request('POST', Uri.parse('${provider.base}/chat/completions'));
     req.headers.addAll({'Authorization': 'Bearer $key', 'Content-Type': 'application/json'});
-    req.body = jsonEncode({'model': model, 'messages': messages, 'stream': true, ...?extraBody});
+    req.body = jsonEncode({'model': model, 'messages': msgsIn, 'stream': true, ...?extraBody});
     http.StreamedResponse resp;
-    try { resp = await http.Client().send(req).timeout(const Duration(seconds: 30)); }
-    catch (_) { return _nonStream(provider, key, model, messages, onDelta, onReasoning); }
+    // ★4.81.83：复用同一个 Client。原来每个请求 new 一个 HttpClient，
+    //   每次都要重新 TCP + TLS 握手（自签/外网 200~600ms），而且从不 close，
+    //   socket 越攒越多 —— 表现就是「打字机效果一顿一顿」。
+    try {
+      resp = await _client.send(req).timeout(const Duration(seconds: 30));
+    } catch (_) { return _nonStream(provider, key, model, msgsIn, onDelta, onReasoning); }
     if (resp.statusCode != 200) {
       final body = await resp.stream.bytesToString();
-      throw Exception('HTTP ${resp.statusCode}: ${body.substring(0, body.length.clamp(0, 200))}');
+      throw Exception(_errText(body, resp.statusCode));
     }
-    final buf = StringBuffer(); var leftover = ''; bool streamBroken = false;
-    await for (final chunk in resp.stream.transform(utf8.decoder)) {
-      final data = leftover + chunk;
-      final lines = data.split('\n');
-      leftover = lines.removeLast();
-      for (var line in lines) {
-        line = line.trim();
-        if (!line.startsWith('data:')) continue;
-        final payload = line.substring(5).trim();
-        if (payload == '[DONE]') break;
-        try {
-          final d0 = jsonDecode(payload)['choices']?[0]?['delta'];
-          final rc = d0?['reasoning_content'] ?? d0?['reasoning'];
-          if (rc is String && rc.isNotEmpty) onReasoning?.call(rc);
-          final delta = d0?['content'];
-          if (delta is String && delta.isNotEmpty) { buf.write(delta); onDelta(delta); }
-        } catch (_) {}
+    final buf = StringBuffer(); var leftover = '';
+    // ★4.81.83 「输出一卡一卡」的真因之二：链路中途断了（弱网/网关掐连接/
+    //   服务端把长流截断）时，await for 会抛异常，异常一路冒到 UI ——
+    //   用户看到的是整段回答消失、只剩一句「出错了」，前面几十个字白等。
+    //   现在：已经吐出的内容算数，只补一条提示，并且**不再重跑一遍**
+    //   （重跑会把同一段回答生成两次，既费钱又更容易超时）。
+    var broke = '';
+    try {
+      await for (final chunk in resp.stream.transform(utf8.decoder)) {
+        final data = leftover + chunk;
+        final lines = data.split('\n');
+        leftover = lines.removeLast();
+        for (var line in lines) {
+          line = line.trim();
+          if (!line.startsWith('data:')) continue;
+          final raw = line.substring(5).trim();
+          if (raw == '[DONE]') continue;
+          if (raw.isEmpty) continue;
+          try {
+            final d0 = jsonDecode(raw)['choices']?[0]?['delta'];
+            final rc = d0?['reasoning_content'] ?? d0?['reasoning'];
+            if (rc is String && rc.isNotEmpty) onReasoning?.call(rc);
+            final delta = d0?['content'];
+            if (delta is String && delta.isNotEmpty) { buf.write(delta); onDelta(delta); }
+          } catch (_) {}
+        }
       }
+    } catch (e) {
+      broke = '$e';
     }
     // 流式没吐出任何内容(部分厂商不支持 stream) → 自动回退非流式
-    if (buf.isEmpty) return _nonStream(provider, key, model, messages, onDelta, onReasoning);
+    if (buf.isEmpty) {
+      if (broke.isNotEmpty) throw Exception('连接中断：$broke');
+      return _nonStream(provider, key, model, msgsIn, onDelta, onReasoning);
+    }
+    if (broke.isNotEmpty) {
+      onDelta('\n\n（网络中断，回答可能不完整：$broke）');
+    }
     return buf.toString();
   }
 
@@ -341,7 +418,7 @@ class AiChat {
   }
 
   static Future<String> _nonStream(AiProvider provider, String key, String model,
-      List<Map<String, String>> messages, void Function(String) onDelta,
+      List<Map<String, dynamic>> messages, void Function(String) onDelta,
       [void Function(String)? onReasoning]) async {
     final r = await http.post(Uri.parse('${provider.base}/chat/completions'),
       headers: {'Authorization': 'Bearer $key', 'Content-Type': 'application/json'},

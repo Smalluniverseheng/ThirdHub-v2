@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n.dart';
+import '../local_tools.dart';
 import 'agent_auto_page.dart';
 import 'agent_bridge.dart';
 import 'agent_protocol.dart';
@@ -95,17 +96,17 @@ class AgentOrbHostState extends State<AgentOrbHost> {
   }
 
   /// 外部（设置页开关）调用：开关球并落盘
+  ///
+  /// ★4.81.83：不再"开球就等于开桥"。理由：权限模型现在是——
+  ///   ① App 内 AI 操控：始终可用，不靠这个球也不靠桥；
+  ///   ② 让电脑连手机：单独一个「局域网调试通道」开关，默认关。
+  ///   揉在一起时，用户只想看见小球，结果后门跟着开了；反过来想远程调试，
+  ///   又得先开一个跟调试无关的悬浮球。分开才对得上这两件事的重量。
   static Future<void> setShow(bool v) async {
     final p = await SharedPreferences.getInstance();
     await p.setBool('agent_orb', v);
     inst?.setState(() => inst!.show = v);
-    // 开球 = 同时把桥拉起来（否则"球在但没监听"是最难解释的状态）
-    if (v) {
-      await AgentBridge.I.start();
-    } else {
-      await AgentBridge.I.stop();
-      inst?.setState(() => inst!.open = false);
-    }
+    if (!v) inst?.setState(() => inst!.open = false);
   }
 
   @override
@@ -379,6 +380,22 @@ class _Acp extends State<AgentControlPage> {
   /// 而不是「去设置里找 IP」。找不到就留空，界面退回 127.0.0.1。
   String _lanIp = '';
 
+  /// 局域网通道是否打开（默认关；App 内操控不依赖它，见 agent_bridge.start）
+  bool _lan = false;
+
+  Future<void> _toggleLan(bool v) async {
+    setState(() => _lan = v);
+    final ok = await AgentBridge.I.setLan(v);
+    if (!mounted) return;
+    setState(() {});
+    if (!ok) {
+      setState(() => _lan = !v);
+      _say('局域网通道切换失败：${AgentBridge.I.lastError}');
+    } else {
+      _say(v ? '局域网通道已打开，端口 ${AgentBridge.I.port}' : '局域网通道已关闭（只监听本机）');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -387,6 +404,8 @@ class _Acp extends State<AgentControlPage> {
       if (!mounted) return;
       setState(() {
         orb = p.getBool('agent_orb') ?? false;
+        // 兼容：老用户开过悬浮球（那时等于开桥），视为已授权过局域网
+        _lan = p.getBool('agent_lan') ?? (p.getBool('agent_orb') ?? false);
         _port.text = '${p.getInt('agent_port') ?? AgentBridge.defaultPort}';
       });
     });
@@ -496,11 +515,25 @@ class _Acp extends State<AgentControlPage> {
       body: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
         // ★4.81.82 两条通道的分工，必须写在最前面，否则用户会以为只做了一个：
         //   本页 = 电脑/我这边驱动；下面那条 = 手机自己跑。
+        // ★4.81.83：入口改指向 AI 模块（用户要求「融进 AI，不要独立模块」）。
         ListTile(
           leading: Icon(Icons.auto_awesome_outlined, color: cs.primary),
-          title: Text(tr('让手机自己跑（填 API 密钥）')),
+          title: Text(tr('在 AI 对话里让它自己操作')),
           subtitle: Text(
-            tr('模型在手机里看截图、自己点，不需要电脑。出门在外也能让它自测一遍。'),
+            tr('AI 模块 → 输入框左侧 + → 让它自己操作 App。用你当前会话的模型，不用另配一套。'),
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: () {
+            Navigator.of(context).pop();
+            LocalHooks.gotoModule?.call('AI');
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.settings_suggest_outlined, size: 18),
+          title: Text(tr('独立配置入口（备用）')),
+          subtitle: Text(
+            tr('单独填厂商/模型/Key 跑一轮自测；平时用上面那条就够了'),
             style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
           ),
           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -508,11 +541,34 @@ class _Acp extends State<AgentControlPage> {
               MaterialPageRoute(builder: (_) => const AgentAutoPage())),
         ),
         const Divider(),
+        // ── 权限说明：本机操控默认开，局域网才需要开关 ──
+        ListTile(
+          leading: Icon(Icons.check_circle_outline,
+              size: 18, color: Colors.green.shade600),
+          title: Text(tr('App 内 AI 操控：默认开启')),
+          subtitle: Text(
+            tr('模型在你的对话里直接跳页面/找内容，不经过网络端口，也不需要任何开关。'),
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+        ),
+        SwitchListTile(
+          value: _lan,
+          onChanged: _toggleLan,
+          secondary: Icon(Icons.lan_outlined,
+              size: 20, color: _lan ? Colors.orangeAccent : null),
+          title: Text(tr('局域网调试通道')),
+          subtitle: Text(
+            tr('允许电脑（tools/th_agent.py）连进这台手机。默认关：关了只监听本机回环。'),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        const Divider(),
         SwitchListTile(
           value: orb,
           onChanged: _toggle,
+          secondary: const Icon(Icons.bubble_chart_outlined, size: 20),
           title: Text(tr('智能助手悬浮球')),
-          subtitle: Text(tr('开启后屏幕上出现小球，AI 可远程操控本机做真机测试')),
+          subtitle: Text(tr('屏幕上出现小球，点开可看指令日志与连接信息')),
         ),
         const Divider(),
         ListTile(

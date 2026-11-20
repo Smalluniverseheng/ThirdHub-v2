@@ -102,6 +102,30 @@ BiliTabDef? biliTabDefOf(String id) {
   return null;
 }
 
+/// 让外部直接切栏目（AI 控制总线的 subtab），不用去模拟点 TabBar。
+///
+/// 为什么必须有个显式钩子：TabBar 的 tab 是**懒加载**的，AI 若靠坐标点，
+/// 一旦用户改过栏目顺序/隐藏了某个栏目，坐标就全错 —— 表现是"点了没反应"，
+/// 而日志里一切正常。走 id 映射才与顺序无关。
+///
+/// 只有当前挂载的 B 站页会注册自己；没打开时 [jump] 返回 false，
+/// 让调用方知道"得先跳过去"，而不是以为切成功了。
+class BiliNav {
+  const BiliNav._();
+  static bool Function(String tab)? _sink;
+
+  static void attach(bool Function(String tab) f) => _sink = f;
+
+  static void detach(bool Function(String tab) f) {
+    // 用 == 而不是 identical：方法 tear-off 在同一实例上是相等的（语言规范保证）
+    if (_sink == f) _sink = null;
+  }
+
+  static bool get available => _sink != null;
+
+  static bool jump(String tab) => _sink?.call(tab) ?? false;
+}
+
 class _BiliModulePageState extends State<BiliModulePage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
@@ -114,13 +138,45 @@ class _BiliModulePageState extends State<BiliModulePage>
   void initState() {
     super.initState();
     _tab = TabController(length: kBiliTabDefault.length, vsync: this);
+    BiliNav.attach(_jumpTab);
     _boot();
   }
 
   @override
   void dispose() {
+    BiliNav.detach(_jumpTab);
     _tab.dispose();
     super.dispose();
+  }
+
+  /// AI 控制总线切栏目的落地实现：id / 中文名 / 序号三种写法都认。
+  /// 认不出就返回 false —— 不要"猜一个最像的"，猜错的代价是用户看着屏幕发愣。
+  bool _jumpTab(String tab) {
+    final ids = _tabIds.isEmpty ? kBiliTabDefault : _tabIds;
+    if (ids.isEmpty) return false;
+    final raw = tab.trim();
+    if (raw.isEmpty) return false;
+    var i = -1;
+    final n = int.tryParse(raw);
+    if (n != null && n >= 0 && n < ids.length) i = n;
+    if (i < 0) {
+      final key = raw.toLowerCase();
+      i = ids.indexWhere((id) => id == key);
+    }
+    if (i < 0) {
+      i = ids.indexWhere((id) => (biliTabDefOf(id)?.label ?? '') == raw);
+    }
+    if (i < 0) {
+      i = ids.indexWhere((id) => tr(biliTabDefOf(id)?.label ?? '') == raw);
+    }
+    if (i < 0) {
+      i = ids.indexWhere((id) =>
+          (biliTabDefOf(id)?.label ?? '').contains(raw) ||
+          raw.contains(biliTabDefOf(id)?.label ?? '###'));
+    }
+    if (i < 0) return false;
+    _tab.animateTo(i);
+    return true;
   }
 
   Future<void> _boot() async {

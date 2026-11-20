@@ -30,6 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
 import 'agent_deeplink.dart';
+import 'agent_map.dart';
 import 'agent_protocol.dart';
 import 'agent_targets.dart';
 
@@ -61,7 +62,7 @@ class AgentBridge {
 
   // ── 生命周期 ──
 
-  Future<bool> start({int? forcePort, bool loopbackOnly = false}) async {
+  Future<bool> start({int? forcePort, bool? lan}) async {
     if (running.value) return true;
     try {
       final p = await SharedPreferences.getInstance();
@@ -71,15 +72,28 @@ class AgentBridge {
         await p.setString('agent_token', token);
       }
       port = forcePort ?? p.getInt('agent_port') ?? defaultPort;
+      // ★4.81.83 权限模型（用户原话：「这个权限默认是开着的，
+      //   只是要局域网连接的话才需要打开」）：
+      //   · App 内 AI 操控（自驱动循环 / app_open）根本不经过这个 server，
+      //     永远可用，不需要任何开关；
+      //   · 这里只管"让别的设备连进来"，默认只绑 127.0.0.1，
+      //     必须在设置里显式打开「局域网调试通道」才绑 0.0.0.0。
+      //   兼容旧用户：以前开悬浮球就等于开桥，那时是 0.0.0.0 ——
+      //   如果 agent_lan 从没写过而悬浮球是开的，视为已授权过局域网。
+      final wantLan = lan ??
+          p.getBool('agent_lan') ??
+          (p.getBool('agent_orb') ?? false);
+      _lan = wantLan;
       _srv = await HttpServer.bind(
-        loopbackOnly ? InternetAddress.loopbackIPv4 : InternetAddress.anyIPv4,
+        wantLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
         port,
         shared: false,
       );
       _srv!.autoCompress = true;
       running.value = true;
       lastError = '';
-      _log('bridge start on 0.0.0.0:$port', ok: true);
+      _log('bridge start on ${wantLan ? '0.0.0.0' : '127.0.0.1'}:$port',
+          ok: true);
       _srv!.listen(_guard, onError: (Object e) {
         lastError = '$e';
         _log('server error: $e', ok: false);
@@ -91,6 +105,22 @@ class AgentBridge {
       running.value = false;
       return false;
     }
+  }
+
+  /// 当前是否允许局域网连入（false = 只监听本机回环）
+  bool _lan = false;
+  bool get lan => _lan;
+
+  /// 开/关局域网通道。落盘 + 运行中就重启一次绑定地址。
+  Future<bool> setLan(bool v) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('agent_lan', v);
+    _lan = v;
+    if (running.value) {
+      await stop();
+      return start(lan: v);
+    }
+    return true;
   }
 
   Future<void> stop() async {
@@ -325,6 +355,35 @@ class AgentBridge {
             ? AgentResult.ok({'module': m})
             : AgentResult.err('module "$m" not opened',
                 hint: '模块名要与底部导航一致；也可能是当前平台门禁不允许该模块');
+
+      case 'map':
+        // 模块地图：给 AI / 宿主脚本一份"这个 App 有什么、能跳到哪"的确定答案。
+        // 比让调用方截图猜快得多，也不会因为栏目顺序变了就跳空。
+        final mq = (c.str('module') ?? '').trim();
+        if (mq.isNotEmpty) {
+          final mod = AgentMap.find(mq);
+          if (mod == null) {
+            return AgentResult.err('no module "$mq"',
+                hint: '现有：${AgentMap.keys.join(" / ")}');
+          }
+          return AgentResult.ok({
+            'module': mod.key,
+            'what': mod.what,
+            'deeplink': mod.deeplink,
+            'searchable': mod.searchable,
+            'pages': [
+              for (final p in mod.pages)
+                {'name': p.name, 'how': p.how, 'what': p.what}
+            ],
+          });
+        }
+        return AgentResult.ok({
+          'text': AgentMap.prompt(),
+          'modules': [
+            for (final m in AgentMap.modules)
+              {'module': m.key, 'what': m.what, 'deeplink': m.deeplink}
+          ],
+        });
 
       case 'deeplink':
         // 深链展开：thirdhub://video?platform=hongguo → [nav, platform]

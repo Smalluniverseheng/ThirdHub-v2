@@ -73,6 +73,26 @@ class AgentRunResult {
 class AgentRunner {
   bool _stopped = false;
 
+  /// 指令执行与截图都做成**可注入**。
+  ///
+  /// 为什么（2026-11-20 踩到的）：原来直接调 `AgentBridge.I.exec` +
+  /// `AgentTargets.shoot`，两者都挂在真实帧调度上（settle 要等 postFrame、
+  /// shoot 要等 toImage）。放进 flutter_test 里只要有一次帧没推上来，
+  /// 整个测试就永久挂着 —— 实测卡满 10 分钟才超时，CI 直接报废。
+  /// 注入之后循环本身可以纯 Dart 跑，毫秒级、确定性。
+  final Future<AgentResult> Function(AgentCmd) _exec;
+  final Future<Uint8List?> Function() _shoot;
+
+  /// 每步之间的喘息（给界面时间稳定下来）。测试里传 Duration.zero。
+  final Duration stepGap;
+
+  AgentRunner({
+    Future<AgentResult> Function(AgentCmd)? exec,
+    Future<Uint8List?> Function()? shoot,
+    this.stepGap = const Duration(milliseconds: 320),
+  })  : _exec = exec ?? ((c) => AgentBridge.I.exec(c)),
+        _shoot = shoot ?? (() => AgentTargets.shoot());
+
   bool get stopped => _stopped;
 
   /// 中止。会在下一步之前生效（不会打断正在进行的点击）。
@@ -82,7 +102,7 @@ class AgentRunner {
   ///
   /// [onStep] 在**每步结束后**回调（含失败步），[onLog] 是给日志区的短文本。
   Future<AgentRunResult> run({
-    required AgentLlm llm,
+    required AgentBrain llm,
     required String goal,
     int maxSteps = 10,
     void Function(AgentStepView)? onStep,
@@ -91,7 +111,7 @@ class AgentRunner {
     _stopped = false;
     final views = <AgentStepView>[];
     final trace = <String>[];
-    final bridge = AgentBridge.I;
+    final execCmd = _exec;
     var lastKey = '';
     var sameCount = 0;
 
@@ -107,9 +127,9 @@ class AgentRunner {
       }
 
       // ① 看
-      final shot = await AgentTargets.shoot();
-      final st = await bridge.exec(const AgentCmd('state', {}));
-      final tree = await bridge.exec(const AgentCmd('tree', {'limit': 70}));
+      final shot = await _shoot();
+      final st = await execCmd(const AgentCmd('state', {}));
+      final tree = await execCmd(const AgentCmd('tree', {'limit': 70}));
       final stateMap = st.ok && st.data is Map
           ? Map<String, dynamic>.from(st.data as Map)
           : <String, dynamic>{};
@@ -164,7 +184,7 @@ class AgentRunner {
 
       // ③ 做
       final t0 = DateTime.now();
-      final r = await bridge.exec(cmd);
+      final r = await execCmd(cmd);
       final ms = DateTime.now().difference(t0).inMilliseconds;
 
       final v = AgentStepView(
@@ -197,7 +217,7 @@ class AgentRunner {
         lastKey = key;
       }
 
-      await Future<void>.delayed(const Duration(milliseconds: 320));
+      if (stepGap > Duration.zero) await Future<void>.delayed(stepGap);
     }
 
     final why = '达到步数上限 $maxSteps 仍未完成';

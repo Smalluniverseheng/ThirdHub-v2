@@ -1,7 +1,7 @@
 {
   "version": 1,
   "updated": "2026-10-17",
-  "note": "Agent 权限档位与工具风险分级。服务端为权威，Flutter 侧 agent_policy.dart 是本地镜像（只用于 UI 预判与断网时拦截）；两边不一致时以服务端判定为准。 ★2026-10-17：登记引擎业务工具（engine.status / kb.search / engine.discover / browser.open / book.recent）。",
+  "note": "Agent 权限档位与工具风险分级。服务端为权威，Flutter 侧 agent_policy.dart 是本地镜像（只用于 UI 预判与断网时拦截）；两边不一致时以服务端判定为准。 ★2026-10-17：登记引擎业务工具（engine.status / kb.search / engine.discover / browser.open / book.recent）。 ★2026-11-20(4.81.83)：登记 app.nav（App 内跳转，app_map/app_open）—— 只改变「当前在哪一页」，不写数据、不产生外部副作用，故归只读；判成 danger 的话默认档位下「让 AI 打开红果」会直接不可用。",
   "risk": {
     "read": {
       "label": "只读安全",
@@ -16,7 +16,8 @@
         "fs.list",
         "engine.status",
         "engine.discover",
-        "book.recent"
+        "book.recent",
+        "app.nav"
       ]
     },
     "write": {
@@ -66,7 +67,9 @@
       "engine_search": "kb.search",
       "engine_discover": "engine.discover",
       "open_item": "browser.open",
-      "recent_history": "book.recent"
+      "recent_history": "book.recent",
+      "app_map": "app.nav",
+      "app_open": "app.nav"
     }
   },
   "profiles": {

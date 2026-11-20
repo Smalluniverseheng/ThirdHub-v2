@@ -10,7 +10,6 @@ import 'haptic.dart';
 import 'markdown_extras.dart';
 import 'module_drawer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'ai.dart';
 import 'ai_agent.dart';
@@ -18,9 +17,13 @@ import 'ai_agent_page.dart';
 import 'ai_agents_snapshot.dart';
 import 'ai_intros.dart';
 import 'ai_rankings_snapshot.dart';
+import 'ai_attach.dart';
+import 'ai_caps.dart';
 import 'ai_providers_page.dart';
 import 'ai_settings_page.dart';
 import 'ai_skills.dart';
+import 'agent/agent_inline.dart';
+import 'agent/agent_targets.dart';
 import 'asr_rec.dart';
 import 'asr_service.dart';
 import 'asr_settings_page.dart';
@@ -38,7 +41,6 @@ import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'in_app_open.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'i18n.dart';
 
 // 边缘滑动识别器: 按下即抢占(外层 PageView 抢不走), 与网站边缘30px右滑开抽屉一致
@@ -52,11 +54,15 @@ final _recogRe = RegExp(r'whisper|transcri|asr|sensevoice|recogn|paraformer|funa
 
 class AiSession {
   String id, title, providerId, model; String? agentId;
-  List<Map<String, String>> messages;
+  /// ★4.81.83：从 Map<String,String> 放宽到 dynamic。
+  /// 为什么必须改：带图片的用户消息，content 是**数组**（text + image_url），
+  /// 用 String 存会在 Map<String,String>.from() 那一行直接抛类型异常 ——
+  /// 也就是"发图后整个会话读不回来"。
+  List<Map<String, dynamic>> messages;
   AiSession({required this.id, required this.title, required this.providerId, required this.model, this.agentId, required this.messages});
   factory AiSession.from(Map<String, dynamic> j) => AiSession(id: j['id'], title: j['title'] ?? '新对话',
     providerId: j['providerId'] ?? '', model: j['model'] ?? '', agentId: j['agentId'],
-    messages: (j['messages'] as List? ?? []).map((e) => Map<String, String>.from(e)).toList());
+    messages: (j['messages'] as List? ?? []).map((e) => Map<String, dynamic>.from(e)).toList());
   Map<String, dynamic> toJson() => {'id': id, 'title': title, 'providerId': providerId, 'model': model, 'agentId': agentId, 'messages': messages};
 }
 
@@ -119,6 +125,13 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   Timer? _asrTimer;
   // 流式合帧: 逐 token setState 会让界面"一颤一颤", 攒 66ms 一帧(约 15fps)
   String _pendingDelta = ''; Timer? _flushT;
+  // ★4.81.83「一卡一卡」修复之一：思考链以前是**逐 token setState**，
+  //   推理模型（deepseek-reasoner / qwen / glm-z1）一吐就是几百上千 token，
+  //   等于每 30ms 重建整页 —— 正文那点合帧省下的全被它吃掉。
+  //   现在和正文共用同一套合帧：66ms 才落一次。
+  String _pendingReason = '';
+  // ★4.81.83 待发送附件（图片/视频/文件）
+  final List<AiAttachment> _attach = [];
   // 顶栏模型胶囊三态: loading|noModel|noKey|ok
   String _capsule = 'loading';
   // TH-Agent v1: 文本工具协议兜底(不支持原生 function-calling 的厂商也能用工具) / MCP 工具是否需确认
@@ -385,7 +398,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _send() async {
-    final text = input.text.trim(); if (text.isEmpty || session == null) return;
+    final text = input.text.trim();
+    // ★4.81.83：只发附件不打字也算一条消息（否则"发了张图"会被当成空输入忽略）
+    if ((text.isEmpty && _attach.isEmpty) || session == null) return;
     // ★ 5.1.2(i)：发送前先披露并取得显式同意。拒绝 → 不发送（内容不出设备）。
     if (!await _ensureAiDisclosure()) return;
     // 生成中 → 进入排队(Kimi 同款)
@@ -398,11 +413,35 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('当前模型未配置 API Key · 点抽屉顶部设置去配置 ${prov.name}')));
       return;
     }
+    // ── 附件 → 多模态 content ──
+    // 会话里存**OpenAI 形状**：它是安卓端唯一的真相，切到 Claude 时由
+    // AiAttach.openaiToAnthropic 现算（而不是存两份，存两份必然漂移）。
+    final atts = List<AiAttachment>.from(_attach);
+    final provNow = AiRegistry.byId(session!.providerId);
+    final visionOk = provNow == null
+        ? true
+        : await AiCaps.supports(provNow.id, session!.model, AiCaps.visionKey);
+    final videoOk = provNow == null
+        ? true
+        : await AiCaps.supports(provNow.id, session!.model, AiCaps.videoKey);
+    final content = AiAttach.contentFor(
+        text: text, items: atts, vision: visionOk, video: videoOk);
     input.clear();
     setState(() {
-      session!.messages.add({'role': 'user', 'content': text});
-      if (session!.title == '新对话') session!.title = text.length > 18 ? '${text.substring(0, 18)}…' : text;
+      session!.messages.add({
+        'role': 'user',
+        'content': content,
+        // 展示用的图片副本：缩略图直接进气泡，不用再从 content 里反解
+        if (atts.where((a) => a.isImage).isNotEmpty)
+          'imgs': [for (final a in atts.where((a) => a.isImage)) {'data': a.dataUri, 'name': a.name}],
+      });
+      if (session!.title == '新对话') {
+        final t = text.isNotEmpty ? text : (atts.isEmpty ? '新对话' : '${atts.length} 个附件');
+        session!.title = t.length > 18 ? '${t.substring(0, 18)}…' : t;
+      }
+      _attach.clear();
       sending = true; streaming = ''; _reasoning = ''; _steps.clear();
+      _pendingDelta = ''; _pendingReason = '';
     });
     AiStore.save();
     _jumpBottom();
@@ -464,23 +503,17 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         // 智能体决定这轮最多能"想-做-看"几轮; 不支持原生 function-calling 的厂商走文本协议
         maxRounds: agent?.maxRounds ?? 8, textToolFallback: _toolFallback,
         onToolsUnsupported: () => _markNoNativeTools(prov.id),
-        onReasoning: (r) { setState(() { _reasoning += r; }); if (!pinned) _jumpBottom(); },
+        // 思考链同样合帧（见 _pendingReason 注释）。不 setState，只攒字符串。
+        onReasoning: (r) { _pendingReason += r; _scheduleFlush(); },
         onToolCall: (name) { setState(() {
           for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
           _steps.add({'icon': 'tool', 'text': '正在调用工具 $name', 'status': 'running'});
         }); if (!pinned) _jumpBottom(); },
-        onDelta: (d) { _pendingDelta += d;
-          for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
-          // 合帧: 66ms 才落一次 UI, 消除逐 token 的抖动; 未钉住时顺手滚到底
-          _flushT ??= Timer(const Duration(milliseconds: 66), () {
-            _flushT = null;
-            if (_pendingDelta.isEmpty || !mounted) return;
-            setState(() { streaming += _pendingDelta; _pendingDelta = ''; });
-            if (!pinned) _jumpBottom();
-          }); });
+        onDelta: (d) { _pendingDelta += d; _scheduleFlush(); });
       // 收尾前把未落盘的尾巴冲掉, 避免最后几个 token 延迟一帧
       _flushT?.cancel(); _flushT = null;
       if (_pendingDelta.isNotEmpty) { streaming += _pendingDelta; _pendingDelta = ''; }
+      if (_pendingReason.isNotEmpty) { _reasoning += _pendingReason; _pendingReason = ''; }
       setState(() {
         for (final s in _steps) { if (s['status'] == 'running') s['status'] = 'done'; }
         session!.messages.add({'role': 'assistant', 'content': full,
@@ -489,6 +522,15 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         streaming = '';
       });
     } catch (e) {
+      // ★4.81.83：发失败才降级，且只记"像是这类输入不被支持"的错。
+      //   下一次用户再发图会收到一句提醒（不是拦截），这比预判能力表可靠得多。
+      if (atts.isNotEmpty) {
+        final msg = '$e';
+        if (AiCaps.looksLikeUnsupported(msg, AiCaps.visionKey)) {
+          await AiCaps.markFail(session!.providerId, session!.model,
+              atts.any((a) => a.isImage) ? AiCaps.visionKey : AiCaps.videoKey, msg);
+        }
+      }
       setState(() { session!.messages.add({'role': 'assistant', 'content': '出错了: $e',
         if (_reasoning.isNotEmpty) 'reasoning': _reasoning,
         if (_steps.isNotEmpty) 'steps': jsonEncode(_steps)}); streaming = ''; });
@@ -535,6 +577,117 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       ])),
     ]))));
   }
+  /// 合帧落地：66ms 一次 setState，正文与思考链共用同一个定时器。
+  /// 之所以要合并：以前正文合帧了、思考链没合帧，推理模型的输出照旧把界面
+  /// 打成 PPT —— 用户看到的"一卡一卡"多半就是这一段。
+  void _scheduleFlush() {
+    _flushT ??= Timer(const Duration(milliseconds: 66), () {
+      _flushT = null;
+      if (!mounted) return;
+      if (_pendingDelta.isEmpty && _pendingReason.isEmpty) return;
+      setState(() {
+        if (_pendingDelta.isNotEmpty) { streaming += _pendingDelta; _pendingDelta = ''; }
+        if (_pendingReason.isNotEmpty) { _reasoning += _pendingReason; _pendingReason = ''; }
+        for (final st in _steps) { if (st['status'] == 'running') st['status'] = 'done'; }
+      });
+      if (!pinned) _jumpBottom();
+    });
+  }
+
+  /// 消息里存的图片条目可能是 {'data': dataUri} 也可能是裸 dataUri 字符串，
+  /// 统一取 base64 字节（Image.memory 不认 data URI）。
+  Uint8List _imgBytesOf(Object? e) {
+    var raw = e is Map ? '${e['data'] ?? ''}' : '${e ?? ''}';
+    final comma = raw.indexOf(',');
+    if (raw.startsWith('data:') && comma > 0) raw = raw.substring(comma + 1);
+    try { return base64Decode(raw); } catch (_) { return Uint8List(0); }
+  }
+
+  void _previewImage(String dataUri) {
+    final b = _imgBytesOf(dataUri);
+    if (b.isEmpty) return;
+    showDialog<void>(context: context, builder: (c) => Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(8),
+      child: GestureDetector(onTap: () => Navigator.pop(c),
+        child: InteractiveViewer(child: Image.memory(b, fit: BoxFit.contain)))));
+  }
+
+  /// 把当前界面截下来当附件发（排查"这里显示不对"最快的手段）。
+  /// 走 AgentTargets.shoot()：它截的是根 RepaintBoundary，不含系统栏，
+  /// 也不会把 App 自己截掉一半 —— 比系统截屏 API 更可控。
+  Future<void> _attachScreenshot() async {
+    try {
+      final png = await AgentTargets.shoot();
+      if (png == null || png.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(tr('截屏失败，换个页面再试'))));
+        return;
+      }
+      setState(() => _attach.add(AiAttachment(
+            kind: AiAttachKind.image,
+            name: 'screenshot.png',
+            bytes: AiAttach.compressImage(png),
+            mime: 'image/jpeg',
+          )));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(trf('截屏失败：{e}', {'e': '$e'}))));
+    }
+  }
+
+  /// 附件选择：图/视频/文件。选完先按"上次失败记录"提醒一句，**仍然放行**。
+  Future<void> _pickAttach(String kind) async {
+    try {
+      final got = <AiAttachment>[];
+      if (kind == 'camera') {
+        final a = await AiAttach.pickCamera();
+        if (a != null) got.add(a);
+      } else if (kind == 'gallery') {
+        got.addAll(await AiAttach.pickImages());
+      } else if (kind == 'video') {
+        final a = await AiAttach.pickFile(videoOnly: true);
+        if (a != null) got.add(a);
+      } else {
+        final a = await AiAttach.pickFile();
+        if (a != null) got.add(a);
+      }
+      if (got.isEmpty || !mounted) return;
+      // ★提醒而非拦截（用户明确要求）：上次这个模型发图失败过，就先说一句，
+      //   用户点头照发。绝不出现"按钮灰掉/弹窗禁止"。
+      final prov = session == null ? null : AiRegistry.byId(session!.providerId);
+      if (prov != null) {
+        for (final a in got) {
+          final cap = a.isImage ? AiCaps.visionKey : 'file';
+          final why = await AiCaps.lastFail(prov.id, session!.model, cap);
+          if (why == null || !mounted) continue;
+          final go = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+            title: Text(tr('这个模型上次没发成功')),
+            // 注意：**不要**在 trf 的 key 里写 \n —— 自检器会把转义还原成真换行，
+            //   于是"键"变成多行字符串，字典里永远对不上（也会污染自检输出）。
+            //   多行文案一律拆成多个 Text。
+            content: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(trf('{m} 上次处理这类附件失败过：{w}', {'m': session!.model, 'w': why})),
+              const SizedBox(height: 10),
+              Text(tr('可能不支持。仍然发送吗？')),
+            ]),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('先不发'))),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('仍然发送'))),
+            ]));
+          if (go != true) return;
+        }
+      }
+      setState(() => _attach.addAll(got));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('选择附件失败：{e}', {'e': '$e'}))));
+    }
+  }
+
   void _jumpBottom() { WidgetsBinding.instance.addPostFrameCallback((_) {
     if (scroll.hasClients) scroll.jumpTo(scroll.position.maxScrollExtent); }); }
 
@@ -693,7 +846,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       ListView.builder(controller: scroll, padding: const EdgeInsets.all(14),
         itemCount: list.length + (liveActive ? 1 : 0), itemBuilder: (_, i) {
           final live = i >= list.length;
-          final m = live ? {'role': 'assistant', 'content': streaming} : list[i];
+          final m = live ? <String, dynamic>{'role': 'assistant', 'content': streaming} : list[i];
           final reasoning = live ? _reasoning : (m['reasoning'] ?? '');
           List<Map<String, String>> steps = live ? _steps : [];
           if (!live && m['steps'] != null) {
@@ -705,7 +858,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           // ★2026-10-17 对齐 Kimi：用户是**小圆角浅灰气泡**（无头像），
           //   助手是**无气泡的正文文字**（左右只留页面 padding）——
           //   这正是"人家的空间利用那么好"的来源：头像和卡片边距全都不占地方了。
-          final bubble = GestureDetector(onLongPress: () => _msgActions(c, m['content'] ?? ''),
+          // ★4.81.83：content 可能是数组（带图），展示与复制都先取纯文字
+          final plain = AiAttach.textOf(m['content']);
+          final bubble = GestureDetector(onLongPress: () => _msgActions(c, plain),
             child: Container(
               margin: EdgeInsets.only(
                   left: me ? 56 : 0, right: me ? 0 : 0, top: 3, bottom: 3),
@@ -721,13 +876,36 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(18))
                   : null,
               child: me
-                ? Text(m['content'] ?? '',
-                    style: TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                        color: dark ? const Color(0xFFE6E6EE) : const Color(0xE6000000)))
+                ? Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+                    // 用户发的图片：缩略图直接显示在气泡里（点了能看大图），
+                    // 否则用户完全不知道"刚才那张图到底发出去没有"。
+                    if (m['imgs'] is List && (m['imgs'] as List).isNotEmpty)
+                      Padding(padding: const EdgeInsets.only(bottom: 6),
+                        child: Wrap(spacing: 4, runSpacing: 4, children: [
+                          for (final e in (m['imgs'] as List))
+                            GestureDetector(
+                              onTap: () => _previewImage('${e is Map ? e['data'] : e}'),
+                              child: ClipRRect(borderRadius: BorderRadius.circular(10),
+                                child: Image.memory(_imgBytesOf(e), width: 92, height: 92,
+                                  fit: BoxFit.cover, gaplessPlayback: true)),
+                            ),
+                        ])),
+                    if (plain.isNotEmpty)
+                      Text(plain,
+                          style: TextStyle(
+                              fontSize: 15,
+                              height: 1.5,
+                              color: dark ? const Color(0xFFE6E6EE) : const Color(0xE6000000))),
+                  ])
                 // 助手消息走真 Markdown 渲染(表格/代码块/标题/列表全量), 长按仍可复制原文
-                : MarkdownBody(data: m['content'] ?? '', selectable: true, styleSheet: _mdStyle(c),
+                // ★4.81.83「一卡一卡」修复之二：**流式中不走 Markdown**。
+                //   flutter_markdown 每次 build 都从头解析整篇，66ms 一帧 × 越来越长的
+                //   正文 = 越写越卡（长的回答后半段几乎是逐字顿）。流式期间先用纯文本，
+                //   收尾那一刻再切成正式排版 —— 视觉上几乎无感，帧率差一个数量级。
+                : (live && plain.isNotEmpty)
+                    ? Text(plain, style: TextStyle(fontSize: 15.5, height: 1.7,
+                        color: dark ? const Color(0xFFE6E6EE) : const Color(0xE6000000)))
+                : MarkdownBody(data: plain, selectable: !live, styleSheet: _mdStyle(c),
                     // ★2026-10-17 对齐 Kimi：代码块带语言/复制/折叠/横滚，表格宽表横滚
                     builders: {
                       'pre': CodeBlockBuilder(accent: Theme.of(c).colorScheme.primary),
@@ -1115,7 +1293,63 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
 
   Widget _inputBar(BuildContext c, bool dark) => SafeArea(child: Padding(
     padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      // 待发送附件条：缩略图 + 大小 + 叉。没有它就是"发出去之后才想起发错图"。
+      if (_attach.isNotEmpty)
+        SizedBox(
+          height: 62,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 4),
+            children: [
+              for (var i = 0; i < _attach.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Container(
+                      width: 56, height: 56,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Theme.of(c).cardTheme.color,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _attach[i].isImage
+                          ? Image.memory(_attach[i].bytes, fit: BoxFit.cover, gaplessPlayback: true)
+                          : Center(
+                              child: Icon(
+                                  _attach[i].kind == AiAttachKind.video
+                                      ? Icons.movie_outlined
+                                      : Icons.description_outlined,
+                                  size: 22)),
+                    ),
+                    Positioned(
+                      right: -6, top: -6,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _attach.removeAt(i)),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                              color: Colors.black54, shape: BoxShape.circle),
+                          child: const Icon(Icons.close, size: 12, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 18),
+                child: Text(
+                  trf('{n} 个附件 · {s}',
+                      {'n': '${_attach.length}', 's': _attach.fold<int>(0, (a, b) => a + b.size) > 1048576
+                          ? '${(_attach.fold<int>(0, (a, b) => a + b.size) / 1048576).toStringAsFixed(1)} MB'
+                          : '${(_attach.fold<int>(0, (a, b) => a + b.size) / 1024).toStringAsFixed(0)} KB'}),
+                  style: TextStyle(fontSize: 10, color: Theme.of(c).hintColor),
+                ),
+              ),
+            ],
+          ),
+        ),
+      Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
       IconButton(icon: const Icon(Icons.add_circle_outline), tooltip: '更多功能', onPressed: () => _plusSheet(c)),
       Expanded(child: _voiceMode ? _voiceBar(c) : TextField(controller: input, minLines: 1, maxLines: 5,
         decoration: InputDecoration(hintText: '输入消息…', isDense: true, filled: true,
@@ -1131,21 +1365,43 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           onPressed: () => setState(() => _voiceMode = false))
       else if (sending)
         const SizedBox(width: 40, height: 40, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)))
-      else if (input.text.trim().isNotEmpty)
+      else if (input.text.trim().isNotEmpty || _attach.isNotEmpty)
         IconButton.filled(onPressed: _send, icon: const Icon(Icons.send, size: 18))
       else
         IconButton(icon: const Icon(Icons.mic_none), tooltip: '语音输入(点按进入, 按住说话)', onPressed: _enterVoice),
+      ]),
     ])));
 
   void _plusSheet(BuildContext c) {
+    // 面板里要显示"用哪个模型跑"，所以先把当前厂商解析出来
+    final prov = (session == null ? null : AiRegistry.byId(session!.providerId)) ??
+        (AiRegistry.all.isEmpty ? null : AiRegistry.all.first);
     showModalBottomSheet(context: c, builder: (c2) => SafeArea(child: Padding(padding: const EdgeInsets.all(16),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // ★4.81.83：这排图标以前点了只弹「准备开放」—— 摆样子。现在都是真入口。
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          for (final e in [('拍照', Icons.photo_camera), ('相册', Icons.image_outlined), ('文件', Icons.insert_drive_file_outlined), ('绘画', Icons.brush_outlined), ('视频', Icons.videocam_outlined)])
-            Column(children: [IconButton.filledTonal(icon: Icon(e.$2), onPressed: () { Navigator.pop(c2);
-                ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('准备开放'))); }),
-              Text(e.$1, style: const TextStyle(fontSize: 11))]),
+          for (final e in [
+            ('拍照', Icons.photo_camera, 'camera'),
+            ('相册', Icons.image_outlined, 'gallery'),
+            ('文件', Icons.insert_drive_file_outlined, 'file'),
+            ('视频', Icons.videocam_outlined, 'video'),
+          ])
+            Column(children: [
+              IconButton.filledTonal(icon: Icon(e.$2), onPressed: () {
+                Navigator.pop(c2);
+                _pickAttach(e.$3);
+              }),
+              Text(e.$1, style: const TextStyle(fontSize: 11)),
+            ]),
         ]),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.screenshot_monitor_outlined, size: 20),
+          title: Text(tr('截一张屏给它看'), style: const TextStyle(fontSize: 14)),
+          subtitle: Text(tr('把当前画面当图片发出去（排查界面问题最快）'),
+              style: const TextStyle(fontSize: 11)),
+          onTap: () async { Navigator.pop(c2); await _attachScreenshot(); },
+        ),
         const Divider(height: 24),
         // 语音朗读：开关 + 设置入口。放这里是因为"朗读回复"属于对话行为的一部分，
         // 用户在会话页就该找到，不必去别处翻设置。
@@ -1193,6 +1449,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         ListTile(dense: true, leading: const Icon(Icons.phone_android), title: const Text('本机工具清单', style: TextStyle(fontSize: 14)),
           subtitle: const Text('设备信息/剪贴板/朗读/文件/分享/打开链接…', style: TextStyle(fontSize: 11)),
           trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(c2); _localToolsSheet(c); }),
+        // ★4.81.83 应用内自驱动：用当前会话的模型看截图、自己点。
+        //   用户要求「融进 AI 模块，不要独立模块」，所以就是这里一行。
+        if (session != null && prov != null)
+          AgentInlineTile(provider: prov, model: session!.model),
         // ★本机 Agent（从「我的」挪过来）：模型调本机工具自动完成任务
         ListTile(dense: true, leading: const Icon(Icons.smart_toy_outlined), title: Text(tr('本机 Agent'), style: const TextStyle(fontSize: 14)),
           subtitle: Text(tr('模型调本机工具自动完成任务'), style: const TextStyle(fontSize: 11)),

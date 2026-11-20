@@ -91,7 +91,6 @@ core/ai_page.dart	你好，我是 ${s.model}
 core/ai_page.dart	停止朗读
 core/ai_page.dart	允许执行
 core/ai_page.dart	先检索再把结果注入模型上下文
-core/ai_page.dart	准备开放
 core/ai_page.dart	切换键盘输入
 core/ai_page.dart	厂商与 Key 管理
 core/ai_page.dart	历史模型 (${p.deprecated.length})
