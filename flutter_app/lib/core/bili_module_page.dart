@@ -27,7 +27,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bili_down_page.dart';
-import 'bili_feed_page.dart' show BiliPlayerPage;
+import 'bili_player.dart';
 import 'bili_swipe_page.dart';
 import 'bili_direct.dart';
 import 'design_tokens.dart';
@@ -770,8 +770,22 @@ class _BiliDetailSheetState extends State<_BiliDetailSheet> {
           .showSnackBar(SnackBar(content: Text(tr('播放失败'))));
       return;
     }
+    // ★4.81.74：换用 core/bili_player.dart 的新播放器（常驻弹幕 + 清晰度面板）。
+    //   带上 cid，播放页才能按 cid 拉弹幕。
     await nav.push(MaterialPageRoute(
-      builder: (_) => BiliPlayerPage(title: widget.title, url: url),
+      builder: (_) => BiliPlayerPage(
+        title: widget.title,
+        url: url,
+        apiBase: widget.ctx.base,
+        token: widget.ctx.token,
+        bvid: widget.bvid,
+        cid: cid,
+        quality: (j?['quality'] as num?)?.toInt() ?? 0,
+        acceptQuality: ((j?['acceptQuality'] as List?) ?? const [])
+            .whereType<num>()
+            .map((e) => e.toInt())
+            .toList(),
+      ),
     ));
   }
 
