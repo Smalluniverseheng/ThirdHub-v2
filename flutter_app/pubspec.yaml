@@ -82,3 +82,8 @@ dependency_overrides:
   # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，
   # 与当前 Flutter stable 内置版本不兼容，锁回 9.5.0
   objective_c: 9.5.0
+  # ★4.81.84 修 CI 红灯：4.81.84 加 intl 时 flutter pub add 触发全局 re-resolve，
+  #   把 shared_preferences_foundation 从 2.5.7 顶到 2.6.2；而 2.6.2 的 generated
+  #   bindings 要求 objective_c ^9.6.0，与上面锁死的 9.5.0 冲突 → kernel_snapshot
+  #   编译期常量断言失败。锁回 2.5.7（4.81.83 全绿的同一版本），objective_c 不动。
+  shared_preferences_foundation: 2.5.7
