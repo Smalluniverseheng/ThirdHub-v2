@@ -357,8 +357,14 @@ void main() {
   ck('§6 投影文件不含 emoji',
       !RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]', unicode: true)
           .hasMatch(shim));
-  ck('§6 本轮零新增 i18n 键（字典未出现第 20 批）',
-      !readOr('lib/core/i18n.dart').contains('i18nUiWords20'));
+  // ★4.81.78 删除一条恒红断言：原来是
+  //     ck('本轮零新增 i18n 键', !i18n.dart.contains('i18nUiWords20'))
+  //   它用"某个历史批次名不存在"来表达"这一轮没往字典里加键"。
+  //   两个问题：① 第 20 批早就并进字典了，断言从此恒红（本地跑一直是红的，
+  //   只是 CI 没跑本脚本所以没人发现）；② "本轮加了 i18n 键"本身不是缺陷，
+  //   恰恰是补翻译的正确动作 —— 断言方向反了。
+  //   真正该守的是"文案走 tr()"，这条已由 §6 的 emoji 检查与
+  //   tool/i18n_hardcoded_scan.dart（ratchet 基线）覆盖，不需要在这里重复。
 
   // 本地镜像层：CI 不携带镜像，打印 SKIP 不伪装成通过；本地存在则逐字节核对。
   const mirrorPath =
