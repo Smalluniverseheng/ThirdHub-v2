@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://thirdhub.pages.dev/download.html"><img src="https://img.shields.io/badge/下载-Android-3b5bfd?style=for-the-badge&logo=android&logoColor=white" alt="下载"></a>
-  <img src="https://img.shields.io/badge/版本-4.81.73-34d399?style=flat-square" alt="版本">
+  <img src="https://img.shields.io/badge/版本-4.81.76-34d399?style=flat-square" alt="版本">
   <img src="https://img.shields.io/badge/体积-~30MB-6366f1?style=flat-square" alt="体积">
   <img src="https://img.shields.io/badge/系统-Android%207.0%2B-9aa3b2?style=flat-square" alt="系统">
   <img src="https://img.shields.io/badge/协议-MIT-blue?style=flat-square" alt="协议">
@@ -50,7 +50,7 @@ flowchart LR
 > 内容源不在 App 里，而在你自己的 NAS 上 —— 换源不用等新版，改一份配置就生效。
 > 没有广告、没有会员墙、不收集数据：所有请求都走你家的机器。
 
-**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.73（50744）
+**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.76（50747）
 
 ---
 
@@ -106,7 +106,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.73**（versionCode 50744），安装包约 **29 MB**（**arm64-v8a 单 ABI**）。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.76**（versionCode 50747），安装包约 **29 MB**（**arm64-v8a 单 ABI**）。
 > ★体积口径（2026-09-28 定）：分发通道的 Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
 > 而双 ABI 通用包是 **54,371,575 B（51.85 MiB）→ 塞不进去**（实测上游 400 `EntityTooLarge`，且会出现「清单写成功、包没传上」的分叉）。
 > 故 push 默认只打 `android-arm64`；32 位（armeabi-v7a）按需 `workflow_dispatch abis=android-arm` 出包，
@@ -123,7 +123,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 | 产品线 | 源码位置 | 仓库 | 包名 | 当前版本 | 体积 | 谁是主力 |
 |---|---|---|---|---|---|---|
-| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.73** | ~30 MB | **★ 用户在用的主线** |
+| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.76** | ~30 MB | **★ 用户在用的主线** |
 | Android 轻壳版 | `ThirdHub-Android` | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 备用 |
 | 完全体客户端（旁支） | `D:/ai/thirdhub-flutter` | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | **旁支，已搁置** |
 | 漫画稳定版（第二代） | `OmniHub-Android` | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | 历史存档 |

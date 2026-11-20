@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.81.69+50740
+version: 4.81.76+50747
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -45,6 +45,11 @@ dependencies:
   # 选型证据：adaptive_navigation / adaptive_breakpoints / flutter_adaptive_scaffold
   # 均已停维（pub.dev isDiscontinued=true，2026-10 查证），此为唯一存活的成熟方案。
   dynamic_layouts: 0.7.0
+  # ★4.81.76 补登：`bili_player.dart` 4.81.74 起就 import 了它，但 pubspec 一直没写，
+  #   于是 4.81.75 的 build-apk 在编译期挂在 "Couldn't resolve the package
+  #   'canvas_danmaku'"。纯 Dart 实现（CustomPainter 直绘），SDK 要求 >=3.0.0
+  #   与本项目一致，无平台代码、无 minSdk 抬升。
+  canvas_danmaku: ^0.3.4
 
 dev_dependencies:
   flutter_test:

@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'reader_fonts.dart';
+import 'chapter_disk_cache.dart';
 import 'read_stats.dart';
 import 'tts.dart';
 import 'tts_presets.dart';
@@ -387,8 +388,15 @@ class _NovelReaderState extends State<NovelReaderPage> {
 
   Future<void> preload(int i) async {    if (i < 0 || i >= widget.chapters.length || chapCache.containsKey(i)) return;
     try {
+      // ★4.81.76：预取也先看磁盘 —— 上次读过的章不用再抓一遍。
+      final disk = await ChapterDiskCache.read(widget.bookUrl, i);
+      if (disk != null) {
+        chapCache[i] = disk;
+        return;
+      }
       final d = await widget.fetchContent(widget.sourceId, widget.chapters[i]['url'] ?? '');
       chapCache[i] = d;
+      unawaited(ChapterDiskCache.write(widget.bookUrl, i, d));
     } catch (_) {}
   }
 
@@ -397,8 +405,22 @@ class _NovelReaderState extends State<NovelReaderPage> {
     final t0 = DateTime.now();
     try {
       Map<String, dynamic> d;
-      if (chapCache.containsKey(idx)) { d = chapCache[idx]!; }
-      else { d = await widget.fetchContent(widget.sourceId, chapter['url'] ?? ''); chapCache[idx] = d; }
+      if (chapCache.containsKey(idx)) {
+        d = chapCache[idx]!;
+      } else {
+        // ★4.81.76 磁盘缓存：内存里没有就翻本机副本 ——
+        //   杀进程/断网后，之前读过的章仍然能翻回去（此前只有内存 map，
+        //   进程一没就全丢，用户会以为「这书突然没了」）。
+        final disk = await ChapterDiskCache.read(widget.bookUrl, idx);
+        if (disk != null) {
+          d = disk;
+          chapCache[idx] = d;
+        } else {
+          d = await widget.fetchContent(widget.sourceId, chapter['url'] ?? '');
+          chapCache[idx] = d;
+          unawaited(ChapterDiskCache.write(widget.bookUrl, idx, d));
+        }
+      }
       text = d['text'] as String? ?? ''; images = List<String>.from(d['images'] ?? []);
       // ★「HTTP 200 但正文是空的」与「抛异常」是**同一类问题**（源没给内容），
       //   旧实现只把前者显示成一句「本章无内容」，用户同样没有出口。归到失败态一起处理。

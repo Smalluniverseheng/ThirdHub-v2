@@ -143,6 +143,8 @@ import 'core/dialog_kit.dart';
 import 'core/playback_settings_page.dart';
 import 'core/advanced_playback_page.dart';
 import 'core/th_http.dart';
+import 'core/backend_health.dart';
+import 'core/play_resolver.dart';
 
 // ═══ 打开方式/分享 路由: 外部打开 txt/epub/音频/视频/链接 → 对应模块 ═══
 class IntentRouter {
@@ -414,9 +416,56 @@ class ApiHttpError implements Exception {
 class Api {
   static String base = '';
   static String token = '';
+
+  /// ★4.81.76 两处改动（都是「做对的没推广」的收口）：
+  ///   ① **复用同一个 Client**。旧实现每次请求 `new HttpClient()` 且从不 close ——
+  ///      自签 TLS 握手一次 200~600ms，等于每次搜索都多付一遍握手钱，socket 还累积；
+  ///   ② **证书校验不再无条件放行**。原来写死 `=> true`，等于对本机发起的任何
+  ///      HTTPS 都免校验。现在只放行两条边界：私网地址，或证书 DN 里带
+  ///      `CN=ThirdHub`（自建后端标识）—— 与 `core/th_http.dart` 同一口径。
+  static http.Client? _shared;
   static http.Client client() {
-    final c = HttpClient()..badCertificateCallback = (_, __, ___) => true;
-    return IOClient(c);
+    return _shared ??= () {
+      final c = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10)
+        ..badCertificateCallback = (cert, host, port) {
+          if (isPrivateHost(host)) return true;
+          final dn = '${cert.subject}|${cert.issuer}';
+          return dn.contains('CN=ThirdHub') || dn.contains('CN = ThirdHub');
+        };
+      return IOClient(c);
+    }();
+  }
+
+  /// 请求前的地址闸门。
+  /// 为什么要单独判：`base` 为空时 `Uri.parse('/v1/x')` 没有 host，抛的是
+  /// `ArgumentError` / `ClientException`，页面会把这个原文糊到用户脸上。
+  /// 这里提前换成一句能照着做的话，并顺手把离线状态记进 [BackendHealth]。
+  static void _ensureBase() {
+    final b = base.trim();
+    if (b.isEmpty || !b.contains('://')) {
+      BackendHealth.markFail('base-empty');
+      throw const ApiOfflineError('还没连上后端（本地也没有保存过地址）\n'
+          '当前只能播放已下载到本机的内容。\n'
+          '连后端：我的 → 系统 → 连接资源库');
+    }
+  }
+
+  /// 统一的失败记账：把「网络层挂了」和「后端回了错误码」分开。
+  static Never _rethrow(Object e) {
+    if (e is! ApiHttpError && e is! ApiAuthError) {
+      BackendHealth.markFail(e);
+      final s = '$e';
+      if (e is SocketException ||
+          e is TimeoutException ||
+          s.contains('ClientException') ||
+          s.contains('HandshakeException')) {
+        throw ApiOfflineError(BackendHealth.lastError.isEmpty
+            ? '连不上后端'
+            : '连不上后端：${BackendHealth.lastError}');
+      }
+    }
+    throw e;
   }
 
   /// 统一的响应闸门：**先判状态码与错误体，再交给调用方**。
@@ -436,32 +485,48 @@ class Api {
     }
     final err = j['data'] is Map ? (j['data'] as Map)['type'] : null;
     if (r.statusCode == 401 || err == 'authentication_error') {
+      // 401 是「密钥不对」，不是「离线」—— 后端明明是通的，别把状态标成离线。
+      BackendHealth.markOk();
       throw ApiAuthError(
           '资源库拒绝了请求：密钥无效或未设置\n请到「我的 → 系统 → 连接资源库」填写后端打印的访问密钥后重连');
     }
     if (r.statusCode >= 400)
       throw ApiHttpError(r.statusCode,
           text.substring(0, text.length > 200 ? 200 : text.length));
+    BackendHealth.markOk();
     return j;
   }
 
-  static Future<Map<String, dynamic>> get(String path) async {
-    final r = await client()
-        .get(Uri.parse('$base$path'), headers: {'X-TH-Token': token});
-    return _unwrap(r, path);
+  static Future<Map<String, dynamic>> get(String path,
+      {Duration timeout = const Duration(seconds: 20)}) async {
+    _ensureBase();
+    try {
+      final r = await client()
+          .get(Uri.parse('$base$path'), headers: {'X-TH-Token': token})
+          .timeout(timeout);
+      return _unwrap(r, path);
+    } catch (e) {
+      _rethrow(e);
+    }
   }
 
   /// 明文 JSON POST（不走 AES 信封）——给不带秘密的控制类请求用
   /// （如删号时清 /v1/pair 设备注册：body 里只有 user_id，密钥在请求头上）。
   static Future<Map<String, dynamic>> post(
-      String path, Map<String, dynamic> body) async {
-    final r = await client().post(Uri.parse('$base$path'),
-        headers: {
-          'X-TH-Token': token,
-          'Content-Type': 'application/json; charset=utf-8'
-        },
-        body: jsonEncode(body));
-    return _unwrap(r, path);
+      String path, Map<String, dynamic> body,
+      {Duration timeout = const Duration(seconds: 20)}) async {
+    _ensureBase();
+    try {
+      final r = await client().post(Uri.parse('$base$path'),
+          headers: {
+            'X-TH-Token': token,
+            'Content-Type': 'application/json; charset=utf-8'
+          },
+          body: jsonEncode(body)).timeout(timeout);
+      return _unwrap(r, path);
+    } catch (e) {
+      _rethrow(e);
+    }
   }
 
   static String img(String u) => '$base/v1/img?url=${Uri.encodeComponent(u)}';
@@ -479,7 +544,9 @@ class Api {
 
   // AES-256-GCM 加密POST(密钥=sha256(token), 头 X-TH-Enc: aes-gcm, body=base64(nonce‖cipher‖tag))
   static Future<Map<String, dynamic>> postEncrypted(
-      String path, Map<String, dynamic> body) async {
+      String path, Map<String, dynamic> body,
+      {Duration timeout = const Duration(seconds: 20)}) async {
+    _ensureBase();
     final alg = AesGcm.with256bits();
     final key = await Sha256().hash(utf8.encode(token));
     final nonce = alg.newNonce();
@@ -487,14 +554,18 @@ class Api {
         secretKey: SecretKey(key.bytes), nonce: nonce);
     final payload =
         base64Encode([...nonce, ...box.cipherText, ...box.mac.bytes]);
-    final r = await client().post(Uri.parse('$base$path'),
-        headers: {
-          'X-TH-Token': token,
-          'X-TH-Enc': 'aes-gcm',
-          'Content-Type': 'text/plain'
-        },
-        body: payload);
-    return _unwrap(r, path);
+    try {
+      final r = await client().post(Uri.parse('$base$path'),
+          headers: {
+            'X-TH-Token': token,
+            'X-TH-Enc': 'aes-gcm',
+            'Content-Type': 'text/plain'
+          },
+          body: payload).timeout(timeout);
+      return _unwrap(r, path);
+    } catch (e) {
+      _rethrow(e);
+    }
   }
 }
 
@@ -2758,6 +2829,92 @@ class _Pf extends State<ProfilePage> {
       ]);
   Widget _sep() => const Divider(height: 1, indent: 52);
 
+  /// 后端连通性条（4.81.76）。
+  ///
+  /// 为什么放在「我的」顶部：用户报「突然什么都没有了」时，九成是断网或 NAS 关机，
+  /// 但旧版界面上没有任何地方说这件事 —— 空白列表看起来像「源里没内容」。
+  /// 这条把状态、原因、下一步做成一屏可读的三行，并且离线时把「离线内容」
+  /// 直接提到手边（那时候它是唯一还能用的东西）。
+  Widget _backendStrip() {
+    final scheme = Theme.of(context).colorScheme;
+    return ValueListenableBuilder<BackendState>(
+      valueListenable: BackendHealth.state,
+      builder: (_, st, __) {
+        final off = st == BackendState.offline;
+        final on = st == BackendState.online;
+        final color = on
+            ? scheme.primary
+            : off
+                ? scheme.error
+                : scheme.onSurfaceVariant;
+        final icon = on
+            ? Icons.cloud_done_outlined
+            : off
+                ? Icons.cloud_off_outlined
+                : Icons.cloud_queue_outlined;
+        final host = Api.base.trim().isEmpty
+            ? '未配置地址'
+            : Api.base.trim().replaceFirst(RegExp(r'^https?://'), '');
+        return Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withValues(alpha: 0.28))),
+            child: Row(children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(BackendHealth.label,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: color)),
+                    const SizedBox(height: 2),
+                    Text(
+                        off
+                            ? '只能播放已下载到本机的内容'
+                            : on
+                                ? host
+                                : '没连上时长这样：只能播已下载的',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 10.5, color: Colors.grey)),
+                  ])),
+              if (off)
+                TextButton(
+                    onPressed: () => Navigator.push(
+                            context, smoothRoute(const MediaOfflinePage()))
+                        .then((_) {
+                      if (mounted) setState(() {});
+                    }),
+                    child: Text(tr('离线内容'),
+                        style: TextStyle(fontSize: 12, color: color))),
+              TextButton(
+                  onPressed: () async {
+                    BackendHealth.reset();
+                    final ok = await Cloud.resolveBackend(force: true);
+                    if (!mounted) return;
+                    if (!ok) {
+                      // 重连失败要说清是"网络层没通"还是"地址没配"，
+                      // 别只甩一句"失败"。
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('仍连不上：${BackendHealth.lastError.isEmpty ? '地址清单没取到（可能没网）' : BackendHealth.lastError}'),
+                          duration: const Duration(seconds: 4)));
+                    }
+                    setState(() {});
+                  },
+                  child: Text(tr('重连'),
+                      style: TextStyle(fontSize: 12, color: color))),
+            ]));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext c) {
     final nick = AppSettings.nickname;
@@ -2766,6 +2923,9 @@ class _Pf extends State<ProfilePage> {
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
         children: [
           _heroCard(),
+          const SizedBox(height: 10),
+          // ★4.81.76：后端在不在，一进来就说清楚（离线时这里是唯一能用的入口）。
+          _backendStrip(),
           const SizedBox(height: 10),
           // ★4.57.0 重构：「我的」= 身份 + 设置 + 全局。
           //
@@ -2846,6 +3006,13 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
           ]),
           _section('数据与诊断', [
+            // ★4.81.76：离线内容此前**没有任何入口** —— `MediaOfflinePage`
+            //   早就写好了（offline_ui.dart 420 行），但 main.dart 只 import
+            //   没挂载，用户根本找不到"我下载的东西在哪"。
+            entry(Icons.download_done_outlined, tr('离线内容'),
+                value: tr('已下载的影视 / 漫画 / 音乐 / 小说'),
+                page: const MediaOfflinePage()),
+            _sep(),
             entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
             _sep(),
             entry(Icons.receipt_long_outlined, '日志中心',
@@ -7680,26 +7847,39 @@ class _MPlay extends State<MusicPlayPage> {
   Future<void> start() async {
     try {
       String playUrl = cur['url'] as String? ?? '';
-      if (playUrl.isEmpty && curSource.isNotEmpty) {
-        final q = AppSettings.p.getString('music_quality') ?? '320k';
-        final r = await Api.get(
-            '/v1/music/url?sourceId=${Uri.encodeComponent(curSource)}&quality=$q&item=${Uri.encodeComponent(jsonEncode(cur))}');
-        playUrl = r['data']?['url'] as String? ?? '';
-      }
-      if (playUrl.isEmpty) {
-        setState(() {
-          loading = false;
-          err = '暂时无法播放这首歌';
-        });
-        return;
-      }
-      // 本地优先：这首歌保存过就播本地文件（断网/引擎关了照样听）。
-      // 本地导入的歌本来就带本地路径，不参与查询。
-      if (!playUrl.startsWith('/') && !playUrl.startsWith('file://')) {
-        _resolvedUrl = playUrl;
-        final lf = await MediaOfflineStore.localFileOf(_musicKey,
-            title: '${cur['name'] ?? ''}');
-        if (lf != null) playUrl = lf.path;
+      // 本地导入的歌（绝对路径 / file://）本来就带本地路径，不参与离线库查询，
+      // 也**不需要任何网络** —— 先把它摘出去，别让下面的联网逻辑碰到它。
+      final isLocalImport = playUrl.startsWith('/') ||
+          playUrl.startsWith('file://');
+      if (!isLocalImport) {
+        // ★4.81.76 本地优先：下载过的这首断网也能听。
+        //   旧写法是「先拿在线地址，拿到了再查本地」—— 断网时第一步行就抛错，
+        //   本地那份永远查不到（与影视 initPlayer 同一个 bug）。
+        final ps = await PlayResolver.media(
+          key: _musicKey,
+          title: '${cur['name'] ?? ''}',
+          online: () async {
+            if (playUrl.isNotEmpty) return OnlineUrl(playUrl);
+            if (curSource.isEmpty) {
+              return const OnlineUrl('', hint: '这条记录没有来源，也没有网址');
+            }
+            final q = AppSettings.p.getString('music_quality') ?? '320k';
+            final r = await Api.get(
+                '/v1/music/url?sourceId=${Uri.encodeComponent(curSource)}&quality=$q&item=${Uri.encodeComponent(jsonEncode(cur))}');
+            final u = (r['data']?['url'] as String? ?? '').trim();
+            return OnlineUrl(u, hint: u.isEmpty ? '音源没有给出播放地址' : null);
+          },
+        );
+        if (!ps.ok) {
+          setState(() {
+            loading = false;
+            err = ps.error ?? '暂时无法播放这首歌';
+          });
+          return;
+        }
+        _resolvedUrl = ps.url ?? '';
+        // 本地命中时 ps.url 为空，用文件路径喂播放器。
+        playUrl = ps.file != null ? ps.file!.path : (ps.url ?? '');
       }
       final mediaItem = MediaItem(
           id: '${cur['id'] ?? playUrl}',
@@ -9016,42 +9196,40 @@ class _Vp extends State<VideoPlayPage> {
 
   Future<void> initPlayer() async {
     try {
-      // ★先试引擎直连（引擎在线时它才是主路径；后端是回落）
-      var url = await _resolveViaEngine(widget.epUrl, widget.flag);
-      Map<String, dynamic> r = const {};
-      if (url == null) {
-        r = await Api.get(
-            '/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
-        if (r['object'] == 'error') {
-          setState(() {
-            loading = false;
-            err = r['data']?['message'] ?? '解析失败';
-          });
-          return;
-        }
-        url = r['data']?['url'] as String? ?? '';
-        if (url.isEmpty) {
-          setState(() {
-            loading = false;
-            err = '播放地址为空（资料库直连与后端都没取到）';
-          });
-          return;
-        }
-      }
-      if (url.isEmpty) {
+      // ★4.81.76：**本地优先**。顺序必须是「先查本机 → 再联网」。
+      //   旧代码先联网解析、解析不到就 return 报「解析失败」，于是**已下载的
+      //   这一集在断网时根本播不了** —— 文件就在磁盘上，只是走不到那行。
+      //   现在交给 PlayResolver：命中本地就一个网络包都不发。
+      final ps = await PlayResolver.media(
+        key: _videoKey,
+        title: widget.title,
+        online: () async {
+          // ★先试引擎直连（引擎在线时它才是主路径；后端是回落）
+          final u = await _resolveViaEngine(widget.epUrl, widget.flag);
+          if (u != null && u.isNotEmpty) {
+            return OnlineUrl(u, origin: PlayOrigin.engine);
+          }
+          final r = await Api.get(
+              '/v1/video/play?sourceId=${Uri.encodeComponent(widget.sourceId)}&flag=${Uri.encodeComponent(widget.flag)}&id=${Uri.encodeComponent(widget.epUrl)}');
+          if (r['object'] == 'error') {
+            throw StateError('${r['data']?['message'] ?? '解析失败'}');
+          }
+          final u2 = (r['data']?['url'] as String? ?? '').trim();
+          return OnlineUrl(u2,
+              hint: u2.isEmpty ? '资料库直连与后端都没取到播放地址' : null);
+        },
+      );
+      if (!ps.ok) {
         setState(() {
           loading = false;
-          err = '播放地址为空（资料库直连与后端都没取到）';
+          err = ps.error ?? '播放失败';
         });
         return;
       }
-      _resolvedUrl = url;
-      // 本地优先：这集保存过就播本地文件 —— 断网/引擎关了照样能看。
-      final lf =
-          await MediaOfflineStore.localFileOf(_videoKey, title: widget.title);
-      _vc = lf != null
-          ? VideoPlayerController.file(lf)
-          : VideoPlayerController.networkUrl(Uri.parse(url));
+      _resolvedUrl = ps.url ?? '';
+      _vc = ps.file != null
+          ? VideoPlayerController.file(ps.file!)
+          : VideoPlayerController.networkUrl(Uri.parse(ps.url!));
       await _vc!.initialize();
       // ★播放器优化：续播 —— 上次看到哪就从哪继续（播完清位；少于 5 秒/接近结尾不恢复）。
       final savedSec = AppSettings.p.getInt(_posKey) ?? 0;
@@ -12261,7 +12439,7 @@ class ProductDetailPage extends StatelessWidget {
                       label: Text(
                           url.contains('pages.dev') ? '打开网页版' : '获取(浏览器打开/下载)'),
                       // ★4.81.75：内置浏览器打开，不再外跳
-                      onPressed: () => InAppOpen.url(c, url))));
+                      onPressed: () => InAppOpen.url(c, url)))));
 }
 
 // ═══ 自动更新: 公告 → 点击下载 → 拉取安装(覆盖安装保留数据) ═══
@@ -16671,23 +16849,23 @@ class _Ecr extends State<EngineComicReader>
       images = [];
     });
     try {
+      // ★4.81.76 本地优先：**先**看本机，命中连网络都不碰。
+      //   旧写法把这一步放在 `widget.fetch(...)` 之后 —— 断网时 fetch 先抛异常，
+      //   直接跳进 catch，本地图片永远读不到（影视/音乐同一类 bug）。
+      final local = await MediaOfflineStore.localPagesOf(_chapKey,
+          title: '${widget.comicName} · $chapName');
+      if (local.isNotEmpty) {
+        images = [for (final f in local) f.path];
+        _fromLocal = true;
+        if (mounted) setState(() => loading = false);
+        return;
+      }
+      _fromLocal = false;
+
       final d = await widget.fetch(chapUrl, limit: 10);
       final raw = (d['images'] as List? ?? d['pages'] as List? ?? []);
       final list = [for (final e in raw) '$e'];
       headers = Map<String, String>.from(d['headers'] ?? d['header'] ?? {});
-
-      // 本地优先：本话保存过就直接读本地图片（断网/引擎关了照样看）。
-      if (list.isNotEmpty) {
-        final local = await MediaOfflineStore.localPagesOf(_chapKey,
-            title: '${widget.comicName} · $chapName');
-        if (local.isNotEmpty) {
-          images = [for (final f in local) f.path];
-          _fromLocal = true;
-          if (mounted) setState(() => loading = false);
-          return;
-        }
-        _fromLocal = false;
-      }
 
       if (list.isEmpty) {
         err = '本话没有图片';
