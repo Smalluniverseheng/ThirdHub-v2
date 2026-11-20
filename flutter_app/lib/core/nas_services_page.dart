@@ -30,6 +30,7 @@ import 'package:chewie/chewie.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'i18n.dart';
+import 'i18n_chewie.dart';
 // 网络书籍点开后直接进阅读器（复用已有阅读页，不另造一套）
 import 'novel_reader.dart';
 
@@ -568,6 +569,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
       );
       await _vp!.initialize();
       _chewie = ChewieController(
+        optionsTranslation: chewieTranslation(),
         videoPlayerController: _vp!,
         autoPlay: true,
         looping: false,

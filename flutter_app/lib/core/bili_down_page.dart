@@ -33,6 +33,7 @@ import 'package:chewie/chewie.dart';
 
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'i18n_chewie.dart';
 
 class BiliDownPage extends StatefulWidget {
   const BiliDownPage({super.key});
@@ -791,6 +792,7 @@ class _BiliPlayerPageState extends State<_BiliPlayerPage> {
       );
       await _vp!.initialize();
       _chewie = ChewieController(
+        optionsTranslation: chewieTranslation(),
         videoPlayerController: _vp!,
         autoPlay: true,
         looping: false,

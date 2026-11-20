@@ -8,6 +8,11 @@ import 'dart:io';
 import 'dart:ui' show PlatformDispatcher, ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+// ★2026-11-20 i18n 收口：此前全应用**没有任何 Localizations delegate**，
+//   于是 MaterialApp 里所有 Flutter 自带控件（文本选择菜单 Cut/Copy/Paste、
+//   返回按钮 tooltip、日期/时间选择器、Chewie 播放器菜单…）永远显示英文，
+//   和自研 UI 的语言互不相干 —— 这就是「界面里又有中文又有英文」的第一大来源。
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -22,6 +27,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'core/player/media_probe.dart';
+import 'core/offline/local_book_engine.dart';
 import 'core/player/media_spec.dart';
 import 'core/player/unified_player.dart';
 import 'core/in_app_open.dart';
@@ -84,6 +90,7 @@ import 'core/local_import.dart';
 import 'core/discover.dart';
 import 'core/novel_reader.dart';
 import 'core/i18n.dart';
+import 'core/i18n_chewie.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
 import 'core/ai_agent.dart';
@@ -1845,6 +1852,24 @@ class _ThAppState extends State<ThApp> {
     return MaterialApp(
         title: 'ThirdHub',
         navigatorKey: IntentRouter.navKey,
+        // ★2026-11-20：把自研 I18n 的当前语言**灌给 Flutter 框架自己**。
+        //   少了这三行，Flutter 内置控件永远说英文（"Cut/Copy/Paste"、"Cancel"、
+        //   "Back"、日期选择器的 "SELECT DATE"）—— 用户看到的「中英混排」大半来自这里。
+        locale: Locale(I18n.instance.locale),
+        supportedLocales: const [
+          Locale('zh'),
+          Locale('en'),
+          Locale('ja'),
+          Locale('fr'),
+          Locale('ru'),
+          Locale('es'),
+          Locale('ar'),
+        ],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         // ★4.81.81 AI 控制总线：包一层 RepaintBoundary（截图起点）+ 悬浮球宿主。
         //   放在 builder 里而不是每个页面里，是为了让它盖住**所有**路由 ——
         //   包括全屏播放器和对话框，否则「AI 想看播放器的样子」永远截不到。
@@ -6159,20 +6184,34 @@ class _NSR extends State<NovelSearchResults> {
             {'ok': true, 'engine': true, 'books': items}
           ];
         });
-      } else if (Api.base.isNotEmpty) {
+      } else {
+        // ★4.81.84 端上优先：源池打进包了，搜索先在手机上直连源站完成，
+        //   后端只在「端上一个源都没搜到」时兜底。这样 NAS 关机/断网也能用，
+        //   而且少一跳中转，出结果更快。
+        var local = const <Map<String, dynamic>>[];
+        try {
+          local = await LocalBookEngine.I.search(q);
+        } catch (_) {}
+        if (local.isNotEmpty) {
+          setState(() => groups = local);
+          if (mounted) setState(() => loading = false);
+          return;
+        }
+        if (Api.base.isEmpty) {
+          // 端上没结果、也没配后端：最后试一次自动发现局域网资料库
+          await EngineDirect.autoConnect();
+          if (EngineDirect.connected) {
+            lastQ = '';
+            await go(q);
+            return;
+          }
+          if (mounted) setState(() => needConn = true);
+          throw Exception('端上没搜到，也没连接后端');
+        }
         final r = await Api.get('/v1/search?q=${Uri.encodeComponent(q)}');
         setState(() {
           groups = List<Map>.from(r['data'] ?? []);
         });
-      } else {
-        await EngineDirect.autoConnect();
-        if (EngineDirect.connected) {
-          lastQ = '';
-          await go(q);
-          return;
-        }
-        if (mounted) setState(() => needConn = true);
-        throw Exception('未连接本地资料库');
       }
     } catch (e) {
       if (mounted)
@@ -6809,9 +6848,21 @@ class _T extends State<TocPage> {
             {'name': chs[i]['name'] ?? '第${i + 1}章', 'url': '$i', 'index': i}
         ];
       } else {
-        final r = await Api.get(
-            '/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
-        chapters = r['data'] ?? [];
+        // ★4.81.84 端上优先：源池在包里，目录直接问源站；拿不到再走后端。
+        var chs = const <Map<String, dynamic>>[];
+        try {
+          chs = await LocalBookEngine.I
+              .toc(widget.book.sourceId, widget.book.bookUrl);
+        } catch (_) {}
+        if (chs.isEmpty) {
+          final r = await Api.get(
+              '/v1/toc?sourceId=${Uri.encodeComponent(widget.book.sourceId)}&url=${Uri.encodeComponent(widget.book.bookUrl)}');
+          chs = ((r['data'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        }
+        chapters = chs;
       }
     } catch (e) {
       err = '$e';
@@ -7005,6 +7056,12 @@ class NovelReadPage extends StatelessWidget {
           final d = Map<String, dynamic>.from(r['data'] ?? {});
           return {'content': d['text'] ?? d['content'] ?? ''};
         }
+        // ★4.81.84 端上优先：正文直连源站，拿不到再走后端兜底。
+        //   离线阅读也会走这条链路（先本地缓存命中，再这里）。
+        try {
+          final lc = await LocalBookEngine.I.content(sid, url);
+          if ('${lc['content'] ?? ''}'.trim().length > 30) return lc;
+        } catch (_) {}
         final r = await Api.get(
             '/v1/content?sourceId=${Uri.encodeComponent(sid)}&url=${Uri.encodeComponent(url)}');
         return Map<String, dynamic>.from(r['data'] ?? {});
@@ -9582,6 +9639,7 @@ class _Vp extends State<VideoPlayPage> {
           double.tryParse(AppSettings.p.getString('video_speed') ?? '1.0') ??
               1.0;
       _cc = ChewieController(
+        optionsTranslation: chewieTranslation(),
           videoPlayerController: _vc!,
           autoPlay: true,
           aspectRatio: _vc!.value.aspectRatio,
@@ -13096,14 +13154,19 @@ class Updater {
 
   // ★2026-11-19 局域网 NAS 直连：家里/同一网络秒下，外网请求会超时后自动回落云端。
   //   版本化文件名优先（sha 与清单严格对应），别名次之。
-  static Future<List<String>> _nasUrls(String ver) async {
+  //
+  //   ★4.81.84 `exact`：要拿 sha256 校验时必须为 true —— 别名 `latest.apk`
+  //   指向的是「当前最新」，清单里写的却是「这一版」。局域网里 latest.apk
+  //   晚一步/早一步更新，下载内容就和 sha 对不上，用户看到「校验失败」，
+  //   但换成浏览器下同一个链接反而能装（浏览器不校验）→ 结论必然是「App 有问题」。
+  static Future<List<String>> _nasUrls(String ver, {bool exact = false}) async {
     try {
       final p = await SharedPreferences.getInstance();
       final base = (p.getString('base') ?? '').trim();
       if (base.isEmpty) return const <String>[];
       final list = <String>[];
       if (ver.isNotEmpty) list.add('$base/v1/dl/app/thirdhub-app-$ver.apk');
-      list.add('$base/v1/dl/app/latest.apk');
+      if (!exact) list.add('$base/v1/dl/app/latest.apk');
       return list;
     } catch (_) {
       return const <String>[];
@@ -13112,10 +13175,13 @@ class Updater {
 
   // 多镜像: NAS(局域网) → 主URL(云端) → Supabase版本包 → ghfast 镜像(GitHub) → GitHub 直链
   // ★GitHub 直链对国内用户需要翻墙, 默认不放在前面——镜像优先, 直链仅作最后手段
-  static Future<List<String>> _mirrorUrls(String url, String ver) async {
+  // ★4.81.84 `exact=true` 时只收「地址里带版本号」的线路，别名一律剔除（见 _nasUrls 注释）
+  static Future<List<String>> _mirrorUrls(String url, String ver,
+      {bool exact = false}) async {
     final list = <String>[];
-    list.addAll(await _nasUrls(ver));
-    list.add(url);
+    list.addAll(await _nasUrls(ver, exact: exact));
+    final urlExact = !exact || ver.isEmpty || url.contains(ver);
+    if (urlExact) list.add(url);
     if (ver.isNotEmpty) {
       list.add(
           'https://onhmosehcwyrqgxadjvb.supabase.co/storage/v1/object/public/downloads/thirdhub-app-$ver.apk');
@@ -13154,6 +13220,27 @@ class Updater {
     final part = File('${f.path}.part');
     final meta = File('${f.path}.part.meta');
     final client = HttpClient();
+    // ★4.81.84：NAS 线路是 HTTPS + 自签证书，不挂这个回调的话
+    //   `_nasUrls()` 里那两条「局域网秒下」永远 HandshakeException 失败 ——
+    //   也就是说它从来就没真正生效过，只是被后面的云端镜像兜住了，没人发现。
+    client.badCertificateCallback = ThirdHubHttpOverrides.trustCert;
+    // ★4.81.84 校验失败的真因（之一）：Dart 的 HttpClient 默认 autoUncompress=true，
+    //   服务器若用 gzip/br 传输，`resp` 吐的是**解压后**的字节，而 contentLength
+    //   头还是**压缩后**的长度 → `len != total` 判「文件不完整」，或者拼出半截包。
+    //   安装包是 zip，本来就压不动，任何 CDN（含 Cloudflare/Supabase）都可能把它
+    //   再包一层。这里要求明文传输并关掉自动解压：落盘字节 == 线上字节 == sha256 口径。
+    client.autoUncompress = false;
+    // 致命错误（换源就能好）时顺手清掉断点文件，否则坏 .part 会被一直续传下去，
+    // 用户看到的就是「每次重试都校验失败」。
+    Future<void> wipe() async {
+      try {
+        if (await part.exists()) await part.delete();
+      } catch (_) {}
+      try {
+        if (await meta.exists()) await meta.delete();
+      } catch (_) {}
+    }
+
     try {
       var pos = 0;
       var total = 0;
@@ -13174,11 +13261,29 @@ class Updater {
       final req = await client
           .getUrl(Uri.parse(url))
           .timeout(const Duration(seconds: 20));
+      // 与 autoUncompress=false 配套：明确告诉服务器别压缩，避免「头里写全长、
+      // 流里是压缩字节」这种口径错位。
+      req.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       if (pos > 0) req.headers.add('Range', 'bytes=$pos-');
       final resp = await req.close().timeout(const Duration(seconds: 30));
       final status = resp.statusCode;
-      if (status != 200 && status != 206) throw Exception('HTTP $status');
-      if (status == 206 && pos == 0) throw Exception('服务器 Range 响应异常');
+      if (status != 200 && status != 206) {
+        await wipe();
+        throw Exception('HTTP $status');
+      }
+      final enc = (resp.headers.value(HttpHeaders.contentEncodingHeader) ?? '')
+          .toLowerCase()
+          .trim();
+      if (enc.isNotEmpty && enc != 'identity') {
+        // 服务器无视 identity 仍压缩：落盘的会是压缩字节，sha256 铁定对不上。
+        // 当场判死换线路，别把坏包交给用户。
+        await wipe();
+        throw Exception('服务器压缩传输($enc)，换线路重试');
+      }
+      if (status == 206 && pos == 0) {
+        await wipe();
+        throw Exception('服务器 Range 响应异常');
+      }
       final append = status == 206;
       if (!append) pos = 0; // 200 = 全量重发
       final contentLen = resp.contentLength; // 206 时是剩余字节数, 200 时是全长
@@ -13207,11 +13312,13 @@ class Updater {
       }
       await sink.close();
       final len = await part.length();
-      if (total > 0 && len != total) throw Exception('文件不完整($len/$total)');
+      // 长度不符 = 这次续传/这次的源本身不可信，断点留着只会越拼越坏
+      if (total > 0 && len != total) {
+        await wipe();
+        throw Exception('文件不完整($len/$total)');
+      }
       if (len < 1024 * 1024) {
-        try {
-          await part.delete();
-        } catch (_) {}
+        await wipe();
         throw Exception('文件过小($len字节), 疑似错误页');
       }
       await part.rename(f.path);
@@ -13224,7 +13331,79 @@ class Updater {
     }
   }
 
-  /// 「已下载 / 总大小 · 速度」的人话描述。
+  /// 逐线路下载 + 就地校验。
+  ///
+  /// ★4.81.84 行为变更：某条线路「下完了但 sha 不对」现在算**这条线路失败**，
+  ///   继续换下一条。改之前是「只要有线路下完就进入校验，不对就直接抛」——
+  ///   镜像顺序里只要有一条坏线路（CDN 缓存了旧版、ghfast 返回拦截页），
+  ///   整个更新就永久失败，用户只能自己去浏览器下。这才是「老是校验失败」的根。
+  static Future<({bool ok, String url, String err})> _downloadVerified({
+    required File f,
+    required List<String> mirrors,
+    required ValueNotifier<double> progress,
+    required ValueNotifier<String> detail,
+    String? sha,
+    void Function(int i, int n)? onSwitch,
+  }) async {
+    final want = (sha ?? '').trim().toLowerCase();
+    var last = '所有线路都不可用';
+    for (var i = 0; i < mirrors.length; i++) {
+      try {
+        if (i > 0) onSwitch?.call(i, mirrors.length);
+        progress.value = 0;
+        if (i > 0) detail.value = '切换线路…';
+        await _fetchTo(mirrors[i], f, progress, detail: detail);
+        if (want.isNotEmpty) {
+          detail.value = '校验文件…';
+          final actual = await _fileSha256(f);
+          if (actual != want) {
+            // 内容不对（错误页 / 旧版本 / 半截包）：删掉，换线路，别原地失败
+            try {
+              await f.delete();
+            } catch (_) {}
+            last = '线路 ${i + 1} 内容与清单不符';
+            continue;
+          }
+        }
+        return (ok: true, url: mirrors[i], err: '');
+      } catch (e) {
+        last = '$e';
+      }
+    }
+    return (ok: false, url: '', err: last);
+  }
+
+  /// 下载彻底失败时的出口。关键不是「报错报得准」，是**别让用户卡死**：
+  /// 给一个可点的「浏览器下载」，跳出去下同一个包，装完数据照旧。
+  static void _showDownloadFail(
+      BuildContext c, String err, List<String> mirrors) {
+    final link = mirrors.isNotEmpty ? mirrors.first : '';
+    if (!c.mounted) return;
+    showDialog<void>(
+      context: c,
+      builder: (c2) => AlertDialog(
+        title: Text(tr('下载失败')),
+        // ★key 里不能放 \n：i18n_selfcheck 会把转义还原成真换行，键永远对不上
+        content: Text('$err\n\n' +
+            tr('可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c2), child: Text(tr('取消'))),
+          if (link.isNotEmpty)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(c2);
+                unawaited(launchUrl(Uri.parse(link),
+                    mode: LaunchMode.externalApplication));
+              },
+              child: Text(tr('浏览器下载')),
+            ),
+        ],
+      ),
+    );
+  }
+
+
   static String _bytesHuman(int done, int total, double speedBps, String tag) {
     String mb(int b) => (b / 1048576).toStringAsFixed(1);
     final buf = StringBuffer();
@@ -13239,11 +13418,20 @@ class Updater {
   }
 
   /// 算文件 sha256。
-  /// 用 `Sha256().hash(bytes)` 而不是 hashStream：前者在本项目已有多处在用
-  /// （见 Api 的 token 摘要），编译风险为零；30MB 包一次性读入的峰值也可接受，
-  /// 且只在下载完成后执行一次。
+  /// ★4.81.84 改流式：安装包从此可以到一两百 MB（用户要求的「包大点没关系，
+  ///   功能别缺」），`readAsBytes()` 一次性读入会在低端机上 OOM 被系统杀掉，
+  ///   表现为「校验时闪退」。
+  ///
+  /// ★cryptography 2.9 **没有** `hashStream()`（我上一版想当然写了，analyze 直接报
+  ///   undefined_method）——它给的是 `newHashSink()` 返回的 `ByteConversionSink`，
+  ///   塞完 `close()` 再 `await sink.hash()`。这里按真实 API 写。
   static Future<String> _fileSha256(File f) async {
-    final h = await Sha256().hash(await f.readAsBytes());
+    final sink = Sha256().newHashSink();
+    await for (final chunk in f.openRead()) {
+      sink.add(chunk);
+    }
+    sink.close();
+    final h = await sink.hash();
     return h.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
@@ -13334,6 +13522,7 @@ class Updater {
                       },
                       child: const Text('后台下载'))
                 ]));
+    var mirrors = <String>[];
     try {
       final dir = await _updateDir();
       final safe = name.replaceAll(RegExp(r'[\\/:*?"<>| ]'), '-');
@@ -13348,40 +13537,27 @@ class Updater {
       final f = File(verTag.isNotEmpty
           ? '$dir/$safe.apk'
           : '$dir/$safe-${DateTime.now().millisecondsSinceEpoch}.apk');
-      final mirrors = await _mirrorUrls(url, verTag);
-      Exception? lastErr;
-      var ok = false;
+      mirrors = await _mirrorUrls(url, verTag,
+          exact: (sha256 ?? '').trim().isNotEmpty);
+      late final ({bool ok, String url, String err}) r;
       final stopNotify = _bgProgressNotify(progress, 88003, '正在下载 $name');
       try {
-        for (var i = 0; i < mirrors.length && !ok; i++) {
-          try {
-            if (i > 0 && c.mounted)
-              ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                  content:
-                      Text('线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…')));
-            progress.value = 0;
-            if (i > 0) detail.value = '切换镜像…';
-            await _fetchTo(mirrors[i], f, progress, detail: detail);
-            ok = true;
-          } catch (e) {
-            lastErr = e is Exception ? e : Exception('$e');
-          }
-        }
+        r = await _downloadVerified(
+          f: f,
+          mirrors: mirrors,
+          progress: progress,
+          detail: detail,
+          sha: sha256,
+          onSwitch: (i, n) {
+            if (!c.mounted) return;
+            ScaffoldMessenger.of(c).showSnackBar(SnackBar(
+                content: Text(trf('线路 {i}/{total} 不可用，换下一条', {'i': i + 1, 'total': n}))));
+          },
+        );
       } finally {
         stopNotify();
       }
-      if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
-      // ★校验：清单给了 sha256 就必须对得上（防镜像错误页/被篡改/半截包）
-      if (sha256 != null && sha256.trim().isNotEmpty) {
-        detail.value = '校验文件…';
-        final actual = await _fileSha256(f);
-        if (actual.toLowerCase() != sha256.trim().toLowerCase()) {
-          try {
-            await f.delete();
-          } catch (_) {}
-          throw Exception('安装包校验不通过（镜像可能返回了错误内容）');
-        }
-      }
+      if (!r.ok) throw Exception(r.err);
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
       list.add('${f.path}|$name|${DateTime.now().toString().substring(0, 16)}');
@@ -13396,9 +13572,7 @@ class Updater {
                 label: tr('安装'), onPressed: () => OpenFilex.open(f.path))));
     } catch (e) {
       if (!background && c.mounted) Navigator.pop(c);
-      if (c.mounted)
-        ScaffoldMessenger.of(c)
-            .showSnackBar(SnackBar(content: Text('下载失败: $e')));
+      _showDownloadFail(c, '$e', mirrors);
     }
   }
 
@@ -13455,46 +13629,34 @@ class Updater {
                       },
                       child: const Text('后台下载'))
                 ]));
+    var mirrors = <String>[];
     try {
       final dir = await _updateDir();
       // ★稳定文件名（2026-10-31 修复）：带时间戳会让 .part/.meta 每次都对不上，
       //   断点续传形同虚设 —— App 自身更新正是用户最常中断的那条下载。
       final f = File('$dir/thirdhub-update-v$newVer.apk');
-      final mirrors = await _mirrorUrls(url, newVer);
-      Exception? lastErr;
-      var ok = false;
+      // 有 sha 就只走「文件名带版本号」的线路，别名 latest 一律剔除
+      mirrors = await _mirrorUrls(url, newVer,
+          exact: (sha ?? '').trim().isNotEmpty);
+      late final ({bool ok, String url, String err}) r;
       final stopNotify = _bgProgressNotify(progress, 88002, '正在下载更新 v$newVer');
       try {
-        for (var i = 0; i < mirrors.length && !ok; i++) {
-          try {
-            if (i > 0 && c.mounted)
-              ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                  content:
-                      Text('线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…')));
-            progress.value = 0;
-            if (i > 0) detail.value = '切换镜像…';
-            await _fetchTo(mirrors[i], f, progress, detail: detail);
-            ok = true;
-          } catch (e) {
-            lastErr = e is Exception ? e : Exception('$e');
-          }
-        }
+        r = await _downloadVerified(
+          f: f,
+          mirrors: mirrors,
+          progress: progress,
+          detail: detail,
+          sha: sha,
+          onSwitch: (i, n) {
+            if (!c.mounted) return;
+            ScaffoldMessenger.of(c).showSnackBar(SnackBar(
+                content: Text(trf('线路 {i}/{total} 不可用，换下一条', {'i': i + 1, 'total': n}))));
+          },
+        );
       } finally {
         stopNotify();
       }
-      if (!ok) throw lastErr ?? Exception('所有镜像均不可用');
-      // ★校验 sha256：清单里带了就必须对得上。下到半截/镜像错误页/被篡改，
-      //   都在这里拦住，而不是等用户点安装时报「解析包出错」。
-      if (sha != null && sha.trim().isNotEmpty) {
-        detail.value = '校验文件…';
-        final actual = await _fileSha256(f);
-        if (actual.toLowerCase() != sha.trim().toLowerCase()) {
-          try {
-            await f.delete();
-          } catch (_) {}
-          throw Exception('安装包校验不通过（镜像内容不对，请重试）');
-        }
-      }
+      if (!r.ok) throw Exception(r.err);
       // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
@@ -13509,11 +13671,14 @@ class Updater {
         ScaffoldMessenger.of(c).showSnackBar(SnackBar(
             duration: const Duration(seconds: 6),
             content: Text('安装包已保存: ${f.path}')));
-      final r = await OpenFilex.open(f.path);
-      if (r.type != ResultType.done && c.mounted) {
+      final openRes = await OpenFilex.open(f.path);
+      if (openRes.type != ResultType.done && c.mounted) {
         ScaffoldMessenger.of(c).showSnackBar(SnackBar(
             duration: const Duration(seconds: 10),
-            content: Text('无法自动调起安装(${r.message})\n请到 下载App 页找到安装包手动安装'),
+            content: Text(
+                    trf('无法自动调起安装({m})', {'m': openRes.message}) +
+                        '\n' +
+                        tr('请到 下载App 页找到安装包手动安装')),
             action: SnackBarAction(
                 label: tr('浏览器下载'),
                 onPressed: () => launchUrl(Uri.parse(mirrors.first),
@@ -13521,9 +13686,7 @@ class Updater {
       }
     } catch (e) {
       if (!background && c.mounted) Navigator.pop(c);
-      if (c.mounted)
-        ScaffoldMessenger.of(c)
-            .showSnackBar(SnackBar(content: Text('下载失败: $e')));
+      _showDownloadFail(c, '$e', mirrors);
     }
   }
 }
@@ -14148,6 +14311,7 @@ class _Lvp extends State<LocalVideoPlayerPage> {
         await ctrl!.seekTo(Duration(seconds: saved));
       }
       chewie = ChewieController(
+        optionsTranslation: chewieTranslation(),
           videoPlayerController: ctrl!,
           autoPlay: true,
           looping: false,

@@ -22,6 +22,16 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '音量': "Volume",
+    '亮度': "Luminosité",
+    '锁定': "Verrouiller",
+    '正常': "Normal",
+    '下载失败': "Échec du téléchargement",
+    '浏览器下载': "Télécharger via le navigateur",
+    '线路 {i}/{total} 不可用，换下一条': "Ligne {i}/{total} indisponible, passage à la suivante",
+    '无法自动调起安装({m})': "Impossible de lancer l’installateur ({m})",
+    '请到 下载App 页找到安装包手动安装': "Ouvrez la page de téléchargement et installez le paquet manuellement",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "Vous pouvez aussi le télécharger dans un navigateur : même paquet, l’installation par-dessus conserve vos données.",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': 'Masquer',
     '未显示': 'Masqués',
@@ -459,6 +469,16 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '音量': "Громкость",
+    '亮度': "Яркость",
+    '锁定': "Заблокировать",
+    '正常': "Обычная",
+    '下载失败': "Не удалось скачать",
+    '浏览器下载': "Скачать в браузере",
+    '线路 {i}/{total} 不可用，换下一条': "Канал {i}/{total} недоступен, пробуем следующий",
+    '无法自动调起安装({m})': "Не удалось запустить установщик ({m})",
+    '请到 下载App 页找到安装包手动安装': "Откройте страницу загрузки и установите пакет вручную",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "Можно скачать в браузере: тот же пакет, при установке поверх данные сохраняются.",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': 'Скрыть',
     '未显示': 'Скрытые',
@@ -896,6 +916,16 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '音量': "Volumen",
+    '亮度': "Brillo",
+    '锁定': "Bloquear",
+    '正常': "Normal",
+    '下载失败': "Error de descarga",
+    '浏览器下载': "Descargar en el navegador",
+    '线路 {i}/{total} 不可用，换下一条': "Línea {i}/{total} no disponible, probando la siguiente",
+    '无法自动调起安装({m})': "No se pudo abrir el instalador ({m})",
+    '请到 下载App 页找到安装包手动安装': "Abre la página de descargas e instala el paquete manualmente",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "También puedes descargarlo en el navegador: es el mismo paquete y la instalación conserva tus datos.",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': 'Ocultar',
     '未显示': 'Ocultos',
@@ -1334,6 +1364,16 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '音量': "مستوى الصوت",
+    '亮度': "السطوع",
+    '锁定': "قفل",
+    '正常': "عادي",
+    '下载失败': "فشل التنزيل",
+    '浏览器下载': "التنزيل عبر المتصفح",
+    '线路 {i}/{total} 不可用，换下一条': "المسار {i}/{total} غير متاح، جارٍ تجربة التالي",
+    '无法自动调起安装({m})': "تعذّر فتح المثبّت ({m})",
+    '请到 下载App 页找到安装包手动安装': "افتح صفحة التنزيل وثبّت الحزمة يدويًا",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "يمكنك التنزيل عبر المتصفح: الحزمة نفسها، والتثبيت فوق القديم يحفظ بياناتك.",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': 'إخفاء',
     '未显示': 'مخفية',
@@ -1771,6 +1811,16 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '音量': "Volume",
+    '亮度': "Brightness",
+    '锁定': "Lock",
+    '正常': "Normal",
+    '下载失败': "Download failed",
+    '浏览器下载': "Download in browser",
+    '线路 {i}/{total} 不可用，换下一条': "Line {i}/{total} unavailable, trying next",
+    '无法自动调起安装({m})': "Couldn't open the installer ({m})",
+    '请到 下载App 页找到安装包手动安装': "Open the Downloads page and install the package manually",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "Or download it in a browser — same package, installing over keeps your data.",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': 'Hide',
     '未显示': 'Hidden',
@@ -2116,6 +2166,16 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '音量': "音量",
+    '亮度': "明るさ",
+    '锁定': "ロック",
+    '正常': "標準",
+    '下载失败': "ダウンロードに失敗しました",
+    '浏览器下载': "ブラウザでダウンロード",
+    '线路 {i}/{total} 不可用，换下一条': "回線 {i}/{total} に接続できません。次を試します",
+    '无法自动调起安装({m})': "インストーラーを起動できません（{m}）",
+    '请到 下载App 页找到安装包手动安装': "「アプリをダウンロード」ページから手動でインストールしてください",
+    '可以改用浏览器下载：同一个安装包，覆盖安装后数据不丢。': "ブラウザでダウンロードもできます。同じパッケージなので上書きインストールでもデータは残ります。",
     // ── 4.81.79 B 站直播/番剧/栏目配置（28 条）──
     '不显示': '非表示',
     '未显示': '非表示中',

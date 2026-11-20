@@ -1,7 +1,7 @@
 name: thirdhub_app
 description: ThirdHub v4 Flutter - 纯播放器前端
 publish_to: "none"
-version: 4.81.83+50754
+version: 4.81.84+50755
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -27,6 +27,8 @@ dependencies:
   path_provider: ^2.1.4
   archive: ^3.6.0
   charset: ^2.0.1
+  # ★4.81.84 端上引擎：Legado 书源规则里的 CSS 选择器要真解析 HTML
+  html: ^0.15.4
   cryptography: ^2.7.0
   share_plus: ^10.0.2
   device_info_plus: ^11.1.0
@@ -55,6 +57,9 @@ dependencies:
   #   两个包都是纯平台通道实现，minSdk 24 满足；失败一律 try/catch 静默降级。
   screen_brightness: ^2.1.11
   volume_controller: ^3.7.1
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
 dev_dependencies:
   flutter_test:
@@ -69,6 +74,9 @@ flutter:
     # 开屏页此前用 Material 内置的 Icons.hub_outlined —— 那是系统通用图标，
     # 与网页端、桌面快捷方式不是同一个东西，用户看到的就是「开屏不是自家标」。
     - assets/branding/
+    # ★4.81.84 端上引擎的源池（995 个纯选择器书源，约 0.9MB）。
+    # 打进包才能「脱离后端也能搜」——后端只做兜底。
+    - assets/sources/
 
 dependency_overrides:
   # objective_c 9.6.x 的构建钩子引用了 code_assets 2.0 才有的 Architecture.arm64e，

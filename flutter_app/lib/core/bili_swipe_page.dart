@@ -9,7 +9,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -17,6 +16,8 @@ import 'bili_module_page.dart'
     show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget,
     biliHeaders;
 import 'design_tokens.dart';
+import 'player/th_player.dart';
+import 'player/th_player_types.dart';
 import 'i18n.dart';
 
 class BiliSwipePage extends StatefulWidget {
@@ -81,7 +82,6 @@ class _SwipeVideoCard extends StatefulWidget {
 class _SwipeVideoCardState extends State<_SwipeVideoCard>
     with AutomaticKeepAliveClientMixin {
   VideoPlayerController? _vp;
-  ChewieController? _chewie;
   List<Map<String, dynamic>> _pages = const [];
   int _pageIdx = 0;
   String _err = '';
@@ -106,7 +106,6 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
 
   @override
   void dispose() {
-    _chewie?.dispose();
     _vp?.dispose();
     super.dispose();
   }
@@ -134,15 +133,12 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
     if (idx < 0 || idx >= _pages.length) return;
     final cid = '${_pages[idx]['cid'] ?? ''}';
     final oldVp = _vp;
-    final oldChewie = _chewie;
     setState(() {
       _loading = true;
       _err = '';
       _vp = null;
-      _chewie = null;
       _pageIdx = idx;
     });
-    oldChewie?.dispose();
     oldVp?.dispose();
     final j = await biliGet(
         widget.ctx,
@@ -167,19 +163,16 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
         vp.dispose();
         return;
       }
-      final chewie = ChewieController(
-        videoPlayerController: vp,
-        autoPlay: true,
-        looping: false,
-        allowFullScreen: false,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: Theme.of(context).colorScheme.primary,
-          handleColor: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      // ★4.81.84：不再套 Chewie。控件换成本仓的 VideoSurface（B 站手机端那套：
+      //   双击暂停/横滑调进度/竖滑调亮度音量/长按 3 倍速/真·横屏全屏）。
+      await vp.setLooping(false);
+      await vp.play();
+      if (!mounted) {
+        vp.dispose();
+        return;
+      }
       setState(() {
         _vp = vp;
-        _chewie = chewie;
         _loading = false;
       });
     } catch (e) {
@@ -255,22 +248,40 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final cs = Theme.of(context).colorScheme;
     final it = widget.item;
     final owner = '${it['owner'] ?? ''}';
     final play = biliPlays(it['play'] is num ? it['play'] as num : null);
     final dur = biliDur(it['duration'] is num ? it['duration'] as num : null);
+    final sub = [
+      if (owner.isNotEmpty) owner,
+      if (play.isNotEmpty) play,
+      if (dur.isNotEmpty) dur,
+      if (_pages.length > 1) trf('第{n}集', {'n': _pageNo}),
+    ].join(' · ');
+
+    // ★4.81.84：这里原来是 Chewie。Chewie 的手机端体验跟 B 站差一截
+    //   （竖屏不给全屏、没有双击暂停/横滑调进度/长按倍速、菜单还写死英文），
+    //   而本仓**早就有**自绘的 ThPlayer（影视页在用，4.81.81 写的）——
+    //   问题只是没推广到这个页面。现在统一成 ThPlayer：
+    //   下载/选集/整季走它自带的底栏按钮，标题作者信息走 title/subtitle。
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 播放器（chewie 自带点按控件）
-        if (_chewie != null && _vp != null)
-          Center(
-            child: AspectRatio(
-              aspectRatio:
-                  _vp!.value.aspectRatio == 0 ? 16 / 9 : _vp!.value.aspectRatio,
-              child: Chewie(controller: _chewie!),
-            ),
+        if (_vp != null)
+          ThPlayer(
+            controller: _vp!,
+            title: _title,
+            subtitle: sub,
+            onDownload: _downloadOne,
+            onEpisodes: _pages.length > 1 ? _pickPage : null,
+            moreExtras: [
+              if (_pages.length > 1)
+                ThMoreItem(
+                  icon: Icons.download_for_offline_outlined,
+                  label: tr('整季下载'),
+                  onTap: _downloadAll,
+                ),
+            ],
           )
         else if (_err.isNotEmpty)
           Center(
@@ -290,104 +301,7 @@ class _SwipeVideoCardState extends State<_SwipeVideoCard>
           )
         else
           const Center(child: CircularProgressIndicator()),
-
-        // 右侧操作列
-        Positioned(
-          right: Gap.sm,
-          bottom: 120,
-          child: Column(
-            children: [
-              _RoundBtn(
-                icon: Icons.download_outlined,
-                label: tr('下载'),
-                onTap: _downloadOne,
-              ),
-              if (_pages.length > 1) ...[
-                const SizedBox(height: Gap.md),
-                _RoundBtn(
-                  icon: Icons.playlist_play_outlined,
-                  label: tr('选集'),
-                  onTap: _pickPage,
-                ),
-                const SizedBox(height: Gap.md),
-                _RoundBtn(
-                  icon: Icons.download_for_offline_outlined,
-                  label: tr('整季下载'),
-                  onTap: _downloadAll,
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        // 底部信息条
-        Positioned(
-          left: Gap.md,
-          right: 76,
-          bottom: 24,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                [
-                  if (owner.isNotEmpty) owner,
-                  if (play.isNotEmpty) play,
-                  if (dur.isNotEmpty) dur,
-                  if (_pages.length > 1)
-                    trf('第{n}集', {'n': _pageNo}),
-                ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
       ],
-    );
-  }
-}
-
-class _RoundBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _RoundBtn(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(28),
-      child: Column(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.black45,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(icon, color: Colors.white, size: 26),
-          ),
-          const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 11)),
-        ],
-      ),
     );
   }
 }

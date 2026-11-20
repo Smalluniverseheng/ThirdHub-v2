@@ -5,7 +5,8 @@
 //
 // 数据来自后端 /v1/bili/view、/v1/bili/replies、/v1/bili/related。
 // 点赞/投币/收藏是**展示**：写操作需要 B 站登录态与 wbi 签名，点击会跳到 B 站原页。
-import 'package:chewie/chewie.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -16,6 +17,8 @@ import 'bili_module_page.dart'
 import 'bili_danmaku_layer.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'player/th_player.dart';
+import 'player/th_player_types.dart';
 
 class BiliVideoPage extends StatefulWidget {
   final BiliCtx ctx;
@@ -33,8 +36,9 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   int _pageIdx = 0;
 
   VideoPlayerController? _vp;
-  ChewieController? _chewie;
-  bool _playing = false;
+  // ★4.81.84 不再用 Chewie：它的控制层没有长按倍速、没有左右滑快进、
+  //   没有上下滑亮度/音量，全屏还是另起路由（弹幕层直接丢失）。换成自家的
+  //   ThPlayer（B 站那套手势 + 倍速面板 + 弹幕常驻）。
   String _playErr = '';
 
   // 弹幕
@@ -63,7 +67,6 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
 
   @override
   void dispose() {
-    _chewie?.dispose();
     _vp?.dispose();
     super.dispose();
   }
@@ -95,15 +98,12 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     final cid = pages.isEmpty
         ? null
         : pages[idx.clamp(0, pages.length - 1)]['cid'];
-    final oldVp = _vp, oldChewie = _chewie;
+    final oldVp = _vp;
     setState(() {
-      _playing = false;
       _playErr = '';
       _vp = null;
-      _chewie = null;
       _pageIdx = idx;
     });
-    oldChewie?.dispose();
     oldVp?.dispose();
     final q = StringBuffer('/v1/bili/playurl?bvid=${Uri.encodeQueryComponent(_bvid)}');
     if (cid != null) q.write('&cid=$cid');
@@ -122,16 +122,9 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         vp.dispose();
         return;
       }
-      final chewie = ChewieController(
-        videoPlayerController: vp,
-        autoPlay: true,
-        allowFullScreen: true,
-        looping: false,
-      );
+      unawaited(vp.play());
       setState(() {
         _vp = vp;
-        _chewie = chewie;
-        _playing = true;
       });
       if (cid != null) _loadDanmaku('$cid');
     } catch (e) {
@@ -238,6 +231,36 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         mode: LaunchMode.externalApplication);
   }
 
+  /// 播放器里的「选集」。页面下方那条横向列表要滚下去才看得见，
+  /// 全屏时更是完全看不见 —— 播放器自己得有个入口（B 站就是这个位置）。
+  Future<void> _pickPage() async {
+    if (_pages.length <= 1) return;
+    final i = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (c2) => SafeArea(
+        child: ListView.builder(
+          itemCount: _pages.length,
+          itemBuilder: (_, i) {
+            final p = _pages[i];
+            final no = p['page'] is num ? (p['page'] as num).toInt() : i + 1;
+            final part = '${p['part'] ?? ''}'.trim();
+            return ListTile(
+              dense: true,
+              leading: Text('$no', style: const TextStyle(fontSize: 12)),
+              title: Text(part.isEmpty ? 'P$no' : part,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing:
+                  i == _pageIdx ? const Icon(Icons.play_arrow, size: 18) : null,
+              onTap: () => Navigator.pop(c2, i),
+            );
+          },
+        ),
+      ),
+    );
+    if (i != null && i != _pageIdx) await _play(i);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -273,20 +296,37 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // 播放器
+          // 播放器（4.81.84 起用 ThPlayer：双击暂停 / 长按倍速 / 左右滑快进 /
+          // 左半屏竖滑调亮度 / 右半屏竖滑调音量 / 倍速面板 / 横屏全屏，
+          // 弹幕作为 overlay 常驻，全屏时不重建）
           AspectRatio(
             aspectRatio: 16 / 9,
             child: Container(
               color: Colors.black,
-              child: _chewie != null && _vp != null
-                  ? Stack(fit: StackFit.expand, children: [
-                      Chewie(controller: _chewie!),
-                      BiliDanmaku(
-                        vp: _vp,
+              child: _vp != null
+                  ? ThPlayer(
+                      controller: _vp!,
+                      title: title,
+                      subtitle: '${owner['name'] ?? ''}',
+                      overlay: BiliDanmaku(
+                        vp: _vp!,
                         items: _dm,
                         enabled: _dmOn,
                       ),
-                    ])
+                      hasDanmaku: true,
+                      onDownload: () => _download(all: false),
+                      onEpisodes:
+                          _pages.length > 1 ? () => _pickPage() : null,
+                      moreExtras: [
+                        if (_pages.length > 1)
+                          ThMoreItem(
+                            icon: Icons.playlist_play,
+                            label: tr('选集'),
+                            sub: '${_pageIdx + 1}/${_pages.length}',
+                            onTap: _pickPage,
+                          ),
+                      ],
+                    )
                   : Center(
                       child: _playErr.isNotEmpty
                           ? Column(
