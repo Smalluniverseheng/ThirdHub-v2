@@ -46,7 +46,7 @@ enum PlayOrigin {
 extension PlayOriginLabel on PlayOrigin {
   String get label => switch (this) {
         PlayOrigin.local => '离线播放',
-        PlayOrigin.engine => '引擎直连',
+        PlayOrigin.engine => '应用内播放',
         PlayOrigin.backend => '后端',
         PlayOrigin.direct => '直连源站',
       };

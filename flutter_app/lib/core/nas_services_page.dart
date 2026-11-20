@@ -220,7 +220,7 @@ class _NasServicesPageState extends State<NasServicesPage> {
         _groups = groups;
         _total = tot;
         if (tot == 0) {
-          _err = tr('本地和网络都没找到。影视源通常可用；书源/音源多数已过期，这部分还在修。');
+          _err = tr('本地和网络都没找到。视频类通常可用；书籍和音乐多数已过期，这部分还在修。');
         }
       });
     } catch (e) {
