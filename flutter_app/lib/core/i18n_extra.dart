@@ -557,6 +557,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'Quelles sources répondent, lesquelles sont ignorées',
     '查看源状态': 'Voir l’état des sources',
     '所有来源都试过了，这一条确实没有命中': 'Toutes les sources ont été essayées — rien pour cette recherche',
+    '完全体': 'Version complète',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -1096,6 +1097,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'Какие источники отвечают, а какие пропускаются',
     '查看源状态': 'Показать состояние источников',
     '所有来源都试过了，这一条确实没有命中': 'Все источники проверены — по этому запросу ничего нет',
+    '完全体': 'Полная версия',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -1636,6 +1638,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'Qué fuentes responden y cuáles se omiten',
     '查看源状态': 'Ver estado de las fuentes',
     '所有来源都试过了，这一条确实没有命中': 'Se probaron todas las fuentes: nada para esta búsqueda',
+    '完全体': 'Versión completa',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -2176,6 +2179,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'أي المصادر تعمل وأيها يتم تجاوزها',
     '查看源状态': 'عرض حالة المصادر',
     '所有来源都试过了，这一条确实没有命中': 'تم تجربة كل المصادر — لا نتيجة لهذا البحث',
+    '完全体': 'النسخة الكاملة',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -2622,6 +2626,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'Which sources respond and which are skipped',
     '查看源状态': 'View source status',
     '所有来源都试过了，这一条确实没有命中': 'Every source was tried — nothing matched this one',
+    '完全体': 'Full version',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -3074,6 +3079,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '哪些源能连上、哪些被自动跳过': 'どのソースが応答し、どれが飛ばされているか',
     '查看源状态': 'ソースの状態を見る',
     '所有来源都试过了，这一条确实没有命中': 'すべてのソースを試しましたが、この検索には該当なし',
+    '完全体': 'フル機能版',
   },
 
 };

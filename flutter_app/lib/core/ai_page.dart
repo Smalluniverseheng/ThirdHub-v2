@@ -20,6 +20,8 @@ import 'ai_rankings_snapshot.dart';
 import 'ai_attach.dart';
 import 'ai_caps.dart';
 import 'ai_providers_page.dart';
+import 'dsh_remote.dart';
+import 'dsh_remote_page.dart';
 import 'ai_settings_page.dart';
 import 'ai_skills.dart';
 import 'agent/agent_inline.dart';
@@ -725,6 +727,29 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     ]));
   }
 
+  /// 打开 DSH「完全体」。
+  ///
+  /// 两种状态：
+  ///   · 已经配对过 → 直接全屏打开，用户感觉不到"跳转"；
+  ///   · 还没配对 → 先进配对页（地址可以留空，会自动按家庭服务器的 IP 猜），
+  ///     配对成功后再自动打开，不用退出来重新点一次。
+  Future<void> _openFullDsh(BuildContext c) async {
+    await DshRemote.load();
+    if (DshRemote.base.isEmpty || DshRemote.token.trim().isEmpty) {
+      if (!mounted) return;
+      await Navigator.push(c,
+          MaterialPageRoute<void>(builder: (_) => const DshRemotePage()));
+      await DshRemote.load();
+      if (!mounted) return;
+      if (DshRemote.base.isEmpty || DshRemote.token.trim().isEmpty) return;
+    }
+    final url = DshRemote.consoleUrl();
+    if (url.isEmpty || !mounted) return;
+    Navigator.push(c,
+        MaterialPageRoute<void>(
+            builder: (_) => DshConsolePage(url: url, title: tr('完全体'))));
+  }
+
   // ── 主区: 顶栏 + 消息 + 输入栏 ──
   Widget _mainBody(BuildContext c, bool dark) {
     final s = session;
@@ -746,7 +771,18 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
                 style: TextStyle(fontSize: 13, color: _capsule == 'noKey' ? Colors.orange : null),
                 overflow: TextOverflow.ellipsis)),
               const Icon(Icons.arrow_drop_down, size: 18)]))),
-        actions: [IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat())]),
+        actions: [
+          // ★4.81.88「完全体」入口。
+          //   DSH 是这套软件里最强的 AI 形态（多智能体、群聊、插件、定时任务），
+          //   但它以前只挂在「我的 → 手机连接」下面 —— 用户根本不会想到去那儿找，
+          //   然后得出"这个 App 的 AI 很弱"的结论。
+          //   AI 页顶栏是第一眼位置，它就应该在这里。
+          IconButton(
+              icon: const Icon(Icons.bolt_outlined),
+              tooltip: tr('完全体'),
+              onPressed: () => _openFullDsh(c)),
+          IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat())
+        ]),
       body: Column(children: [
         // 排队提示条(Kimi 同款: ☰ 排队 | N 条消息排队中)
         if (_queue.isNotEmpty) InkWell(onTap: _queueSheet, child: Container(
