@@ -133,6 +133,20 @@ class DynamicSource {
     final id = val('id');
     final drill = a.drill || a.map.containsKey('drill');
 
+    // ★4.81.90 把 `||` 候选链的备选地址留下来：首选探死了，
+    //   Playable 还能换下一条试（源包写 || 就是为了这个时刻）。
+    final alts = <String>[];
+    final playSpec = a.map['playUrl'];
+    if (play.isNotEmpty && playSpec != null && !playSpec.isTemplate) {
+      for (final cand in playSpec.path.split('||')) {
+        var v = pickField(entry, src, cand.trim(), fetch: a.fetch);
+        if (v.isEmpty) continue;
+        if (playSpec.strip) v = freeStripTags(v);
+        if (playSpec.abs) v = spec.resolve(v);
+        if (v.isNotEmpty && v != play) alts.add(v);
+      }
+    }
+
     return FreeItem(
       // id 缺失时用「标题 + 播放地址」拼一个稳定的：下钻时还要用它取详情。
       id: id.isNotEmpty ? id : (play.isNotEmpty ? play : title),
@@ -147,6 +161,7 @@ class DynamicSource {
       raw: {
         'id': id,
         'playUrl': play,
+        if (alts.isNotEmpty) 'playAlts': alts,
         // 详情动作需要知道「当前条目属于哪个 feed/专辑」
         if (spec.base.isNotEmpty) 'base': spec.base,
       },

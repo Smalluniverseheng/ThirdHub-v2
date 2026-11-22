@@ -19,6 +19,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../agg/playable.dart';
+import '../i18n.dart';
 import '../ui_cover.dart';
 import 'free_models.dart';
 import 'free_open.dart';
@@ -73,22 +75,41 @@ class FreeItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext c) {
     final sub = subtitleOverride ?? item.displaySubtitle;
-    return ListTile(
-      leading: item.cover.isEmpty
-          ? const SizedBox(width: 48, height: 48)
-          : CoverThumb(item.cover, fallbackText: item.displayTitle),
-      title: Text(item.displayTitle,
-          maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: sub.isEmpty
-          ? null
-          : Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis),
-      // 用源名做尾部标记：用户能一眼看出这条来自哪个来源，
-      // 出了问题也知道该去「我的源」里关哪个。
-      trailing: Text(item.source,
-          style: Theme.of(c).textTheme.labelSmall?.copyWith(
-                color: Theme.of(c).colorScheme.onSurfaceVariant,
-              )),
-      onTap: () => FreeOpen.open(c, item),
+    // ★4.81.90 死链明示：后台探活探出来的失效条目灰掉 + 打上标，
+    //   不用点进去才知道打不开。没探过的不标（未知≠失效）。
+    //   听 Playable.tick 自刷新 —— 探活是后台回来的，不该要求每个列表页
+    //   记得 setState（漏一处就是"标永远不出来"）。
+    return ValueListenableBuilder<int>(
+      valueListenable: Playable.tick,
+      builder: (c, _, __) {
+        final dead = Playable.isDead(item);
+        return Opacity(
+          opacity: dead ? 0.55 : 1,
+          child: ListTile(
+            leading: item.cover.isEmpty
+                ? const SizedBox(width: 48, height: 48)
+                : CoverThumb(item.cover, fallbackText: item.displayTitle),
+            title: Text(item.displayTitle,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: sub.isEmpty
+                ? null
+                : Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis),
+            // 用源名做尾部标记：用户能一眼看出这条来自哪个来源，
+            // 出了问题也知道该去「我的源」里关哪个。死了的换成失效标。
+            trailing: dead
+                ? Text(tr('已失效'),
+                    style: Theme.of(c)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: Theme.of(c).colorScheme.error))
+                : Text(item.source,
+                    style: Theme.of(c).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(c).colorScheme.onSurfaceVariant,
+                        )),
+            onTap: () => FreeOpen.open(c, item),
+          ),
+        );
+      },
     );
   }
 }

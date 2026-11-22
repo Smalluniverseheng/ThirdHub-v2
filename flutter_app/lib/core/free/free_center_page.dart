@@ -6,9 +6,12 @@
 //
 // 页面结构：一个 tab 切板块，一个搜索框，一个列表；点条目按内容类型分派到
 // 统一播放器 / 漫画阅读 / 文本阅读。源不可达时在顶部直说，不伪装成"没内容"。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../i18n.dart';
+import '../agg/playable.dart';
 import '../agg/source_health.dart';
 import '../player/media_spec.dart';
 import '../player/unified_player.dart';
@@ -186,6 +189,10 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
         _items = list;
         _loading = false;
       });
+      // ★4.81.90 后台探活：死链标「已失效」，每条出结果刷一次列表徽标。
+      unawaited(Playable.sweep(list, onUpdate: () {
+        if (mounted) setState(() {});
+      }));
     } on FreeNetException catch (e) {
       if (!mounted || gen != _req) return;
       // ★4.81.88：原来这里把「该板块第一个源」标记为不可达 —— 但失败可能

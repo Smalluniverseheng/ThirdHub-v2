@@ -15,6 +15,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../agg/playable.dart';
 import '../i18n.dart';
 import '../player/media_spec.dart';
 import '../player/unified_player.dart';
@@ -38,6 +39,12 @@ class FreeOpen {
 
   /// 打开一条开放源结果。所有导航都从 [c] 出发。
   static Future<void> open(BuildContext c, FreeItem it) async {
+    // ★4.81.90 已探明失效的条目直接拦：列表里已经标了「已失效」，
+    //   点进去只会有转圈和报错 —— 不拿用户的时间换教训。
+    if (Playable.isDead(it)) {
+      _toast(c, tr('这条打不开了，已标记为失效'));
+      return;
+    }
     // ★ 导入/同步来的源：没有专属 Dart 实现，能下钻就下钻（声明式
     //   detail 动作），不能下钻就直接播/读。
     if (FreeRegistry.isDynamic(it.source)) {
@@ -89,16 +96,20 @@ class FreeOpen {
   /// 与开放源页原来的 `_play` 一致：视频的直链必须现取 ——
   /// PeerTube 的列表接口不返回 files 字段。
   static Future<void> play(BuildContext c, FreeItem it) async {
-    var url = it.playUrl;
+    // ★4.81.90 候选回退：主地址死了换 `||` 链的下一条（Playable 按 URL 记死活）。
+    //   没探过的地址照常放行 —— 未知≠失效，先给播，打不开再记账。
+    var url = Playable.liveCandidate(it) ?? '';
     if (url.isEmpty && it.kind == FreeKind.video) {
       final host = '${it.raw['host'] ?? ''}';
       try {
         url = await PeerTubeSource.playUrl(it.id,
             host: host.isEmpty ? null : host);
       } on FreeNetException catch (e) {
+        Playable.markDead(it); // 实锤：连地址都解析不出来
         if (c.mounted) _toast(c, e.message);
         return;
       } catch (e) {
+        Playable.markDead(it);
         if (c.mounted) _toast(c, '$e');
         return;
       }

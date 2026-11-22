@@ -505,6 +505,28 @@ class Cloud {
     } catch (_) { return false; }
   }
 
+  /// 只取一行（4.81.90 进度合并前比对云端用）。
+  ///
+  /// 进度推送不能盲目覆盖（平板随手翻几页会把手机读到的第 20 章打回去），
+  /// 写之前必须知道云端现在是什么。整表 [tableDown] 干这件事太贵 ——
+  /// 翻一页就拉全表，所以开这个按 id 的点查。返回 `{data, updated_at}`，
+  /// 查不到 / 未登录 / 出错都返回 null（调用方按"云端没有"处理，合并是幂等的）。
+  static Future<Map<String, dynamic>?> tableGet(String table, String id) async {
+    if (!loggedIn || id.isEmpty) return null;
+    try {
+      final r = await thGet(
+          Uri.parse(
+              '$base/rest/v1/$table?user_id=eq.$userId&id=eq.${Uri.encodeComponent(id)}&select=data,updated_at'),
+          headers: _authHeaders);
+      if (r.statusCode != 200) return null;
+      final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
+      if (list.isEmpty) return null;
+      return Map<String, dynamic>.from(list.first as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 删掉本用户在 [table] 里的 [id] 行。
   ///
   /// ★ 这是「删除要真的删云端」的唯一出口：

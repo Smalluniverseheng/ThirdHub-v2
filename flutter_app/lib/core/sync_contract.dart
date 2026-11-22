@@ -180,6 +180,51 @@ Map<String, dynamic> progressRowOf(int chapterIndex, {int? tsMs}) => <String, dy
       'ts': tsMs ?? DateTime.now().millisecondsSinceEpoch,
     };
 
+/// 阅读进度合并（4.81.90）：**谁也不能把谁打回去**。
+///
+/// 多端场景的真实事故：手机读到 20 章，平板随手翻到 6 章并带着"此刻"的
+/// 时间戳上云 —— 按"谁后写谁赢"，20 章就没了。进度不是"最近一次动作"，
+/// 是"读到哪了"，所以口径是：
+///   1. **读得远的胜**（chapterIndex 大）—— 进度只进不退；
+///   2. 同一章 → 时间新的胜（记录"最后停在这"的时刻）。
+/// 返回归一化后的胜方行（chapterIndex ≥ 0），输入双方都不会被修改。
+Map<String, dynamic> progressRowMerge(
+    Map<String, dynamic> a, Map<String, dynamic> b) {
+  final int ciA = _ciOf(a), ciB = _ciOf(b);
+  if (ciA != ciB) return ciA > ciB ? _normProgress(a, ciA) : _normProgress(b, ciB);
+  return tsOf(a) >= tsOf(b) ? _normProgress(a, ciA) : _normProgress(b, ciB);
+}
+
+int _ciOf(Map<String, dynamic> j) {
+  final Object? v = j['chapterIndex'];
+  final int n = v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+  return n < 0 ? 0 : n;
+}
+
+Map<String, dynamic> _normProgress(Map<String, dynamic> j, int ci) =>
+    <String, dynamic>{'chapterIndex': ci, 'ts': tsOf(j)};
+
+/// 云端进度要不要落进本机（[ReadSync._pullProgress] 的判定，抽出来给闸门跑）。
+///
+/// 与 [progressRowMerge] 同一套口径，外加重读保护：
+///   · 云端更深、且不比本机旧 → 落（换设备续读的主路径）；
+///   · 云端更浅 → **不动本机**（进度只进不退）；
+///   · 云端更深但本机时间更新 → **不动本机**（用户正在重读前几章，
+///     本机此刻的位置才是他手里正在读的）——云端那份也没丢，
+///     下次本机推的时候由 [progressRowMerge] 保住最远进度。
+///   · 同章 → 只对表时间戳。
+bool progressPullApplies({
+  required int cloudCi,
+  required int cloudTs,
+  required int localCi,
+  required int localTs,
+}) {
+  if (localCi < 0) return true; // 本机没读过 → 云端说什么都收
+  if (cloudCi < localCi) return false; // 更浅 → 不退
+  if (cloudCi == localCi) return cloudTs > localTs; // 同章 → 只更新时间
+  return cloudTs >= localTs; // 更深 → 要求云端不比本机旧
+}
+
 /// 合并规则（**与网页端 `sync-service.js` 的 `pullAll()` 逐条对齐**）：
 ///
 /// 1. 墓碑命中（本机删过）→ 删云端 + 清本机，**绝不恢复**

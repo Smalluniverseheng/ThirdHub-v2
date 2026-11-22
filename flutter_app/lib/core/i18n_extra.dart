@@ -23,6 +23,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
     '这一条没有命中': 'Aucun résultat pour cette recherche',
+    '已失效': 'Indisponible',
+    '这条打不开了，已标记为失效': 'Ce lien ne fonctionne plus, marqué indisponible',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': 'Recherche effectuée dans les sources publiques accessibles directement depuis cet appareil — rien trouvé. Connectez l\'application bibliothèque ou le serveur domestique pour couvrir davantage de sources.',
     '已同步 {n} 个源': '{n} sources synchronisées',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Importer, synchroniser, supprimer des sources — hors de l’app',
@@ -563,6 +565,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
     '这一条没有命中': 'По этому запросу ничего не найдено',
+    '已失效': 'Недоступно',
+    '这条打不开了，已标记为失效': 'Этот элемент не открывается, отмечен как недоступный',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': 'Поиск выполнен по публичным источникам, доступным напрямую с этого устройства, — ничего не найдено. Подключите приложение-библиотеку или домашний сервер, чтобы охватить больше источников.',
     '已同步 {n} 个源': 'Синхронизировано источников: {n}',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Импорт, синхронизация и удаление источников — вне приложения',
@@ -1103,6 +1107,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
     '这一条没有命中': 'Sin resultados para esta búsqueda',
+    '已失效': 'No disponible',
+    '这条打不开了，已标记为失效': 'Este elemento no abre, marcado como no disponible',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': 'Se buscó en las fuentes públicas accesibles directamente desde este dispositivo y no se encontró nada. Conecta la aplicación de biblioteca o el servidor del hogar para cubrir más fuentes.',
     '已同步 {n} 个源': '{n} fuentes sincronizadas',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Importar, sincronizar y borrar fuentes — fuera de la app',
@@ -1644,6 +1650,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
     '这一条没有命中': 'لا نتائج لهذا البحث',
+    '已失效': 'غير متاح',
+    '这条打不开了，已标记为失效': 'هذا العنصر لا يُفتح، تم وسمه كغير متاح',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': 'تم البحث في المصادر العامة التي يمكن لهذا الجهاز الوصول إليها مباشرةً ولم يُعثر على شيء. اتصل بتطبيق المكتبة أو خادم المنزل للبحث في مصادر أكثر.',
     '已同步 {n} 个源': 'تمت مزامنة {n} مصدرًا',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'استيراد ومزامنة وحذف المصادر — خارج التطبيق',
@@ -2184,6 +2192,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
     '这一条没有命中': 'No results for this search',
+    '已失效': 'Unavailable',
+    '这条打不开了，已标记为失效': 'This one no longer opens; marked unavailable',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': 'Searched the public sources this device can reach directly — nothing found. Connect the library app or home backend to reach many more sources.',
     '已同步 {n} 个源': 'Synced {n} sources',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Import, sync and remove content sources — not bundled in the app',
@@ -2632,6 +2642,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
     '这一条没有命中': 'この検索では見つかりませんでした',
+    '已失效': '利用できません',
+    '这条打不开了，已标记为失效': 'この項目は開けません。利用不可としてマークしました',
     '已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。': '端末から直接つながる公開ソースで検索しましたが見つかりませんでした。ライブラリアプリか家庭用バックエンドに接続すると、より多くのソースを検索できます。',
     '已同步 {n} 个源': '{n} 件のソースを同期しました',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'コンテンツソースのインポート・同期・削除（アプリ非同梱）',

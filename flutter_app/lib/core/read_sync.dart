@@ -125,7 +125,20 @@ class ReadSync {
   }
 
   static Future<void> _sendProgress(String id, int chapterIndex) async {
-    final Map<String, dynamic> data = progressRowOf(chapterIndex);
+    final Map<String, dynamic> mine = progressRowOf(chapterIndex);
+    // ★4.81.90 写前合并，不盲目覆盖：另一台设备读得更远时，云端那份必须活下来。
+    //   （真实事故：平板随手翻到 6 章、带"此刻"时间戳上云，把手机读到的 20 章打回。）
+    //   口径在 sync_contract.progressRowMerge：读得远的胜，同章取时间新者。
+    Map<String, dynamic> data = mine;
+    try {
+      final row = await Cloud.tableGet('th_reading_progress', id);
+      final Object? d = row?['data'];
+      if (d is Map) {
+        data = progressRowMerge(mine, Map<String, dynamic>.from(d));
+      }
+    } catch (_) {
+      // 点查失败就退回直推：宁可有一次覆盖风险，也不能让进度永远推不上去。
+    }
     await _push('th_reading_progress', SyncRow(id, data, tsOf(data)));
   }
 
@@ -242,14 +255,22 @@ class ReadSync {
         continue;
       }
       final int cloudTs = r.ts > 0 ? r.ts : tsOf(r.data);
-      final int localTs = p.getInt('$_ptsPrefix$bookUrl') ?? 0;
-      if (localTs > cloudTs) continue; // 本机更新 → 下次翻页自然会推，无需在这里反推
       final Object? idx = r.data['chapterIndex'];
       if (idx is! num) continue;
       final int ci = idx.toInt();
       if (ci < 0) continue;
-      if (p.getInt('progress_$bookUrl') == ci) {
-        if (cloudTs > localTs) await p.setInt('$_ptsPrefix$bookUrl', cloudTs);
+      final int localTs = p.getInt('$_ptsPrefix$bookUrl') ?? 0;
+      final int localCi = p.getInt('progress_$bookUrl') ?? -1;
+      // ★4.81.90 进度只进不退 + 重读保护（口径见 sync_contract.progressPullApplies）：
+      //   云端更浅不动本机；云端更深但本机是"正在重读前几章"也不动本机 ——
+      //   云端那份没丢，下次本机推送时由 progressRowMerge 保住最远进度。
+      if (!progressPullApplies(
+          cloudCi: ci, cloudTs: cloudTs, localCi: localCi, localTs: localTs)) {
+        continue;
+      }
+      if (localCi == ci) {
+        // 同章：只对表时间戳，不算"改动"
+        await p.setInt('$_ptsPrefix$bookUrl', cloudTs);
         continue;
       }
       await p.setInt('progress_$bookUrl', ci);

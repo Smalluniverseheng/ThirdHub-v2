@@ -35,6 +35,7 @@ import '../free/free_registry.dart';
 import '../engine_direct.dart';
 import '../i18n.dart';
 import '../ui_cover.dart';
+import 'playable.dart';
 import 'source_health.dart';
 import '../../main.dart' show Api;
 
@@ -166,6 +167,9 @@ class BoardFeed {
         if (r.items.isNotEmpty) {
           groups.add(FreeBoard.group(r.items));
           nLocal += r.items.length;
+          // ★4.81.90 后台逐条探活（死链标「已失效」）。徽标靠 Playable.tick
+          //   自己刷到各列表的 FreeItemTile 上，这里 fire-and-forget 即可。
+          unawaited(Playable.sweep(r.items));
         }
         errors.addAll(r.errors);
       } catch (e) {
@@ -232,6 +236,8 @@ class _BoardDiscoverViewState extends State<BoardDiscoverView> {
         _items = r.items;
         _loading = false;
       });
+      // ★4.81.90 后台逐条探活，死链标「已失效」（徽标靠 tick 自刷新）。
+      unawaited(Playable.sweep(r.items));
     } catch (e) {
       if (!mounted || seq != _seq) return;
       setState(() {
