@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../i18n.dart';
+import '../agg/source_health.dart';
 import '../player/media_spec.dart';
 import '../player/unified_player.dart';
 import 'free_http.dart';
@@ -106,9 +107,6 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   String _err = '';
   List<FreeItem> _items = const [];
 
-  /// 源 id → 是否可达。null = 还没探。
-  Map<String, bool> _reach = const {};
-
   /// 外部源（导入/同步）本次的失败原因。UI 折叠显示，不挡内容。
   List<String> _extErrors = const [];
 
@@ -144,7 +142,6 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
       // 读缓存或同步失败就当没有外部源，内置源照常用。
     }
     if (!mounted) return;
-    _probe();
     _load();
   }
 
@@ -154,14 +151,16 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
     super.dispose();
   }
 
+  /// 强制重检。
+  ///
+  /// ★4.81.88：这里不再"探一遍然后画横幅"。探活的结论现在直接变成行为
+  ///   ——`core/agg/source_health.dart` 记录每个源的成败，连续失败的源
+  ///   进入冷却期，搜索时直接跳过。所以「重检」只做一件事：把账单清空，
+  ///   让下一次取数重新试一遍所有源。用户点它，就是想要这个。
   Future<void> _probe() async {
-    final all = <FreeSource>[];
-    for (final k in kFreeTabs) {
-      all.addAll(sourcesOf(k));
-    }
-    final r = await FreeReach.probeAll(all);
+    await SourceHealth.reset();
     if (!mounted) return;
-    setState(() => _reach = r);
+    setState(() {});
   }
 
   Future<void> _loadPoem() async {
@@ -189,7 +188,10 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
       });
     } on FreeNetException catch (e) {
       if (!mounted || gen != _req) return;
-      FreeReach.mark(sourcesOf(_kind).first.id, false);
+      // ★4.81.88：原来这里把「该板块第一个源」标记为不可达 —— 但失败可能
+      //   来自任何一个源，甚至来自导入源。无差别记账会让一个正常的源被
+      //   冤枉。现在每个源自己记账（FreeRegistry.searchDynamic 里逐源记），
+      //   这里只负责把原因显示出来。
       setState(() {
         _loading = false;
         _err = e.message;
@@ -242,11 +244,6 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   // ── UI ───────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final dead = sourcesOf(_kind)
-        .where((s) => _reach[s.id] == false)
-        .map((s) => s.name)
-        .toList();
-
     return Scaffold(
       appBar: AppBar(
         title: Text(tr('开放源')),
@@ -255,7 +252,6 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
             tooltip: tr('重新探测'),
             icon: const Icon(Icons.wifi_tethering),
             onPressed: () async {
-              FreeReach.clear();
               await _probe();
               if (mounted) setState(() {});
               _load();
@@ -330,10 +326,14 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
       ),
       body: Column(
         children: [
-          if (dead.isNotEmpty) _banner(dead),
-          if (dead.isEmpty) _offlineNote(),
+          // ★4.81.88：删掉「{n} 当前不可达」横幅。
+          //   那句话把四个源名堆成一行，看起来像"这里全废了"；而下面明明
+          //   有诗词和古登堡的内容 —— 判定和取数脱钩，判定只用来吓人。
+          //   现在坏源由 core/agg/source_health.dart 静默淘汰（冷却期不再
+          //   发请求），界面只在**真的一条都没有**时说一句人话。
+          _offlineNote(),
           _sourceStrip(),
-          if (_extErrors.isNotEmpty) _extErrorNote(),
+          if (_extErrors.isNotEmpty && _items.isEmpty) _extErrorNote(),
           if (_kind == FreeKind.book && _items.isNotEmpty && _poem.isNotEmpty)
             _poemCard(),
           Expanded(child: _body()),
@@ -550,23 +550,6 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
             ),
           ],
         ),
-      );
-
-  Widget _banner(List<String> dead) => Container(
-        width: double.infinity,
-        color: Colors.orange.withValues(alpha: 0.14),
-        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-        child: Row(children: [
-          const Icon(Icons.wifi_off, size: 16, color: Colors.orange),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              trf('{n} 当前不可达，可能被网络阻断，换网或稍后重试', {'n': dead.join('、')}),
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-          TextButton(onPressed: _load, child: Text(tr('重试'))),
-        ]),
       );
 
   /// 「菩萨蛮 · 温庭筠」这种来源行，两段都可能为空。

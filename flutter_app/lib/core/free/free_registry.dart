@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../agent_dsh_client.dart' show AgentDshClient;
+import '../agg/source_health.dart';
 import '../changelog.dart' show ChangelogStore;
 import 'free_bundle.dart';
 import 'free_dynamic.dart';
@@ -125,6 +126,7 @@ class FreeRegistry {
   /// 预热缓存。App 启动与进「开放源」页时各调一次（幂等）。
   static Future<void> ensureLoaded() async {
     if (_loaded) return;
+    await SourceHealth.ensureLoaded();
     final p = await SharedPreferences.getInstance();
     selfResponsibility = p.getBool(_kSelfResp) ?? false;
     final ts = p.getInt(_kLastSync);
@@ -266,12 +268,16 @@ class FreeRegistry {
   ///
   /// 单个源失败不影响其它源 —— 用户导入的源质量参差，
   /// 「有一个源挂了」不应该表现成「整个板块空着」。
+  ///
+  /// ★ 4.81.88 起接入源健康：冷却中的源**不发请求**（省一个超时），
+  ///   每个源单独计时并把成败记到 [SourceHealth]。页面上不再有
+  ///   「XX 当前不可达」这种诊断横幅 —— 判定直接变成行为，不是变成文案。
   static Future<ExternalSearchResult> searchDynamic(
     FreeKind kind,
     String q, {
     int page = 1,
   }) async {
-    final specs = [
+    final all = [
       for (final e in _external.values)
         if (e.source.kind == kind &&
             e.spec != null &&
@@ -279,19 +285,34 @@ class FreeRegistry {
             _gateAllows(e.source))
           e.spec!
     ];
-    if (specs.isEmpty) return const ExternalSearchResult([], []);
+    if (all.isEmpty) return const ExternalSearchResult([], []);
+
+    // 全部都在冷战里也要给一次机会：挑累计失败最少的那个试一次，
+    // 否则用户会看到「有源但永远空白」——那比慢更难受。
+    var specs = all.where((s) => SourceHealth.isUsable(s.id)).toList();
+    if (specs.isEmpty) {
+      final sorted = [...all]..sort(
+          (a, b) => SourceHealth.failsOf(a.id).compareTo(SourceHealth.failsOf(b.id)));
+      specs = [sorted.first];
+    }
 
     final items = <FreeItem>[];
     final errs = <String>[];
     final vars = {'q': q, 'page': '$page'};
 
     await Future.wait(specs.map((s) async {
+      final sw = Stopwatch()..start();
       try {
         final got = await DynamicSource.run(s, s.search!, vars);
+        SourceHealth.reportOk(s.id,
+            ms: sw.elapsedMilliseconds, count: got.length);
         items.addAll(got);
       } on FreeNetException catch (e) {
+        // offline=true 才是「到不了」；格式类错误只记原因不冷却。
+        SourceHealth.reportFail(s.id, e.message, soft: !e.offline);
         errs.add('${s.name}：${e.message}');
       } catch (e) {
+        SourceHealth.reportFail(s.id, '$e', soft: true);
         errs.add('${s.name}：$e');
       }
     }));
@@ -349,8 +370,29 @@ class FreeRegistry {
 
   /// 内置源的取数（编译进包的那几个）。
   ///
-  /// 与 4.81.85 的行为完全一致，只是从页面里搬了出来。
+  /// ★ 内置源**不参与冷却**：它是保底通路，冷却它等于关掉整个板块的
+  ///   离线能力。但成败照记 —— 体检面板要能看出"这个源今天基本不通"。
   static Future<List<FreeItem>> _builtinSearch(
+    FreeKind kind,
+    String q, {
+    String bookBucket = 'A–M',
+  }) async {
+    final key = 'builtin:${kind.name}';
+    final sw = Stopwatch()..start();
+    try {
+      final got = await _builtinRaw(kind, q, bookBucket: bookBucket);
+      SourceHealth.reportOk(key, ms: sw.elapsedMilliseconds, count: got.length);
+      return got;
+    } on FreeNetException catch (e) {
+      SourceHealth.reportFail(key, e.message, soft: !e.offline);
+      rethrow;
+    } catch (e) {
+      SourceHealth.reportFail(key, '$e', soft: true);
+      rethrow;
+    }
+  }
+
+  static Future<List<FreeItem>> _builtinRaw(
     FreeKind kind,
     String q, {
     String bookBucket = 'A–M',
