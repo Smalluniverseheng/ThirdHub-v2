@@ -146,6 +146,7 @@ import 'core/th_http.dart';
 import 'core/backend_health.dart';
 import 'core/play_resolver.dart';
 // ★4.81.77「开放源」：直连公网正规站点的独立内容通路，不经过 Api/base。
+import 'core/free/free_board.dart';
 import 'core/free/free_center_page.dart';
 import 'core/free/free_source_manage_page.dart';
 import 'core/free/free_models.dart';
@@ -6175,6 +6176,14 @@ Widget searchEmptyState({
   required String kind,
   VoidCallback? onFix,
   VoidCallback? onFree,
+
+  /// 是否已经试过「本机直连的开放源」（★4.81.87）。
+  ///
+  /// 漫画/音乐/影视在没连引擎也没连后端时会先直连公网源。
+  /// 那时候再说「还没连上内容来源」就是错的 —— 用户刚看到进度条转完，
+  /// 说明我们试过了，只是没命中。文案必须说实话。
+  /// 小说板块不走这条路（它有打包进包的 995 个源），保持原文案。
+  bool triedLocal = false,
 }) {
   if (loading) return const SizedBox.shrink();
   final hasAny = groups
@@ -6186,7 +6195,11 @@ Widget searchEmptyState({
   }
   if (needConn) {
     return _searchEmptyBox(
-        Icons.link_off, '还没连上内容来源', '「$kind」的内容由资料库应用或家庭后端提供，两者任连其一即可开始搜索。',
+        Icons.link_off,
+        triedLocal ? tr('这一条没有命中') : '还没连上内容来源',
+        triedLocal
+            ? tr('已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。')
+            : '「$kind」的内容由资料库应用或家庭后端提供，两者任连其一即可开始搜索。',
         onFix: onFix, onFree: onFree);
   }
   return _searchEmptyBox(Icons.search_off, '没有找到相关$kind',
@@ -7331,8 +7344,15 @@ class _CSR extends State<ComicSearchResults> {
           await go(q);
           return;
         }
-        if (mounted) setState(() => needConn = true);
-        throw Exception('未连接本地资料库');
+        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
+        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
+        final freeItems = await FreeBoard.search(FreeKind.comic, q);
+        if (freeItems.isNotEmpty) {
+          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
+        } else {
+          if (mounted) setState(() => needConn = true);
+          throw Exception('未连接本地资料库');
+        }
       }
     } catch (e) {
       if (mounted)
@@ -7360,7 +7380,14 @@ class _CSR extends State<ComicSearchResults> {
         Expanded(
             child: ListView(children: [
           for (final g in groups) ...[
-            if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+            // ★4.81.87：本机直连的开放源结果（FreeItem 结构），
+            //   与后端/引擎的 Map 结构不同，必须分开渲染，否则直接抛类型错。
+            if (FreeBoard.isFree(g))
+              for (final it in (g['items'] as List<FreeItem>))
+                FreeItemTile(item: it),
+            if (!FreeBoard.isFree(g) &&
+                g['ok'] == true &&
+                (g['items'] as List?)?.isNotEmpty == true)
               for (final b in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (b['coverUrl'] ?? '') != ''
@@ -7391,6 +7418,7 @@ class _CSR extends State<ComicSearchResults> {
               needConn: needConn,
               groups: groups,
               listKeys: const ['items'],
+              triedLocal: true,
               kind: '漫画',
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),
@@ -7896,8 +7924,15 @@ class _MSR extends State<MusicSearchResults> {
           await go(q);
           return;
         }
-        if (mounted) setState(() => needConn = true);
-        throw Exception('未连接本地资料库');
+        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
+        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
+        final freeItems = await FreeBoard.search(FreeKind.music, q);
+        if (freeItems.isNotEmpty) {
+          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
+        } else {
+          if (mounted) setState(() => needConn = true);
+          throw Exception('未连接本地资料库');
+        }
       }
     } catch (e) {
       if (mounted)
@@ -7941,7 +7976,14 @@ class _MSR extends State<MusicSearchResults> {
         Expanded(
             child: ListView(children: [
           for (final g in groups) ...[
-            if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+            // ★4.81.87：本机直连的开放源结果（FreeItem 结构），
+            //   与后端/引擎的 Map 结构不同，必须分开渲染，否则直接抛类型错。
+            if (FreeBoard.isFree(g))
+              for (final it in (g['items'] as List<FreeItem>))
+                FreeItemTile(item: it),
+            if (!FreeBoard.isFree(g) &&
+                g['ok'] == true &&
+                (g['items'] as List?)?.isNotEmpty == true)
               for (final m in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (m['coverUrl'] ?? '') != ''
@@ -7975,6 +8017,7 @@ class _MSR extends State<MusicSearchResults> {
               needConn: needConn,
               groups: groups,
               listKeys: const ['items'],
+              triedLocal: true,
               kind: '音乐',
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),
@@ -9290,8 +9333,15 @@ class _VSR extends State<VideoSearchResults> {
           await go(q);
           return;
         }
-        if (mounted) setState(() => needConn = true);
-        throw Exception('未连接本地资料库');
+        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
+        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
+        final freeItems = await FreeBoard.search(FreeKind.video, q);
+        if (freeItems.isNotEmpty) {
+          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
+        } else {
+          if (mounted) setState(() => needConn = true);
+          throw Exception('未连接本地资料库');
+        }
       }
     } catch (e) {
       if (mounted)
@@ -9319,7 +9369,14 @@ class _VSR extends State<VideoSearchResults> {
         Expanded(
             child: ListView(children: [
           for (final g in groups) ...[
-            if (g['ok'] == true && (g['items'] as List?)?.isNotEmpty == true)
+            // ★4.81.87：本机直连的开放源结果（FreeItem 结构），
+            //   与后端/引擎的 Map 结构不同，必须分开渲染，否则直接抛类型错。
+            if (FreeBoard.isFree(g))
+              for (final it in (g['items'] as List<FreeItem>))
+                FreeItemTile(item: it),
+            if (!FreeBoard.isFree(g) &&
+                g['ok'] == true &&
+                (g['items'] as List?)?.isNotEmpty == true)
               for (final b in (g['items'] as List? ?? []))
                 ListTile(
                     leading: (b['coverUrl'] ?? '') != ''
@@ -9351,6 +9408,7 @@ class _VSR extends State<VideoSearchResults> {
               needConn: needConn,
               groups: groups,
               listKeys: const ['items'],
+              triedLocal: true,
               kind: '视频',
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),

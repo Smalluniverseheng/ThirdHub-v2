@@ -13,6 +13,7 @@ import '../player/media_spec.dart';
 import '../player/unified_player.dart';
 import 'free_http.dart';
 import 'free_models.dart';
+import 'free_open.dart';
 import 'free_policy.dart';
 import 'free_registry.dart';
 import 'free_source_manage_page.dart';
@@ -202,117 +203,19 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
     }
   }
 
-  /// 内置源的取数。
+  /// 取数：内置源 + 已同步/已导入源，合并去重。
   ///
-  /// 与 4.81.85 之前完全一致 —— 只是电台多加了 SomaFM（两个源并发，
-  /// 任一有结果就够用；两个都挂才算这个板块挂了）。
-  Future<List<FreeItem>> _fetchBuiltin() async {
-    final q = _q.text.trim();
-    switch (_kind) {
-      case FreeKind.music:
-        return q.isEmpty
-            ? AudiusSource.trending()
-            : AudiusSource.search(q);
-      case FreeKind.radio:
-        return _radioAll(q);
-      case FreeKind.podcast:
-        // iTunes 必须有词，空搜索给一个能出结果的中性词。
-        return PodcastSource.search(q.isEmpty ? '故事' : q);
-      case FreeKind.comic:
-        return q.isEmpty
-            ? MangaDexSource.popularZh()
-            : MangaDexSource.search(q);
-      case FreeKind.video:
-        return q.isEmpty
-            ? PeerTubeSource.latest()
-            : PeerTubeSource.search(q);
-      case FreeKind.book:
-        if (q.isNotEmpty) return WikisourceSource.search(q);
-        return GutenbergAuSource.browse(bucket: _bucket);
-      default:
-        return const [];
-    }
-  }
-
-  /// 电台：radio-browser 与 SomaFM 并发。
-  ///
-  /// ★ 为什么必须并发而不是串行兜底：两个源都在境外，
-  ///   串行时一个超时就把首屏拖 15 秒。并发下最坏也是 15 秒，最好 2 秒。
-  Future<List<FreeItem>> _radioAll(String q) async {
-    final out = <FreeItem>[];
-    final errs = <String>[];
-    await Future.wait([
-      () async {
-        try {
-          final got = q.isEmpty
-              ? await RadioSource.top()
-              : await RadioSource.search(q);
-          out.addAll(got);
-        } on FreeNetException catch (e) {
-          errs.add('网络电台：${e.message}');
-        }
-      }(),
-      () async {
-        try {
-          final got =
-              q.isEmpty ? await SomaFmSource.top() : await SomaFmSource.search(q);
-          out.addAll(got);
-        } on FreeNetException catch (e) {
-          errs.add('SomaFM：${e.message}');
-        }
-      }(),
-    ]);
-    // 两个都空 + 都有错 → 真的失败了，把原因抛出去让 UI 说人话。
-    if (out.isEmpty && errs.isNotEmpty) {
-      throw FreeNetException(errs.join('；'), offline: true);
-    }
-    return out;
-  }
-
-  /// 内置 + 外部源合并取数。
-  ///
-  /// ★ 顺序是先内置后外部，且**内置失败不阻塞外部**：
-  ///   用户导入源本来就是为了「内置源没有的东西」，
-  ///   因为 MangaDex 挂了就让导入的源也不显示，等于把功能锁死了。
+  /// ★4.81.87：具体逻辑已下沉到 [FreeRegistry.searchAll] —— 漫画/音乐/影视
+  ///   三个板块在没连引擎也没连后端时也要用同一套源，不能只服务这一个页面。
+  ///   这里只保留「把失败原因带给 UI」这一层页面职责。
   Future<List<FreeItem>> _fetch() async {
-    final q = _q.text.trim();
-
-    var builtin = const <FreeItem>[];
-    FreeNetException? builtinErr;
-    try {
-      builtin = await _fetchBuiltin();
-    } on FreeNetException catch (e) {
-      builtinErr = e;
-    }
-
-    var ext = const ExternalSearchResult(<FreeItem>[], <String>[]);
-    if (FreeRegistry.allOf(_kind).any((s) => !s.builtin)) {
-      try {
-        ext = await FreeRegistry.searchDynamic(_kind, q);
-      } catch (_) {
-        // 声明式引擎内部已逐源兜错，这里只是最后一层保险。
-      }
-    }
+    final ext = await FreeRegistry.searchAll(
+      _kind,
+      _q.text.trim(),
+      bookBucket: _bucket,
+    );
     _extErrors = ext.errors;
-
-    final merged = _dedupe([...builtin, ...ext.items]);
-    if (merged.isEmpty && builtinErr != null) throw builtinErr;
-    return merged;
-  }
-
-  /// 去重：同标题 + 同播放地址视为同一条。
-  ///
-  /// 为什么按「标题+地址」而不是 id：不同源的 id 体系完全不兼容，
-  /// 而同一个内容被两个源返回时，这两项通常是一样的。
-  static List<FreeItem> _dedupe(List<FreeItem> src) {
-    final seen = <String>{};
-    final out = <FreeItem>[];
-    for (final it in src) {
-      final k = '${it.title.trim().toLowerCase()}|${it.playUrl}';
-      if (!seen.add(k)) continue;
-      out.add(it);
-    }
-    return out;
+    return ext.items;
   }
 
   void _switchKind(FreeKind k) {
@@ -327,130 +230,13 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   }
 
   // ── 点击分派 ──────────────────────────────────────────────
-  Future<void> _open(FreeItem it) async {
-    // ★ 导入/同步来的源走通用分派：它们没有专属 Dart 实现，
-    //   能下钻就下钻（声明式 detail 动作），不能下钻就直接播/读。
-    if (FreeRegistry.isDynamic(it.source)) {
-      final spec = FreeRegistry.specOf(it.source);
-      if (spec?.detail != null && it.drill) {
-        await _openDrill(it);
-        return;
-      }
-      await _play(it);
-      return;
-    }
-
-    if (it.kind == FreeKind.comic) {
-      if (it.drill) {
-        _openComicChapters(it);
-      } else {
-        _openComicReader(it);
-      }
-      return;
-    }
-    if (it.kind == FreeKind.book) {
-      if (it.drill) {
-        _openBookToc(it);
-      } else {
-        _openBookReader(it);
-      }
-      return;
-    }
-    if (it.kind == FreeKind.podcast && it.drill) {
-      _openPodcastEpisodes(it);
-      return;
-    }
-    await _play(it);
-  }
-
-  /// 导入源的通用下钻页。
-  Future<void> _openDrill(FreeItem parent) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _DrillListPage(parent: parent),
-    ));
-  }
-
-  Future<void> _play(FreeItem it) async {
-    var url = it.playUrl;
-    // 视频的直链要现取（PeerTube 列表接口不返回 files）。
-    if (url.isEmpty && it.kind == FreeKind.video) {
-      final host = '${it.raw['host'] ?? ''}';
-      setState(() => _loading = true);
-      try {
-        url = await PeerTubeSource.playUrl(it.id,
-            host: host.isEmpty ? null : host);
-      } on FreeNetException catch (e) {
-        if (!mounted) return;
-        setState(() => _loading = false);
-        _toast(e.message);
-        return;
-      }
-      if (!mounted) return;
-      setState(() => _loading = false);
-    }
-    if (url.isEmpty) {
-      _toast('这一条没有可播地址');
-      return;
-    }
-    final kind = it.kind == FreeKind.video ? MediaKind.video : MediaKind.audio;
-    if (!mounted) return;
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => UnifiedPlayerPage(
-        spec: MediaSpec(
-          url: url,
-          title: it.displayTitle,
-          cover: it.cover.isEmpty ? null : it.cover,
-          artist: it.kind == FreeKind.podcast ? it.subtitle : it.subtitle,
-          kindOverride: kind,
-          sourceTag: freeKindName(it.kind),
-          allowAudioMode: it.kind != FreeKind.radio,
-        ),
-      ),
-    ));
-  }
+  /// 打开一条结果 —— 分派逻辑在 [FreeOpen]，与板块页共用同一份，
+  /// 保证同一部漫画从「开放源」和从「漫画板块」点进去表现一致。
+  Future<void> _open(FreeItem it) => FreeOpen.open(context, it);
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<void> _openPodcastEpisodes(FreeItem show) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _EpisodeListPage(show: show),
-    ));
-  }
-
-  Future<void> _openComicChapters(FreeItem manga) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _ChapterListPage(manga: manga),
-    ));
-  }
-
-  Future<void> _openComicReader(FreeItem chapter) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => FreeComicReadPage(chapter: chapter),
-    ));
-  }
-
-  Future<void> _openBookToc(FreeItem book) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _BookTocPage(book: book),
-    ));
-  }
-
-  Future<void> _openBookReader(FreeItem page) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => FreeTextReadPage(
-        title: page.displayTitle,
-        loader: () async {
-          if (page.source == WikisourceSource.id) {
-            return WikisourceSource.read('${page.raw['pageTitle'] ?? page.id}');
-          }
-          return GutenbergAuSource.read('${page.raw['url'] ?? page.id}');
-        },
-      ),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── UI ───────────────────────────────────────────────────
@@ -966,15 +752,15 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
 // ─────────────────────────────────────────────────────────────
 // 播客单集
 // ─────────────────────────────────────────────────────────────
-class _EpisodeListPage extends StatefulWidget {
-  const _EpisodeListPage({required this.show});
+class FreeEpisodePage extends StatefulWidget {
+  const FreeEpisodePage({required this.show});
   final FreeItem show;
 
   @override
-  State<_EpisodeListPage> createState() => _EpisodeListPageState();
+  State<FreeEpisodePage> createState() => FreeEpisodePageState();
 }
 
-class _EpisodeListPageState extends State<_EpisodeListPage> {
+class FreeEpisodePageState extends State<FreeEpisodePage> {
   bool _loading = true;
   String _err = '';
   List<FreeItem> _list = const [];
@@ -1053,15 +839,15 @@ class _EpisodeListPageState extends State<_EpisodeListPage> {
 // ─────────────────────────────────────────────────────────────
 // 漫画章节
 // ─────────────────────────────────────────────────────────────
-class _ChapterListPage extends StatefulWidget {
-  const _ChapterListPage({required this.manga});
+class FreeChapterListPage extends StatefulWidget {
+  const FreeChapterListPage({required this.manga});
   final FreeItem manga;
 
   @override
-  State<_ChapterListPage> createState() => _ChapterListPageState();
+  State<FreeChapterListPage> createState() => FreeChapterListPageState();
 }
 
-class _ChapterListPageState extends State<_ChapterListPage> {
+class FreeChapterListPageState extends State<FreeChapterListPage> {
   bool _loading = true;
   String _err = '';
   List<FreeItem> _list = const [];
@@ -1245,15 +1031,15 @@ class _FreeComicReadPageState extends State<FreeComicReadPage> {
 // ─────────────────────────────────────────────────────────────
 // 书籍目录
 // ─────────────────────────────────────────────────────────────
-class _BookTocPage extends StatefulWidget {
-  const _BookTocPage({required this.book});
+class FreeBookTocPage extends StatefulWidget {
+  const FreeBookTocPage({required this.book});
   final FreeItem book;
 
   @override
-  State<_BookTocPage> createState() => _BookTocPageState();
+  State<FreeBookTocPage> createState() => FreeBookTocPageState();
 }
 
-class _BookTocPageState extends State<_BookTocPage> {
+class FreeBookTocPageState extends State<FreeBookTocPage> {
   bool _loading = true;
   String _err = '';
   List<FreeItem> _list = const [];
@@ -1432,16 +1218,16 @@ class _FreeTextReadPageState extends State<FreeTextReadPage> {
 // 刻意不做的事：
 //   · 不猜「这一项是章节还是单集」—— 声明式源自己用 kind 声明板块，照办即可；
 //   · 不在子项上再下钻（源包最多两层），避免用户写出一条无限递归的源把 App 拖死。
-class _DrillListPage extends StatefulWidget {
-  const _DrillListPage({required this.parent});
+class FreeDrillPage extends StatefulWidget {
+  const FreeDrillPage({required this.parent});
 
   final FreeItem parent;
 
   @override
-  State<_DrillListPage> createState() => _DrillListPageState();
+  State<FreeDrillPage> createState() => FreeDrillPageState();
 }
 
-class _DrillListPageState extends State<_DrillListPage> {
+class FreeDrillPageState extends State<FreeDrillPage> {
   bool _loading = true;
   String _err = '';
   List<FreeItem> _list = const [];

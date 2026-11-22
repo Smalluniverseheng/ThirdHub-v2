@@ -299,6 +299,133 @@ class FreeRegistry {
     return ExternalSearchResult(items, errs);
   }
 
+  /// 内置源 + 已同步/已导入源的统一搜索 —— 板块页与开放源页共用这一处。
+  ///
+  /// ★ 为什么必须抬到注册表里（4.81.87）：
+  ///   4.81.86 之前这段逻辑是 `free_center_page` 的私有方法，结果是
+  ///   漫画/音乐/影视三个板块在「既没连引擎、也没连后端」时只能显示
+  ///   「未连接本地资料库」—— 而手机本来就能直连的开放源就在包里躺着，
+  ///   用户却进不去。这正是「后端只是保底」没兑现的那一段。
+  ///   现在板块页直接调这里，不连任何服务器都能出内容。
+  ///
+  /// 顺序仍是「内置在前、外部在后」，且**内置失败不阻塞外部**：
+  /// 用户导入源就是为了补内置源没有的东西，不能因为 MangaDex 挂了
+  /// 就连导入源一起不显示。
+  ///
+  /// [bookBucket] 只在 book 板块且 [q] 为空时用到（公版书按首字母分区浏览）。
+  static Future<ExternalSearchResult> searchAll(
+    FreeKind kind,
+    String q, {
+    int page = 1,
+    String bookBucket = 'A–M',
+  }) async {
+    final items = <FreeItem>[];
+    final errs = <String>[];
+    FreeNetException? builtinErr;
+
+    try {
+      items.addAll(await _builtinSearch(kind, q, bookBucket: bookBucket));
+    } on FreeNetException catch (e) {
+      builtinErr = e;
+    } catch (e) {
+      // 内置源抛出非网络异常也要收敛：不能让它把外部源一起带下水。
+      builtinErr = FreeNetException('$e');
+    }
+
+    final hasExternal = _external.values
+        .any((e) => e.source.kind == kind && _gateAllows(e.source));
+    if (hasExternal) {
+      final ext = await searchDynamic(kind, q, page: page);
+      items.addAll(ext.items);
+      errs.addAll(ext.errors);
+    }
+
+    final merged = _dedupe(items);
+    // 内置真的挂了、外部也没兜住 —— 把内置的原因如实报出去（离线/超时），
+    // 而不是显示一个「什么都没搜到」的白页让人以为内容不存在。
+    if (merged.isEmpty && builtinErr != null) throw builtinErr;
+    return ExternalSearchResult(merged, errs);
+  }
+
+  /// 内置源的取数（编译进包的那几个）。
+  ///
+  /// 与 4.81.85 的行为完全一致，只是从页面里搬了出来。
+  static Future<List<FreeItem>> _builtinSearch(
+    FreeKind kind,
+    String q, {
+    String bookBucket = 'A–M',
+  }) async {
+    switch (kind) {
+      case FreeKind.music:
+        return q.isEmpty ? AudiusSource.trending() : AudiusSource.search(q);
+      case FreeKind.radio:
+        return _radioAll(q);
+      case FreeKind.podcast:
+        // iTunes 必须有词，空搜索给一个能出结果的中性词。
+        return PodcastSource.search(q.isEmpty ? '故事' : q);
+      case FreeKind.comic:
+        return q.isEmpty
+            ? MangaDexSource.popularZh()
+            : MangaDexSource.search(q);
+      case FreeKind.video:
+        return q.isEmpty ? PeerTubeSource.latest() : PeerTubeSource.search(q);
+      case FreeKind.book:
+        if (q.isNotEmpty) return WikisourceSource.search(q);
+        return GutenbergAuSource.browse(bucket: bookBucket);
+      default:
+        return const [];
+    }
+  }
+
+  /// 电台：radio-browser 与 SomaFM 并发。
+  ///
+  /// ★ 必须并发而不是串行兜底：两个源都在境外，串行时一个超时
+  ///   就把首屏拖到 15 秒以上。并发下最坏也是 15 秒，最好 2 秒。
+  static Future<List<FreeItem>> _radioAll(String q) async {
+    final out = <FreeItem>[];
+    final errs = <String>[];
+    await Future.wait([
+      () async {
+        try {
+          final got =
+              q.isEmpty ? await RadioSource.top() : await RadioSource.search(q);
+          out.addAll(got);
+        } on FreeNetException catch (e) {
+          errs.add('网络电台：${e.message}');
+        }
+      }(),
+      () async {
+        try {
+          final got = q.isEmpty
+              ? await SomaFmSource.top()
+              : await SomaFmSource.search(q);
+          out.addAll(got);
+        } on FreeNetException catch (e) {
+          errs.add('SomaFM：${e.message}');
+        }
+      }(),
+    ]);
+    if (out.isEmpty && errs.isNotEmpty) {
+      throw FreeNetException(errs.join('；'), offline: true);
+    }
+    return out;
+  }
+
+  /// 去重：同标题 + 同播放地址视为同一条。
+  ///
+  /// 按「标题+地址」而不是 id：不同源的 id 体系完全不兼容，
+  /// 而同一内容被两个源返回时这两项通常一样。
+  static List<FreeItem> _dedupe(List<FreeItem> src) {
+    final seen = <String>{};
+    final out = <FreeItem>[];
+    for (final it in src) {
+      final k = '${it.title.trim().toLowerCase()}|${it.playUrl}';
+      if (!seen.add(k)) continue;
+      out.add(it);
+    }
+    return out;
+  }
+
   /// 下钻：取子列表（章节 / 单集 / 剧集）。
   static Future<List<FreeItem>> drill(FreeItem parent) async {
     final e = _external[parent.source];
