@@ -92,6 +92,8 @@ import 'core/discover.dart';
 import 'core/novel_reader.dart';
 import 'core/i18n.dart';
 import 'core/i18n_chewie.dart';
+import 'core/agg/board_feed.dart';
+import 'core/agg/source_health_page.dart';
 import 'core/ai.dart';
 import 'core/ai_page.dart';
 import 'core/ai_agent.dart';
@@ -3095,20 +3097,18 @@ class _Pf extends State<ProfilePage> {
             _sep(),
             entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
             _sep(),
-            // ★4.81.77：放在身份/云端旁边，而不是塞进「数据与诊断」——
-            //   它是能看能听的内容通路，不是诊断工具。
-            //   语义上也正好接上顶上那条后端状态条：后端不可达时，这里还有内容。
-            entry(Icons.public, tr('开放源'),
-                value: tr('不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书'),
-                page: const FreeSourcePage()),
-            _sep(),
-            // ★4.81.86：源清单与安装包分离的入口。
-            //   放在「开放源」正下方，是因为用户看完内容自然会问
-            //   「能不能加点别的」—— 这一条就是答案。
+            // ★4.81.88：「开放源」不再是一个并列的内容分类。
+            //   它的内容已经并进漫画 / 影视 / 音乐 / 小说四个板块 ——
+            //   用户点「漫画」就是漫画，不需要先学一个叫"开放源"的概念。
+            //   这里只留两个**设置性质**的入口：换源、看源的健康。
             entry(Icons.tune, tr('我的源'),
                 value: tr('导入 / 同步 / 删除内容源，不装在安装包里'),
                 page: FreeSourceManagePage(
                     backendBase: Api.base, backendToken: Api.token)),
+            _sep(),
+            entry(Icons.monitor_heart_outlined, tr('源状态'),
+                value: tr('哪些源能连上、哪些被自动跳过'),
+                page: const SourceHealthPage()),
           ]),
           _section('设置', [
             entry(Icons.notifications_none, '通知',
@@ -6043,7 +6043,10 @@ class _Nv extends State<NovelSection> {
   final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
-  int sub = EngineDirect.connected ? 2 : 0;
+  // ★4.81.88：默认进「发现」。以前是「有引擎才进发现，否则进书架」，
+  //   而书架对没连引擎的人是空的 —— 点进板块看到一片空白，结论只能是
+  //   "这个分类没内容"。现在发现页在没有引擎时用本机直连源出内容。
+  int sub = 2;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
       key: _dk,
@@ -6099,13 +6102,16 @@ class _Nv extends State<NovelSection> {
             child: [
           ShelfPage(kind: 'novel', builder: (b) => TocPage(book: b)),
           HistoryPage(kind: 'novel', builder: (b) => TocPage(book: b)),
-          EngineDiscoverView(
-              type: 'novel',
-              onOpen: (it) => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          EngineItemPage(type: 'novel', item: it)))),
+          if (EngineDirect.connected)
+            EngineDiscoverView(
+                type: 'novel',
+                onOpen: (it) => Navigator.push(
+                    c,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            EngineItemPage(type: 'novel', item: it))))
+          else
+            const BoardDiscoverView(kind: BoardKind.novel),
           const ModuleSearchTab(tab: 1)
         ][sub]),
       ]));
@@ -6198,7 +6204,7 @@ Widget searchEmptyState({
         Icons.link_off,
         triedLocal ? tr('这一条没有命中') : '还没连上内容来源',
         triedLocal
-            ? tr('已经用本机直连的公开来源搜过，没有找到；连上资料库或家庭后端后再搜，覆盖的来源会更多。')
+            ? tr('所有来源都试过了，这一条确实没有命中')
             : '「$kind」的内容由资料库应用或家庭后端提供，两者任连其一即可开始搜索。',
         onFix: onFix, onFree: onFree);
   }
@@ -6253,10 +6259,12 @@ Widget _searchEmptyBox(IconData icon, String title, String sub,
         ],
         if (onFree != null) ...[
           const SizedBox(height: 10),
+          // ★4.81.88：这里不再是"换个地方再搜一遍"。三路已经并发跑过，
+          //   空就是真空。此时有用的信息是"哪个源没连上"，所以给体检页。
           OutlinedButton.icon(
             onPressed: onFree,
-            icon: const Icon(Icons.public, size: 16),
-            label: Text(tr('用开放内容搜索')),
+            icon: const Icon(Icons.monitor_heart_outlined, size: 16),
+            label: Text(tr('查看源状态')),
           ),
         ],
       ]),
@@ -7215,7 +7223,10 @@ class _Cs extends State<ComicSection> {
   final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
-  int sub = EngineDirect.connected ? 2 : 0;
+  // ★4.81.88：默认进「发现」。以前是「有引擎才进发现，否则进书架」，
+  //   而书架对没连引擎的人是空的 —— 点进板块看到一片空白，结论只能是
+  //   "这个分类没内容"。现在发现页在没有引擎时用本机直连源出内容。
+  int sub = 2;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
       key: _dk,
@@ -7287,13 +7298,19 @@ class _Cs extends State<ComicSection> {
                       sourceId: b.sourceId,
                       comicId: b.bookUrl,
                       title: b.name))),
-          EngineDiscoverView(
-              type: 'comic',
-              onOpen: (it) => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          EngineItemPage(type: 'comic', item: it)))),
+          if (EngineDirect.connected)
+            EngineDiscoverView(
+                type: 'comic',
+                onOpen: (it) => Navigator.push(
+                    c,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            EngineItemPage(type: 'comic', item: it))))
+          else
+            // ★4.81.88：没有引擎也要有"发现"——用包里能直连的公版源出推荐流。
+            //   以前这里始终是引擎视图，没引擎的人点「发现」看到的是
+            //   一个"请连接引擎"的引导页，等于这个分类不存在。
+            const BoardDiscoverView(kind: BoardKind.comic),
           const ModuleSearchTab(tab: 2)
         ][sub]),
       ]));
@@ -7313,7 +7330,7 @@ class _CSR extends State<ComicSearchResults> {
   int _seq = 0;
   bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async {
-    if (q.isEmpty || q == lastQ) return;
+    if (q == lastQ && groups.isNotEmpty) return;
     lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(
@@ -7325,39 +7342,21 @@ class _CSR extends State<ComicSearchResults> {
       needConn = false;
     });
     try {
-      if (EngineDirect.connected) {
-        final items = await EngineDirect.search('comic', q);
-        setState(() {
-          groups = [
-            {'ok': true, 'engine': true, 'items': items}
-          ];
-        });
-      } else if (Api.base.isNotEmpty) {
-        final r = await Api.get('/v1/comic/search?q=${Uri.encodeComponent(q)}');
-        setState(() {
-          groups = List<Map>.from(r['data'] ?? []);
-        });
-      } else {
-        await EngineDirect.autoConnect();
-        if (EngineDirect.connected) {
-          lastQ = '';
-          await go(q);
-          return;
-        }
-        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
-        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
-        final freeItems = await FreeBoard.search(FreeKind.comic, q);
-        if (freeItems.isNotEmpty) {
-          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
-        } else {
-          if (mounted) setState(() => needConn = true);
-          throw Exception('未连接本地资料库');
-        }
-      }
+      // ★4.81.88 聚合：书库 / 引擎 / 本机直连源**并发**，谁有内容就出谁。
+      //   旧写法是三选一（引擎 → 后端 → 才轮到本机源），只要后端在线，
+      //   包里带的开放源一次都不会被调用 —— 用户在自家 NAS 环境下搜漫画
+      //   永远空白，而 MangaDex 就在安装包里。这就是分类失去意义的地方。
+      final r = await BoardFeed.search(BoardKind.comic, q);
+      if (!mounted || mySeq != _seq) return;
+      setState(() {
+        groups = r.groups;
+        needConn = r.isEmpty;
+      });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('错误: $e')));
+      }
     }
     if (mounted) setState(() => loading = false);
   }
@@ -7365,13 +7364,15 @@ class _CSR extends State<ComicSearchResults> {
   @override
   void initState() {
     super.initState();
-    if (widget.query.isNotEmpty) go(widget.query);
+    // ★4.81.88：空查询也要出内容 —— 进搜索页签先给推荐流，
+    //   而不是一屏空白等用户自己敲字再猜"是不是没连上"。
+    go(widget.query);
   }
 
   @override
   void didUpdateWidget(ComicSearchResults old) {
     super.didUpdateWidget(old);
-    if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query);
+    if (widget.query != old.query) go(widget.query);
   }
 
   @override
@@ -7423,10 +7424,7 @@ class _CSR extends State<ComicSearchResults> {
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),
               onFree: () => Navigator.push(c,
-                  MaterialPageRoute(
-                      builder: (_) => FreeSourcePage(
-                          initialKind: freeKindForBoard('漫画'),
-                          initialQuery: widget.query)))),
+                  MaterialPageRoute(builder: (_) => const SourceHealthPage()))),
         ])),
       ]);
 }
@@ -7704,7 +7702,10 @@ class _Ms extends State<MusicSection> {
   final _dk = GlobalKey<ModuleDrawerHostState>();
   // ★2026-10-15：默认进「发现」—— 书架空的时候进来一片空白，
   //   产品看起来"什么内容都没有"。引擎在线时直接给发现流（各源推荐）。
-  int sub = EngineDirect.connected ? 2 : 0;
+  // ★4.81.88：默认进「发现」。以前是「有引擎才进发现，否则进书架」，
+  //   而书架对没连引擎的人是空的 —— 点进板块看到一片空白，结论只能是
+  //   "这个分类没内容"。现在发现页在没有引擎时用本机直连源出内容。
+  int sub = 2;
   @override
   Widget build(BuildContext c) => ModuleDrawerHost(
       key: _dk,
@@ -7770,13 +7771,16 @@ class _Ms extends State<MusicSection> {
                         'artist': b.author,
                         'coverUrl': b.coverUrl
                       }, sourceId: b.sourceId))),
-          EngineDiscoverView(
-              type: 'music',
-              onOpen: (it) => Navigator.push(
-                  c,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          EngineItemPage(type: 'music', item: it)))),
+          if (EngineDirect.connected)
+            EngineDiscoverView(
+                type: 'music',
+                onOpen: (it) => Navigator.push(
+                    c,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            EngineItemPage(type: 'music', item: it))))
+          else
+            const BoardDiscoverView(kind: BoardKind.music),
           const ModuleSearchTab(tab: 4)
         ][sub]),
       ]));
@@ -7893,7 +7897,7 @@ class _MSR extends State<MusicSearchResults> {
   int _seq = 0;
   bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async {
-    if (q.isEmpty || q == lastQ) return;
+    if (q == lastQ && groups.isNotEmpty) return;
     lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(
@@ -7905,53 +7909,33 @@ class _MSR extends State<MusicSearchResults> {
       needConn = false;
     });
     try {
-      if (EngineDirect.connected) {
-        final items = await EngineDirect.search('music', q);
-        setState(() {
-          groups = [
-            {'ok': true, 'engine': true, 'items': items}
-          ];
-        });
-      } else if (Api.base.isNotEmpty) {
-        final r = await Api.get('/v1/music/search?q=${Uri.encodeComponent(q)}');
-        setState(() {
-          groups = List<Map>.from(r['data'] ?? []);
-        });
-      } else {
-        await EngineDirect.autoConnect();
-        if (EngineDirect.connected) {
-          lastQ = '';
-          await go(q);
-          return;
-        }
-        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
-        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
-        final freeItems = await FreeBoard.search(FreeKind.music, q);
-        if (freeItems.isNotEmpty) {
-          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
-        } else {
-          if (mounted) setState(() => needConn = true);
-          throw Exception('未连接本地资料库');
-        }
-      }
+      // ★4.81.88 聚合：书库 / 引擎 / 本机直连源并发，谁有内容就出谁。
+      final r = await BoardFeed.search(BoardKind.music, q);
+      if (!mounted || mySeq != _seq) return;
+      setState(() {
+        groups = r.groups;
+        needConn = r.isEmpty;
+      });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('错误: $e')));
+      }
     }
-    setState(() => loading = false);
+    if (mounted) setState(() => loading = false);
   }
 
   @override
   void initState() {
     super.initState();
-    if (widget.query.isNotEmpty) go(widget.query);
+    // ★4.81.88：空查询也要出内容（推荐流），与漫画/影视一致。
+    go(widget.query);
   }
 
   @override
   void didUpdateWidget(MusicSearchResults old) {
     super.didUpdateWidget(old);
-    if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query);
+    if (widget.query != old.query) go(widget.query);
   }
 
   Future<void> play(Map item, String sourceId) async {
@@ -8022,10 +8006,7 @@ class _MSR extends State<MusicSearchResults> {
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),
               onFree: () => Navigator.push(c,
-                  MaterialPageRoute(
-                      builder: (_) => FreeSourcePage(
-                          initialKind: freeKindForBoard('音乐'),
-                          initialQuery: widget.query)))),
+                  MaterialPageRoute(builder: (_) => const SourceHealthPage()))),
         ])),
       ]);
 }
@@ -8867,10 +8848,16 @@ class _Vs extends State<VideoSection> {
 
   /// 首屏停在哪个平台。
   ///
-  /// ★ 旧逻辑是「引擎在线就进发现，否则进片库」。改平台横切后这条推理仍然成立，
-  ///   只是落点变了：**有内容平台可看就停在第一个平台**（红果），
-  ///   否则停在片库。目的不变 —— 别让用户一进来看到一片空白。
-  int get _initialPage => currentGate().allowThirdPartyVideoSources ? 0 : 2;
+  /// ★ 4.81.88 改判据：以前是「门禁允许就停在红果」，而红果页整页挂在
+  ///   后端上 —— 没连后端的人一进影视板块，看到的是"还没连上后端"。
+  ///   现在的顺序是：后端在 → 红果；后端不在但可看第三方 → 发现（本机
+  ///   直连源，有内容就能播）；都不行 → 片库。**任何情况下都不把用户
+  ///   丢进一个只会提示"去连服务器"的页面。**
+  int get _initialPage {
+    if (Api.base.trim().isNotEmpty) return 0;
+    if (currentGate().allowThirdPartyVideoSources) return 4;
+    return 2;
+  }
 
   /// 平台清单（顺序 = 左右滑动的顺序）。
   ///
@@ -9003,12 +8990,15 @@ class _Vs extends State<VideoSection> {
       const ShelfPage(kind: 'video', builder: _videoDetail),
       HistoryPage(kind: 'video', builder: _videoDetail),
       if (thirdParty)
-        EngineDiscoverView(
-            type: 'video',
-            onOpen: (it) => Navigator.push(
-                c,
-                MaterialPageRoute(
-                    builder: (_) => EngineItemPage(type: 'video', item: it)))),
+        if (EngineDirect.connected)
+          EngineDiscoverView(
+              type: 'video',
+              onOpen: (it) => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                      builder: (_) => EngineItemPage(type: 'video', item: it))))
+        else
+          const BoardDiscoverView(kind: BoardKind.video),
       if (thirdParty) const ModuleSearchTab(tab: 3),
     ];
     final cur = sub.clamp(0, pages.length - 1);
@@ -9302,7 +9292,7 @@ class _VSR extends State<VideoSearchResults> {
   int _seq = 0;
   bool needConn = false; // 本次是否被「未连接引擎与资源库」拦下（空态要用）
   Future<void> go(String q) async {
-    if (q.isEmpty || q == lastQ) return;
+    if (q == lastQ && groups.isNotEmpty) return;
     lastQ = q;
     final mySeq = ++_seq;
     await Future.delayed(
@@ -9314,53 +9304,33 @@ class _VSR extends State<VideoSearchResults> {
       needConn = false;
     });
     try {
-      if (EngineDirect.connected) {
-        final items = await EngineDirect.search('video', q);
-        setState(() {
-          groups = [
-            {'ok': true, 'engine': true, 'items': items}
-          ];
-        });
-      } else if (Api.base.isNotEmpty) {
-        final r = await Api.get('/v1/video/search?q=${Uri.encodeComponent(q)}');
-        setState(() {
-          groups = List<Map>.from(r['data'] ?? []);
-        });
-      } else {
-        await EngineDirect.autoConnect();
-        if (EngineDirect.connected) {
-          lastQ = '';
-          await go(q);
-          return;
-        }
-        // ★4.81.87：既没连引擎、也没连后端 —— 直接用手机能直连的开放源。
-        //   包里带着的源不该因为「不在家、NAS 关着」就用不了。
-        final freeItems = await FreeBoard.search(FreeKind.video, q);
-        if (freeItems.isNotEmpty) {
-          if (mounted) setState(() => groups = [FreeBoard.group(freeItems)]);
-        } else {
-          if (mounted) setState(() => needConn = true);
-          throw Exception('未连接本地资料库');
-        }
-      }
+      // ★4.81.88 聚合：书库 / 引擎 / 本机直连源并发，谁有内容就出谁。
+      final r = await BoardFeed.search(BoardKind.video, q);
+      if (!mounted || mySeq != _seq) return;
+      setState(() {
+        groups = r.groups;
+        needConn = r.isEmpty;
+      });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('错误: $e')));
+      }
     }
-    setState(() => loading = false);
+    if (mounted) setState(() => loading = false);
   }
 
   @override
   void initState() {
     super.initState();
-    if (widget.query.isNotEmpty) go(widget.query);
+    // ★4.81.88：空查询也要出内容（推荐流），与漫画/音乐一致。
+    go(widget.query);
   }
 
   @override
   void didUpdateWidget(VideoSearchResults old) {
     super.didUpdateWidget(old);
-    if (widget.query.isNotEmpty && widget.query != old.query) go(widget.query);
+    if (widget.query != old.query) go(widget.query);
   }
 
   @override
@@ -9413,10 +9383,7 @@ class _VSR extends State<VideoSearchResults> {
               onFix: () => Navigator.push(c,
                   MaterialPageRoute(builder: (_) => const EngineDirectPage())),
               onFree: () => Navigator.push(c,
-                  MaterialPageRoute(
-                      builder: (_) => FreeSourcePage(
-                          initialKind: freeKindForBoard('视频'),
-                          initialQuery: widget.query)))),
+                  MaterialPageRoute(builder: (_) => const SourceHealthPage()))),
         ])),
       ]);
 }
@@ -10258,7 +10225,15 @@ class ModuleDef {
 /// `RootNav` 首帧三处各写一遍，加一个模块要改三处、漏一处就出现
 /// 「引导页选了、装完没有」。现在只有这一处。
 const List<String> kDefaultNav = <String>[
-  '搜索', '开放源', '小说', '漫画', '视频', '音乐', 'AI',
+  // ★4.81.88 移除「开放源」一级导航。
+  //   用户的原话："怎么又拆成了独立的模块，那么我分类的意义又是什么呢？"
+  //   ——分类本身就是「这里该有什么内容」。开放源不是一个内容类型，
+  //   它是内容来源；把来源摆成一个板块，等于让用户在五个板块之外再学一个
+  //   概念，而且点进去还是空壳。现在源全部沉到各板块背后（见
+  //   core/agg/board_feed.dart），板块首屏直接出内容。
+  //   模块定义仍保留在 kModules 里 —— AI 控制总线与深链还能打开它，
+  //   老用户也能从导航设置里手动加回来。
+  '搜索', '小说', '漫画', '视频', '音乐', 'AI',
   '聊天', '社区', '相册', '工具箱', '我的',
 ];
 
@@ -11258,12 +11233,17 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
     //   这正是「模块被藏起来」这个抱怨的机械成因之一。
     //   这里一次性把「开放源」补到末尾；打过标记就不再补，
     //   否则用户主动移除它之后，每次启动都会被强行塞回来。
-    if (!(p.getBool('_freeSrcMigrated') ?? false)) {
-      if (!migrated.contains('开放源') && kModules.containsKey('开放源')) {
-        migrated.add('开放源');
+    // ★4.81.88：撤销 4.81.77 那次「把开放源补进导航」的迁移。
+    //   4.81.77 补它的理由是"新模块对老用户默认不可见"——那个判断本身没错，
+    //   错的是把内容来源做成了一个并列的内容分类。现在源沉到板块背后，
+    //   导航里就不该再有这一项。模块定义保留，AI 与深链仍可打开。
+    if (!(p.getBool('_freeSrcMerged') ?? false)) {
+      final before = migrated.length;
+      migrated.removeWhere((k) => k == '开放源');
+      if (migrated.length != before) {
         await p.setStringList('nav_modules', migrated);
       }
-      await p.setBool('_freeSrcMigrated', true);
+      await p.setBool('_freeSrcMerged', true);
     }
     final visible =
         migrated.where((k) => currentGate().allowModule(k)).toList();

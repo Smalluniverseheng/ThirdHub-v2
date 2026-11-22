@@ -7,6 +7,7 @@
 //     不能让它拖死整个页面 —— 这是这里所有 try 都单独兜的原因。
 import 'dart:convert';
 
+import '../agg/text_clean.dart';
 import 'free_http.dart';
 import 'free_models.dart';
 import 'free_sources_media.dart' show asList, asMap;
@@ -365,8 +366,13 @@ class WikisourceSource {
     if (html.isEmpty) {
       throw const FreeNetException('这一页没有正文');
     }
-    final text = stripHtml(html);
-    if (text.length < 30) {
+    // ★4.81.88：正文统一过 TextClean。
+    //   MediaWiki 导出的 HTML 里带着「[编辑]」、分类页尾、折叠表头，
+    //   每个源各自手剥永远剥不干净，而且剥法还会互相不一致 ——
+    //   那正是"同一个 App 里正文质量忽高忽低"的来源。
+    final text =
+        TextClean.body(stripHtml(html), kind: TextSourceKind.wikisource);
+    if (!TextClean.looksLikeBody(text, minLen: 30)) {
       throw const FreeNetException('这一页正文过短（可能是目录或空页）');
     }
     return text;
@@ -484,19 +490,20 @@ class GutenbergAuSource {
   static Future<String> read(String url) async {
     final raw = await FreeHttp.text(url,
         timeout: const Duration(seconds: 30), maxBytes: 12 * 1024 * 1024);
+    // ★4.81.88：txt 仍然不能走 stripHtml（纯文本里的 `<` 会被当标签删掉，
+    //   索引里三分之一的条目只有 .txt，走错这条路就是"书打开是空的"），
+    //   但样板剥离与段落规整对 txt / HTML 同样必要 —— 古登堡的版权声明
+    //   占整本书的 3%~8%，不剥掉等于用户一翻书先看到一堆法律条文。
     if (url.toLowerCase().endsWith('.txt')) {
-      final t = raw
-          .replaceAll('\r\n', '\n')
-          .replaceAll('\r', '\n')
-          .replaceAll(RegExp(r'\n{4,}'), '\n\n\n')
-          .trim();
-      if (t.length < 200) {
+      final t = TextClean.body(raw, kind: TextSourceKind.gutenberg);
+      if (!TextClean.looksLikeBody(t, minLen: 200)) {
         throw const FreeNetException('这本书的文本文件是空的或过短');
       }
       return t;
     }
-    final text = stripHtml(raw);
-    if (text.length < 200) {
+    final text =
+        TextClean.body(stripHtml(raw), kind: TextSourceKind.gutenberg);
+    if (!TextClean.looksLikeBody(text, minLen: 200)) {
       throw const FreeNetException('这本书的页面没有解析出正文');
     }
     return text;

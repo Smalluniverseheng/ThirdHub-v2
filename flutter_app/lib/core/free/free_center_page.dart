@@ -1178,15 +1178,47 @@ class _FreeTextReadPageState extends State<FreeTextReadPage> {
                   ),
                 )
               : Scrollbar(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 48),
-                    child: SelectableText(
-                      _text,
-                      style: TextStyle(fontSize: _size, height: 1.75),
+                  // ★4.81.88 排版：整篇一个 SelectableText 的渲染是
+                  //   "所有段落糊成一堵墙"。按段落拆开、给中文习惯的首行
+                  //   缩进，再用 ListView 让整本书不会一次性渲染到卡死。
+                  //   用 SelectionArea 包住，跨段选择复制仍然可用。
+                  child: SelectionArea(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 48),
+                      itemCount: _paras.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 7),
+                      itemBuilder: (c, i) {
+                        final p = _paras[i];
+                        // 首行缩进两格（中文排版惯例）；段首本来就有
+                        // 缩进的不重复加。
+                        final indented = p.startsWith('\u3000') ||
+                                p.startsWith('  ')
+                            ? p
+                            : '\u3000\u3000$p';
+                        return Text(
+                          indented,
+                          textAlign: TextAlign.justify,
+                          style: TextStyle(fontSize: _size, height: 1.85),
+                        );
+                      },
                     ),
                   ),
                 ),
     );
+  }
+
+  /// 段落切分：双空行是分段首选；原文用单换行分段时退化到逐行。
+  ///
+  /// 为什么放在渲染层切而不在 TextClean 里切死：
+  /// 不同来源的分段习惯不一样（古登堡是 `\n\n`，维基 HTML 剥完是 `\n`），
+  /// 读进来的原文要保持"复制出来还是原文"，排版是展示的事。
+  List<String> get _paras {
+    var parts = _text.split(RegExp(r'\n\s*\n+'));
+    if (parts.length <= 1) parts = _text.split('\n');
+    return [
+      for (final p in parts)
+        if (p.trim().isNotEmpty) p.trim()
+    ];
   }
 }
 
