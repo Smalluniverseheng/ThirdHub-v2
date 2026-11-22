@@ -1,4 +1,4 @@
-// 「桌面引擎」页：配对 + 取货。
+// 「桌面端」页：配对 + 取货。
 //
 // 这一页存在的意义，是把「合规边界」做成用户能看见、能操作的东西：
 // 手机端只负责**收货**，抓取与转格式发生在桌面端。页面上把这句话写清楚，
@@ -168,7 +168,7 @@ class _DesktopEnginePageState extends State<DesktopEnginePage> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text(tr('桌面引擎')),
+        title: Text(tr('桌面端')),
         actions: [
           IconButton(
             tooltip: tr('刷新'),
@@ -261,7 +261,7 @@ class _DesktopEnginePageState extends State<DesktopEnginePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title(tr('连接桌面引擎')),
+            _title(tr('连接桌面端')),
             TextField(
               controller: _url,
               keyboardType: TextInputType.url,
@@ -546,7 +546,7 @@ class _DesktopEnginePageState extends State<DesktopEnginePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(tr('怎么起一个桌面引擎'),
+            Text(tr('怎么起一个桌面端'),
                 style: const TextStyle(
                     fontSize: 12.5, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),

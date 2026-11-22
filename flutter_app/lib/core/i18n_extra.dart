@@ -24,7 +24,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'fr': <String, String>{
     '已同步 {n} 个源': '{n} sources synchronisées',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Importer, synchroniser, supprimer des sources — hors de l’app',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} sources nécessitent le bureau',
     '任务进度': 'Progression',
     '使用条款': 'Conditions d’utilisation',
@@ -37,7 +37,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'Dissocié',
     '已存入本地库：{n}': 'Enregistré dans la bibliothèque : {n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': 'Par ex. 192.168.1.10 ou http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'Comment démarrer un moteur de bureau',
+    '怎么起一个桌面端': 'Comment démarrer l\'application de bureau',
     '成品 {n}': '{n} prêts',
     '成品库': 'Bibliothèque de sorties',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': 'Exécutez les deux lignes ci-dessus, puis collez le jeton dans les deux champs. Sur ordinateur, restez en réseau local.',
@@ -45,7 +45,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': 'Recevoir',
     '本机不含抓取代码，也不会上传你的任何文件。': 'Cet appareil ne contient aucun code d’extraction et n’envoie jamais vos fichiers.',
     '标准格式': 'Format standard',
-    '桌面引擎': 'Moteur de bureau',
+    '桌面端': 'Poste de bureau',
     '桌面端 data/token 里的那串': 'La chaîne dans data/token du bureau',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'Seule la version bureau peut exécuter ce type de sources ; les fichiers finis sont convertis en formats standards puis transférés ici.',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'Le bureau extrait et convertit ; cet appareil ne fait que recevoir les fichiers finis, enregistrés localement.',
@@ -57,7 +57,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'Cet élément n’a pas d’adresse lisible',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'Vous vérifiez l’origine et la licence de ces sources. Elles n’apparaissent qu’après activation.',
     '连接并保存': 'Connecter et enregistrer',
-    '连接桌面引擎': 'Connecter le moteur de bureau',
+    '连接桌面端': 'Connecter le poste de bureau',
     '队列 {n} · 正在处理': 'File {n} · en cours',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'Domaine public',
@@ -551,7 +551,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'ru': <String, String>{
     '已同步 {n} 个源': 'Синхронизировано источников: {n}',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Импорт, синхронизация и удаление источников — вне приложения',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} источников требуют десктопа',
     '任务进度': 'Ход задачи',
     '使用条款': 'Условия использования',
@@ -564,7 +564,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'Отвязано',
     '已存入本地库：{n}': 'Сохранено в локальную библиотеку: {n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': 'Например 192.168.1.10 или http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'Как запустить десктоп-движок',
+    '怎么起一个桌面端': 'Как запустить приложение для компьютера',
     '成品 {n}': 'Готово: {n}',
     '成品库': 'Готовые файлы',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': 'Выполните две строки выше и вставьте токен в оба поля. На десктопе лучше держать только в локальной сети.',
@@ -572,7 +572,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': 'Принять',
     '本机不含抓取代码，也不会上传你的任何文件。': 'На этом устройстве нет кода сбора данных, и ваши файлы никуда не отправляются.',
     '标准格式': 'Стандартный формат',
-    '桌面引擎': 'Десктоп-движок',
+    '桌面端': 'Компьютер',
     '桌面端 data/token 里的那串': 'Строка из data/token на десктопе',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'Такие источники может запускать только десктопная версия; готовые файлы конвертируются в стандартные форматы и передаются сюда.',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'Десктоп собирает и конвертирует; это устройство только принимает готовые файлы и сохраняет их локально.',
@@ -584,7 +584,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'У этого элемента нет адреса для воспроизведения',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'Вы сами подтверждаете происхождение и лицензию этих источников. Они появятся в поиске после включения.',
     '连接并保存': 'Подключить и сохранить',
-    '连接桌面引擎': 'Подключить десктоп-движок',
+    '连接桌面端': 'Подключить компьютер',
     '队列 {n} · 正在处理': 'Очередь {n} · в работе',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'Общественное достояние',
@@ -1078,7 +1078,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'es': <String, String>{
     '已同步 {n} 个源': '{n} fuentes sincronizadas',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Importar, sincronizar y borrar fuentes — fuera de la app',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} fuentes requieren escritorio',
     '任务进度': 'Progreso',
     '使用条款': 'Condiciones de uso',
@@ -1091,7 +1091,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'Desemparejado',
     '已存入本地库：{n}': 'Guardado en la biblioteca local: {n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': 'Por ej. 192.168.1.10 o http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'Cómo iniciar un motor de escritorio',
+    '怎么起一个桌面端': 'Cómo iniciar la aplicación de escritorio',
     '成品 {n}': '{n} listos',
     '成品库': 'Biblioteca de listos',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': 'Ejecuta las dos líneas de arriba y pega el token en los dos campos. En escritorio, mejor solo en red local.',
@@ -1099,7 +1099,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': 'Recibir',
     '本机不含抓取代码，也不会上传你的任何文件。': 'Este dispositivo no contiene código de extracción y nunca sube tus archivos.',
     '标准格式': 'Formato estándar',
-    '桌面引擎': 'Motor de escritorio',
+    '桌面端': 'Escritorio',
     '桌面端 data/token 里的那串': 'La cadena en data/token del escritorio',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'Solo la versión de escritorio puede ejecutar estas fuentes; los archivos finales se convierten a formatos estándar y se envían aquí.',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'El escritorio extrae y convierte; este dispositivo solo recibe los archivos finales, que se guardan localmente.',
@@ -1111,7 +1111,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'Este elemento no tiene dirección reproducible',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'Tú confirmas el origen y la licencia de estas fuentes. Solo aparecen al activarlo.',
     '连接并保存': 'Conectar y guardar',
-    '连接桌面引擎': 'Conectar motor de escritorio',
+    '连接桌面端': 'Conectar escritorio',
     '队列 {n} · 正在处理': 'Cola {n} · procesando',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'Dominio público',
@@ -1606,7 +1606,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'ar': <String, String>{
     '已同步 {n} 个源': 'تمت مزامنة {n} مصدرًا',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'استيراد ومزامنة وحذف المصادر — خارج التطبيق',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} مصادر تحتاج نسخة سطح المكتب',
     '任务进度': 'تقدّم المهمة',
     '使用条款': 'شروط الاستخدام',
@@ -1619,7 +1619,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'تم إلغاء الاقتران',
     '已存入本地库：{n}': 'حُفظ في المكتبة المحلية: {n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': 'مثل 192.168.1.10 أو http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'كيف تشغّل محرّك سطح المكتب',
+    '怎么起一个桌面端': 'كيف تشغّل تطبيق سطح المكتب',
     '成品 {n}': 'الجاهز {n}',
     '成品库': 'مكتبة الجاهز',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': 'نفّذ السطرين أعلاه ثم ألصق الرمز في الحقلين. على سطح المكتب يُفضّل البقاء داخل الشبكة المحلية.',
@@ -1627,7 +1627,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': 'استلام',
     '本机不含抓取代码，也不会上传你的任何文件。': 'هذا الجهاز لا يحتوي على شيفرة استخراج ولا يرفع ملفاتك أبدًا.',
     '标准格式': 'صيغة قياسية',
-    '桌面引擎': 'محرّك سطح المكتب',
+    '桌面端': 'سطح المكتب',
     '桌面端 data/token 里的那串': 'السلسلة الموجودة في data/token على سطح المكتب',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'نسخة سطح المكتب وحدها تشغّل مثل هذه المصادر؛ ثم تُحوَّل الملفات الجاهزة إلى صيغ قياسية وتُسلَّم لهذا الجهاز.',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'سطح المكتب يقوم بالاستخراج والتحويل، وهذا الجهاز يستقبل الملفات الجاهزة فقط ويحفظها محليًا.',
@@ -1639,7 +1639,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'هذا العنصر بلا عنوان قابل للتشغيل',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'أنت تتحقق من مصدر هذه المصادر وترخيصها. لن تظهر إلا بعد التفعيل.',
     '连接并保存': 'اتصال وحفظ',
-    '连接桌面引擎': 'الاتصال بمحرّك سطح المكتب',
+    '连接桌面端': 'الاتصال بسطح المكتب',
     '队列 {n} · 正在处理': 'الطابور {n} · قيد المعالجة',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'ملكية عامة',
@@ -2133,7 +2133,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'en': <String, String>{
     '已同步 {n} 个源': 'Synced {n} sources',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'Import, sync and remove content sources — not bundled in the app',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} sources need desktop',
     '任务进度': 'Task progress',
     '使用条款': 'Terms of use',
@@ -2146,7 +2146,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'Unpaired',
     '已存入本地库：{n}': 'Saved to local library: {n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': 'Such as 192.168.1.10 or http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'How to start a desktop engine',
+    '怎么起一个桌面端': 'How to start the desktop app',
     '成品 {n}': '{n} ready',
     '成品库': 'Ready library',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': 'Run the two lines above, then paste the token into the two fields. On desktop, keep it LAN-only.',
@@ -2154,7 +2154,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': 'Receive',
     '本机不含抓取代码，也不会上传你的任何文件。': 'This device contains no scraping code and never uploads your files.',
     '标准格式': 'Standard format',
-    '桌面引擎': 'Desktop engine',
+    '桌面端': 'Desktop app',
     '桌面端 data/token 里的那串': 'The string in the desktop data/token file',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'Only the desktop build can run sources like these; finished files are converted to standard formats and handed to this device.',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'The desktop side scrapes and converts; this device only receives the finished files, which are saved locally.',
@@ -2166,7 +2166,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'This item has no playable address',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'You confirm the origin and licensing of these sources. They appear in search only after you turn this on.',
     '连接并保存': 'Connect and save',
-    '连接桌面引擎': 'Connect desktop engine',
+    '连接桌面端': 'Connect desktop app',
     '队列 {n} · 正在处理': 'Queue {n} · processing',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'Public domain',
@@ -2568,7 +2568,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   'ja': <String, String>{
     '已同步 {n} 个源': '{n} 件のソースを同期しました',
     '导入 / 同步 / 删除内容源，不装在安装包里': 'コンテンツソースのインポート・同期・削除（アプリ非同梱）',
-    // ── 桌面引擎 / 合规说明（4.81.86 补齐）──
+    // ── 桌面端 / 合规说明（4.81.86 补齐）──
     '{n} 个来源需桌面端': '{n} 件はデスクトップ版が必要',
     '任务进度': 'タスクの進捗',
     '使用条款': '利用規約',
@@ -2581,7 +2581,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '已取消配对': 'ペアを解除しました',
     '已存入本地库：{n}': 'ローカルライブラリに保存：{n}',
     '形如 192.168.1.10 或 http://192.168.1.10:8421': '例：192.168.1.10 または http://192.168.1.10:8421',
-    '怎么起一个桌面引擎': 'デスクトップエンジンの起動方法',
+    '怎么起一个桌面端': 'デスクトップアプリの起動方法',
     '成品 {n}': '完成品 {n}',
     '成品库': '完成品ライブラリ',
     '把上面两行跑一遍，令牌填到上面两个框里就行。桌面端建议只开在局域网，': '上の2行を実行し、トークンを上の2つの欄に入れてください。デスクトップ版は LAN 内のみの公開を推奨します。',
@@ -2589,7 +2589,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '接收': '受信',
     '本机不含抓取代码，也不会上传你的任何文件。': 'この端末にスクレイピングのコードはなく、あなたのファイルを送信しません。',
     '标准格式': '標準フォーマット',
-    '桌面引擎': 'デスクトップエンジン',
+    '桌面端': 'デスクトップ',
     '桌面端 data/token 里的那串': 'デスクトップ版の data/token にある文字列',
     '桌面端才能运行这类来源；成品转成标准格式后交接到本机。': 'この種のソースはデスクトップ版のみ実行できます。完成品は標準フォーマットに変換して本機へ渡します。',
     '桌面端负责抓取与转格式，本机只负责接收成品。收到的文件会存成本地文件，': 'デスクトップ版が取得と変換を担当し、本機は完成品を受け取るだけです。受け取ったファイルはローカルに保存されます。',
@@ -2601,7 +2601,7 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '这一条没有可播地址': 'この項目には再生できるアドレスがありません',
     '这些源的内容来源与授权由你自行确认。打开后它们才会出现在搜索里；': 'これらのソースの出所とライセンスはご自身で確認してください。オンにすると検索に表示されます。',
     '连接并保存': '接続して保存',
-    '连接桌面引擎': 'デスクトップエンジンに接続',
+    '连接桌面端': 'デスクトップに接続',
     '队列 {n} · 正在处理': 'キュー {n} · 処理中',
     // ── 我的源（源包导入 / 同步 / 授权标签）──
     '公有领域': 'パブリックドメイン',

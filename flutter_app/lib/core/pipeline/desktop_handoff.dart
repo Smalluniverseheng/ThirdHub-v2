@@ -1,4 +1,4 @@
-// 桌面引擎客户端：配对、下单/看单、取货、落本地库。
+// 桌面端客户端：配对、下单/看单、取货、落本地库。
 //
 // 边界（很重要，别在别处补功能把它搞乱）
 // ---------------------------------------
@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../local_import.dart';
 
-/// 桌面引擎交互失败。带 [hint] 是为了让 UI 能直接告诉用户下一步做什么，
+/// 桌面端交互失败。带 [hint] 是为了让 UI 能直接告诉用户下一步做什么，
 /// 而不是把 `SocketException: Connection refused` 甩到脸上。
 class HandoffException implements Exception {
   final String message;
@@ -102,8 +102,8 @@ class Handoff {
     final base = await url();
     final tk = await token();
     if (base.isEmpty) {
-      throw const HandoffException('还没配对桌面引擎',
-          hint: '在「我的 → 桌面引擎」里填入地址和令牌');
+      throw const HandoffException('还没配对桌面端',
+          hint: '在「我的 → 桌面端」里填入地址和令牌');
     }
     final uri = Uri.parse('$base$path');
     final headers = <String, String>{
@@ -142,7 +142,7 @@ class Handoff {
           hint: '确认手机和桌面端在同一个局域网，端口 8421 没被防火墙挡',
           offline: true);
     } on SocketException {
-      throw const HandoffException('连不上桌面引擎',
+      throw const HandoffException('连不上桌面端',
           hint: '确认桌面端容器在跑：curl http://<地址>:8421/v1/health',
           offline: true);
     } catch (e) {
