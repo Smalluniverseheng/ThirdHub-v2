@@ -1,0 +1,680 @@
+{
+  "schema": 1,
+  "name": "中文播客合集（24 个）",
+  "version": "2026.11.21",
+  "note": "RSS 是公开订阅地址，任何一个都能单独抄成自己的源（见 docs/FREE-SOURCE-SPEC.md §9.2）。不同节目更新频率差别很大，旧节目可能已经停更。",
+  "sources": [
+    {
+      "id": "ielts_english2026",
+      "name": "雅思口语IELTS English2026",
+      "note": "中文播客（RSS 公开订阅）· 语言学习 · 约 2288 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "英语口语家森Jason；内容版权归各节目方",
+      "termsUrl": "",
+      "base": "",
+      "ping": "https://rss.libsyn.com/shows/184811/destinations/1269143.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://rss.libsyn.com/shows/184811/destinations/1269143.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_2023",
+      "name": "科技美学|每日资讯 2023",
+      "note": "中文播客（RSS 公开订阅）· 科技 · 约 2000 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "科技美学中国；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/3660775.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/3660775.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_36",
+      "name": "36氪·商业情报局（第二季）",
+      "note": "中文播客（RSS 公开订阅）· 商业新闻 · 约 2000 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "36氪音频；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/36264240.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/36264240.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_3",
+      "name": "新闻早餐",
+      "note": "中文播客（RSS 公开订阅）· 新闻 · 约 2000 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "东方网；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/4519297.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/4519297.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_4",
+      "name": "头条热榜 | 每天精选最有价值的新闻",
+      "note": "中文播客（RSS 公开订阅）· 每日新闻 · 约 1957 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "瓜田情报局；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/100545755.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/100545755.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_5",
+      "name": "咖啡音乐",
+      "note": "中文播客（RSS 公开订阅）· 音乐赏析 · 约 1948 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "平凡的咖啡音乐；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/40477454.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/40477454.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_6",
+      "name": "富爸爸：真实世界的商业教育",
+      "note": "中文播客（RSS 公开订阅）· 职业 · 约 1763 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "终身都要成长；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/79750885.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/79750885.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_7",
+      "name": "成人睡前故事",
+      "note": "中文播客（RSS 公开订阅）· 情感与人际关系 · 约 1740 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "那月有声；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/67610333.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/67610333.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_8",
+      "name": "儿童睡前故事：一千零一夜合集",
+      "note": "中文播客（RSS 公开订阅）· 儿童与家庭 · 约 1499 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "喜马拉雅儿童官方；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/257813.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/257813.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_9",
+      "name": "逗比来了：段子笑话脱口秀",
+      "note": "中文播客（RSS 公开订阅）· 喜剧 · 约 1454 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "熊猫大湿；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/273040.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/273040.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_10",
+      "name": "怀旧金曲",
+      "note": "中文播客（RSS 公开订阅）· 音乐 · 约 1223 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "一米阳光音乐台；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/268926.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/268926.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_11",
+      "name": "吐槽脱口秀",
+      "note": "中文播客（RSS 公开订阅）· 喜剧 · 约 1216 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "主播老T；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/211742.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/211742.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_12",
+      "name": "虎嗅·商业有味道",
+      "note": "中文播客（RSS 公开订阅）· 商业新闻 · 约 1072 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "虎嗅APP；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/2823309.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/2823309.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_1000",
+      "name": "经典怀旧音乐1000首",
+      "note": "中文播客（RSS 公开订阅）· 音乐赏析 · 约 1033 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "哈囉李敖；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/73723823.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/73723823.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_14",
+      "name": "从华尔街到陆家嘴",
+      "note": "中文播客（RSS 公开订阅）· 商务 · 约 990 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "第一财经；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/310684.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/310684.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_fm",
+      "name": "故事FM",
+      "note": "中文播客（RSS 公开订阅）· 社会与文化 · 约 930 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "寇爱哲；内容版权归各节目方",
+      "termsUrl": "",
+      "base": "",
+      "ping": "https://feeds.storyfm.cn/storyfm.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://feeds.storyfm.cn/storyfm.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_16",
+      "name": "心灵疗愈：焦虑症抑郁症心理音乐",
+      "note": "中文播客（RSS 公开订阅）· 健康与健身 · 约 854 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "重塑心灵心理训练中心；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/11904910.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/11904910.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "fund",
+      "name": "FUND财经早班车",
+      "note": "中文播客（RSS 公开订阅）· 投资 · 约 829 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "中国基金报；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/76282658.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/76282658.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_18",
+      "name": "成人睡前故事｜温柔男声哄睡夜听治愈助眠晚安电台",
+      "note": "中文播客（RSS 公开订阅）· 剧情 · 约 772 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "徐之末；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/71029167.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/71029167.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_19",
+      "name": "焦虑症自救【失眠紧张不安】不焦虑的活法（放松入睡）",
+      "note": "中文播客（RSS 公开订阅）· 教育 · 约 753 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "重塑心灵心理训练中心；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/9842510.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/9842510.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_10_2",
+      "name": "跨洋热议｜10分钟带你打破中美信息差｜新闻脱口秀",
+      "note": "中文播客（RSS 公开订阅）· 新闻评论 · 约 506 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "AsLife1314；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/82179651.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/82179651.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_21",
+      "name": "野史下酒｜有趣的历史故事",
+      "note": "中文播客（RSS 公开订阅）· 历史 · 约 460 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "恶霸波；内容版权归各节目方",
+      "termsUrl": "",
+      "base": "",
+      "ping": "https://s1.proxy.wavpub.com/yeshixiajiu.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://s1.proxy.wavpub.com/yeshixiajiu.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_5_2",
+      "name": "英语每日一听 | 每天少于5分钟",
+      "note": "中文播客（RSS 公开订阅）· 语言学习 · 约 460 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "晨听英语；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/14812466.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/14812466.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "pod_23",
+      "name": "高效磨耳朵 | 最好的英语听力资源",
+      "note": "中文播客（RSS 公开订阅）· 课程 · 约 354 期",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "英语磨耳朵；内容版权归各节目方",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "http://www.ximalaya.com/album/46602128.xml",
+      "search": {
+        "method": "GET",
+        "path": "http://www.ximalaya.com/album/46602128.xml",
+        "fetch": "rss",
+        "limit": 60,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    }
+  ]
+}

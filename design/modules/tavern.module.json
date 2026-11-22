@@ -2,13 +2,15 @@
   "id": "tavern",
   "name": "酒馆",
   "icon": {
-    "app": null,
+    "app": "theater_comedy_outlined",
     "web": "drama"
   },
   "version": "1.0.0",
   "deps": [],
   "entry": {
-    "app": [],
+    "app": [
+      "酒馆"
+    ],
     "web": "tavern",
     "webLoad": "./modules/tavern.js",
     "webFn": "renderTavern"

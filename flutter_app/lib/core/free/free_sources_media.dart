@@ -42,7 +42,14 @@ class AudiusSource {
   static String? _activeHost;
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.music, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.music,
+      license: LicenseKind.officialApi,
+      attribution: 'Audius 平台及上传艺人；曲目授权由艺人自行声明',
+      termsUrl: 'https://audius.co/terms',
+      pingUrl: pingUrl);
 
   static Future<String> _host() async {
     if (_activeHost != null) return _activeHost!;
@@ -125,7 +132,14 @@ class PodcastSource {
       'https://itunes.apple.com/search?term=podcast&media=podcast&limit=1';
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.podcast, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.podcast,
+      license: LicenseKind.officialApi,
+      attribution: 'Apple Podcasts 目录（检索用）；音频版权归各节目方',
+      termsUrl: 'https://www.apple.com/legal/internet-services/itunes/',
+      pingUrl: pingUrl);
 
   /// 搜节目。返回项 `drill = true`，点进去加载单集。
   static Future<List<FreeItem>> search(String q, {int limit = 20}) async {
@@ -268,7 +282,14 @@ class RadioSource {
   ];
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.radio, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.radio,
+      license: LicenseKind.officialApi,
+      attribution: 'radio-browser.info 社区目录；流媒体版权归各电台',
+      termsUrl: 'https://www.radio-browser.info/',
+      pingUrl: pingUrl);
 
   /// 热门台（无关键词时）。
   static Future<List<FreeItem>> top({int limit = 30}) =>
@@ -348,7 +369,14 @@ class PeerTubeSource {
   ];
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.video, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.video,
+      license: LicenseKind.officialApi,
+      attribution: 'PeerTube 各公开实例与其上传者；授权以实例声明为准',
+      termsUrl: 'https://joinpeertube.org/',
+      pingUrl: pingUrl);
 
   static Future<List<FreeItem>> search(String q,
       {String? host, int limit = 20}) async {
@@ -442,4 +470,94 @@ List<dynamic> asList(dynamic v) => v is List ? v : const [];
 String briefJson(dynamic v, [int n = 200]) {
   final s = jsonEncode(v);
   return s.length > n ? '${s.substring(0, n)}…' : s;
+}
+
+// ─────────────────────────────────────────────────────────────
+// SomaFM —— 独立网络电台，官方公开 JSON 目录 + 直连流
+// ─────────────────────────────────────────────────────────────
+//
+// 为什么接它：radio-browser 是**社区目录**，条目质量参差、经常失效；
+// SomaFM 是运营了二十多年的独立电台，自己维护目录与流地址，
+// 频道数少但每一个都能播 —— 补的正是「条目多、能听少」这个洞。
+//
+// 直链规律：`https://ice1.somafm.com/{id}-128-mp3`。
+// 为什么不解析它给的 .pls：.pls 只是**另一个文本文件**，还得再解析一次，
+// 而 ice 域名与码率的规律稳定（.pls 里的 File1 就是同一个地址）。
+class SomaFmSource {
+  SomaFmSource._();
+
+  static const String id = 'somafm';
+  static const String name = 'SomaFM';
+  static const String note = '独立网络电台，官方目录与直播流，无需登录';
+  static const String _catalog = 'https://somafm.com/channels.json';
+
+  static const FreeSource source = FreeSource(
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.radio,
+      license: LicenseKind.officialApi,
+      attribution: 'SomaFM 及其节目方；直播流版权归各节目',
+      termsUrl: 'https://somafm.com/',
+      pingUrl: _catalog);
+
+  /// 目录一次就 58KB 拿全，搜索在本地过滤 —— 比再发一次请求快，也不会被限流。
+  static Future<List<FreeItem>> _all() async {
+    final d = await FreeHttp.json(_catalog,
+        timeout: const Duration(seconds: 20), maxBytes: 4 * 1024 * 1024);
+    final chs = d['channels'];
+    if (chs is! List) throw const FreeNetException('SomaFM 目录结构变化');
+
+    final out = <FreeItem>[];
+    for (final c in chs) {
+      if (c is! Map) continue;
+      final cid = '${c['id'] ?? ''}'.trim();
+      if (cid.isEmpty) continue;
+      out.add(FreeItem(
+        id: cid,
+        source: id,
+        kind: FreeKind.radio,
+        title: '${c['title'] ?? cid}'.trim(),
+        subtitle: [
+          if ('${c['genre'] ?? ''}'.isNotEmpty) '${c['genre']}',
+          if ((c['listeners'] as num?) != null)
+            '${(c['listeners'] as num).toInt()} 人在听',
+        ].join(' · '),
+        cover: '${c['largeimage'] ?? c['image'] ?? ''}',
+        desc: stripHtml('${c['description'] ?? ''}'),
+        playUrl: 'https://ice1.somafm.com/$cid-128-mp3',
+        raw: {
+          'dj': '${c['dj'] ?? ''}',
+          'genre': '${c['genre'] ?? ''}',
+          'lastPlaying': '${c['lastPlaying'] ?? ''}',
+          'listeners': (c['listeners'] as num?)?.toInt() ?? 0,
+        },
+      ));
+    }
+    // 听众多的排前面：这比目录顺序更能代表「现在值得听」。
+    out.sort((a, b) {
+      final la = (a.raw['listeners'] as num?) ?? 0;
+      final lb = (b.raw['listeners'] as num?) ?? 0;
+      return lb.compareTo(la);
+    });
+    return out;
+  }
+
+  static Future<List<FreeItem>> top({int limit = 40}) async {
+    final all = await _all();
+    return all.take(limit).toList();
+  }
+
+  static Future<List<FreeItem>> search(String q, {int limit = 40}) async {
+    final k = q.trim().toLowerCase();
+    final all = await _all();
+    if (k.isEmpty) return all.take(limit).toList();
+    final hit = all.where((it) {
+      final hay = '${it.title} ${it.subtitle} ${it.desc} '
+              '${it.raw['genre'] ?? ''} ${it.raw['dj'] ?? ''}'
+          .toLowerCase();
+      return hay.contains(k);
+    }).toList();
+    return hit.take(limit).toList();
+  }
 }

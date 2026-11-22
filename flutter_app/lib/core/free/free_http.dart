@@ -77,6 +77,25 @@ class FreeHttp {
     Duration timeout = const Duration(seconds: 15),
     int maxBytes = 8 * 1024 * 1024,
     int redirects = 4,
+  }) =>
+      send(url,
+          headers: headers,
+          timeout: timeout,
+          maxBytes: maxBytes,
+          redirects: redirects);
+
+  /// 通用请求：支持 GET / POST（用户导入的源里 POST 接口不少）。
+  ///
+  /// [body] 仅对非 GET 生效。**不做表单编码猜测** —— 源包里写什么就发什么，
+  /// Content-Type 由源包自己在 headers 里声明（缺省按 JSON）。
+  static Future<List<int>> send(
+    String url, {
+    String method = 'GET',
+    String? body,
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 15),
+    int maxBytes = 8 * 1024 * 1024,
+    int redirects = 4,
   }) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
@@ -85,10 +104,19 @@ class FreeHttp {
     if (uri.scheme != 'https' && uri.scheme != 'http') {
       throw FreeNetException('不支持的协议：${uri.scheme}');
     }
+    final m = method.toUpperCase();
 
     Future<List<int>> once() async {
-      final req = await _client.getUrl(uri);
+      final req = await _client.openUrl(m, uri);
       _headers(headers).forEach(req.headers.set);
+      if (body != null && m != 'GET' && m != 'HEAD') {
+        if (req.headers.value('content-type') == null) {
+          req.headers.set('Content-Type', 'application/json; charset=utf-8');
+        }
+        final b = utf8.encode(body);
+        req.contentLength = b.length;
+        req.add(b);
+      }
       final resp = await req.close();
       final code = resp.statusCode;
 
@@ -104,8 +132,14 @@ class FreeHttp {
           throw FreeNetException('跳转次数过多', sourceDead: true);
         }
         final next = uri.resolve(loc);
-        return bytes(next.toString(),
-            headers: headers, timeout: timeout, maxBytes: maxBytes, redirects: redirects - 1);
+        // 303 一律降级为 GET；其余保持原方法（307/308 语义要求保方法）。
+        return send(next.toString(),
+            method: code == 303 ? 'GET' : m,
+            body: code == 303 ? null : body,
+            headers: headers,
+            timeout: timeout,
+            maxBytes: maxBytes,
+            redirects: redirects - 1);
       }
 
       if (code >= 400) {
@@ -171,6 +205,7 @@ class FreeHttp {
     Map<String, String>? headers,
     Duration timeout = const Duration(seconds: 15),
     Map<String, String>? query,
+    int maxBytes = 8 * 1024 * 1024,
   }) async {
     var u = url;
     if (query != null && query.isNotEmpty) {
@@ -182,7 +217,9 @@ class FreeHttp {
       u = '$u$sep$qs';
     }
     final t = await text(u,
-        headers: {...?headers, 'Accept': 'application/json'}, timeout: timeout);
+        headers: {...?headers, 'Accept': 'application/json'},
+        timeout: timeout,
+        maxBytes: maxBytes);
     if (t.trim().isEmpty) {
       throw FreeNetException('源站返回空响应');
     }
@@ -203,8 +240,13 @@ class FreeHttp {
     Map<String, String>? headers,
     Duration timeout = const Duration(seconds: 15),
     Map<String, String>? query,
+    int maxBytes = 8 * 1024 * 1024,
   }) async {
-    final d = await jsonAny(url, headers: headers, timeout: timeout, query: query);
+    final d = await jsonAny(url,
+        headers: headers,
+        timeout: timeout,
+        query: query,
+        maxBytes: maxBytes);
     if (d is Map<String, dynamic>) return d;
     if (d is Map) return Map<String, dynamic>.from(d);
     throw FreeNetException('源站响应结构不符（期望对象）');

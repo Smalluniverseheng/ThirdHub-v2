@@ -125,7 +125,7 @@ void main(List<String> args) {
       m.group(1)!,
   };
 
-  // ── 75 份清单 ──
+  // ── 全量模块清单（份数由「= 注册表行数」这条钉住，不写死数字）──
   final Map<String, Map<String, dynamic>> manifests = {};
   final List<FileSystemEntity> files = Directory(dir).listSync();
   for (final FileSystemEntity f in files) {
@@ -137,7 +137,7 @@ void main(List<String> args) {
   }
 
   print('== 1. 清单集合 ⇄ 注册表 ==');
-  ck('注册表行数 = 75', rows.length == 75);
+  ck('注册表行数合理（正则没失配）', rows.length >= 60);
   ck('注册表 id 无重复',
       rows.map((r) => r.id).toSet().length == rows.length);
   ck('清单份数 = 注册表行数（每模块一份，不多不少）',

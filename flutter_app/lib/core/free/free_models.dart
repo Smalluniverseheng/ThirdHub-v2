@@ -25,6 +25,78 @@ enum FreeKind {
       this == FreeKind.video;
 }
 
+/// 一个源是从哪来的。
+///
+/// ★ 为什么它是一等模型而不是备注：
+///   合规审计要能一眼分清「随包发布的源」和「用户自己加的源」——
+///   前者由我们负责，后者是用户的配置。审计口径完全不同。
+enum SourceOrigin {
+  /// 编译进安装包的少量合规源。不可删、不可改。
+  builtin,
+
+  /// 管理员账号同步下来的扩展源包。可在设置里关闭。
+  admin,
+
+  /// 用户自己导入的源。随时可删。
+  user;
+
+  String get i18nKey => switch (this) {
+        SourceOrigin.builtin => '内置',
+        SourceOrigin.admin => '管理员同步',
+        SourceOrigin.user => '我导入的',
+      };
+}
+
+/// 内容来源的授权性质。**从强到弱排列**，顺序即宽松程度。
+enum LicenseKind {
+  /// 公有领域：作者去世逾保护期，或明确放弃全部权利。全球可自由复制传播。
+  publicDomain,
+
+  /// 知识共享等开放许可：作者以 CC / ODbL / MIT 等条款明确许可使用。
+  creativeCommons,
+
+  /// 平台**官方公开 API**，且其使用条款允许第三方客户端读取。
+  officialApi,
+
+  /// 用户自有内容：自己购买/录制/扫描的文件，或用户自己部署的家庭服务。
+  userOwned,
+
+  /// 用户自行导入的第三方源规则。**版权状态不明**，且可能违反目标站点条款。
+  /// 仅桌面端。
+  thirdPartyRule,
+
+  /// 程序主动爬取网页。**版权状态不明**，且通常违反目标站点条款。仅桌面端。
+  scraped;
+
+  /// 是否允许进入要上架的移动端构建。
+  ///
+  /// 这是整个文件唯一的判定口径，别在别处再写一份 if。
+  bool get mobileSafe => switch (this) {
+        LicenseKind.publicDomain => true,
+        LicenseKind.creativeCommons => true,
+        LicenseKind.officialApi => true,
+        LicenseKind.userOwned => true,
+        LicenseKind.thirdPartyRule => false,
+        LicenseKind.scraped => false,
+      };
+
+  /// 唯一的 i18n 键。UI 不拼字符串，避免 6 语言漏翻。
+  String get i18nKey => switch (this) {
+        LicenseKind.publicDomain => '公有领域',
+        LicenseKind.creativeCommons => '开放许可',
+        LicenseKind.officialApi => '官方公开接口',
+        LicenseKind.userOwned => '自有内容',
+        LicenseKind.thirdPartyRule => '第三方规则',
+        LicenseKind.scraped => '主动抓取',
+      };
+
+  /// 徽标底色用的语义分组：true = 完全合规，false = 需自担责任。
+  bool get cleanBadge => mobileSafe;
+
+  /// 排序权重：合规的排前面。
+  int get rank => index;
+}
+
 /// 一个可下钻的多级列表（漫画的章、播客的期）在 UI 里表现一致：
 /// 「点条目 → 出子列表 → 点子条目 → 播/读」。用 [FreeItem.drill] 标记。
 class FreeItem {
@@ -99,13 +171,42 @@ class FreeSource {
   /// 探活地址。为空表示不做探测（总是尝试）。
   final String pingUrl;
 
+  /// 内容授权性质。**必填，没有默认值** —— 写不出来源和授权就不该进库。
+  ///
+  /// 这个字段唯一的作用是喂给 [FreePolicy] 判断能否进移动端构建。
+  final LicenseKind license;
+
+  /// 权利人署名 / 内容出处。上架审核会看这一项，也是给用户的交代。
+  final String attribution;
+
+  /// 该源的使用条款或授权说明地址。空表示无（极少见）。
+  final String termsUrl;
+
+  /// 这个源从哪来：内置 / 管理员同步 / 用户导入。
+  ///
+  /// ★ 为什么它是一等字段而不是注释：
+  ///   合规审计要能一眼分清「随包发布的源」和「用户自己加的源」。
+  ///   前者我们要负责，后者是用户的配置。
+  final SourceOrigin origin;
+
+  /// 「这源从哪来」的人话说明（如「我的 NAS 同步」）。可空。
+  final String originNote;
+
   const FreeSource({
     required this.id,
     required this.name,
     required this.note,
     required this.kind,
+    required this.license,
+    this.attribution = '',
+    this.termsUrl = '',
     this.pingUrl = '',
+    this.origin = SourceOrigin.builtin,
+    this.originNote = '',
   });
+
+  /// 是否随安装包发布。只有这种源会被算进「上架合规」范围。
+  bool get builtin => origin == SourceOrigin.builtin;
 }
 
 /// 可达性探测结果缓存。

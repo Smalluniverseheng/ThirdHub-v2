@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "name": "进阶示例源（自担责任）",
+  "version": "2026.11.21",
+  "note": "这包的源都不是「公有领域 / 开放许可 / 官方公开接口」那四类，导入后需在「我的源」里打开自担责任开关才会生效。内容来源与授权请自行确认。",
+  "sources": [
+    {
+      "id": "netease_music",
+      "name": "网易云音乐",
+      "note": "网易云公开搜索接口 + 官方外链播放。无版权曲目会返回空，表现为点了不响。",
+      "kind": "music",
+      "license": "thirdPartyRule",
+      "attribution": "网易云音乐及各唱片公司；曲目版权归权利人，本配置只做地址映射",
+      "termsUrl": "https://music.163.com/",
+      "base": "https://music.163.com",
+      "ping": "/api/search/get?s=test&type=1&limit=1",
+      "search": {
+        "method": "GET",
+        "path": "/api/search/get",
+        "query": {
+          "s": "{q}",
+          "type": "1",
+          "limit": "30"
+        },
+        "headers": {
+          "Referer": "https://music.163.com"
+        },
+        "fetch": "json",
+        "list": "result.songs",
+        "limit": 40,
+        "map": {
+          "id": "id",
+          "title": "name",
+          "subtitle": {
+            "path": "artists[].name"
+          },
+          "desc": "album.name",
+          "playUrl": {
+            "tpl": "https://music.163.com/song/media/outer/url?id={id}.mp3"
+          }
+        }
+      }
+    },
+    {
+      "id": "storyfm",
+      "name": "故事 FM",
+      "note": "公开播客 RSS。RSS 类源不分页，搜索任何词都返回最新一期列表。",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "故事 FM 及各期讲述者",
+      "termsUrl": "https://storyfm.cn/",
+      "base": "",
+      "ping": "https://feeds.storyfm.cn/storyfm.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://feeds.storyfm.cn/storyfm.xml",
+        "fetch": "rss",
+        "limit": 50,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url",
+          "cover": "itunes:image@href"
+        }
+      }
+    },
+    {
+      "id": "ximalaya_demo",
+      "name": "喜马拉雅（示例专辑）",
+      "note": "公开 RSS 专辑。把 path 换成任意专辑的 xml 地址，就是一个新源。",
+      "kind": "podcast",
+      "license": "officialApi",
+      "attribution": "喜马拉雅及各专辑作者",
+      "termsUrl": "https://www.ximalaya.com/",
+      "base": "",
+      "ping": "https://www.ximalaya.com/album/67610333.xml",
+      "search": {
+        "method": "GET",
+        "path": "https://www.ximalaya.com/album/67610333.xml",
+        "fetch": "rss",
+        "limit": 40,
+        "map": {
+          "id": "guid",
+          "title": "title",
+          "subtitle": "pubDate",
+          "desc": {
+            "path": "description",
+            "strip": true
+          },
+          "playUrl": "enclosure@url"
+        }
+      }
+    },
+    {
+      "id": "ctext_books",
+      "name": "中国哲学书电子化（需密钥）",
+      "note": "古籍检索。检索接口免费，读正文需要 api.ctext.org 的密钥；没有密钥时只能看到书名与 URN。",
+      "kind": "book",
+      "license": "officialApi",
+      "attribution": "中国哲学书电子化计划（ctext.org）",
+      "termsUrl": "https://ctext.org/tools/subscribe",
+      "base": "https://api.ctext.org",
+      "ping": "/searchtexts?title=%E8%AB%96%E8%AA%9E",
+      "search": {
+        "method": "GET",
+        "path": "/searchtexts",
+        "query": {
+          "title": "{q}"
+        },
+        "fetch": "json",
+        "list": "books",
+        "limit": 40,
+        "map": {
+          "id": "urn",
+          "title": "title",
+          "subtitle": {
+            "tpl": "ctext · {id}"
+          }
+        }
+      }
+    }
+  ]
+}

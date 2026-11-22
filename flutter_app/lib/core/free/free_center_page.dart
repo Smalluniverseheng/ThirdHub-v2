@@ -13,6 +13,9 @@ import '../player/media_spec.dart';
 import '../player/unified_player.dart';
 import 'free_http.dart';
 import 'free_models.dart';
+import 'free_policy.dart';
+import 'free_registry.dart';
+import 'free_source_manage_page.dart';
 import 'free_sources_media.dart';
 import 'free_sources_read.dart';
 
@@ -64,25 +67,19 @@ IconData freeKindIcon(FreeKind k) {
   }
 }
 
-/// 板块对应的源列表（用于可达性探测与说明）。
-List<FreeSource> sourcesOf(FreeKind k) {
-  switch (k) {
-    case FreeKind.music:
-      return [AudiusSource.source];
-    case FreeKind.radio:
-      return [RadioSource.source];
-    case FreeKind.podcast:
-      return [PodcastSource.source];
-    case FreeKind.comic:
-      return [MangaDexSource.source];
-    case FreeKind.video:
-      return [PeerTubeSource.source];
-    case FreeKind.book:
-      return [PoemSource.source, ...bookSources];
-    default:
-      return const [];
-  }
-}
+/// 板块对应的源列表 —— **已按当前运行形态过滤过**。
+///
+/// 搜索与探活都走这里：移动端构建里根本拿不到需要自担责任的源，
+/// 所以「移动端全合规」不是一句文案，而是这条函数返回值的属性。
+///
+/// ★ 4.81.86 起清单不再只有内置源：管理员同步的、用户导入的也在里面。
+///   具体从哪来由 [FreeRegistry] 管，这里只是转发（保持旧调用点不动）。
+List<FreeSource> sourcesOf(FreeKind k) => FreeRegistry.sourcesOf(k);
+
+/// 未过滤的完整清单。只在「合规说明」页与桌面端调试时用。
+///
+/// ★ 禁止在业务代码里直接调它 —— 那等于绕过闸门。自检脚本会盯这一条。
+List<FreeSource> allSourcesOf(FreeKind k) => FreeRegistry.allOf(k);
 
 class FreeSourcePage extends StatefulWidget {
   const FreeSourcePage({
@@ -111,6 +108,9 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   /// 源 id → 是否可达。null = 还没探。
   Map<String, bool> _reach = const {};
 
+  /// 外部源（导入/同步）本次的失败原因。UI 折叠显示，不挡内容。
+  List<String> _extErrors = const [];
+
   /// 古登堡的字母桶。
   String _bucket = 'A–M';
 
@@ -123,9 +123,28 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
   void initState() {
     super.initState();
     if (widget.initialQuery.isNotEmpty) _q.text = widget.initialQuery;
+    _boot();
+    if (_kind == FreeKind.book) _loadPoem();
+  }
+
+  /// 先把「外部源」缓存预热，再取数。
+  ///
+  /// ★ 预热是必要的：导入源存在 SharedPreferences 里，读盘是异步的，
+  ///   而 `sourcesOf()` 是同步的（几十个调用点靠它渲染）。
+  ///   不预热的话第一次进页面会「只看到内置源」，用户会以为导入失败。
+  Future<void> _boot() async {
+    try {
+      await FreeRegistry.ensureLoaded();
+      // 管理员同账号的多台设备，靠这一句拿到同一份源清单。
+      // 不是管理员 / 没连后端 / 12 小时内同步过 → 直接返回 0，不发请求。
+      final added = await FreeRegistry.autoSyncIfNeeded();
+      if (added > 0 && mounted) _toast(trf('已同步 {n} 个源', {'n': added}));
+    } catch (_) {
+      // 读缓存或同步失败就当没有外部源，内置源照常用。
+    }
+    if (!mounted) return;
     _probe();
     _load();
-    if (_kind == FreeKind.book) _loadPoem();
   }
 
   @override
@@ -183,7 +202,11 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
     }
   }
 
-  Future<List<FreeItem>> _fetch() async {
+  /// 内置源的取数。
+  ///
+  /// 与 4.81.85 之前完全一致 —— 只是电台多加了 SomaFM（两个源并发，
+  /// 任一有结果就够用；两个都挂才算这个板块挂了）。
+  Future<List<FreeItem>> _fetchBuiltin() async {
     final q = _q.text.trim();
     switch (_kind) {
       case FreeKind.music:
@@ -191,7 +214,7 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
             ? AudiusSource.trending()
             : AudiusSource.search(q);
       case FreeKind.radio:
-        return q.isEmpty ? RadioSource.top() : RadioSource.search(q);
+        return _radioAll(q);
       case FreeKind.podcast:
         // iTunes 必须有词，空搜索给一个能出结果的中性词。
         return PodcastSource.search(q.isEmpty ? '故事' : q);
@@ -211,6 +234,87 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
     }
   }
 
+  /// 电台：radio-browser 与 SomaFM 并发。
+  ///
+  /// ★ 为什么必须并发而不是串行兜底：两个源都在境外，
+  ///   串行时一个超时就把首屏拖 15 秒。并发下最坏也是 15 秒，最好 2 秒。
+  Future<List<FreeItem>> _radioAll(String q) async {
+    final out = <FreeItem>[];
+    final errs = <String>[];
+    await Future.wait([
+      () async {
+        try {
+          final got = q.isEmpty
+              ? await RadioSource.top()
+              : await RadioSource.search(q);
+          out.addAll(got);
+        } on FreeNetException catch (e) {
+          errs.add('网络电台：${e.message}');
+        }
+      }(),
+      () async {
+        try {
+          final got =
+              q.isEmpty ? await SomaFmSource.top() : await SomaFmSource.search(q);
+          out.addAll(got);
+        } on FreeNetException catch (e) {
+          errs.add('SomaFM：${e.message}');
+        }
+      }(),
+    ]);
+    // 两个都空 + 都有错 → 真的失败了，把原因抛出去让 UI 说人话。
+    if (out.isEmpty && errs.isNotEmpty) {
+      throw FreeNetException(errs.join('；'), offline: true);
+    }
+    return out;
+  }
+
+  /// 内置 + 外部源合并取数。
+  ///
+  /// ★ 顺序是先内置后外部，且**内置失败不阻塞外部**：
+  ///   用户导入源本来就是为了「内置源没有的东西」，
+  ///   因为 MangaDex 挂了就让导入的源也不显示，等于把功能锁死了。
+  Future<List<FreeItem>> _fetch() async {
+    final q = _q.text.trim();
+
+    var builtin = const <FreeItem>[];
+    FreeNetException? builtinErr;
+    try {
+      builtin = await _fetchBuiltin();
+    } on FreeNetException catch (e) {
+      builtinErr = e;
+    }
+
+    var ext = const ExternalSearchResult(<FreeItem>[], <String>[]);
+    if (FreeRegistry.allOf(_kind).any((s) => !s.builtin)) {
+      try {
+        ext = await FreeRegistry.searchDynamic(_kind, q);
+      } catch (_) {
+        // 声明式引擎内部已逐源兜错，这里只是最后一层保险。
+      }
+    }
+    _extErrors = ext.errors;
+
+    final merged = _dedupe([...builtin, ...ext.items]);
+    if (merged.isEmpty && builtinErr != null) throw builtinErr;
+    return merged;
+  }
+
+  /// 去重：同标题 + 同播放地址视为同一条。
+  ///
+  /// 为什么按「标题+地址」而不是 id：不同源的 id 体系完全不兼容，
+  /// 而同一个内容被两个源返回时，这两项通常是一样的。
+  static List<FreeItem> _dedupe(List<FreeItem> src) {
+    final seen = <String>{};
+    final out = <FreeItem>[];
+    for (final it in src) {
+      final k = '${it.title.trim().toLowerCase()}|${it.playUrl}';
+      if (!seen.add(k)) continue;
+      out.add(it);
+    }
+    return out;
+  }
+
   void _switchKind(FreeKind k) {
     if (k == _kind) return;
     setState(() {
@@ -224,6 +328,18 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
 
   // ── 点击分派 ──────────────────────────────────────────────
   Future<void> _open(FreeItem it) async {
+    // ★ 导入/同步来的源走通用分派：它们没有专属 Dart 实现，
+    //   能下钻就下钻（声明式 detail 动作），不能下钻就直接播/读。
+    if (FreeRegistry.isDynamic(it.source)) {
+      final spec = FreeRegistry.specOf(it.source);
+      if (spec?.detail != null && it.drill) {
+        await _openDrill(it);
+        return;
+      }
+      await _play(it);
+      return;
+    }
+
     if (it.kind == FreeKind.comic) {
       if (it.drill) {
         _openComicChapters(it);
@@ -245,6 +361,13 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
       return;
     }
     await _play(it);
+  }
+
+  /// 导入源的通用下钻页。
+  Future<void> _openDrill(FreeItem parent) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _DrillListPage(parent: parent),
+    ));
   }
 
   Future<void> _play(FreeItem it) async {
@@ -352,6 +475,21 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
               _load();
             },
           ),
+          IconButton(
+            tooltip: tr('我的源'),
+            icon: const Icon(Icons.tune),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const FreeSourceManagePage(),
+              ));
+              // 回来后清单可能变了（导入/删除/开关），要重新取数。
+              await FreeRegistry.ensureLoaded();
+              if (!mounted) return;
+              setState(() {});
+              _probe();
+              _load();
+            },
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(96),
@@ -408,6 +546,8 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
         children: [
           if (dead.isNotEmpty) _banner(dead),
           if (dead.isEmpty) _offlineNote(),
+          _sourceStrip(),
+          if (_extErrors.isNotEmpty) _extErrorNote(),
           if (_kind == FreeKind.book && _items.isNotEmpty && _poem.isNotEmpty)
             _poemCard(),
           Expanded(child: _body()),
@@ -422,6 +562,207 @@ class _FreeSourcePageState extends State<FreeSourcePage> {
         child: Text(
           tr('这些源直连公网站点，不需要你的服务器在线'),
           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+        ),
+      );
+
+  /// 导入源本次的失败原因。
+  ///
+  /// 为什么单独一条而不是并进 `_err`：内置源正常、只有一两个导入源挂了时，
+  /// 整页不该显示成「加载失败」—— 用户导入的源参差是常态，
+  /// 遮住能用的内容比不显示错误更糟。
+  Widget _extErrorNote() {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 6),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        title: Text(
+          trf('{n} 个导入源本次没取到内容', {'n': _extErrors.length}),
+          style: TextStyle(fontSize: 11, color: cs.tertiary),
+        ),
+        children: [
+          for (final e in _extErrors)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(e,
+                  style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── 来源与授权 ───────────────────────────────────────────
+  // 为什么要有这一条：开放源的内容来自第三方站点，用户有权知道
+  // 「这是谁的、按什么条款授权、能不能商用」。上架审核也认这一项。
+  Widget _sourceStrip() {
+    final shown = sourcesOf(_kind);
+    final hidden = FreePolicy.desktopOnly(allSourcesOf(_kind));
+    if (shown.isEmpty && hidden.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        children: [
+          for (final s in shown)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                avatar: Icon(Icons.verified_outlined,
+                    size: 14, color: Colors.green.shade600),
+                label: Text('${s.name} · ${tr(s.license.i18nKey)}',
+                    style: const TextStyle(fontSize: 11)),
+                onPressed: () => _showSourceSheet(s),
+              ),
+            ),
+          if (hidden.isNotEmpty)
+            ActionChip(
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              avatar: const Icon(Icons.desktop_windows_outlined, size: 14),
+              label: Text(
+                  trf('{n} 个来源需桌面端', {'n': hidden.length}),
+                  style: const TextStyle(fontSize: 11)),
+              onPressed: () => _showDesktopOnlySheet(hidden),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 单个来源的授权详情。信息全部来自源代码里的常量，不是运行时猜的。
+  void _showSourceSheet(FreeSource s) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (bc) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(freeKindIcon(s.kind), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(s.name,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600))),
+              ]),
+              const SizedBox(height: 10),
+              Text(s.note, style: const TextStyle(fontSize: 13, height: 1.5)),
+              const SizedBox(height: 12),
+              _kv(tr('授权性质'), tr(s.license.i18nKey)),
+              if (s.attribution.isNotEmpty) _kv(tr('内容出处'), s.attribution),
+              if (s.termsUrl.isNotEmpty)
+                _kv(tr('使用条款'), s.termsUrl, selectable: true),
+              const SizedBox(height: 10),
+              Text(
+                tr(s.license.mobileSafe
+                    ? '该来源可在移动端直接使用'
+                    : '该来源仅桌面端可用'),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: s.license.mobileSafe
+                        ? Colors.green.shade700
+                        : Colors.orange.shade800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 「我这儿为什么看不到这几个源」—— 明说，不静默消失。
+  void _showDesktopOnlySheet(List<FreeSource> hidden) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (bc) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.desktop_windows_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(tr('此来源需桌面端'),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 10),
+              for (final s in hidden)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    trf(FreePolicy.blockReasonTpl,
+                        {'n': s.name, 'l': tr(s.license.i18nKey)}),
+                    style: const TextStyle(fontSize: 12.5, height: 1.5),
+                  ),
+                ),
+              const Divider(height: 20),
+              Text(
+                tr('桌面端才能运行这类来源；成品转成标准格式后交接到本机。'),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 12),
+              // 4.81.86：移动端不再只有「不行」一个答案。
+              // 用户自己写的源、自己承担授权责任，是他自己的选择 ——
+              // 但要让他在知道后果的前提下自己开口。
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: Text(tr('去「我的源」里自行决定')),
+                  onPressed: () async {
+                    Navigator.pop(bc);
+                    await Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const FreeSourceManagePage(),
+                    ));
+                    await FreeRegistry.ensureLoaded();
+                    if (!mounted) return;
+                    setState(() {});
+                    _probe();
+                    _load();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v, {bool selectable = false}) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+                width: 68,
+                child: Text(k,
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade600))),
+            Expanded(
+              child: selectable
+                  ? SelectableText(v,
+                      style: const TextStyle(fontSize: 12, height: 1.4))
+                  : Text(v,
+                      style: const TextStyle(fontSize: 12, height: 1.4)),
+            ),
+          ],
         ),
       );
 
@@ -1076,6 +1417,129 @@ class _FreeTextReadPageState extends State<FreeTextReadPage> {
                     ),
                   ),
                 ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 导入源的通用下钻页
+// ══════════════════════════════════════════════════════════════
+//
+// 内置源各自有专属的下钻页（漫画章节、书籍目录、播客单集），
+// 因为它们的结构差异大。导入源没有专属实现，只有一组声明式的
+// `detail` 动作 —— 所以这里只需要一个「拿到子项列表 → 点开能播」的通用页。
+//
+// 刻意不做的事：
+//   · 不猜「这一项是章节还是单集」—— 声明式源自己用 kind 声明板块，照办即可；
+//   · 不在子项上再下钻（源包最多两层），避免用户写出一条无限递归的源把 App 拖死。
+class _DrillListPage extends StatefulWidget {
+  const _DrillListPage({required this.parent});
+
+  final FreeItem parent;
+
+  @override
+  State<_DrillListPage> createState() => _DrillListPageState();
+}
+
+class _DrillListPageState extends State<_DrillListPage> {
+  bool _loading = true;
+  String _err = '';
+  List<FreeItem> _list = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    try {
+      final l = await FreeRegistry.drill(widget.parent);
+      if (!mounted) return;
+      setState(() {
+        _list = l;
+        _loading = false;
+      });
+    } on FreeNetException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _err = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _err = '加载失败：$e';
+        _loading = false;
+      });
+    }
+  }
+
+  void _play(FreeItem e) {
+    if (e.playUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('这一条没有可播地址'))));
+      return;
+    }
+    final video = e.kind == FreeKind.video;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => UnifiedPlayerPage(
+        spec: MediaSpec(
+          url: e.playUrl,
+          title: e.displayTitle,
+          cover: e.cover.isEmpty ? null : e.cover,
+          artist: e.subtitle.isEmpty ? null : e.subtitle,
+          kindOverride: video ? MediaKind.video : MediaKind.audio,
+          sourceTag: widget.parent.title,
+        ),
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.parent.displayTitle)),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _err.isNotEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_err, textAlign: TextAlign.center),
+                  ),
+                )
+              : _list.isEmpty
+                  ? Center(child: Text(tr('这个源没有返回更多内容')))
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(8),
+                      itemCount: _list.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (c, i) {
+                        final e = _list[i];
+                        return ListTile(
+                          dense: true,
+                          leading: e.cover.isEmpty
+                              ? const Icon(Icons.play_circle_outline)
+                              : ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Image.network(
+                                    e.cover,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.play_circle_outline),
+                                  ),
+                                ),
+                          title: Text(e.displayTitle, maxLines: 2),
+                          subtitle: Text(e.displaySubtitle,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          trailing: const Icon(Icons.play_arrow),
+                          onTap: () => _play(e),
+                        );
+                      },
+                    ),
     );
   }
 }

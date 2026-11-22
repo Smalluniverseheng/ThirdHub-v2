@@ -78,6 +78,76 @@ class LocalLib {
     await _save(kind, items);
   }
 
+  // ── 程序化收货：桌面端交付过来的标准格式文件 ────────────────
+  //
+  // 与 importNovels/importMedia 的区别：那几个是**用户挑文件**（要弹选择器），
+  // 这里是**网络收件**，文件已在内存里。共同点是都落到同一个本地库索引，
+  // 所以收到之后它能像自己导入的文件一样被书架/播放器直接看到。
+  //
+  // 为什么不落公共目录：本 App 不申请存储写权限也要能用。
+  // 落到应用私有目录里，卸载即清，用户不会在相册里发现一堆莫名其妙的东西。
+  //
+  // @param kind  novel / comic / music / video
+  // @param name  文件名（含扩展名，来自桌面端成品元数据）
+  // @param bytes 文件内容
+  // @return 落盘后的绝对路径；失败返回 null 并写 [lastErrors]
+  static Future<String?> acceptFile({
+    required String kind,
+    required String name,
+    required List<int> bytes,
+  }) async {
+    if (bytes.isEmpty) {
+      lastErrors.add('$name: 内容为空');
+      return null;
+    }
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+    try {
+      final dir = await _dir(kind);
+      final items = await list(kind);
+      final stem = name.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+
+      // EPUB 走与「手动导入」完全相同的转换：epub → txt。
+      // 理由不是省事，是**一致性** —— 同一本书不管从哪来，
+      // 后续章节切分/阅读进度/听书都走同一条通路，不会出现两种行为。
+      if (kind == 'novel' && ext == 'epub') {
+        final text = epubToText(bytes);
+        if (text.trim().isEmpty) {
+          lastErrors.add('$name: 没能解析出正文(EPUB 可能是空壳或加密)');
+          return null;
+        }
+        final out = File('${dir.path}/${stamp}_$stem.txt');
+        await out.writeAsString(text);
+        items.add({
+          'name': stem,
+          'path': out.path,
+          'format': 'epub',
+          'size': text.length,
+        });
+        await _save(kind, items);
+        invalidateNovel(out.path);
+        await AppLog.transfer('接收$kind 1 个', d: {'kind': kind, 'from': 'desktop'});
+        return out.path;
+      }
+
+      final dst = File('${dir.path}/${stamp}_$name');
+      await dst.writeAsBytes(bytes, flush: true);
+      items.add({
+        'name': stem,
+        'path': dst.path,
+        'format': ext,
+        'size': bytes.length,
+      });
+      await _save(kind, items);
+      await AppLog.transfer('接收$kind 1 个', d: {'kind': kind, 'from': 'desktop'});
+      return dst.path;
+    } catch (e) {
+      lastErrors.add('$name: $e');
+      await AppLog.warn('transfer', '接收成品失败', d: {'name': name, 'err': '$e'});
+      return null;
+    }
+  }
+
   // ── 文本解码: UTF-8/UTF-16(BOM) → 严格UTF-8 → GBK(中文小说常见) → 容错UTF-8 ──
   // 网上下载的中文 txt 小说大量是 GBK/GB18030 编码, 直接 latin1 兜底会全文乱码("看不了")
   static String decodeText(List<int> bytes) {

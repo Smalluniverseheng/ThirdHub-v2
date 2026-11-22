@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "name": "漫画与开放视频（合规，移动端可用）",
+  "version": "2026.11.21",
+  "note": "这三个源都属于「官方公开接口 / 开放许可」那四类，移动端直接可用，不需要打开自担责任开关。漫画来自 MangaDex（开放漫画数据库，仅收录经授权的作品）；视频来自 PeerTube 联邦网络（创作者自选许可发布，多数为 CC 授权）。",
+  "sources": [
+    {
+      "id": "mangadex",
+      "name": "MangaDex",
+      "note": "开放漫画数据库，只列安全分级（safe）作品。可用中文译名检索 —— 库里有 altTitles 中文别名，搜「火影」能命中。只提供作品页链接，不抓取页面内容。",
+      "kind": "comic",
+      "license": "officialApi",
+      "attribution": "MangaDex 及其各作品作者、出版社；作品版权归原权利人",
+      "termsUrl": "https://mangadex.org/",
+      "base": "https://api.mangadex.org",
+      "ping": "/manga?limit=1&contentRating[]=safe",
+      "search": {
+        "method": "GET",
+        "path": "/manga?title={q}&limit=24&contentRating[]=safe&includes[]=cover_art&order[relevance]=desc",
+        "headers": {
+          "User-Agent": "ThirdHub/1.0",
+          "Accept": "application/json"
+        },
+        "fetch": "json",
+        "list": "data",
+        "limit": 24,
+        "map": {
+          "id": {
+            "path": "id"
+          },
+          "title": {
+            "path": "attributes.title.zh||attributes.title.zh-hk||attributes.title.en||attributes.title.ja||attributes.title.0"
+          },
+          "subtitle": {
+            "path": "attributes.year"
+          },
+          "desc": {
+            "path": "attributes.description.zh||attributes.description.en",
+            "strip": true
+          },
+          "coverFile": {
+            "path": "relationships.0.attributes.fileName||relationships.1.attributes.fileName||relationships.2.attributes.fileName||relationships.3.attributes.fileName||relationships.4.attributes.fileName"
+          },
+          "cover": {
+            "tpl": "https://uploads.mangadex.org/covers/{id}/{coverFile}.256.jpg"
+          },
+          "link": {
+            "tpl": "https://mangadex.org/title/{id}"
+          }
+        }
+      }
+    },
+    {
+      "id": "peertube_tchncs",
+      "name": "PeerTube 开放视频",
+      "note": "PeerTube 联邦网络（德国老牌实例 techncs）。为速度优先只取 12 条（24 条要 10 秒以上）。搜英文关键词命中率高，中文内容少。点进去会取最高清的可播地址。",
+      "kind": "video",
+      "license": "creativeCommons",
+      "attribution": "PeerTube 联邦网络各实例与视频创作者；多数视频由创作者以 CC 许可发布",
+      "termsUrl": "https://joinpeertube.org/",
+      "base": "https://tube.tchncs.de",
+      "ping": "/api/v1/search/videos?search=test&count=1",
+      "search": {
+        "method": "GET",
+        "path": "/api/v1/search/videos?search={q}&count=12",
+        "headers": {
+          "User-Agent": "ThirdHub/1.0",
+          "Accept": "application/json"
+        },
+        "fetch": "json",
+        "list": "data",
+        "drill": true,
+        "limit": 12,
+        "map": {
+          "id": {
+            "path": "uuid"
+          },
+          "title": {
+            "path": "name"
+          },
+          "subtitle": {
+            "path": "channel.displayName"
+          },
+          "desc": {
+            "path": "truncatedDescription||description",
+            "strip": true
+          },
+          "cover": {
+            "path": "thumbnailPath||previewPath",
+            "abs": true
+          },
+          "link": {
+            "path": "url",
+            "abs": true
+          }
+        }
+      },
+      "detail": {
+        "method": "GET",
+        "path": "/api/v1/videos/{id}",
+        "headers": {
+          "User-Agent": "ThirdHub/1.0",
+          "Accept": "application/json"
+        },
+        "fetch": "json",
+        "limit": 1,
+        "map": {
+          "title": {
+            "path": "name"
+          },
+          "playUrl": {
+            "path": "streamingPlaylists.0.files.0.fileUrl||files.0.fileUrl||streamingPlaylists.0.playlistUrl"
+          }
+        }
+      }
+    },
+    {
+      "id": "peertube_kockatoo",
+      "name": "PeerTube 视频库",
+      "note": "PeerTube 大型实例 kockatoo（收录量上万）。作为上面那个的备份 —— 单个实例维护时会连不上，两个换着用。",
+      "kind": "video",
+      "license": "creativeCommons",
+      "attribution": "PeerTube 联邦网络各实例与视频创作者；多数视频由创作者以 CC 许可发布",
+      "termsUrl": "https://joinpeertube.org/",
+      "base": "https://tube.kockatoo.org",
+      "ping": "/api/v1/search/videos?search=test&count=1",
+      "search": {
+        "method": "GET",
+        "path": "/api/v1/search/videos?search={q}&count=16",
+        "headers": {
+          "User-Agent": "ThirdHub/1.0",
+          "Accept": "application/json"
+        },
+        "fetch": "json",
+        "list": "data",
+        "drill": true,
+        "limit": 16,
+        "map": {
+          "id": {
+            "path": "uuid"
+          },
+          "title": {
+            "path": "name"
+          },
+          "subtitle": {
+            "path": "channel.displayName"
+          },
+          "desc": {
+            "path": "truncatedDescription||description",
+            "strip": true
+          },
+          "cover": {
+            "path": "thumbnailPath||previewPath",
+            "abs": true
+          },
+          "link": {
+            "path": "url",
+            "abs": true
+          }
+        }
+      },
+      "detail": {
+        "method": "GET",
+        "path": "/api/v1/videos/{id}",
+        "headers": {
+          "User-Agent": "ThirdHub/1.0",
+          "Accept": "application/json"
+        },
+        "fetch": "json",
+        "limit": 1,
+        "map": {
+          "title": {
+            "path": "name"
+          },
+          "playUrl": {
+            "path": "streamingPlaylists.0.files.0.fileUrl||files.0.fileUrl||streamingPlaylists.0.playlistUrl"
+          }
+        }
+      }
+    }
+  ]
+}

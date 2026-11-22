@@ -110,9 +110,12 @@ void main() {
       '旧 id 与 read 并存不重复展开',
       ModuleRegistry.applyNavIds(['read', 'comic']).join(',') ==
           '小说,漫画,音乐,视频,有声书,我的');
+  // ★2026-11-21：这里的"网页独有 id"样本原来用 tavern，但 App 端 2026-11-04 已补齐
+  //   TavernPage（kModules 有「酒馆」、模块市场「生活」分类可添加），tavern 现在是
+  //   两端共有模块。改用真正 App 端没有的 grade / plugins / storage 作样本。
   ck(
       '网页独有 id 跳过（不认识≠删除，合并时带回去）',
-      ModuleRegistry.applyNavIds(['tavern', 'grade', 'plugins']).join(',') ==
+      ModuleRegistry.applyNavIds(['grade', 'plugins', 'storage']).join(',') ==
           '我的');
   ck('App 独有 id 正常投影',
       ModuleRegistry.applyNavIds(['jobs', 'notes']).join(',') == '自动化任务,笔记,我的');
@@ -123,15 +126,16 @@ void main() {
   print('== 4. 合并写 mergeNavIds ==');
   final appKnown = ModuleRegistry.appKnownIds;
   ck(
-      'appKnownIds 含 read 与 profile、不含 tavern',
+      'appKnownIds 含 read 与 profile、含 tavern（App 端已有酒馆）、不含 grade',
       appKnown.contains('read') &&
           appKnown.contains('profile') &&
-          !appKnown.contains('tavern'));
+          appKnown.contains('tavern') &&
+          !appKnown.contains('grade'));
   final m1 = ModuleRegistry.mergeNavIds(
-      ['search', 'read'], ['tavern', 'search', 'grade'],
+      ['search', 'read'], ['plugins', 'search', 'grade'],
       knownIds: appKnown);
   ck('本端新顺序优先', m1.take(2).join(',') == 'search,read');
-  ck('不认识的 id 保序追加尾部', m1.sublist(2).join(',') == 'tavern,grade');
+  ck('不认识的 id 保序追加尾部', m1.sublist(2).join(',') == 'plugins,grade');
   ck('认识的旧位置被丢弃（以新顺序为准）', m1.where((x) => x == 'search').length == 1);
   final m2 = ModuleRegistry.mergeNavIds(['jobs'], null, knownIds: appKnown);
   ck('云端数组为空时只留本端', m2.join(',') == 'jobs');
@@ -144,20 +148,20 @@ void main() {
   // ── 5. 两端往返模拟（核心回归：互不踩踏 + 幂等）──
   print('== 5. 两端往返模拟 ==');
   final webKnown = webBoardIds.toSet();
-  // 初始：网页写布局 [ai, search, read, tavern]（网页用户配置）
-  var cloudArr = <String>['ai', 'search', 'read', 'tavern'];
+  // 初始：网页写布局 [ai, search, read, grade]（网页用户配置，grade=成绩=App 端没有的）
+  var cloudArr = <String>['ai', 'search', 'read', 'grade'];
   // ① App 用户把导航改成 [搜索, 小说, 自动化任务, 我的] → 上行合并写
   final appUp = ModuleRegistry.navIdsOf(['搜索', '小说', '自动化任务', '我的']);
   cloudArr = ModuleRegistry.mergeNavIds(appUp, cloudArr, knownIds: appKnown);
   ck('App 上行后：App 的 id 在前', cloudArr.take(2).join(',') == 'search,read');
   ck('App 上行后：App 独有 id 进数组', cloudArr.contains('jobs'));
-  ck('★ App 上行后：网页独有 id 全存活', cloudArr.contains('tavern'));
-  // ② 网页用户在导航栏管理改成 [ai, game, read]（关掉 tavern）→ 合并写
+  ck('★ App 上行后：网页独有 id 全存活', cloudArr.contains('grade'));
+  // ② 网页用户在导航栏管理改成 [ai, game, read]（关掉 grade）→ 合并写
   cloudArr = ModuleRegistry.mergeNavIds(['ai', 'game', 'read'], cloudArr,
       knownIds: webKnown);
   ck('网页改动后：网页新顺序在前', cloudArr.take(3).join(',') == 'ai,game,read');
   ck('★ 网页改动后：App 独有 id 全存活', cloudArr.contains('jobs'));
-  ck('网页关掉的板块真的被删', !cloudArr.contains('tavern'));
+  ck('网页关掉的板块真的被删', !cloudArr.contains('grade'));
   // ③ App 下行：投影出自己认识的（read 子集记忆 = 只开小说）
   final appDown = ModuleRegistry.applyNavIds(cloudArr, readGroup: ['小说']);
   ck('★ App 下行：read 子集生效（read 在 → 小说展开、漫画不展开）',

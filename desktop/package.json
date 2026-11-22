@@ -1,0 +1,17 @@
+{
+  "name": "thirdhub-desktop-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ThirdHub 桌面引擎：把网页素材转成 EPUB / CBZ / MP3 / MP4 标准成品，通过签名链接交接到移动端",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "smoke": "node test/smoke.cjs"
+  },
+  "dependencies": {}
+}

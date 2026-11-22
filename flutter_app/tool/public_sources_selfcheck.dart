@@ -83,14 +83,20 @@ void main() {
   final mainSrc = File('lib/main.dart').readAsStringSync();
   final page = File('lib/core/public_sources_page.dart').readAsStringSync();
   final i18n = File('lib/core/i18n.dart').readAsStringSync();
-  ok(mainSrc.contains("import 'core/public_data_sources.dart';") &&
-      mainSrc.contains("import 'core/public_sources_page.dart';"),
-      'main.dart 引入了规则层与清单页');
+  // ★2026-11-21 修断言：原来要求 main.dart 同时 import 规则层与清单页。
+  //   但规则层只被清单页用，main 直接 import 会变成 unused_import（analyze 报警），
+  //   真正该钉的是「main 接线到清单页 且 清单页吃得到规则层」，改成这个口径。
+  ok(mainSrc.contains("import 'core/public_sources_page.dart';") &&
+      page.contains("import 'public_data_sources.dart';"),
+      'main.dart 引入了清单页，清单页引入规则层');
   ok(mainSrc.contains('const PublicSourcesPage()'), '「我的」里有真实入口');
   ok(mainSrc.contains("tr('公开数据源')"), '入口标题走 tr() 不是写死中文');
   ok(page.contains('mobileVisibleSources()'), '清单页只渲染准入放行的条目');
   ok(page.contains('const ApiKeysPage()'), '填密钥复用统一密钥库，不另造一套');
-  ok(page.contains('launchUrl('), '官方文档/官网可点开');
+  // ★2026-11-21 修断言：4.81.75 起统一改走内置浏览器 InAppOpen（不把用户踢到系统浏览器），
+  //   原来只认 launchUrl 会误报。两者任一存在即算「官网/文档可点开」。
+  ok(page.contains('launchUrl(') || page.contains('InAppOpen.url('),
+      '官方文档/官网可点开');
   ok(i18n.contains('i18nUiWords15.forEach'), '第 15 批译文真的被装载');
   const keys = [
     '公开数据源',

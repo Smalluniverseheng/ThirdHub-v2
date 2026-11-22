@@ -26,6 +26,7 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'core/continue_rail.dart';
 import 'core/player/media_probe.dart';
 import 'core/offline/local_book_engine.dart';
 import 'core/player/media_spec.dart';
@@ -146,6 +147,7 @@ import 'core/backend_health.dart';
 import 'core/play_resolver.dart';
 // ★4.81.77「开放源」：直连公网正规站点的独立内容通路，不经过 Api/base。
 import 'core/free/free_center_page.dart';
+import 'core/free/free_source_manage_page.dart';
 import 'core/free/free_models.dart';
 // ★4.81.78 启动轨迹 / 安全模式 / 兜底错误卡片。
 import 'core/boot.dart';
@@ -3098,6 +3100,14 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.public, tr('开放源'),
                 value: tr('不需要服务器：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书'),
                 page: const FreeSourcePage()),
+            _sep(),
+            // ★4.81.86：源清单与安装包分离的入口。
+            //   放在「开放源」正下方，是因为用户看完内容自然会问
+            //   「能不能加点别的」—— 这一条就是答案。
+            entry(Icons.tune, tr('我的源'),
+                value: tr('导入 / 同步 / 删除内容源，不装在安装包里'),
+                page: FreeSourceManagePage(
+                    backendBase: Api.base, backendToken: Api.token)),
           ]),
           _section('设置', [
             entry(Icons.notifications_none, '通知',
@@ -3807,7 +3817,7 @@ class _Rp extends State<RecentPlayPage> {
   };
   @override
   Widget build(BuildContext c) => Scaffold(
-      appBar: AppBar(title: const Text('最近播放')),
+      appBar: AppBar(title: Text(tr('最近播放'))),
       body: items.isEmpty
           ? const Center(
               child: Text('还没有播放记录\n去音乐/视频/有声书/广播里播点什么',
@@ -3835,8 +3845,57 @@ class _Rp extends State<RecentPlayPage> {
                           await Recents.remove(
                               e['kind'] ?? '', e['target'] ?? '');
                           _load();
-                        })),
+                        }),
+                    // ★以前这一行没有 onTap —— 记录能看不能点，点了完全没反应。
+                    onTap: () => openRecentEntry(c, RecentEntry.fromMap(e))),
             ]));
+}
+
+/// 「继续上次」卡片 / 「最近播放」列表点击后的统一路由。
+///
+/// ★为什么抽成顶层函数：以前 `RecentPlayPage` 的每一行**根本没有 onTap**
+///   —— 列表能看不能点，用户点了没反应还以为卡了。现在搜索页的横滑带和
+///   最近播放页共用这一份规则，不会再出现"两处行为不一样"。
+///
+/// 规则与 Recents 写入侧严格对应（main.dart 的 MusicPlayPage / LocalVideoPlayerPage
+/// 写入时都带了 target）：
+///   · video + 本地路径 → 本地视频播放器（播放器自己按 vpos_* 恢复进度）
+///   · music / radio + 可播地址 → 音乐播放器（按 mpos_* 恢复进度）
+///   · audiobook → 有声书页（它需要先选目录，无法定位到具体某一集，不假装能续播）
+///   · 没有 target 或模块未开启 → 回模块 / 明说没开启，绝不静默无反应
+Future<void> openRecentEntry(BuildContext c, RecentEntry e) async {
+  final t = e.target;
+  if (t.isNotEmpty && e.kind == 'video') {
+    await Navigator.push(
+        c,
+        smoothRoute(LocalVideoPlayerPage(
+            item: <String, dynamic>{'name': e.title, 'path': t})));
+    return;
+  }
+  if (t.isNotEmpty && (e.kind == 'music' || e.kind == 'radio')) {
+    await Navigator.push(
+        c,
+        smoothRoute(MusicPlayPage(
+            item: <String, dynamic>{
+              'name': e.title,
+              'url': t,
+              'artist': e.sub
+            })));
+    return;
+  }
+  final mod = switch (e.kind) {
+    'video' => '视频',
+    'music' => '音乐',
+    'radio' => '广播',
+    'audiobook' => '有声书',
+    _ => '搜索',
+  };
+  if (thJumpToModule(mod)) return;
+  if (!c.mounted) return;
+  ScaffoldMessenger.maybeOf(c)?.showSnackBar(SnackBar(
+      content: Text(trf('「{{m}}」不在底部导航里，请到「我的 → 功能管理」开启',
+          {'m': tr(mod)})),
+      duration: const Duration(seconds: 3)));
 }
 
 // ═══ 阅读统计(规划 R-1): 时长 + 字数, 今日/本周 ═══
@@ -5601,6 +5660,14 @@ class _Home extends State<SearchSection> {
               else
                 FilledButton(onPressed: go, child: Text(tr('搜索')))
             ])),
+        // ★「继续上次」：搜索页是默认落地页，进来第一眼应当是"上次看到哪"，
+        //   而不是一个空输入框。点卡片 → 本地视频/音乐/电台直接回到播放器
+        //   （播放器自己按 vpos_/mpos_ 恢复进度），有声书这类回模块。
+        //   没有记录时组件自己 return 空，不会留白条。
+        ContinueRail(
+            onOpen: (e) => openRecentEntry(c, e),
+            onAll: () =>
+                Navigator.push(c, smoothRoute(const RecentPlayPage()))),
         // 2026-11-05：推荐带嵌在搜索页里（不占独立模块位）。
         // 跟着当前类型筛选走：选漫画显示漫画推荐，选视频显示影视推荐。
         Padding(
@@ -5952,6 +6019,16 @@ Widget modMenuBtn(BuildContext c) => IconButton(
       }
       st.openModuleMenu();
     });
+
+/// 顶层模块跳转入口 —— 给「不在模块祖先链里」的组件用（如最近播放的横滑带）。
+///
+/// 找不到根导航（极端情况：首帧还没建完）就返回 false，**不抛异常**：
+/// 一个"点了没反应"远好过整棵树崩掉。调用方负责给出可读反馈。
+bool thJumpToModule(String name) {
+  final st = RootNav.inst;
+  if (st == null || !st.mounted) return false;
+  return st.jumpToModule(name);
+}
 
 // ═══ 板块一: 小说阅读器(功能完整) ═══
 class NovelSection extends StatefulWidget {
@@ -11227,6 +11304,20 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
       });
     });
   }
+
+  /// 按模块名跳到指定模块（供独立路由页 / 横滑带这类"不在模块内"的组件使用）。
+  ///
+  /// 返回 false 表示「这个模块不在当前底部导航里」——调用方负责提示用户，
+  /// 不要在这里弹 SnackBar：调用方才知道该怎么措辞（是"去功能管理开启"还是别的）。
+  /// 走 [_go] 而不是 [_goNow]：模块锁（PIN）必须照常生效，否则从最近播放
+  /// 点一下就能绕过用户自己设的锁。
+  bool jumpToModule(String name, {bool animate = false}) {
+    final i = enabled.indexOf(name);
+    if (i < 0) return false;
+    _go(i, animate: animate);
+    return true;
+  }
+
 
   /// [recordHistory] = false 时**不把当前模块写进访问历史**。
   ///

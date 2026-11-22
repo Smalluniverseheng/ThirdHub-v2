@@ -33,7 +33,14 @@ class MangaDexSource {
   static const List<String> _ratings = ['safe', 'suggestive'];
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.comic, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.comic,
+      license: LicenseKind.officialApi,
+      attribution: 'MangaDex 社区与各作品权利人；仅取 safe/suggestive 分级',
+      termsUrl: 'https://api.mangadex.org/docs/',
+      pingUrl: pingUrl);
 
   /// 搜索。
   ///
@@ -251,7 +258,14 @@ class WikisourceSource {
   static const String _api = 'https://zh.wikisource.org/w/api.php';
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.book, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.book,
+      license: LicenseKind.creativeCommons,
+      attribution: '维基文库贡献者，CC BY-SA 4.0；引用需署名',
+      termsUrl: 'https://zh.wikisource.org/wiki/Wikisource:%E7%89%88%E6%9D%83%E4%BF%A1%E6%81%AF',
+      pingUrl: pingUrl);
 
   /// 搜作品。`intitle:` 让匹配落在标题上，避免全文搜索把无关页面带进来。
   static Future<List<FreeItem>> search(String q, {int limit = 20}) async {
@@ -373,7 +387,14 @@ class GutenbergAuSource {
   static const String _base = 'https://gutenberg.net.au';
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.book, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.book,
+      license: LicenseKind.publicDomain,
+      attribution: 'Project Gutenberg Australia，公版英文书',
+      termsUrl: 'https://gutenberg.net.au/licence.html',
+      pingUrl: pingUrl);
 
   /// 两个索引页（A–M / N–Z）。
   static const Map<String, String> buckets = {
@@ -494,7 +515,14 @@ class PoemSource {
   static const String pingUrl = 'https://v1.jinrishici.com/all.json';
 
   static const FreeSource source = FreeSource(
-      id: id, name: name, note: note, kind: FreeKind.poem, pingUrl: pingUrl);
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.poem,
+      license: LicenseKind.publicDomain,
+      attribution: '今日诗词，古典诗词属公有领域',
+      termsUrl: 'https://www.jinrishici.com/',
+      pingUrl: pingUrl);
 
   /// 随机一句。返回 content/origin/author/category。
   static Future<Map<String, String>> one() async {
@@ -508,9 +536,48 @@ class PoemSource {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// 一言（Hitokoto）—— CC0 一句话，公开接口，国内直连稳定
+// ─────────────────────────────────────────────────────────────
+// 与「今日诗词」同属句子类，但覆盖面完全不同：诗词只收古典，
+// 一言收的是台词、歌词、书摘、原创 —— 两个源并排，才不会每天看到同一句。
+class HitokotoSource {
+  HitokotoSource._();
+
+  static const String id = 'hitokoto';
+  static const String name = '一言';
+  static const String note = '一句话摘录（台词 / 书摘 / 原创），CC0 公开接口，国内可直连';
+  static const String pingUrl = 'https://v1.hitokoto.cn/?encode=json';
+
+  static const FreeSource source = FreeSource(
+      id: id,
+      name: name,
+      note: note,
+      kind: FreeKind.poem,
+      license: LicenseKind.creativeCommons,
+      attribution: '一言社区与各投稿者，CC0 1.0 通用（公有领域贡献）',
+      termsUrl: 'https://developer.hitokoto.cn/',
+      pingUrl: pingUrl);
+
+  /// 随机一句。字段映射到与今日诗词同一套键，UI 不用分叉。
+  static Future<Map<String, String>> one() async {
+    final d = await FreeHttp.json(pingUrl);
+    return {
+      'content': '${d['hitokoto'] ?? ''}',
+      'origin': '${d['from'] ?? ''}',
+      'author': '${d['from_who'] ?? ''}',
+      'category': '${d['type'] ?? ''}',
+    };
+  }
+}
+
 /// 把所有「书」类源聚成一个列表，供 UI 展示来源说明。
 List<FreeSource> get bookSources =>
     [WikisourceSource.source, GutenbergAuSource.source];
+
+/// 「句子」类源：诗词 + 一言。两个源内容不重叠，并排展示。
+List<FreeSource> get poemSources =>
+    [PoemSource.source, HitokotoSource.source];
 
 /// JSON 编码便捷入口（部分调试分支要用）。
 String jsonBrief(Object? v, [int n = 160]) {

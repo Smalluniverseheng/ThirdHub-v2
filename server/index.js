@@ -487,6 +487,7 @@ const media = require('./routes-media');
 const rtAdmin = require('./routes-admin');
 const rtData = require('./routes-data');
 const rtSources = require('./routes-sources');
+const rtFree = require('./routes-free');
 const rtSearch = require('./routes-search');
 const rtLibrary = require('./routes-library');
 const rtThp = require('./routes-thp');
@@ -1382,6 +1383,11 @@ async function handle(req, res, body) {
   // ── Agent Runtime(/agent/*): server/routes-agent.js ──
   // 顺序放在数据服务之后、源管理之前：/agent 前缀与其它路由无重叠。
   if ((await rtAgent.handle(req, res, body, u, p, send, agentCtx)) || res.writableEnded) return;
+  // ── 端上声明式源包(/v1/free/sources): server/routes-free.js ──
+  //   与下面的 /v1/src、/v1/sources 是**两套东西**：
+  //   那两套给后端引擎跑（legado 源），这里发放的是 App 端直接执行的纯数据源。
+  //   必须挂在 authGate 之后 —— 源清单本身就是要鉴权的东西。
+  if (await rtFree.handle(req, res, body, u, p, send, { DATA })) return;
   // ── 源管理(/v1/src /v1/sources /v1/img /v1/status): server/routes-sources.js ──
   if ((await rtSources.handle(req, res, body, u, p, send, sourcesCtx)) || res.writableEnded) return;
   // 统一搜索路由: 前端只说"搜什么类型", 后端按引擎能力分发

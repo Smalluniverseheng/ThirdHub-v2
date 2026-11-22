@@ -65,7 +65,9 @@ const List<ModuleRegEntry> kModuleRegistry = <ModuleRegEntry>[
   // ── read 组（网页一个 read 大板块 ⇄ App 五个独立模块，多对一）──
   ModuleRegEntry('read', '阅读', ['小说', '漫画', '音乐', '视频', '有声书'], 'read'),
   // ── 网页独有板块（App 端 filter 丢弃，但 mergeNavIds 保序保留）──
-  ModuleRegEntry('tavern', '酒馆', [], 'tavern'),
+  // ★2026-11-21：App 端 2026-11-04 已补齐 TavernPage（main.dart kModules 有「酒馆」），
+  //   注册表却一直写着空 appKeys →「模块市场里酒馆无归属」属于真漂移，此处补登记。
+  ModuleRegEntry('tavern', '酒馆', ['酒馆'], 'tavern'),
   ModuleRegEntry('storage', '存储', [], 'storage'),
   ModuleRegEntry('navstation', '导航', [], 'navstation'),
   ModuleRegEntry('compute', '后端', [], 'compute'),
