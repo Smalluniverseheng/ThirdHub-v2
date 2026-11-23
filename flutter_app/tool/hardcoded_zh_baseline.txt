@@ -607,7 +607,6 @@ core/mini_modules3.dart	输入城市(如 深圳 / Shenzhen)
 core/mini_modules3.dart	输入快递单号
 core/mini_modules3.dart	还没有提醒\n到点会弹系统通知, 关屏也响
 core/mini_modules4.dart	下载原图
-core/mini_modules4.dart	下载失败: $e
 core/mini_modules4.dart	代码已复制
 core/mini_modules4.dart	例如：故事FM / 忽左忽右
 core/mini_modules4.dart	加 RSS
@@ -944,7 +943,6 @@ main.dart	下载全部集
 main.dart	下载到后端资源库
 main.dart	下载到哪里？
 main.dart	下载到本机
-main.dart	下载失败: $e
 main.dart	下载已暂停，随时可以继续
 main.dart	下载整部
 main.dart	下载此版本
@@ -1065,14 +1063,12 @@ main.dart	播放错误: $err
 main.dart	改昵称
 main.dart	数据存在哪?
 main.dart	无损
-main.dart	无法自动调起安装(${r.message})\n请到 下载App 页找到安装包手动安装
 main.dart	日
 main.dart	暂无更新信息
 main.dart	暂无歌词\n这首歌没有找到，换一首试试
 main.dart	暂无网络资料库在线
 main.dart	暂未发现 · 资源库/资料库开机后会自动广播
 main.dart	更新历史
-main.dart	最近播放
 main.dart	本周字数
 main.dart	本周时长
 main.dart	本地
@@ -1120,7 +1116,6 @@ main.dart	等待音频会话就绪…
 main.dart	简介
 main.dart	纯播放器前端 · 连接资源库开始
 main.dart	纸
-main.dart	线路 ${i} 不通, 换镜像 ${i + 1}/${mirrors.length}…
 main.dart	缓存已清理
 main.dart	编辑书籍
 main.dart	翻页

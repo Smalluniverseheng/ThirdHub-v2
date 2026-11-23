@@ -61,7 +61,7 @@ class _Wp extends State<WallpaperPage> {
       await f.writeAsBytes(r.bodyBytes);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已保存: ${f.path}\n可到 文件 模块设为壁纸')));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('下载失败: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('下载失败：{e}', {'e': '$e'}))));
     }
   }
 

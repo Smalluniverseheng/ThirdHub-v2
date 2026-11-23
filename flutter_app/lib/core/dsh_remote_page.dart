@@ -306,11 +306,19 @@ class _DshRemotePageState extends State<DshRemotePage> {
 // ═══ 内嵌控制台 ═══
 class DshConsolePage extends StatefulWidget {
   const DshConsolePage(
-      {super.key, required this.url, required this.title, this.admin = false});
+      {super.key,
+      required this.url,
+      required this.title,
+      this.admin = false,
+      this.embedded = false});
 
   final String url;
   final String title;
   final bool admin;
+
+  /// 嵌入模式：只要 WebView 主体（不带 Scaffold / AppBar），
+  /// 供 AI 页「完全体」页签原生内嵌 —— 用户点进 AI 对话页直接用，不再走跳转。
+  final bool embedded;
 
   @override
   State<DshConsolePage> createState() => _DshConsolePageState();
@@ -348,6 +356,55 @@ class _DshConsolePageState extends State<DshConsolePage> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final body = _err.isEmpty
+        ? (_c == null
+            ? Center(child: Text(tr('正在打开…')))
+            : WebViewWidget(controller: _c!))
+        : Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_off, size: 40, color: cs.outline),
+                  const SizedBox(height: 12),
+                  Text(tr('页面打不开'),
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Text(_err,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: cs.outline)),
+                  const SizedBox(height: 8),
+                  Text(tr('确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: cs.outline)),
+                  const SizedBox(height: 16),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    OutlinedButton(
+                        onPressed: () {
+                          setState(() => _err = '');
+                          _c?.reload();
+                        },
+                        child: Text(tr('重新加载'))),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                        onPressed: () => launchUrl(Uri.parse(widget.url),
+                            mode: LaunchMode.externalApplication),
+                        child: Text(tr('用浏览器打开'))),
+                  ]),
+                ],
+              ),
+            ),
+          );
+    // 嵌入模式：只要 WebView 主体，外壳（AppBar/进度条）由宿主页面提供。
+    if (widget.embedded) {
+      return Column(children: [
+        if (_progress > 0 && _progress < 100)
+          LinearProgressIndicator(value: _progress / 100, minHeight: 2),
+        Expanded(child: body),
+      ]);
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
@@ -374,47 +431,7 @@ class _DshConsolePageState extends State<DshConsolePage> {
                     value: _progress / 100, minHeight: 2))
             : null,
       ),
-      body: _err.isEmpty
-          ? (_c == null
-              ? Center(child: Text(tr('正在打开…')))
-              : WebViewWidget(controller: _c!))
-          : Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.cloud_off, size: 40, color: cs.outline),
-                    const SizedBox(height: 12),
-                    Text(tr('页面打不开'),
-                        style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    Text(_err,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: cs.outline)),
-                    const SizedBox(height: 8),
-                    Text(tr('确认手机和电脑在同一个 Wi-Fi，且电脑端 DSH 没关'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: cs.outline)),
-                    const SizedBox(height: 16),
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      OutlinedButton(
-                          onPressed: () {
-                            setState(() => _err = '');
-                            _c?.reload();
-                          },
-                          child: Text(tr('重新加载'))),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                          onPressed: () => launchUrl(Uri.parse(widget.url),
-                              mode: LaunchMode.externalApplication),
-                          child: Text(tr('用浏览器打开'))),
-                    ]),
-                  ],
-                ),
-              ),
-            ),
+      body: body,
     );
   }
 }

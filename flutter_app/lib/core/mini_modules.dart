@@ -7,9 +7,63 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'calc_engine.dart';
 import 'i18n.dart';
+
+// ── 待办/记账的纯逻辑（放顶层便于单测） ──
+
+/// 周期待办的下一次到期时间：按 天/周/月 滚动，落后于现在会一路追上。
+/// 月滚动做月末钳制（1月31日 → 2月28日），不许 DateTime 自由溢出到下月3日。
+int todoNextDue(int dueMs, String repeat, {int? now}) {
+  final nowMs = now ?? DateTime.now().millisecondsSinceEpoch;
+  var d = DateTime.fromMillisecondsSinceEpoch(dueMs);
+  var guard = 0;
+  while (d.millisecondsSinceEpoch <= nowMs && guard < 500) {
+    d = switch (repeat) {
+      'week' => _addDays(d, 7),
+      'month' => _addMonths(d, 1),
+      _ => _addDays(d, 1),
+    };
+    guard++;
+  }
+  return d.millisecondsSinceEpoch;
+}
+
+/// 按天推进，保留时分秒（DateTime(y,m,d+n) 会把时间重置成 00:00）。
+DateTime _addDays(DateTime d, int n) => DateTime(
+    d.year, d.month, d.day + n, d.hour, d.minute, d.second, d.millisecond, d.microsecond);
+
+DateTime _addMonths(DateTime d, int n) {
+  final y = d.year + ((d.month - 1 + n) ~/ 12);
+  final m = (d.month - 1 + n) % 12 + 1;
+  const dim = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  var last = dim[m - 1];
+  if (m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) last = 29;
+  return DateTime(y, m, d.day > last ? last : d.day, d.hour, d.minute, d.second,
+      d.millisecond, d.microsecond);
+}
+
+/// 记账导出 CSV：带表头，字段含逗号/引号/换行时按 RFC4180 加引号转义。
+String ledgerCsv(List<Map<String, dynamic>> entries) {
+  final b = StringBuffer('日期,分类,备注,类型,金额\n');
+  for (final e in entries) {
+    final dt = DateTime.fromMillisecondsSinceEpoch((e['ts'] as num?)?.toInt() ?? 0);
+    String esc(String s) {
+      final t = s.replaceAll('"', '""');
+      return (t.contains(',') || t.contains('"') || t.contains('\n')) ? '"$t"' : t;
+    }
+    b.writeln([
+      dt.toString().substring(0, 16),
+      esc('${e['cat'] ?? ''}'),
+      esc('${e['note'] ?? ''}'),
+      e['income'] == true ? '收入' : '支出',
+      '${e['income'] == true ? '+' : '-'}${(e['amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+    ].join(','));
+  }
+  return b.toString();
+}
 
 // ── 通用本地存储 ──
 class _Store {
@@ -833,6 +887,20 @@ class _Todo extends State<TodoPage> {
   final input = TextEditingController();
   String group = '默认';
   static const groups = ['默认', '工作', '生活', '购物'];
+  // 优先级 1=高 2=中 3=低 0=无；重复 none/day/week/month
+  static const _priLabels = {0: '无', 1: '高', 2: '中', 3: '低'};
+  static const _priColors = {
+    0: Colors.grey,
+    1: Colors.redAccent,
+    2: Colors.orange,
+    3: Colors.blueGrey,
+  };
+  static const _repLabels = {
+    'none': '不重复',
+    'day': '每天',
+    'week': '每周',
+    'month': '每月',
+  };
 
   @override
   void initState() {
@@ -906,14 +974,153 @@ class _Todo extends State<TodoPage> {
       'title': t,
       'done': false,
       'group': group,
+      'pri': 0,
+      'due': 0,
+      'rep': 'none',
       'ts': DateTime.now().millisecondsSinceEpoch
     });
     input.clear();
     _save();
   }
 
+  /// 打开详情面板：优先级 / 截止 / 重复 / 标题编辑 / 删除。
+  Future<void> _detail(Map<String, dynamic> e) async {
+    final titleC = TextEditingController(text: '${e['title'] ?? ''}');
+    var pri = (e['pri'] as num?)?.toInt() ?? 0;
+    var rep = '${e['rep'] ?? 'none'}';
+    var due = (e['due'] as num?)?.toInt() ?? 0;
+    if (!mounted) return;
+    await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (c2) => StatefulBuilder(builder: (c2, setD) {
+              final dueTxt = due == 0
+                  ? tr('截止') + '：' + tr('无')
+                  : tr('截止') +
+                      '：${DateTime.fromMillisecondsSinceEpoch(due).toString().substring(0, 16)}';
+              return Padding(
+                  padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 16,
+                      bottom: 16 + MediaQuery.of(c2).viewInsets.bottom),
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tr('编辑待办'),
+                            style: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 10),
+                        TextField(
+                            controller: titleC,
+                            decoration: InputDecoration(
+                                labelText: tr('内容'), isDense: true)),
+                        const SizedBox(height: 12),
+                        Text(tr('优先级'),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                            spacing: 6,
+                            children: [0, 1, 2, 3]
+                                .map((p) => ChoiceChip(
+                                    label: Text(tr(_priLabels[p]!),
+                                        style: const TextStyle(fontSize: 12)),
+                                    selected: pri == p,
+                                    onSelected: (_) =>
+                                        setD(() => pri = p)))
+                                .toList()),
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          Expanded(
+                              child: Text(dueTxt,
+                                  style: const TextStyle(fontSize: 13))),
+                          TextButton.icon(
+                              icon: const Icon(Icons.event, size: 16),
+                              label: Text(tr('选择日期'),
+                                  style: const TextStyle(fontSize: 12)),
+                              onPressed: () async {
+                                final now = DateTime.now();
+                                final d = await showDatePicker(
+                                    context: c2,
+                                    initialDate: due == 0
+                                        ? now
+                                        : DateTime.fromMillisecondsSinceEpoch(
+                                            due),
+                                    firstDate:
+                                        now.subtract(const Duration(days: 365)),
+                                    lastDate: now
+                                        .add(const Duration(days: 365 * 3)));
+                                if (d != null) {
+                                  final t = await showTimePicker(
+                                      context: c2,
+                                      initialTime:
+                                          const TimeOfDay(hour: 9, minute: 0));
+                                  setD(() => due = DateTime(
+                                          d.year,
+                                          d.month,
+                                          d.day,
+                                          t?.hour ?? 9,
+                                          t?.minute ?? 0)
+                                      .millisecondsSinceEpoch);
+                                }
+                              }),
+                          if (due != 0)
+                            TextButton(
+                                onPressed: () => setD(() => due = 0),
+                                child: Text(tr('清除'),
+                                    style: const TextStyle(fontSize: 12))),
+                        ]),
+                        const SizedBox(height: 12),
+                        Text(tr('重复'),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                            spacing: 6,
+                            children: _repLabels.keys
+                                .map((r) => ChoiceChip(
+                                    label: Text(tr(_repLabels[r]!),
+                                        style: const TextStyle(fontSize: 12)),
+                                    selected: rep == r,
+                                    onSelected: (_) =>
+                                        setD(() => rep = r)))
+                                .toList()),
+                        const SizedBox(height: 16),
+                        Row(children: [
+                          TextButton(
+                              onPressed: () {
+                                items.remove(e);
+                                Navigator.pop(c2);
+                                _save();
+                              },
+                              child: Text(tr('删除'),
+                                  style: const TextStyle(
+                                      color: Colors.redAccent))),
+                          const Spacer(),
+                          FilledButton(
+                              onPressed: () {
+                                e['title'] = titleC.text.trim();
+                                e['pri'] = pri;
+                                e['rep'] = rep;
+                                e['due'] = due;
+                                Navigator.pop(c2);
+                                _save();
+                              },
+                              child: Text(tr('保存'))),
+                        ]),
+                      ]));
+            }));
+  }
+
   Widget _tile(Map<String, dynamic> e) {
     final isDone = e['done'] == true;
+    final pri = (e['pri'] as num?)?.toInt() ?? 0;
+    final rep = '${e['rep'] ?? 'none'}';
+    final due = (e['due'] as num?)?.toInt() ?? 0;
+    final overdue =
+        due > 0 && !isDone && due < DateTime.now().millisecondsSinceEpoch;
     return Dismissible(
         key: ValueKey('${e['ts']}_${e['title']}'),
         direction: DismissDirection.endToStart,
@@ -931,20 +1138,54 @@ class _Todo extends State<TodoPage> {
             leading: Checkbox(
                 value: isDone,
                 onChanged: (v) {
-                  e['done'] = v == true;
+                  final nowDone = v == true;
+                  e['done'] = nowDone;
+                  // 周期待办：完成后自动滚出下一次（对齐 Todoist 的重复语义）
+                  if (nowDone && rep != 'none') {
+                    items.insert(0, {
+                      'title': e['title'],
+                      'done': false,
+                      'group': e['group'] ?? '默认',
+                      'pri': pri,
+                      'rep': rep,
+                      'due': due > 0
+                          ? todoNextDue(due, rep)
+                          : DateTime.now().millisecondsSinceEpoch,
+                      'ts': DateTime.now().millisecondsSinceEpoch
+                    });
+                  }
                   _save();
                 }),
-            title: Text(e['title'] ?? '',
+            title: Row(children: [
+              if (pri != 0)
+                Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(Icons.flag,
+                        size: 12, color: _priColors[pri])),
+              Expanded(
+                  child: Text(e['title'] ?? '',
+                      style: TextStyle(
+                          fontSize: 14,
+                          decoration:
+                              isDone ? TextDecoration.lineThrough : null,
+                          color: isDone ? Colors.grey : null))),
+            ]),
+            subtitle: Text(
+                [
+                  e['group'] ?? '默认',
+                  if (rep != 'none') tr(_repLabels[rep]!),
+                  if (due != 0)
+                    (overdue
+                            ? tr('已过期') + ' '
+                            : '') +
+                        DateTime.fromMillisecondsSinceEpoch(due)
+                            .toString()
+                            .substring(5, 16),
+                ].join(' · '),
                 style: TextStyle(
-                    fontSize: 14,
-                    decoration: isDone ? TextDecoration.lineThrough : null,
-                    color: isDone ? Colors.grey : null)),
-            subtitle: Text('${e['group'] ?? '默认'}',
-                style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            onTap: () {
-              e['done'] = !isDone;
-              _save();
-            }));
+                    fontSize: 10,
+                    color: overdue ? Colors.redAccent : Colors.grey)),
+            onTap: () => _detail(e)));
   }
 }
 
@@ -1298,6 +1539,23 @@ class _Ledger extends State<LedgerPage> {
     _load();
   }
 
+  /// 导出 CSV（Excel 直接能开）：写临时文件后走系统分享。
+  Future<void> _exportCsv() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final f = File(
+          '${dir.path}/thirdhub_ledger_${DateTime.now().millisecondsSinceEpoch}.csv');
+      // BOM 头：Excel 不加它会把 UTF-8 中文显示成乱码
+      await f.writeAsString('﻿${ledgerCsv(entries)}');
+      await Share.shareXFiles([XFile(f.path)], text: tr('导出 CSV'));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(trf('导出失败：{e}', {'e': '$e'}))));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext c) {
     final now = DateTime.now();
@@ -1324,6 +1582,10 @@ class _Ledger extends State<LedgerPage> {
                     _sum('本月收入', inc, Colors.green),
                     _sum('结余', inc - exp,
                         inc - exp >= 0 ? Colors.green : Colors.redAccent),
+                    IconButton(
+                        icon: const Icon(Icons.ios_share, size: 20),
+                        tooltip: tr('导出 CSV'),
+                        onPressed: entries.isEmpty ? null : _exportCsv),
                     IconButton.filled(
                         icon: const Icon(Icons.add, size: 20),
                         tooltip: '记一笔',

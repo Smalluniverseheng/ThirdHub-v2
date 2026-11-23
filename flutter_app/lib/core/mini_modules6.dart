@@ -117,6 +117,8 @@ class _News extends State<NewsPage> {
   String curFeed = '';
   bool loading = false;
   String err = '';
+  /// 已读文章链接集合（持久化）—— 未读计数 = 当前源的文章里不在集合里的条数。
+  Set<String> readLinks = {};
 
   /// 内置源版本：**改了内置源必须 +1**，配合 `_load()` 里的迁移。
   /// 老判据是 `if (saved.isEmpty)` —— 用户机器上已有旧列表时恒假，**新增的内置源永远进不来**。
@@ -136,6 +138,11 @@ class _News extends State<NewsPage> {
   Future<void> _load() async {
     final saved = await _Store6.list('news_feeds');
     final p = await SharedPreferences.getInstance();
+    // 已读集合（老安装没有该键就是空集合 = 全未读，语义正确）
+    try {
+      readLinks = ((jsonDecode(p.getString('news_read_links') ?? '[]') as List)
+          .map((e) => '$e')).toSet();
+    } catch (_) { readLinks = {}; }
     final seen = p.getInt('news_feeds_builtin_v') ?? 0;
     List<Map<String, dynamic>> list = saved;
     if (saved.isEmpty) {
@@ -187,6 +194,24 @@ class _News extends State<NewsPage> {
     setState(() => loading = false);
   }
 
+  Future<void> _markRead(String link) async {
+    if (link.isEmpty || readLinks.contains(link)) return;
+    setState(() => readLinks.add(link));
+    final p = await SharedPreferences.getInstance();
+    await p.setString('news_read_links', jsonEncode(readLinks.toList()));
+  }
+
+  Future<void> _markAllRead() async {
+    setState(() {
+      for (final a in articles) {
+        final l = a['link'] ?? '';
+        if (l.isNotEmpty) readLinks.add(l);
+      }
+    });
+    final p = await SharedPreferences.getInstance();
+    await p.setString('news_read_links', jsonEncode(readLinks.toList()));
+  }
+
   Future<void> _addFeed() async {
     final urlC = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (c2) => AlertDialog(
@@ -232,7 +257,9 @@ class _News extends State<NewsPage> {
     ]))));
   }
 
-  @override Widget build(BuildContext c) => Column(children: [
+  @override Widget build(BuildContext c) {
+    final unread = articles.where((a) => !readLinks.contains(a['link'] ?? '')).length;
+    return Column(children: [
     SizedBox(height: 46, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       children: [
         for (final f in feeds) Padding(padding: const EdgeInsets.only(right: 6),
@@ -244,18 +271,28 @@ class _News extends State<NewsPage> {
           onPressed: _addFeed),
       ])),
     if (err.isNotEmpty && articles.isNotEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('加载失败: $err', style: const TextStyle(fontSize: 11, color: Colors.redAccent))),
+    if (articles.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(12, 2, 6, 0), child: Row(children: [
+      Text(unread > 0 ? trf('未读 {n} 条', {'n': unread}) : tr('全部已读'),
+        style: TextStyle(fontSize: 11, color: unread > 0 ? Colors.blueGrey : Colors.grey)),
+      const Spacer(),
+      if (unread > 0) TextButton(onPressed: _markAllRead, child: Text(tr('全部已读'), style: const TextStyle(fontSize: 11))),
+    ])),
     Expanded(child: loading
       ? const Center(child: CircularProgressIndicator())
       : articles.isEmpty
         ? _emptyBox()
         : ListView.builder(itemCount: articles.length, itemBuilder: (_, i) {
           final a = articles[i];
+          final isRead = readLinks.contains(a['link'] ?? '');
           return ListTile(dense: true,
-            title: Text(a['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+            leading: Icon(Icons.circle, size: 7, color: isRead ? Colors.transparent : Colors.blueGrey),
+            title: Text(a['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, fontWeight: isRead ? FontWeight.w400 : FontWeight.w600)),
             subtitle: Text(a['desc'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 10, color: Colors.grey)),
             trailing: const Icon(Icons.open_in_new, size: 14, color: Colors.grey),
-            onTap: () => InAppOpen.url(c, a['link'] ?? ''));
+            onTap: () { _markRead(a['link'] ?? ''); InAppOpen.url(c, a['link'] ?? ''); });
         })),
   ]);
+  }
 }
