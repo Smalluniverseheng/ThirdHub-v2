@@ -42,7 +42,7 @@ android {
     //   首次启动略慢），但 minSdk24 全覆盖、无功能影响，比砍掉用户要的功能强。
     packaging {
         jniLibs {
-            isUseLegacyPackaging = true
+            useLegacyPackaging = true
         }
     }
     compileOptions {

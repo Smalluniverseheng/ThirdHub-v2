@@ -43,9 +43,12 @@
          会把所有请求拦在系统层（报 CLEARTEXT communication not permitted，
          Dart 侧表现为 http.ClientException），表现为「连上了却一直显示未连接引擎 + 搜索无结果」。
          细化策略见 res/xml/network_security_config.xml。 -->
+    <!-- 4.81.95：压缩 native .so（安装时解压），把 APK 压进 Supabase 50MB 上限。
+         与 build.gradle.kts 的 packaging.jniLibs.useLegacyPackaging=true 语义一致。 -->
     <application android:label="第三方聚合" android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
+        android:extractNativeLibs="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <!-- ═══ 画中画（★必需，勿删）═══
              supportsPictureInPicture 不开，则 enterPictureInPictureMode() 直接抛
