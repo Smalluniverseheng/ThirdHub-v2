@@ -34,6 +34,17 @@ android {
                             else signingConfigs.getByName("debug")
         }
     }
+    // ★ 2026-11-24 (4.81.95)：压缩 native .so，把 APK 压进 Supabase 50MB 单对象上限。
+    //   4.81.94 因 media_kit(libmpv 11.8MB) + openhongguo(libgojni 7.1MB) 涨到 56.5MB，
+    //   免费桶 file_size_limit=52428800 硬锁 50MB 传不上去（413 Payload too large）。
+    //   实测 .so 用 zlib 压缩后 libapp 19.3→8.1 / libmpv 11.8→5.3 / libflutter 11.2→5.2 /
+    //   libgojni 7.1→2.7，整包 53.9→约25MB。代价：安装时系统解压 so 到私有目录（占更多内部存储、
+    //   首次启动略慢），但 minSdk24 全覆盖、无功能影响，比砍掉用户要的功能强。
+    packaging {
+        jniLibs {
+            isUseLegacyPackaging = true
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
