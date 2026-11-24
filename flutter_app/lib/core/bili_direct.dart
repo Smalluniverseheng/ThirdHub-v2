@@ -8,19 +8,17 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'bili_auth.dart' show BiliAuth;
+
 const String biliUA =
     'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 const String biliReferer = 'https://www.bilibili.com/';
 
 Future<Map<String, dynamic>> _getJson(String apiPath) async {
+  // ★4.81.94 登录态：扫码后所有直连请求带 cookie，playurl 才能拿到 1080p
   final r = await http.get(
     Uri.parse('https://api.bilibili.com$apiPath'),
-    headers: {
-      'user-agent': biliUA,
-      'referer': biliReferer,
-      'accept': 'application/json,text/plain,*/*',
-      'accept-language': 'zh-CN,zh;q=0.9',
-    },
+    headers: BiliAuth.I.headers(),
   ).timeout(const Duration(seconds: 20));
   final j = jsonDecode(utf8.decode(r.bodyBytes));
   if (j is Map) return Map<String, dynamic>.from(j);
@@ -167,12 +165,23 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
     if (path.startsWith('/v1/bili/playurl')) {
       final bvid = q['bvid'] ?? '';
       final cid = q['cid'] ?? '';
-      final qn = q['qn'] ?? '64';
-      final j = await _getJson(
-          '/x/player/playurl?bvid=$bvid&cid=$cid&fnval=1&qn=$qn&platform=html5');
+      final qn = int.tryParse(q['qn'] ?? '64') ?? 64;
+      final loggedIn = BiliAuth.I.loggedIn;
+
+      // ★4.81.94 高清分叉：登录 + qn≥80 走 DASH（platform=web 才有流），
+      //   音视频分离由 media_kit 同步播放；否则走 MP4 单流（video_player）。
+      //   实测：platform=html5 时 DASH 流恒为 0，必须用 web。
+      final hd = loggedIn && qn >= 80;
+      final api = hd
+          ? '/x/player/playurl?bvid=$bvid&cid=$cid&fnval=16&qn=$qn&fourk=1&platform=web'
+          : '/x/player/playurl?bvid=$bvid&cid=$cid&fnval=1&qn=$qn&platform=html5';
+      final j = await _getJson(api);
       final d = (j['data'] as Map?) ?? const {};
       final dash = (d['dash'] as Map?) ?? const {};
       final vids = (dash['video'] as List?) ?? const [];
+      final auds = (dash['audio'] as List?) ?? const [];
+
+      // 挑码率最高的一路视频（优先 avc，兼容性好）
       String best = '';
       int bestId = -1;
       for (final v in vids.whereType<Map>()) {
@@ -183,6 +192,14 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
           best = url;
         }
       }
+      // DASH 音轨（挑码率最高）
+      String audioUrl = '';
+      for (final a in auds.whereType<Map>()) {
+        final url = '${a['baseUrl'] ?? a['base_url'] ?? ''}';
+        if (url.isNotEmpty) { audioUrl = url; break; }
+      }
+
+      final isDash = hd && best.isNotEmpty && audioUrl.isNotEmpty;
       if (best.isEmpty) {
         final durl = (d['durl'] as List?) ?? const [];
         if (durl.isNotEmpty && durl.first is Map) {
@@ -196,7 +213,10 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
         'ok': true,
         'url': best,
         'quality': realQuality,
+        'dash': isDash,
+        if (isDash) 'audioUrl': audioUrl,
         if (accept is List && accept.isNotEmpty) 'acceptQuality': accept,
+        if (!loggedIn) 'needLoginForHd': true,
       };
     }
 

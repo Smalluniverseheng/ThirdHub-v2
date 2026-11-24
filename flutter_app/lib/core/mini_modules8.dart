@@ -13,6 +13,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:file_picker/file_picker.dart';
 import 'recents.dart';
+import 'drama_page.dart';
+import 'i18n.dart';
 
 // ═══ 扫描仪: 拍照/选图 → 灰度增强 → 保存 ═══
 class ScannerPage extends StatefulWidget { const ScannerPage({super.key}); @override State<ScannerPage> createState() => _Scan(); }
@@ -168,8 +170,13 @@ class _Sp extends State<ShortPlayPage> {
   }
 
   @override Widget build(BuildContext c) => Column(children: [
+    // ★4.81.94 在线短剧入口（管理员/激活码解锁）
+    Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 0), child: SizedBox(width: double.infinity,
+      child: FilledButton.icon(icon: const Icon(Icons.cloud_outlined, size: 18),
+        label: Text(tr('在线短剧')), onPressed: () => Navigator.push(c,
+          MaterialPageRoute(builder: (_) => const DramaPage()))))),
     Padding(padding: const EdgeInsets.all(12), child: SizedBox(width: double.infinity,
-      child: FilledButton.icon(icon: const Icon(Icons.folder_open, size: 18),
+      child: OutlinedButton.icon(icon: const Icon(Icons.folder_open, size: 18),
         label: const Text('选择短剧文件夹(mp4)'), onPressed: _pickDir))),
     Expanded(child: files.isEmpty
       ? const Center(child: Text('选一个装短剧的文件夹\n按文件名排序, 点集数竖屏连播', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)))

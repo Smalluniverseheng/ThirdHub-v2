@@ -14,7 +14,11 @@ import 'package:video_player/video_player.dart';
 import 'bili_module_page.dart'
     show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget,
     biliHeaders;
+import 'bili_actions.dart' show BiliActionResult, BiliActions;
+import 'bili_auth.dart' show BiliAuth;
+import 'bili_auth_page.dart' show BiliAuthPage;
 import 'bili_danmaku_layer.dart';
+import 'bili_dash_player.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 import 'player/th_player.dart';
@@ -55,6 +59,9 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   String _replyErr = '';
 
   List<Map<String, dynamic>> _related = const [];
+  bool _inWatchLater = false;
+  final TextEditingController _commentCtrl = TextEditingController();
+  bool _postingComment = false;
   bool _descOpen = false;
 
   String get _bvid => '${widget.item['bvid'] ?? ''}';
@@ -91,6 +98,60 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     }
     _loadReplies(reset: true);
     _loadRelated();
+    BiliActions.I.isWatchLater(_bvid).then((v) {
+      if (mounted) setState(() => _inWatchLater = v);
+    });
+  }
+
+  /// 统一互动：未登录先提示，登录后执行并 toast 结果
+  Future<void> _doAction(Future<BiliActionResult> Function() act) async {
+    await BiliAuth.I.load();
+    if (!BiliAuth.I.loggedIn) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('请先登录 B站')),
+            action: SnackBarAction(label: tr('去登录'), onPressed: () {
+              Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const BiliAuthPage()));
+            })),
+        );
+      }
+      return;
+    }
+    final r = await act();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(r.ok ? tr('操作成功') : r.message)),
+      );
+    }
+  }
+
+  /// 发表评论（oid 用 aid；从 item 里取，没有则用 cid）
+  Future<void> _postComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    await BiliAuth.I.load();
+    if (!BiliAuth.I.loggedIn) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('请先登录 B站'))),
+        );
+      }
+      return;
+    }
+    setState(() => _postingComment = true);
+    final oid = '${widget.item['aid'] ?? widget.item['cid'] ?? ''}';
+    final r = await BiliActions.I.comment(oid, text);
+    if (mounted) {
+      setState(() => _postingComment = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(r.ok ? tr('发布成功') : r.message)),
+      );
+      if (r.ok) {
+        _commentCtrl.clear();
+        _loadReplies(reset: true);
+      }
+    }
   }
 
   Future<void> _play(int idx) async {
@@ -114,6 +175,31 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       setState(() => _playErr = tr('播放失败'));
       return;
     }
+
+    // ★4.81.94 1080p DASH：音视频分离，交给 media_kit 播放器（外挂音轨同步）
+    final isDash = j?['dash'] == true;
+    if (isDash) {
+      // 先拉弹幕再跳（与 720p 共用同一份数据）
+      if (cid != null && (_dmCid != '$cid' || _dm.isEmpty)) {
+        await _loadDanmaku('$cid');
+      }
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BiliDashPlayerPage(
+            title: '${widget.item['title'] ?? ''}',
+            videoUrl: url,
+            audioUrl: '${j?['audioUrl'] ?? ''}',
+            cid: '$cid',
+            quality: (j?['quality'] is num) ? (j?['quality'] as num).toInt() : 80,
+            danmaku: _dm,
+          ),
+        ),
+      );
+      return;
+    }
+
     try {
       final vp = VideoPlayerController.networkUrl(Uri.parse(url),
           httpHeaders: biliHeaders(widget.ctx));
@@ -372,12 +458,28 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _statBtn(Icons.thumb_up_outlined, _fmtNum(stat['like']), _openInBili),
-                    _statBtn(Icons.monetization_on_outlined, _fmtNum(stat['coin']), _openInBili),
-                    _statBtn(Icons.star_border_rounded, _fmtNum(stat['favorite']), _openInBili),
+                    _statBtn(Icons.thumb_up_outlined, _fmtNum(stat['like']),
+                        () => _doAction(() => BiliActions.I.like(_bvid))),
+                    _statBtn(Icons.monetization_on_outlined, _fmtNum(stat['coin']),
+                        () => _doAction(() => BiliActions.I.coin(_bvid))),
+                    _statBtn(Icons.star_border_rounded, _fmtNum(stat['favorite']),
+                        () => _doAction(() => BiliActions.I.favorite(_bvid))),
                     _statBtn(Icons.share_outlined, _fmtNum(stat['share']), _openInBili),
                     _statBtn(Icons.chat_bubble_outline, _fmtNum(stat['reply']),
                         _openInBili),
+                    // 稍后再看（本机，不需登录）
+                    _statBtn(
+                      _inWatchLater ? Icons.watch_later : Icons.watch_later_outlined,
+                      tr('稍后再看'),
+                      () async {
+                        if (_inWatchLater) {
+                          await BiliActions.I.removeWatchLater(_bvid);
+                        } else {
+                          await BiliActions.I.addWatchLater(_bvid);
+                        }
+                        if (mounted) setState(() => _inWatchLater = !_inWatchLater);
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -473,6 +575,36 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                 _sortChip(tr('最新'), '0'),
               ],
             ),
+          ),
+          // 发表评论（登录后可用）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.md, 10, Gap.md, 4),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentCtrl,
+                  decoration: InputDecoration(
+                    hintText: tr('说点什么…'),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _postingComment
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : FilledButton(
+                      onPressed: _postComment,
+                      child: Text(tr('发布')),
+                    ),
+            ]),
           ),
           if (_replyErr.isNotEmpty)
             Padding(

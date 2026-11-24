@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'bili_auth_page.dart';
 import 'bili_down_page.dart';
 import 'bili_player.dart';
 import 'bili_swipe_page.dart';
@@ -407,6 +408,14 @@ class _BiliModulePageState extends State<BiliModulePage>
           tabBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: tr('B站登录'),
+            icon: const Icon(Icons.account_circle_outlined, size: 20),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BiliAuthPage()),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link, size: 20),
             onPressed: () => openBiliLinkSheet(context, ctx, ''),
@@ -428,6 +437,13 @@ class _BiliModulePageState extends State<BiliModulePage>
         title: Text(tr('哔哩哔哩')),
         actions: [
           tabBtn,
+          IconButton(
+            tooltip: tr('B站登录'),
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BiliAuthPage()),
+            ),
+          ),
           IconButton(
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link),
