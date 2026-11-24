@@ -303,6 +303,32 @@ class _DshRemotePageState extends State<DshRemotePage> {
   }
 }
 
+/// 尽力点掉 DSH 控制台首页的「新建会话」引导，直接进入对话。
+/// 只读 DOM 文本/aria-label 定位，不依赖会变的 class；找不到时不做任何事。
+const String _kEnterChatJs = '''
+(function () {
+  if (window.__thEnterChatDone) return;
+  var kw = ['新对话','新建会话','新建对话','开始对话','立即对话','New chat','New conversation','Start chat'];
+  var nodes = document.querySelectorAll('button,a,[role="button"],[tabindex="0"]');
+  function hit(el) {
+    var t = (el.textContent || '').trim();
+    var al = el.getAttribute('aria-label') || '';
+    var ti = el.getAttribute('title') || '';
+    for (var i = 0; i < kw.length; i++) {
+      if (t === kw[i] || al.indexOf(kw[i]) >= 0 || ti.indexOf(kw[i]) >= 0 ||
+          (t.length < 24 && t.indexOf(kw[i]) >= 0)) return true;
+    }
+    return false;
+  }
+  for (var j = 0; j < nodes.length; j++) {
+    if (hit(nodes[j])) {
+      try { nodes[j].click(); window.__thEnterChatDone = true; } catch (e) {}
+      return;
+    }
+  }
+})();
+''';
+
 // ═══ 内嵌控制台 ═══
 class DshConsolePage extends StatefulWidget {
   const DshConsolePage(
@@ -310,11 +336,16 @@ class DshConsolePage extends StatefulWidget {
       required this.url,
       required this.title,
       this.admin = false,
-      this.embedded = false});
+      this.embedded = false,
+      this.autoChat = false});
 
   final String url;
   final String title;
   final bool admin;
+
+  /// 自动进入对话：从 AI 页融合入口进来时，页面加载后尽力点掉控制台首页的
+  /// 「新建会话」引导，让用户点进 AI 就直接是对话框（找不到按钮则无害跳过）。
+  final bool autoChat;
 
   /// 嵌入模式：只要 WebView 主体（不带 Scaffold / AppBar），
   /// 供 AI 页「完全体」页签原生内嵌 —— 用户点进 AI 对话页直接用，不再走跳转。
@@ -328,6 +359,7 @@ class _DshConsolePageState extends State<DshConsolePage> {
   WebViewController? _c;
   int _progress = 0;
   String _err = '';
+  bool _autoChatDone = false;
 
   @override
   void initState() {
@@ -347,6 +379,15 @@ class _DshConsolePageState extends State<DshConsolePage> {
       },
       onPageFinished: (_) {
         if (mounted) setState(() => _err = '');
+        if (widget.autoChat && !_autoChatDone) {
+          _autoChatDone = true;
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) c.runJavaScript(_kEnterChatJs).catchError((_) {});
+          });
+          Future.delayed(const Duration(milliseconds: 1400), () {
+            if (mounted) c.runJavaScript(_kEnterChatJs).catchError((_) {});
+          });
+        }
       },
     ));
     c.loadRequest(Uri.parse(widget.url));

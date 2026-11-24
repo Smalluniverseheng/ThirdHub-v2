@@ -139,9 +139,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   // TH-Agent v1: 文本工具协议兜底(不支持原生 function-calling 的厂商也能用工具) / MCP 工具是否需确认
   bool _toolFallback = true; bool _confirmMcp = false;
   StreamSubscription? _regSub;
-  // ★4.81.91「完全体」原生化：AI 页顶部分段 —— 轻量对话 / 完全体(DSH 内嵌)。
-  //   用户要求"点进 AI 对话页就能直接用 DSH"，不再藏在角落按钮跳独立页。
-  bool _fullMode = false; bool _dshPaired = false; String _dshUrl = '';
+  // ★4.81.92 融合：点进 AI 对话页，本体就是 DSH（配对后），没有分段、没有二次点击。
+  //   _useLight 仅在未配对、用户主动选「轻量对话」临时降级时为真。
+  bool _dshPaired = false; String _dshUrl = '';
+  bool _useLight = false;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
@@ -198,12 +199,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     _ctxTurns = prefs.getInt('ai_ctx_turns') ?? 0;
     _toolFallback = prefs.getBool('ai_tool_fallback') ?? true;
     _confirmMcp = prefs.getBool('ai_confirm_mcp') ?? false;
-    // 「完全体」页签：记住上次停在哪一档；从未选过则按配对状态定 ——
-    // 已配对就直接落在完全体（用户要求"点进 AI 就能直接用 DSH"），未配对走轻量对话。
+    // ★4.81.92 融合：AI 对话页默认就是 DSH，不再有模式切换/档位记忆。
     await DshRemote.load();
     _dshPaired = DshRemote.base.isNotEmpty && DshRemote.token.trim().isNotEmpty;
     _dshUrl = DshRemote.consoleUrl();
-    _fullMode = prefs.getBool('ai_full_mode') ?? _dshPaired;
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
@@ -736,14 +735,6 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     ]));
   }
 
-  /// 切「完全体 / 轻量对话」页签（记忆上次选择）。
-  void _switchFullMode(bool full) {
-    if (_fullMode == full) return;
-    setState(() => _fullMode = full);
-    SharedPreferences.getInstance().then((p) => p.setBool('ai_full_mode', full));
-    Haptic.light();
-  }
-
   /// 完全体页签的配对引导：没配对时直接推配对页，回来自动刷新成控制台。
   Future<void> _pairDsh(BuildContext c) async {
     await Navigator.push(c,
@@ -753,110 +744,85 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     setState(() {
       _dshPaired = DshRemote.base.isNotEmpty && DshRemote.token.trim().isNotEmpty;
       _dshUrl = DshRemote.consoleUrl();
+      if (_dshPaired) _useLight = false; // 连上就直接进 DSH 对话
     });
     if (_dshPaired) Haptic.medium();
   }
 
-  // ── 主区: 顶栏 + [完全体|轻量对话] 分段 + 消息/DSH + 输入栏 ──
+  // ── 主区: 已配对=AI 对话本体就是 DSH；未配对=引导页；可临时降级轻量对话 ──
   Widget _mainBody(BuildContext c, bool dark) {
     final s = session;
+    final dshMode = _dshPaired && !_useLight;
     return Scaffold(
-      appBar: AppBar(leading: IconButton(icon: const Icon(Icons.menu), onPressed: _openDrawer),
-        title: GestureDetector(onTap: () {
-            // 未配密钥时点胶囊直达厂商配置页; 已配则开快捷切换
-            if (_capsule == 'noKey') {
-              Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage()))
-                .then((_) => _refreshCapsule());
-            } else { _quickSheet(); }
-          },
-          child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(18)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Flexible(child: Text(
-                _capsule == 'noKey' ? '未配置密钥 · 点我配置'
-                  : (s == null || s.model.isEmpty) ? '当前无模型' : s.model,
-                style: TextStyle(fontSize: 13, color: _capsule == 'noKey' ? Colors.orange : null),
-                overflow: TextOverflow.ellipsis)),
-              const Icon(Icons.arrow_drop_down, size: 18)]))),
-        actions: [
-          IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat())
+      appBar: AppBar(
+        leading: IconButton(icon: const Icon(Icons.menu), onPressed: _openDrawer),
+        title: dshMode
+          ? Text(tr('完全体'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600))
+          : GestureDetector(onTap: () {
+              // 未配密钥时点胶囊直达厂商配置页; 已配则开快捷切换
+              if (_capsule == 'noKey') {
+                Navigator.push(c, MaterialPageRoute(builder: (_) => const AiProvidersPage()))
+                  .then((_) => _refreshCapsule());
+              } else { _quickSheet(); }
+            },
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(18)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Flexible(child: Text(
+                  _capsule == 'noKey' ? '未配置密钥 · 点我配置'
+                    : (s == null || s.model.isEmpty) ? '当前无模型' : s.model,
+                  style: TextStyle(fontSize: 13, color: _capsule == 'noKey' ? Colors.orange : null),
+                  overflow: TextOverflow.ellipsis)),
+                const Icon(Icons.arrow_drop_down, size: 18)]))),
+        actions: dshMode ? [] : [
+          if (_useLight) IconButton(icon: const Icon(Icons.bolt_outlined), tooltip: tr('完全体'),
+            onPressed: () => setState(() => _useLight = false)),
+          IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat()),
         ]),
-      body: Column(children: [
-        // ★4.81.91 完全体原生化：对话页顶部分段 —— 点进 AI 就能直接用 DSH，
-        //   不再是角落小按钮跳独立页（用户：「直接点进 AI 模块对话页就能用 DSH」）。
-        _modeSwitch(c, dark),
-        // IndexedStack 保活：切档不重建 WebView / 不丢对话滚动位置
-        Expanded(child: IndexedStack(index: _fullMode ? 1 : 0, children: [
-          Column(children: [
-            // 排队提示条(Kimi 同款: ☰ 排队 | N 条消息排队中)
-            if (_queue.isNotEmpty) InkWell(onTap: _queueSheet, child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 6, 12, 0), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(12)),
-              child: Row(children: [
-                Icon(queuePaused ? Icons.pause_circle_outline : Icons.playlist_play, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                Expanded(child: Text('排队 | ${_queue.length} 条消息排队中${queuePaused ? ' (已暂停)' : ''}',
-                  style: const TextStyle(fontSize: 13))),
-                const Icon(Icons.keyboard_arrow_up, size: 18, color: Colors.grey),
-              ]))),
-            Expanded(child: s == null ? const Center(child: CircularProgressIndicator())
-              : (s.messages.where((m) => m['role'] != 'system').isEmpty && streaming.isEmpty && _reasoning.isEmpty && _steps.isEmpty)
-                ? _emptyHint(c) : _msgList(c, s)),
-            _inputBar(c, dark),
-          ]),
-          _dshPane(c),
-        ])),
-      ]));
+      body: dshMode
+        // ★融合关键：不再有分段/IndexedStack —— 配对后这一整块就是 DSH 对话。
+        ? DshConsolePage(url: _dshUrl, title: tr('完全体'), embedded: true, autoChat: true)
+        : (_useLight
+          ? Column(children: [
+              if (_queue.isNotEmpty) InkWell(onTap: _queueSheet, child: Container(
+                margin: const EdgeInsets.fromLTRB(12, 6, 12, 0), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(color: Theme.of(c).cardTheme.color, borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  Icon(queuePaused ? Icons.pause_circle_outline : Icons.playlist_play, size: 18, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('排队 | ${_queue.length} 条消息排队中${queuePaused ? ' (已暂停)' : ''}',
+                    style: const TextStyle(fontSize: 13))),
+                  const Icon(Icons.keyboard_arrow_up, size: 18, color: Colors.grey),
+                ]))),
+              Expanded(child: s == null ? const Center(child: CircularProgressIndicator())
+                : (s.messages.where((m) => m['role'] != 'system').isEmpty && streaming.isEmpty && _reasoning.isEmpty && _steps.isEmpty)
+                  ? _emptyHint(c) : _msgList(c, s)),
+              _inputBar(c, dark),
+            ])
+          : _dshGuide(c)),
+    );
   }
 
-  // 完全体/轻量对话 分段切换
-  Widget _modeSwitch(BuildContext c, bool dark) {
+  // 未配对引导：点「去连接」配对后自动进入 DSH 对话；也可临时用轻量对话
+  Widget _dshGuide(BuildContext c) {
     final cs = Theme.of(c).colorScheme;
-    Widget seg(String label, bool active, bool full) => Expanded(
-      child: GestureDetector(
-        onTap: () => _switchFullMode(full),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: active ? cs.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(10)),
-          child: Text(label, textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-              color: active ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.75))))));
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: dark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(13)),
-      child: Row(children: [
-        seg(tr('完全体'), _fullMode, true),
-        seg(tr('轻量对话'), !_fullMode, false),
-      ]));
-  }
-
-  // 完全体页签内容：已配对=原生内嵌 DSH 控制台；未配对=内联配对引导（不跳走）
-  Widget _dshPane(BuildContext c) {
-    if (!_dshPaired) {
-      final cs = Theme.of(c).colorScheme;
-      return Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Column(
-        mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.bolt_outlined, size: 52, color: cs.primary),
-          const SizedBox(height: 14),
-          Text(tr('完全体'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text(tr('连接家庭服务器上的 DSH 后，在这里直接使用多智能体、群聊与插件'),
-            textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, height: 1.6, color: cs.onSurface.withValues(alpha: 0.6))),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            icon: const Icon(Icons.link, size: 18),
-            label: Text(tr('去连接')),
-            onPressed: () => _pairDsh(c)),
-        ])));
-    }
-    return DshConsolePage(url: _dshUrl, title: tr('完全体'), embedded: true);
+    return Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Column(
+      mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.bolt_outlined, size: 52, color: cs.primary),
+        const SizedBox(height: 14),
+        Text(tr('完全体'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Text(tr('连接家庭服务器上的 DSH 后，在这里直接使用多智能体、群聊与插件'),
+          textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, height: 1.6, color: cs.onSurface.withValues(alpha: 0.6))),
+        const SizedBox(height: 18),
+        FilledButton.icon(
+          icon: const Icon(Icons.link, size: 18),
+          label: Text(tr('去连接')),
+          onPressed: () => _pairDsh(c)),
+        const SizedBox(height: 6),
+        TextButton(onPressed: () => setState(() => _useLight = true),
+          child: Text(tr('轻量对话'))),
+      ])));
   }
 
   Widget _emptyHint(BuildContext c) {
