@@ -49,6 +49,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   List<Map<String, dynamic>> _dm = const [];
   bool _dmOn = true;
   String _dmCid = '';
+  String _dmNote = ''; // 弹幕为空时的原因（别让用户以为功能没做）
 
   final List<Map<String, dynamic>> _replies = [];
   int _replyPage = 1;
@@ -140,7 +141,17 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       return;
     }
     setState(() => _postingComment = true);
-    final oid = '${widget.item['aid'] ?? widget.item['cid'] ?? ''}';
+    // ★ 评论接口的 oid 是 aid，不是 cid；列表条目没有 aid，必须从详情里取
+    final oid = '${_view?['aid'] ?? widget.item['aid'] ?? ''}';
+    if (oid.isEmpty) {
+      setState(() => _postingComment = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('视频信息还没加载好，稍后再试'))),
+        );
+      }
+      return;
+    }
     final r = await BiliActions.I.comment(oid, text);
     if (mounted) {
       setState(() => _postingComment = false);
@@ -271,7 +282,13 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
-    setState(() => _dm = items);
+    final errRaw = '${j == null ? '' : (j['error'] ?? '')}'.trim();
+    setState(() {
+      _dm = items;
+      _dmNote = items.isNotEmpty
+          ? ''
+          : (errRaw.isEmpty ? tr('这条视频还没人发弹幕，或弹幕接口暂时不可用') : errRaw);
+    });
   }
 
   Future<void> _loadRelated() async {
@@ -432,6 +449,23 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                     ),
             ),
           ),
+          // 弹幕拿不到时明确说一句（沉默会让人以为功能没实现）
+          if (_dmNote.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: cs.surfaceContainerHighest,
+              padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 13, color: cs.outline),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_dmNote,
+                        style: TextStyle(fontSize: 11, color: cs.outline)),
+                  ),
+                ],
+              ),
+            ),
           // 标题 + 统计
           Padding(
             padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.md, 0),
@@ -613,7 +647,12 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   style: TextStyle(fontSize: 12, color: cs.error)),
             ),
           // 评论列表
-          for (final r in _replies) _ReplyTile(item: r),
+          for (final r in _replies)
+            _ReplyTile(
+              item: r,
+              aid: '${_view?['aid'] ?? ''}',
+              ctx: widget.ctx,
+            ),
           if (_replyLoading)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -720,8 +759,10 @@ String _initial(String s) {
 
 class _ReplyTile extends StatefulWidget {
   final Map<String, dynamic> item;
+  final String aid;
+  final BiliCtx ctx;
 
-  const _ReplyTile({required this.item});
+  const _ReplyTile({required this.item, required this.aid, required this.ctx});
 
   @override
   State<_ReplyTile> createState() => _ReplyTileState();
@@ -729,6 +770,32 @@ class _ReplyTile extends StatefulWidget {
 
 class _ReplyTileState extends State<_ReplyTile> {
   bool _open = false;
+  bool _loadingMore = false;
+  List<Map<String, dynamic>> _more = const [];
+
+  /// 展开回复：本地只带了 3 条，超过就去拉整串（B站 的 rcount 才是真实总数）
+  Future<void> _toggle() async {
+    final r = widget.item;
+    final rcount = (r['rcount'] as num?)?.toInt() ?? 0;
+    final local = ((r['replies'] as List?) ?? const []).length;
+    setState(() => _open = !_open);
+    if (!_open || _more.isNotEmpty || _loadingMore) return;
+    if (rcount <= local || widget.aid.isEmpty) return;
+    setState(() => _loadingMore = true);
+    final j = await biliGet(
+      widget.ctx,
+      '/v1/bili/reply/reply?aid=${widget.aid}'
+      '&root=${Uri.encodeQueryComponent('${r['id'] ?? ''}')}&pn=1',
+    );
+    if (!mounted) return;
+    setState(() {
+      _more = ((j == null ? null : j['items'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+      _loadingMore = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -796,7 +863,7 @@ class _ReplyTileState extends State<_ReplyTile> {
                 if (subs.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   GestureDetector(
-                    onTap: () => setState(() => _open = !_open),
+                    onTap: _toggle,
                     child: Text(
                       _open
                           ? tr('收起回复')
@@ -815,7 +882,14 @@ class _ReplyTileState extends State<_ReplyTile> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (final s in subs)
+                          if (_loadingMore)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(tr('加载中'),
+                                  style: TextStyle(
+                                      fontSize: 11, color: cs.outline)),
+                            ),
+                          for (final s in (_more.isEmpty ? subs : _more))
                             Padding(
                               padding: const EdgeInsets.only(bottom: 4),
                               child: RichText(

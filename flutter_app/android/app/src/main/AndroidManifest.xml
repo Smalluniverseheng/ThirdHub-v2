@@ -48,7 +48,6 @@
     <application android:label="第三方聚合" android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
-        android:extractNativeLibs="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <!-- ═══ 画中画（★必需，勿删）═══
              supportsPictureInPicture 不开，则 enterPictureInPictureMode() 直接抛

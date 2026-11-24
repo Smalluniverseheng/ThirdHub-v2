@@ -673,6 +673,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'Mot de passe oublié',
     '请先填邮箱': 'Saisissez votre email d abord',
     '重置邮件已发出，去邮箱点链接后回来登录': 'Email de réinitialisation envoyé, cliquez le lien puis revenez vous connecter',
+    '视频信息还没加载好，稍后再试': 'La vidéo est encore en cours de chargement, réessayez',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'Aucun commentaire défilant pour cette vidéo, ou service indisponible',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -1328,6 +1330,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'Забыли пароль',
     '请先填邮箱': 'Сначала введите email',
     '重置邮件已发出，去邮箱点链接后回来登录': 'Письмо для сброса отправлено: перейдите по ссылке и вернитесь для входа',
+    '视频信息还没加载好，稍后再试': 'Видео ещё загружается, попробуйте позже',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'На этом видео нет данмаку, или сервис недоступен',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -1984,6 +1988,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'Olvidé mi contraseña',
     '请先填邮箱': 'Primero escribe tu correo',
     '重置邮件已发出，去邮箱点链接后回来登录': 'Correo de restablecimiento enviado: abre el enlace y vuelve a iniciar sesión',
+    '视频信息还没加载好，稍后再试': 'El vídeo aún se está cargando, inténtalo más tarde',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'Este vídeo no tiene danmaku o el servicio no está disponible',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -2640,6 +2646,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'نسيت كلمة المرور',
     '请先填邮箱': 'أدخل البريد أولًا',
     '重置邮件已发出，去邮箱点链接后回来登录': 'أُرسل بريد إعادة التعيين: افتح الرابط ثم عد لتسجيل الدخول',
+    '视频信息还没加载好，稍后再试': 'الفيديو قيد التحميل، حاول لاحقًا',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'لا توجد تعليقات متحركة لهذا الفيديو أو الخدمة غير متاحة',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -3202,6 +3210,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'Forgot password',
     '请先填邮箱': 'Enter your email first',
     '重置邮件已发出，去邮箱点链接后回来登录': 'Reset email sent — open the link, then come back to sign in',
+    '视频信息还没加载好，稍后再试': 'Video info is still loading, try again later',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'No danmaku on this video yet, or the service is unavailable',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -3770,6 +3780,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '忘记密码': 'パスワードを忘れた',
     '请先填邮箱': '先にメールアドレスを入力してください',
     '重置邮件已发出，去邮箱点链接后回来登录': 'リセットメールを送信しました。リンクを開いてから戻ってログインしてください',
+    '视频信息还没加载好，稍后再试': '動画情報を読み込み中です。後でもう一度お試しください',
+    '这条视频还没人发弹幕，或弹幕接口暂时不可用': 'この動画にはまだ弾幕がないか、サービスが利用できません',
   },
 
 };
