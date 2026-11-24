@@ -106,7 +106,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.95**（versionCode 50766），安装包约 **25 MB**（**arm64-v8a 单 ABI**）。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.95**（versionCode 50766），安装包约 **57 MB**（**arm64-v8a 单 ABI**，分段下载后自动合并）。
 > ★体积口径（2026-09-28 定）：分发通道的 Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
 > 而双 ABI 通用包是 **54,371,575 B（51.85 MiB）→ 塞不进去**（实测上游 400 `EntityTooLarge`，且会出现「清单写成功、包没传上」的分叉）。
 > 故 push 默认只打 `android-arm64`；32 位（armeabi-v7a）按需 `workflow_dispatch abis=android-arm` 出包，

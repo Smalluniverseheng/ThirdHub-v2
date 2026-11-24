@@ -13216,6 +13216,15 @@ class ProductDetailPage extends StatelessWidget {
 // 更新历史**不再打进安装包**：点开「更新历史」时才从云端按需拉取
 // （数据层见 core/changelog.dart 与 ChangelogPanel）。分级可见由服务端
 // RLS 强制 —— 公开段人人可读，4.0 之前的全部历史仅管理员账号可读。
+
+/// 用户在下载过程中主动「切换路线」时的哨兵异常：
+/// 不是网络故障，不弹失败框、不删断点文件，直接换另一条路重来。
+class _SwitchRoute implements Exception {
+  const _SwitchRoute();
+  @override
+  String toString() => '已切换下载路线';
+}
+
 class Updater {
   // ★ 版本号唯一来源 = core/app_version.dart。
   //   4.40.0 时这里漏改，导致装了新版仍被判成旧版、反复弹升级提示。别再写死字面量。
@@ -13322,12 +13331,82 @@ class Updater {
       }
       if (url.isNotEmpty && c.mounted) {
         newVer = ver;
-        _downloadAndInstall(c, url, sha: m['sha256'] as String?);
+        // ★4.81.95 下载路线由用户选：快速（分段续传）/ 标准（整包直连）/ 浏览器。
+        //   分段清单缺失（旧清单）时只给后两个，不硬塞。
+        final parts = m['parts'] as List?;
+        final route = await _pickRoute(c,
+            hasParts: parts?.isNotEmpty == true, size: m['size'] as int?);
+        if (route == null || !c.mounted) return;
+        if (route == 'browser') {
+          unawaited(launchUrl(Uri.parse(url),
+              mode: LaunchMode.externalApplication));
+          return;
+        }
+        _downloadAndInstall(c, url,
+            sha: m['sha256'] as String?, parts: parts, route: route);
       }
     }
   }
 
   static String newVer = '';
+
+  /// ★4.81.95 下载路线选择。
+  ///
+  /// 为什么要有这一步：大安装包只有两条现实通路 ——
+  ///   fast：云端分片（每片单独下载后可续传，多线路并发感受更快）；
+  ///   slow：整包直连（GitHub Release，一条流下到底，慢但最稳，浏览器也能下）。
+  /// 用户网络差异极大，与其替他猜，不如点一下自己选；选过就记住，下次默认高亮。
+  static Future<String?> _pickRoute(BuildContext c,
+      {required bool hasParts, int? size}) async {
+    final p = await SharedPreferences.getInstance();
+    final last = p.getString('update_route') ?? (hasParts ? 'fast' : 'slow');
+    final mb = (size != null && size > 0)
+        ? ' · ${(size / 1048576).toStringAsFixed(0)} MB'
+        : '';
+    String? pick;
+    if (!c.mounted) return null;
+    pick = await showDialog<String>(
+      context: c,
+      builder: (c2) => SimpleDialog(
+        title: Text(tr('选择下载方式'), style: const TextStyle(fontSize: 16)),
+        children: [
+          if (hasParts)
+            ListTile(
+              leading: const Icon(Icons.bolt, size: 20),
+              title: Text(tr('快速下载（分段续传）')),
+              subtitle: Text('${tr('分段下载，断了能接着下，通常更快')}$mb',
+                  style: const TextStyle(fontSize: 11)),
+              trailing: last == 'fast'
+                  ? Text(tr('上次使用'),
+                      style: const TextStyle(fontSize: 10, color: Colors.grey))
+                  : null,
+              onTap: () => Navigator.pop(c2, 'fast'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.language, size: 20),
+            title: Text(tr('标准下载（整包直连）')),
+            subtitle: Text('${tr('整包一次下完，一条线路到底更稳')}$mb',
+                style: const TextStyle(fontSize: 11)),
+            trailing: (hasParts ? last == 'slow' : last != 'fast')
+                ? Text(tr('上次使用'),
+                    style: const TextStyle(fontSize: 10, color: Colors.grey))
+                : null,
+            onTap: () => Navigator.pop(c2, 'slow'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.open_in_browser, size: 20),
+            title: Text(tr('浏览器下载')),
+            subtitle: Text(tr('交给浏览器下载，网络不稳时保底'),
+                style: const TextStyle(fontSize: 11)),
+            onTap: () => Navigator.pop(c2, 'browser'),
+          ),
+        ],
+      ),
+    );
+    if (pick == null) return null;
+    if (pick != 'browser') await p.setString('update_route', pick);
+    return pick;
+  }
 
   // ★2026-11-19 局域网 NAS 直连：家里/同一网络秒下，外网请求会超时后自动回落云端。
   //   版本化文件名优先（sha 与清单严格对应），别名次之。
@@ -13393,7 +13472,7 @@ class Updater {
   // 返回最终落盘字节数（调用方做 sha256 校验要用）。
   static Future<int> _fetchTo(
       String url, File f, ValueNotifier<double> progress,
-      {ValueNotifier<String>? detail}) async {
+      {ValueNotifier<String>? detail, bool Function()? abort}) async {
     final part = File('${f.path}.part');
     final meta = File('${f.path}.part.meta');
     final client = HttpClient();
@@ -13474,6 +13553,12 @@ class Updater {
       final t0 = DateTime.now().millisecondsSinceEpoch;
       var lastUi = t0;
       await for (final chunk in resp) {
+        // ★4.81.95 用户中途点了「切换路线」：保留 .part（同 url 下次续传），
+        //   用哨兵异常跳出多层调用，由上层改成另一条路线重来。
+        if (abort != null && abort()) {
+          await sink.close();
+          throw const _SwitchRoute();
+        }
         sink.add(chunk);
         got += chunk.length;
         final now = DateTime.now().millisecondsSinceEpoch;
@@ -13521,15 +13606,17 @@ class Updater {
     required ValueNotifier<String> detail,
     String? sha,
     void Function(int i, int n)? onSwitch,
+    bool Function()? abort,
   }) async {
     final want = (sha ?? '').trim().toLowerCase();
     var last = '所有线路都不可用';
     for (var i = 0; i < mirrors.length; i++) {
       try {
+        if (abort != null && abort()) throw const _SwitchRoute();
         if (i > 0) onSwitch?.call(i, mirrors.length);
         progress.value = 0;
         if (i > 0) detail.value = '切换线路…';
-        await _fetchTo(mirrors[i], f, progress, detail: detail);
+        await _fetchTo(mirrors[i], f, progress, detail: detail, abort: abort);
         if (want.isNotEmpty) {
           detail.value = '校验文件…';
           final actual = await _fileSha256(f);
@@ -13544,10 +13631,94 @@ class Updater {
         }
         return (ok: true, url: mirrors[i], err: '');
       } catch (e) {
+        if (e is _SwitchRoute) rethrow; // 用户要求换路线，不算线路故障
         last = '$e';
       }
     }
     return (ok: false, url: '', err: last);
+  }
+
+  /// ★4.81.95 分段下载：云端单对象有 50MB 上限，大安装包切成若干段分别上传，
+  ///   这里逐段下载（每段复用 _fetchTo 的断点续传），再按序流式合并成完整 apk。
+  ///   - parts: [{url, size?, sha256?}, ...]，顺序即拼接顺序，绝不能并发合并。
+  ///   - 每段可选 sha256 校验（清单给了就验，防 CDN 缓存旧段）。
+  ///   - 成功返回 true（内容落在 target）；任一段失败清理所有段文件返回 false，
+  ///     调用方再回落到完整包线路（GitHub 镜像）。
+  static Future<bool> _downloadPartsTo({
+    required List parts,
+    required File target,
+    required ValueNotifier<double> progress,
+    required ValueNotifier<String> detail,
+    bool Function()? abort,
+  }) async {
+    if (parts.isEmpty) return false;
+    final segFiles = <File>[];
+    // 每段独立临时文件（复用 .part/.meta 断点续传，文件名带段号防串段）
+    for (var i = 0; i < parts.length; i++) {
+      final m = parts[i];
+      if (m is! Map) return false;
+      final url = '${m['url'] ?? ''}';
+      if (url.isEmpty) return false;
+      // 用户中途换路线：段文件全部保留，下次快速下载能直接续上
+      if (abort != null && abort()) throw const _SwitchRoute();
+      final seg = File('${target.path}.seg$i');
+      segFiles.add(seg);
+      final segProg = ValueNotifier<double>(0);
+      // 段进度折算到总进度：已完成段数 / 总段数 + 本段进度 / 总段数
+      segProg.addListener(() {
+        progress.value =
+            (i + (segProg.value > 0 ? segProg.value : 0)) / parts.length;
+      });
+      try {
+        detail.value = trf('下载第 {i}/{n} 段', {'i': i + 1, 'n': parts.length});
+        await _fetchTo(url, seg, segProg, detail: detail, abort: abort);
+        final want = '${m['sha256'] ?? ''}'.trim().toLowerCase();
+        if (want.isNotEmpty) {
+          detail.value = tr('校验文件…');
+          if (await _fileSha256(seg) != want) {
+            throw Exception('第 ${i + 1} 段校验不符');
+          }
+        }
+      } catch (e) {
+        // 换路线不是故障：段文件留着续传，异常往上抛给调用方重排路线
+        if (e is _SwitchRoute) rethrow;
+        for (final s in segFiles) {
+          try {
+            if (await s.exists()) await s.delete();
+          } catch (_) {}
+          try {
+            final meta = File('${s.path}.part.meta');
+            if (await meta.exists()) await meta.delete();
+          } catch (_) {}
+          try {
+            final part = File('${s.path}.part');
+            if (await part.exists()) await part.delete();
+          } catch (_) {}
+        }
+        return false;
+      }
+    }
+    // 按序流式合并（不整包读入内存，低端机不 OOM）
+    try {
+      detail.value = tr('正在合并安装包…');
+      final sink = target.openWrite(mode: FileMode.write);
+      for (final s in segFiles) {
+        await for (final chunk in s.openRead()) {
+          sink.add(chunk);
+        }
+      }
+      await sink.close();
+      progress.value = 1;
+    } catch (_) {
+      return false;
+    }
+    // 合并后清段文件（保留 target 供外层整体 sha 校验）
+    for (final s in segFiles) {
+      try {
+        if (await s.exists()) await s.delete();
+      } catch (_) {}
+    }
+    return true;
   }
 
   /// 下载彻底失败时的出口。关键不是「报错报得准」，是**别让用户卡死**：
@@ -13767,45 +13938,62 @@ class Updater {
   }
 
   static Future<void> _downloadAndInstall(BuildContext c, String url,
-      {String? sha}) async {
+      {String? sha, List? parts, String route = 'fast'}) async {
     final progress = ValueNotifier<double>(0);
     final detail = ValueNotifier<String>(tr('连接中…'));
     var background = false;
-    showDialog(
-        context: c,
-        barrierDismissible: false,
-        builder: (c2) => AlertDialog(
-                title: const Text('正在下载更新'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  ValueListenableBuilder<double>(
-                      valueListenable: progress,
-                      builder: (_, v, __) =>
-                          Column(mainAxisSize: MainAxisSize.min, children: [
-                            LinearProgressIndicator(value: v > 0 ? v : null),
-                            const SizedBox(height: 8),
-                            Text(
-                                v > 0
-                                    ? '${(v * 100).toStringAsFixed(0)}%'
-                                    : tr('连接中…'),
-                                style: const TextStyle(fontSize: 12)),
-                          ])),
-                  const SizedBox(height: 6),
-                  ValueListenableBuilder<String>(
-                      valueListenable: detail,
-                      builder: (_, t, __) => Text(t,
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.grey))),
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () {
-                        background = true;
-                        Navigator.pop(c2);
-                        ScaffoldMessenger.of(c).showSnackBar(
-                            const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
-                      },
-                      child: const Text('后台下载'))
-                ]));
+    String? switchTo; // 非空 = 用户中途要求换路线
+    final canFast = parts != null && parts.isNotEmpty;
+    var cur = (route == 'fast' && canFast) ? 'fast' : 'slow';
+
+    // 进度框抽成函数：用户切过路线后要能再弹一次（同一个 progress/detail 实例）
+    void openDlg() {
+      showDialog(
+          context: c,
+          barrierDismissible: false,
+          builder: (c2) => AlertDialog(
+                  title: const Text('正在下载更新'),
+                  content: Column(mainAxisSize: MainAxisSize.min, children: [
+                    ValueListenableBuilder<double>(
+                        valueListenable: progress,
+                        builder: (_, v, __) =>
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                              LinearProgressIndicator(value: v > 0 ? v : null),
+                              const SizedBox(height: 8),
+                              Text(
+                                  v > 0
+                                      ? '${(v * 100).toStringAsFixed(0)}%'
+                                      : tr('连接中…'),
+                                  style: const TextStyle(fontSize: 12)),
+                            ])),
+                    const SizedBox(height: 6),
+                    ValueListenableBuilder<String>(
+                        valueListenable: detail,
+                        builder: (_, t, __) => Text(t,
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.grey))),
+                  ]),
+                  actions: [
+                    // 两条路都可用时才给切换入口；断点都保留，来回切不白下
+                    if (canFast)
+                      TextButton(
+                          onPressed: () {
+                            switchTo = cur == 'fast' ? 'slow' : 'fast';
+                            Navigator.pop(c2);
+                          },
+                          child: Text(tr('切换路线'))),
+                    TextButton(
+                        onPressed: () {
+                          background = true;
+                          Navigator.pop(c2);
+                          ScaffoldMessenger.of(c).showSnackBar(
+                              const SnackBar(content: Text('已转入后台下载, 完成后会通知你')));
+                        },
+                        child: const Text('后台下载'))
+                  ]));
+    }
+
+    openDlg();
     var mirrors = <String>[];
     try {
       final dir = await _updateDir();
@@ -13815,25 +14003,80 @@ class Updater {
       // 有 sha 就只走「文件名带版本号」的线路，别名 latest 一律剔除
       mirrors = await _mirrorUrls(url, newVer,
           exact: (sha ?? '').trim().isNotEmpty);
-      late final ({bool ok, String url, String err}) r;
       final stopNotify = _bgProgressNotify(progress, 88002, '正在下载更新 v$newVer');
+      var ok = false;
+      var lastErr = '所有线路都不可用';
       try {
-        r = await _downloadVerified(
-          f: f,
-          mirrors: mirrors,
-          progress: progress,
-          detail: detail,
-          sha: sha,
-          onSwitch: (i, n) {
-            if (!c.mounted) return;
-            ScaffoldMessenger.of(c).showSnackBar(SnackBar(
-                content: Text(trf('线路 {i}/{total} 不可用，换下一条', {'i': i + 1, 'total': n}))));
-          },
-        );
+        // 路线循环：① 用户点「切换路线」→ 换另一条重来（断点都在）；
+        //          ② 分段失败 → 自动回落整包，不让用户卡在坏段上。
+        while (true) {
+          switchTo = null;
+          progress.value = 0;
+          bool ab() => switchTo != null;
+          try {
+            if (cur == 'fast') {
+              var segOk = await _downloadPartsTo(
+                  parts: parts!,
+                  target: f,
+                  progress: progress,
+                  detail: detail,
+                  abort: ab);
+              if (segOk) {
+                // 合并成功也要验总 sha（防某段错但段 sha 缺失 / 合并串行出错）
+                final want = (sha ?? '').trim().toLowerCase();
+                if (want.isNotEmpty && await _fileSha256(f) != want) {
+                  segOk = false;
+                  lastErr = tr('分段合并后内容与清单不符');
+                }
+              }
+              if (segOk) {
+                ok = true;
+              } else if (switchTo == null) {
+                lastErr = tr('分段下载失败');
+              }
+            } else {
+              final r = await _downloadVerified(
+                f: f,
+                mirrors: mirrors,
+                progress: progress,
+                detail: detail,
+                sha: sha,
+                abort: ab,
+                onSwitch: (i, n) {
+                  if (!c.mounted) return;
+                  ScaffoldMessenger.of(c).showSnackBar(SnackBar(
+                      content: Text(trf('线路 {i}/{total} 不可用，换下一条',
+                          {'i': i + 1, 'total': n}))));
+                },
+              );
+              ok = r.ok;
+              if (!r.ok) lastErr = r.err;
+            }
+          } on _SwitchRoute {
+            // 用户切路线，不是故障：保留断点，下面统一换路
+          }
+          if (switchTo != null) {
+            cur = switchTo!;
+            switchTo = null;
+            progress.value = 0;
+            detail.value = tr('已切换下载路线，继续…');
+            if (!c.mounted) throw Exception('页面已关闭');
+            openDlg();
+            continue;
+          }
+          if (ok) break;
+          // 分段不可用 → 自动回落整包（用户不用自己判断哪种更快）
+          if (cur == 'fast' && mirrors.isNotEmpty) {
+            cur = 'slow';
+            detail.value = tr('分段不可用，改用整包下载…');
+            continue;
+          }
+          break;
+        }
       } finally {
         stopNotify();
       }
-      if (!r.ok) throw Exception(r.err);
+      if (!ok) throw Exception(lastErr);
       // 留档: 已下载安装包列表(可在 下载App 页重装, 不用重新下载)
       final p = await SharedPreferences.getInstance();
       final list = p.getStringList('update_apks') ?? [];
