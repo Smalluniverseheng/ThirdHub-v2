@@ -160,12 +160,16 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
       return {'ok': true, 'pages': list};
     }
 
-    // 播放地址（DASH，挑最高码率）
+    // 播放地址：优先 MP4 单流（有声、直连播放器能播），qn 缺省给最高可用的 720p。
+    // 实测（2026-11-24）：fnval=16&platform=html5 只回 480p durl；
+    //   fnval=1&qn=64 无 cookie 就能拿 720p 有声 MP4。DASH 高清流是音视频
+    //   分离，本机 video_player 单 URL 播会没声音，故不走 DASH。
     if (path.startsWith('/v1/bili/playurl')) {
       final bvid = q['bvid'] ?? '';
       final cid = q['cid'] ?? '';
+      final qn = q['qn'] ?? '64';
       final j = await _getJson(
-          '/x/player/playurl?bvid=$bvid&cid=$cid&fnval=16&fourk=1&platform=html5&high_quality=1');
+          '/x/player/playurl?bvid=$bvid&cid=$cid&fnval=1&qn=$qn&platform=html5');
       final d = (j['data'] as Map?) ?? const {};
       final dash = (d['dash'] as Map?) ?? const {};
       final vids = (dash['video'] as List?) ?? const [];
@@ -186,7 +190,14 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
         }
       }
       if (best.isEmpty) return {'ok': false, 'url': '', 'error': '无可用播放地址'};
-      return {'ok': true, 'url': best, 'quality': bestId};
+      final realQuality = (d['quality'] is num) ? (d['quality'] as num).toInt() : bestId;
+      final accept = d['acceptQuality'];
+      return {
+        'ok': true,
+        'url': best,
+        'quality': realQuality,
+        if (accept is List && accept.isNotEmpty) 'acceptQuality': accept,
+      };
     }
 
     // 评论
