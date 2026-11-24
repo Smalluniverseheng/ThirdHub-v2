@@ -53,48 +53,154 @@ class Cloud {
   // ★ 埋点刻意**不加 await**：登录/连接都在用户点按的关键路径上，
   //   `AppLog` 要落盘（SharedPreferences + 文件），await 它会把"点一下要等多久"
   //   变成不可控。日志是旁路，不能拖慢主流程；丢了最多少一条记录。
+  //
+  // ★4.81.96 登录失败必须说人话。原来直接把 Supabase 的
+  //   `error_description`（英文，或干脆空）甩给用户，界面上一句
+  //   "Invalid login credentials" 或 "登录失败" 完全没法判断该做什么。
+  static String friendlyAuthError(int status, Map<String, dynamic> j) {
+    final code = '${j['error_code'] ?? j['code'] ?? ''}';
+    final raw = '${j['error_description'] ?? j['msg'] ?? j['message'] ?? ''}';
+    switch (code) {
+      case 'invalid_credentials':
+        return '邮箱或密码不对，再核对一下';
+      case 'email_not_confirmed':
+        return '邮箱还没验证，先去邮箱点确认链接，再回来登录';
+      case 'user_already_exists':
+      case 'email_exists':
+        return '这个邮箱已经注册过了，直接登录即可';
+      case 'weak_password':
+        return '密码太简单，换更长的（至少 6 位）';
+      case 'signup_disabled':
+        return '当前暂不开放注册';
+      case 'over_email_send_rate_limit':
+      case 'over_request_rate_limit':
+        return '操作太频繁，等一分钟再试';
+      case 'invalid_grant':
+        return '登录已过期，请重新登录';
+    }
+    if (status == 429) return '操作太频繁，等一分钟再试';
+    if (status >= 500) return '服务器暂时不可用，稍后重试';
+    if (raw.isNotEmpty) return raw;
+    return '登录失败（$status）';
+  }
+
   static Future<void> signIn(String mail, String password) async {
-    final r = await thPost(Uri.parse('$base/auth/v1/token?grant_type=password'),
-      headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
-    final j = jsonDecode(r.body);
+    final http.Response r;
+    try {
+      r = await thPost(
+          Uri.parse('$base/auth/v1/token?grant_type=password'),
+          headers: _authHeaders,
+          body: jsonEncode({'email': mail, 'password': password}));
+    } catch (e) {
+      AppLog.warn('account', '登录请求没发出去', d: {'email': mail, 'e': '$e'});
+      throw Exception('网络不通，检查网络后再试');
+    }
+    Map<String, dynamic> j = const {};
+    try {
+      j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {}
     if (r.statusCode != 200) {
       // 登录失败必须留痕：用户报"登不上"时，后台日志要能直接看出是**密码错**
       // 还是**网络/服务端错**还是**邮箱未确认**——只报一句"登录失败"没法排查。
       AppLog.warn('account', '登录失败', d: {
         'email': mail,
         'status': r.statusCode,
-        'reason': '${j['error_description'] ?? j['msg'] ?? j['error'] ?? '未知'}',
+        'reason':
+            '${j['error_description'] ?? j['msg'] ?? j['error'] ?? j['error_code'] ?? '未知'}',
       });
-      throw Exception(j['error_description'] ?? j['msg'] ?? '登录失败');
+      throw Exception(friendlyAuthError(r.statusCode, j));
     }
-    accessToken = j['access_token'] ?? ''; refreshToken = j['refresh_token'] ?? '';
-    userId = j['user']?['id'] ?? ''; email = j['user']?['email'] ?? mail;
-    AppLog.account('登录成功', d: {'email': email, 'uid': userId.length >= 8 ? userId.substring(0, 8) : userId});
-    await _save(); await profile();
+    accessToken = j['access_token'] ?? '';
+    refreshToken = j['refresh_token'] ?? '';
+    userId = j['user']?['id'] ?? '';
+    email = j['user']?['email'] ?? mail;
+    if (accessToken.isEmpty) throw Exception('服务器没返回登录凭据，稍后重试');
+    AppLog.account('登录成功', d: {
+      'email': email,
+      'uid': userId.length >= 8 ? userId.substring(0, 8) : userId
+    });
+    // ★先落盘再拉资料：凭据已经拿到了，绝不能因为后面一次 GET 超时
+    //   就告诉用户「登录失败」——那会让他在明明已登录的状态下反复重试。
+    await _save();
+    try {
+      await profile();
+    } catch (e) {
+      AppLog.warn('account', '登录成功但资料拉取失败', d: {'e': '$e'});
+    }
   }
 
+  /// 登录态是否还活着（自动识别用）。
+  /// ok=令牌有效 / expired=令牌失效（该重新登录）/ offline=网络问题（令牌未必坏）/ none=没登录
+  static Future<String> sessionState() async {
+    if (!loggedIn) return 'none';
+    try {
+      final r = await thGet(Uri.parse('$base/auth/v1/user'),
+          headers: _authHeaders, timeout: const Duration(seconds: 8));
+      if (r.statusCode == 200) return 'ok';
+      if (r.statusCode == 401 || r.statusCode == 403) return 'expired';
+      return 'offline';
+    } catch (_) {
+      return 'offline';
+    }
+  }
+
+  /// 令牌被服务端判死时清掉本地残留。
+  /// ★不清的后果：`loggedIn` 永远是 true，每个请求 401，
+  ///   用户看到的是「明明登录了，什么都同步不了」——比明确未登录更难排查。
+  static Future<void> clearStale() async {
+    accessToken = '';
+    refreshToken = '';
+    userId = '';
+    email = '';
+    profileData = {};
+    await _save();
+  }
+
+  /// 注册成功后若还需要邮箱验证，把提示放这里。
+  /// UI 用普通提示展示（不是红色错误）——它其实是一次成功。
+  static String lastNotice = '';
+
   static Future<void> signUp(String mail, String password) async {
-    final r = await thPost(Uri.parse('$base/auth/v1/signup'),
-      headers: _authHeaders, body: jsonEncode({'email': mail, 'password': password}));
-    final j = jsonDecode(r.body);
+    lastNotice = '';
+    final http.Response r;
+    try {
+      r = await thPost(Uri.parse('$base/auth/v1/signup'),
+          headers: _authHeaders,
+          body: jsonEncode({'email': mail, 'password': password}));
+    } catch (e) {
+      AppLog.warn('account', '注册请求没发出去', d: {'email': mail, 'e': '$e'});
+      throw Exception('网络不通，检查网络后再试');
+    }
+    Map<String, dynamic> j = const {};
+    try {
+      j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {}
     if (r.statusCode != 200) {
       AppLog.warn('account', '注册失败', d: {
-        'email': mail, 'status': r.statusCode,
-        'reason': '${j['error_description'] ?? j['msg'] ?? j['error'] ?? '未知'}',
+        'email': mail,
+        'status': r.statusCode,
+        'reason':
+            '${j['error_description'] ?? j['msg'] ?? j['error'] ?? j['error_code'] ?? '未知'}',
       });
-      throw Exception(j['error_description'] ?? j['msg'] ?? '注册失败');
+      throw Exception(friendlyAuthError(r.statusCode, j));
     }
     if (j['access_token'] != null) {
-      accessToken = j['access_token']; refreshToken = j['refresh_token'] ?? '';
-      userId = j['user']?['id'] ?? ''; email = j['user']?['email'] ?? mail;
+      accessToken = j['access_token'];
+      refreshToken = j['refresh_token'] ?? '';
+      userId = j['user']?['id'] ?? '';
+      email = j['user']?['email'] ?? mail;
       AppLog.account('注册成功并已登录', d: {'email': email});
       await _save();
-    } else {
-      // 走了这条路说明还要去邮箱点确认链接 —— 这是用户最容易卡住的一步
-      // （界面看起来"什么都没发生"），不记下来就完全无从解释。
-      AppLog.account('注册成功，等待邮箱确认', d: {'email': mail});
-      await signIn(mail, password);
+      try {
+        await profile();
+      } catch (_) {}
+      return;
     }
+    // 走了这条路说明还要去邮箱点确认链接 —— 这是用户最容易卡住的一步
+    // （界面看起来"什么都没发生"）。★不要去调 signIn 硬试一遍：
+    //   未验证的账号必然 400，用户会以为「刚注册就登录失败」。
+    AppLog.account('注册成功，等待邮箱确认', d: {'email': mail});
+    lastNotice = '注册成功，去邮箱点确认链接，再回来登录';
   }
 
   static Future<void> refresh() async {
@@ -110,6 +216,30 @@ class Cloud {
       //   把真正有用的记录挤出去）。失败则必须记——它意味着用户会在某个时刻
       //   突然"什么都同步不了"，而界面上往往只表现成转圈。
       AppLog.warn('account', '登录态续期失败', d: {'status': r.statusCode});
+      // ★4.81.96 续期被拒（400/401）说明这个 refresh_token 已经没用了，
+      //   必须清干净：留着就是一个「永远 loggedIn、每个请求都 401」的僵尸态。
+      if (r.statusCode == 400 || r.statusCode == 401 || r.statusCode == 403) {
+        await clearStale();
+      }
+    }
+  }
+
+  /// 发送重置密码邮件。
+  /// ★以前 App 里根本没有这条路 —— 用户忘了密码只能去网页端，找不到就以为「登不上」。
+  static Future<void> resetPassword(String mail) async {
+    final http.Response r;
+    try {
+      r = await thPost(Uri.parse('$base/auth/v1/recover'),
+          headers: _authHeaders, body: jsonEncode({'email': mail}));
+    } catch (e) {
+      throw Exception('网络不通，检查网络后再试');
+    }
+    if (r.statusCode != 200) {
+      Map<String, dynamic> j = const {};
+      try {
+        j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      } catch (_) {}
+      throw Exception(friendlyAuthError(r.statusCode, j));
     }
   }
 

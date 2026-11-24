@@ -80,6 +80,8 @@ import 'core/design_tokens.dart';
 import 'core/app_widgets.dart';
 import 'package:cryptography/cryptography.dart';
 import 'core/cloud.dart';
+import 'core/cloud_auth_dialog.dart';
+import 'core/account_center.dart';
 import 'core/read_sync.dart';
 import 'core/storage_usage.dart';
 import 'core/remote_config.dart';
@@ -3094,6 +3096,12 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.person_outline, '账号安全',
                 value: logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录',
                 page: const ProfileSubPage()),
+            _sep(),
+            // ★4.81.96 账号与在线状态：云端 / 后端 / B站 / 短剧 / 完全体 / AI 供应商
+            //   一页看全，进来就自动探活，不用逐个点「测试连接」。
+            entry(Icons.verified_user_outlined, tr('账号与在线状态'),
+                value: tr('自动识别各账号登录态与连通性'),
+                page: const AccountCenterPage()),
             _sep(),
             entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
             _sep(),
@@ -12487,132 +12495,37 @@ class _At extends State<AccountTile> {
   //   将来接入任何社交登录时：把 core/apple_gate.dart 的 kHasThirdPartyLogin
   //   置 true（needsSignInWithApple 随之变 true），**同一次提交里**在此对话框
   //   补「Sign in with Apple」按钮 + 真实的 Apple 登录实现，缺一不可。
-  /// 登录 / 注册。
+  /// 登录 / 注册（4.81.96 起统一走 core/cloud_auth_dialog.dart）。
   ///
-  /// ★2026-10-18 修四处问题（用户报「登录界面明显有问题」）：
-  ///   ① 控制器 finally 释放（原来每次点都漏两个）；
-  ///   ② 弹窗内先校验（邮箱格式 / 密码长度），不合法就地提示、不关窗；
-  ///   ③ 密码可见切换；
-  ///   ④ 错误就地显示，而不是关窗后弹一条 SnackBar。
+  /// 弹窗本身负责校验、就地报错、防重复提交；这里只负责「登录成功之后顺手做的事」，
+  /// 而且每一步都尽力而为 —— 凭据已经存好，任何一步失败都不能让用户以为没登上。
   Future<void> _auth(bool isLogin) async {
-    final mailC = TextEditingController();
-    final passC = TextEditingController();
-    bool obscure = true;
-    String? tip; // 弹窗内的提示（错误或说明），showPasswordTip 用作函数签名标记
+    setState(() => busy = true);
     try {
-      final ok = await showDialog<bool>(
-          context: context,
-          builder: (c2) => StatefulBuilder(
-                builder: (c2, setSt) {
-                  void fail(String m) => setSt(() => tip = m);
-                  return AlertDialog(
-                      title: Text(isLogin
-                          ? tr('登录 ThirdHub 账号')
-                          : tr('注册 ThirdHub 账号')),
-                      content:
-                          Column(mainAxisSize: MainAxisSize.min, children: [
-                        TextField(
-                            controller: mailC,
-                            autofocus: true,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) {
-                              if (tip != null) fail('');
-                            },
-                            decoration: InputDecoration(
-                                labelText: tr('邮箱'), isDense: true)),
-                        TextField(
-                            controller: passC,
-                            obscureText: obscure,
-                            textInputAction: TextInputAction.done,
-                            onChanged: (_) {
-                              if (tip != null) fail('');
-                            },
-                            onSubmitted: (_) {
-                              final m = mailC.text.trim();
-                              final p = passC.text;
-                              if (!m.contains('@') || m.length < 5) {
-                                fail('邮箱格式看起来不对');
-                                return;
-                              }
-                              if (p.length < 6) {
-                                fail('密码至少 6 位');
-                                return;
-                              }
-                              Navigator.pop(c2, true);
-                            },
-                            decoration: InputDecoration(
-                                labelText: tr('密码(至少6位)'),
-                                isDense: true,
-                                suffixIcon: IconButton(
-                                    tooltip: obscure ? '显示密码' : '隐藏密码',
-                                    icon: Icon(
-                                        obscure
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                        size: 18),
-                                    onPressed: () =>
-                                        setSt(() => obscure = !obscure)))),
-                        const SizedBox(height: 8),
-                        // 说明 / 错误（就地显示，不关窗）
-                        if (tip != null && tip!.isNotEmpty)
-                          Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Text(tip!,
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.redAccent))),
-                        const Text('前后端登录同一账号即可自动配对连接, 无需填地址',
-                            style: TextStyle(fontSize: 11, color: Colors.grey)),
-                      ]),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(c2, false),
-                            child: Text(tr('取消'))),
-                        FilledButton(
-                            onPressed: () {
-                              final m = mailC.text.trim();
-                              final p = passC.text;
-                              if (!m.contains('@') || m.length < 5) {
-                                fail('邮箱格式看起来不对');
-                                return;
-                              }
-                              if (p.length < 6) {
-                                fail('密码至少 6 位');
-                                return;
-                              }
-                              Navigator.pop(c2, true);
-                            },
-                            child: Text(isLogin ? tr('登录') : tr('注册')))
-                      ]);
-                },
-              ));
-      if (ok != true) return;
-      setState(() => busy = true);
+      final logged = await showCloudAuthDialog(context, isLogin: isLogin);
+      if (!logged || !mounted) return;
+      var softErr = '';
       try {
-        if (isLogin) {
-          await Cloud.signIn(mailC.text.trim(), passC.text);
-        } else {
-          await Cloud.signUp(mailC.text.trim(), passC.text);
-        }
         await _syncProfile();
-        await AppSettings.ensureIdentity();
-        await _autoConnect();
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('已登录')));
-        }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
-        }
+        softErr = '$e';
       }
-      if (mounted) setState(() => busy = false);
+      try {
+        await AppSettings.ensureIdentity();
+      } catch (_) {}
+      try {
+        await _autoConnect();
+      } catch (_) {}
+      if (!mounted) return;
+      final notice = Cloud.lastNotice;
+      Cloud.lastNotice = '';
+      final msg = notice.isNotEmpty
+          ? notice
+          : (softErr.isEmpty ? tr('已登录') : tr('已登录') + '（' + tr('资料稍后自动同步') + '）');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     } finally {
-      // ★控制器必须释放：原来每次点登录都漏两个（TextEditingController 持有焦点/监听）
-      mailC.dispose();
-      passC.dispose();
+      if (mounted) setState(() => busy = false);
     }
   }
 
