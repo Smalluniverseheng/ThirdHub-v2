@@ -8,7 +8,8 @@ import struct
 import sys
 from pathlib import Path
 
-# 全部等长，保证字符串边界不变，不影响 dynstr 其它引用
+# 改名只在原字符串槽内进行：等长直接覆盖，变短用 \0 填满剩余字节——
+# dynstr 里后一个字符串紧跟其后，所以"变短"是安全的，"变长"会踩到邻居，一律拒绝。
 RENAME = {
     b"libz.so.1": b"libz_1.so",
     b"libcrypto.so.3": b"libcrypto_3.so",
@@ -16,6 +17,9 @@ RENAME = {
     b"libicui18n.so.79": b"libicui18n_79.so",
     b"libicuuc.so.79": b"libicuuc_79.so",
     b"libicudata.so.79": b"libicudata_79.so",
+    # termux proot：APK 只收 lib*.so，带版本号的名字 PMS 不会解压出来
+    b"libtalloc.so.2": b"libtalloc.so",
+    b"libandroid-shmem.so.0": b"libandroid-shmem.so",
 }
 OLD_RUNPATH = b"/data/data/com.termux/files/usr/lib"
 NEW_RUNPATH = b"$ORIGIN"
@@ -89,8 +93,9 @@ class Elf:
                 changes.append(f"RUNPATH {old.decode()} -> $ORIGIN")
             elif old in RENAME:
                 new = RENAME[old]
-                assert len(new) == len(old), (old, new)
-                self.buf[s:e - 1] = new
+                assert len(new) <= len(old), (old, new)
+                # 等长直接覆盖；变短则补 \0：dynstr 是连续字符串池，缩短不越界
+                self.buf[s:e - 1] = new + b"\0" * (len(old) - len(new))
                 changes.append(f"{old.decode()} -> {new.decode()}")
         return changes
 

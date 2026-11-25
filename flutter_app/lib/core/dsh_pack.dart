@@ -1,42 +1,44 @@
-// DSH 完全体 · 可选数据包（4.81.97）
+// DSH 完全体 · 本机运行包（4.81.106 重做：改用 PRoot）
 //
 // 产品语义（用户拍板）：
 //   AI 模块有两种跑法 ——
-//     · 连家里服务：手机只当屏幕，算力在家里 NAS（默认，最省手机资源）
-//     · 本机运行：把「完全体」数据包装到手机，断网也能用（可随时拆掉）
-//   两种形态同一个入口，切换在「AI 运行位置」里一脚踩过去。
+//     · 连家里服务：手机只当屏幕，算力在家里 NAS（最省手机资源）
+//     · 本机运行：把「完全体」装到手机，断网也能用（可随时拆掉）
 //
-// 包结构（zip，App 只管解压，不在包里做任何假设之外的解析）：
-//   app/                  DSH 本体（node_modules + 启动脚本）
-//   home/                 初始工作目录（会话/技能/配置的落点，首次运行会写入）
-//   meta.json             {version, build, note}
+// ★4.81.106 为什么推倒重做：
+//   4.81.99 那版是「Termux 的 bionic Node + 11 个 .so 改名 + 直接 exec」，
+//   真机上属于赌博：Termux 的 node 是按 /data/data/com.termux 前缀编译的，
+//   靠改 DT_NEEDED/RUNPATH 搬进 APK 能起是运气。而且原生 addon 一个都没有，
+//   所谓"完全体"其实是残缺体。
 //
-// 运行时（node）为什么不放数据包里：
-//   targetSdk 36 起，应用私有目录里的可执行文件**禁止 exec**（W^X）。所以 node
-//   必须由 APK 的 nativeLibraryDir 提供（libnode-bin.so），数据包只放纯 JS +
-//   资源。这样数据包可以随时删，运行时跟着 APK 走，两边解耦。
+//   现在换成移动端跑 Linux 用户态的标准答案 —— PRoot + Ubuntu rootfs：
+//     · 运行时 = Ubuntu 24.04 base + **官方** node-linux-arm64（不用改任何 ELF）
+//     · DSH 在 rootfs 里 npm 装好，原生 addon（sharp/koffi/pty/sherpa）全都在
+//     · 启动器 = Termux 的 proot（--kill-on-exit/--link2symlink/--sysvipc 都已验证）
+//   这套配方来自开源项目 dsh-Go 的实践，我们只学它的启动/就绪/停止细节。
 //
-// 原生 addon 的处置（4.81.99 本地实测：15 个 .node 全移除后仍可启动）：
-//   DSH 强依赖 node-addon-require-builtin 访问 Node 内部 loader。手机上没有
-//   android-arm64 的 .node，改用纯 JS 替身 + `--expose-internals`：内部 loader
-//   由 Node 原生暴露，替身只做转发。其余 14 个 .node（koffi/sharp/node-pty/
-//   sherpa-onnx/node-addon-system）是桌面扩展，移除后 Web 服务正常起来，
-//   仅对应扩展不激活。
+// ★两个必须照抄的细节（都是真机上会直接白屏的坑）：
+//   ① **就绪信号是 token，不是端口**。`dsh web` 起来后只打印一行
+//      `dsh web: http://127.0.0.1:PORT/?token=xxx`，之后所有请求没带
+//      `dsh-auth-*` cookie 一律 401。所以必须抓这行、拿 token 地址开 WebView，
+//      光探端口通了就打首页 = 401 白屏（这是 4.81.99 版在真机上"看着装了却用不了"的主因）。
+//   ② **停止要发两枪**。PRoot 自己忽略 SIGTERM，必须按 rootfs 里的 pid 文件
+//      SIGTERM 那个 node 进程，必要时再 SIGQUIT proot；只 kill proot 会留下孤儿 node
+//      继续占着 3825 端口，下次启动永远起不来。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:archive/archive_io.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
 import '../core/app_log.dart';
+import 'dsh_tar.dart';
 import 'kv.dart' show aiStore;
 
-/// 数据包状态
+/// 本机运行包状态
 enum DshPackState {
   /// 没装（也没在装）
   none,
@@ -44,13 +46,13 @@ enum DshPackState {
   /// 正在下载
   downloading,
 
-  /// 正在解压
+  /// 正在解压（这一步最久，6 万文件）
   unpacking,
 
-  /// 装好了，运行时也在 → 可以「本机运行」
+  /// 装好了，启动器也在 → 可以「本机运行」
   ready,
 
-  /// 数据包装好了，但缺 node 运行时（APK 侧还没随包发）
+  /// 包装好了，但缺启动器（这版 APK 没带 proot）
   noRuntime,
 
   /// 出过错
@@ -82,9 +84,16 @@ class DshPack {
   double progress = 0;
   String progressText = '';
 
+  /// 启动后从 stdout 抓到的鉴权 token（每次启动都会换新的）
+  String token = '';
+
   Process? _proc;
+  /// 进程是否已经退出（Dart 的 Process 没有 isAlive，只能靠 exitCode 记账）
+  bool _exited = true;
   String _root = '';
+  String _rootfs = '';
   String _nativeLib = '';
+  String _tmp = '';
   int port = 3825;
 
   /// 本机模式是否被用户选中且真的可用
@@ -92,15 +101,24 @@ class DshPack {
   bool _wantLocal = false;
   bool get enabled => _wantLocal && usable;
 
-  /// 本机控制台地址（带 token 由 DSH 自己生成到 home 下，首次启动后读回）
+  bool get running => _proc != null;
+
+  /// 本机控制台地址（不带 token 会 401，仅作健康检查用）
   String get localBase => 'http://127.0.0.1:$port';
+
+  /// 给 WebView 用的地址：**必须带 token**，否则 DSH 一律 401。
+  /// 打开一次后 DSH 会 303 下发 dsh-auth cookie，后续同站点请求都靠 cookie。
+  String get consoleUrl => token.isEmpty ? '$localBase/' : '$localBase/?token=$token';
 
   Future<void> load() async {
     try {
       final paths = await _paths();
-      _root = '${paths['files'] ?? ''}/dsh-pack';
+      final files = '${paths['files'] ?? ''}';
       _nativeLib = '${paths['nativeLib'] ?? ''}';
-      final d = Directory(_root);
+      _tmp = '${paths['cache'] ?? files}/dsh-tmp';
+      _root = '$files/dsh';
+      _rootfs = '$_root/rootfs';
+      final d = Directory(_rootfs);
       if (!await d.exists()) {
         state = DshPackState.none;
         return;
@@ -113,8 +131,8 @@ class DshPack {
           installedBytes = (j['size'] is num) ? (j['size'] as num).toInt() : 0;
         }
       }
-      final hasApp = await Directory('$_root/app').exists();
-      if (!hasApp) {
+      final hasDsh = await File('$_rootfs/usr/local/bin/dsh').exists();
+      if (!hasDsh) {
         state = DshPackState.none;
         return;
       }
@@ -122,11 +140,11 @@ class DshPack {
       state = await runtimeReady() ? DshPackState.ready : DshPackState.noRuntime;
       message = state == DshPackState.ready
           ? ''
-          : '已装好数据包，但这版安装包还没带本机运行组件，暂时请继续用家里服务。';
+          : '运行包已装好，但这版安装包没带本机启动组件，暂时继续用家里服务。';
     } catch (e) {
       state = DshPackState.error;
       message = '$e';
-      AppLog.add('dsh', 'warn', '数据包读取失败: $e');
+      AppLog.add('dsh', 'warn', '运行包读取失败: $e');
     }
   }
 
@@ -136,23 +154,16 @@ class DshPack {
           .invokeMapMethod<String, String>('paths');
       if (r != null) return Map<String, String>.from(r);
     } catch (_) {}
-    final d = await getApplicationSupportDirectory();
-    return {'files': d.path, 'nativeLib': '', 'cache': d.path};
+    return {'files': Directory.systemTemp.path, 'nativeLib': '', 'cache': ''};
   }
 
-  /// node 运行时是否就位（nativeLibraryDir 下的 libnode-bin.so）
+  /// 启动器是否就位：proot + loader 都在 nativeLibraryDir
   Future<bool> runtimeReady() async {
     if (_nativeLib.isEmpty) return false;
-    for (final n in ['libnode-bin.so', 'libnode.so']) {
-      final f = File('$_nativeLib/$n');
-      if (await f.exists()) {
-        try {
-          await Process.run('chmod', ['755', f.path]);
-        } catch (_) {}
-        return true;
-      }
+    for (final n in ['libproot.so', 'libproot-loader.so', 'libtalloc.so']) {
+      if (!await File('$_nativeLib/$n').exists()) return false;
     }
-    return false;
+    return true;
   }
 
   /// 拉远端清单；没有发布过就返回 null（不是错误）
@@ -179,31 +190,51 @@ class DshPack {
     if (state == DshPackState.downloading || state == DshPackState.unpacking) {
       return false;
     }
+    await stop();
     state = DshPackState.downloading;
     progress = 0;
     progressText = '准备下载';
     onTick?.call();
-    final tmp = File('$_root.download.zip');
+    final tmp = File('$_root.download.tar.gz');
     try {
       final j = jsonDecode(
           await http.read(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 15)));
       if (j is! Map) throw '清单格式不对';
       final url = '${j['url'] ?? ''}';
-      if (url.isEmpty) throw '清单里没有下载地址';
       final parts = j['parts'] is List ? List<dynamic>.from(j['parts'] as List) : null;
+      if (url.isEmpty && (parts == null || parts.isEmpty)) throw '清单里没有下载地址';
+      final wantVer = '${j['version'] ?? ''}';
+      final wantSha = '${j['sha256'] ?? ''}'.trim().toLowerCase();
+
       await Directory(_root).create(recursive: true);
       await _fetch(url, tmp, parts, onTick);
-      state = DshPackState.unpacking;
-      progressText = '正在解压';
-      onTick?.call();
-      // 6.5 万个文件同步解压会卡住 UI isolate 数分钟，丢到独立 isolate 跑。
-      await Isolate.run(() => _unzipSync(tmp.path, _root, version));
-      await tmp.delete();
-      await load();
-      if (state == DshPackState.noRuntime) {
-        // 数据包已就位，只差运行时 —— 让用户看到真实原因
-        return true;
+
+      if (wantSha.isNotEmpty) {
+        progressText = '校验完整性';
+        onTick?.call();
+        if (await _fileSha256(tmp) != wantSha) throw '运行包校验不符，请重试';
       }
+
+      // 6 万文件 + 800MB，必须离开 UI isolate
+      state = DshPackState.unpacking;
+      progressText = '正在解压（首次约 1-3 分钟）';
+      onTick?.call();
+      final target = _rootfs;
+      // 旧目录先删干净，避免半旧半新
+      try {
+        final old = Directory(target);
+        if (await old.exists()) await old.delete(recursive: true);
+      } catch (_) {}
+      await Directory(target).create(recursive: true);
+      final tpath = tmp.path;
+      await Isolate.run(() => extractTarGzToDisk(tpath, target));
+      try {
+        await tmp.delete();
+      } catch (_) {}
+
+      await _prepareRootfs(wantVer);
+      await load();
+      if (state == DshPackState.noRuntime) return true;
       return state == DshPackState.ready;
     } catch (e) {
       state = DshPackState.error;
@@ -217,8 +248,50 @@ class DshPack {
     }
   }
 
-  /// 下载数据包。清单带 parts 时逐段下载 + 逐段校验 + 顺序合并；否则整包。
-  /// Supabase 单对象上限 50MB，完全体包必然走分片。
+  /// 解压后的收尾：补目录、写 resolv.conf、记 meta
+  Future<void> _prepareRootfs(String ver) async {
+    for (final d in [
+      '$_rootfs/var/lib/dsh-app/empty',
+      '$_rootfs/var/lib/dsh-app/shm',
+      '$_rootfs/root/.dsh',
+      '$_rootfs/root/.l2s',
+      '$_rootfs/tmp',
+      '$_rootfs/etc',
+    ]) {
+      try {
+        await Directory(d).create(recursive: true);
+      } catch (_) {}
+    }
+    // Android 没有 /etc/resolv.conf，proot 里必须自己写，否则所有域名解析失败
+    try {
+      await File('$_rootfs/etc/resolv.conf').writeAsString(
+          'nameserver 223.5.5.5\nnameserver 119.29.29.29\noptions timeout:2 attempts:2\n');
+    } catch (_) {}
+    final bytes = await _dirBytes(_rootfs);
+    await File('$_root/meta.json').writeAsString(jsonEncode({
+      'version': ver,
+      'size': bytes,
+      'at': DateTime.now().millisecondsSinceEpoch,
+    }));
+    installedBytes = bytes;
+  }
+
+  Future<int> _dirBytes(String dir) async {
+    var total = 0;
+    try {
+      await for (final e in Directory(dir).list(recursive: true, followLinks: false)) {
+        if (e is File) {
+          try {
+            total += await e.length();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  /// 下载。清单带 parts 时逐段下载 + 逐段校验 + 顺序合并；否则整包。
+  /// Supabase 单对象上限 50MB，运行包必然走分片。
   Future<void> _fetch(String url, File to, List<dynamic>? parts,
       void Function()? onTick) async {
     if (parts != null && parts.isNotEmpty) {
@@ -289,7 +362,6 @@ class DshPack {
   }
 
   Future<String> _fileSha256(File f) async {
-    // 与 main.dart 的分片校验保持同一套实现（cryptography，流式不占内存）
     final sink = Sha256().newHashSink();
     await for (final chunk in f.openRead()) {
       sink.add(chunk);
@@ -299,68 +371,164 @@ class DshPack {
     return h.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
-  /// 顶层函数（Isolate.run 不能捕获 this / 实例成员）
-  void _unzipSync(String zipPath, String root, String version) {
-    Directory(root).createSync(recursive: true);
-    final af = ZipDecoder().decodeBuffer(InputFileStream(zipPath));
-    extractArchiveToDisk(af, root);
-    // 记一份 meta，卸载后也能看出装过什么版本
-    File('$root/meta.json').writeAsStringSync(
-        jsonEncode({'version': version, 'at': DateTime.now().millisecondsSinceEpoch}));
+  /// 挑一个 loopback 端口（3825 起 20 个候选）
+  Future<int> _pickPort() async {
+    for (var p = 3825; p <= 3845; p++) {
+      try {
+        final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, p);
+        await s.close();
+        return p;
+      } catch (_) {}
+    }
+    final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final p = s.port;
+    await s.close();
+    return p;
   }
 
-  /// 启动本机 DSH（只在 usable 时允许）
-  Future<bool> start() async {
+  /// PRoot 启动命令（配方对齐 dsh-Go 的 manifest.launch，改过的只有路径与端口）
+  List<String> _argv(int port) => [
+        '$_nativeLib/libproot.so',
+        '--kill-on-exit',
+        '--link2symlink',
+        '--sysvipc',
+        '-L',
+        '-0',
+        '--rootfs=$_rootfs',
+        '--cwd=/root',
+        '-b', '/dev',
+        '-b', '/dev/urandom:/dev/random',
+        '-b', '/proc',
+        '-b', '/proc/self/fd:/dev/fd',
+        '-b', '/proc/self/fd/0:/dev/stdin',
+        '-b', '/proc/self/fd/1:/dev/stdout',
+        '-b', '/proc/self/fd/2:/dev/stderr',
+        '-b', '/sys',
+        '-b', '$_rootfs/var/lib/dsh-app/empty:/sys/fs/selinux',
+        '-b', '$_rootfs/var/lib/dsh-app/shm:/dev/shm',
+        '-b', '/system',
+        '-b', '/apex',
+        '/usr/bin/env', '-i',
+        'HOME=/root',
+        'USER=root',
+        'LOGNAME=root',
+        'SHELL=/bin/bash',
+        'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        'LANG=C.UTF-8',
+        'TERM=xterm-256color',
+        'TMPDIR=/tmp',
+        'DSH_HOME=/root/.dsh',
+        // 中文字体与 Android 自带字体都在 /system（已 bind）
+        'XDG_DATA_DIRS=/usr/local/share:/usr/share:/system',
+        'NODE_OPTIONS=--dns-result-order=ipv4first',
+        'UV_USE_IO_URING=0',
+        '/bin/sh', '-c',
+        // $$ 必须是 raw：Dart 里会被当成插值
+        r'echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web --host 127.0.0.1 --port '
+            '$port --no-open',
+      ];
+
+  /// 启动本机 DSH（成功时 `token` 已就绪，可直接给 WebView）
+  Future<bool> start({void Function()? onTick}) async {
     if (!await runtimeReady()) {
-      message = '本机运行组件未就绪';
+      message = '本机启动组件未就绪';
       return false;
     }
-    if (_proc != null) return true;
+    if (_proc != null) return token.isNotEmpty;
     try {
-      final node = '$_nativeLib/libnode-bin.so';
-      final entry = '$_root/app/boot.mjs';
-      if (!await File(entry).exists()) {
-        message = '数据包里没找到启动入口';
+      await Directory(_tmp).create(recursive: true);
+      try {
+        await Directory('$_rootfs/root/.l2s').create(recursive: true);
+      } catch (_) {}
+      // DSH 要求凭据文件只能自己读；上一次启动写下的若是 644，本次会直接拒绝启动
+      try {
+        final cred = File('$_rootfs/root/.dsh/.credentials.yaml');
+        if (await cred.exists()) {
+          await Process.run('chmod', ['600', cred.path]);
+        }
+      } catch (_) {}
+
+      port = await _pickPort();
+      token = '';
+      message = '';
+      final log = <String>[];
+      _proc = await Process.start(
+        '$_nativeLib/libproot.so',
+        _argv(port),
+        environment: {
+          'PROOT_LOADER': '$_nativeLib/libproot-loader.so',
+          'PROOT_TMP_DIR': _tmp,
+          'PROOT_L2S_DIR': '$_rootfs/root/.l2s',
+          'LD_LIBRARY_PATH': '$_nativeLib',
+          'PATH': '/system/bin:/system/xbin',
+          'HOME': _root,
+          'TMPDIR': _tmp,
+        },
+        workingDirectory: _root,
+      );
+      final proc = _proc!;
+      _exited = false;
+      // 拿不到 stdin 会让 proot 里的 node 在部分 ROM 上直接退出
+      try {
+        await proc.stdin.close();
+      } catch (_) {}
+
+      final ready = Completer<bool>();
+      final tokenRe = RegExp(r'dsh web:\s*(http://127\.0\.0\.1:(\d+)/)\?token=([A-Za-z0-9_\-]+)');
+
+      void scan(String line, bool isErr) {
+        final s = line.trim();
+        if (s.isEmpty) return;
+        log.add(s);
+        if (log.length > 40) log.removeAt(0);
+        if (isErr) {
+          AppLog.add('dsh', 'warn', s);
+        } else {
+          AppLog.add('dsh', 'info', s);
+        }
+        if (token.isEmpty) {
+          final m = tokenRe.firstMatch(s);
+          if (m != null) {
+            port = int.tryParse(m.group(2) ?? '') ?? port;
+            token = m.group(3) ?? '';
+            if (!ready.isCompleted) ready.complete(true);
+          }
+        }
+      }
+
+      proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
+          (l) => scan(l, false));
+      proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(
+          (l) => scan(l, true));
+      unawaited(proc.exitCode.then((code) {
+        _exited = true;
+        AppLog.add('dsh', 'warn', '本机 DSH 退出 code=$code');
+        if (identical(_proc, proc)) _proc = null;
+        if (!ready.isCompleted) ready.complete(false);
+      }));
+
+      // 首次启动要展开 rootfs 里的 node（冷启动最长见 3 分钟），给 180 秒
+      final ok = await ready.future.timeout(const Duration(seconds: 180),
+          onTimeout: () => false);
+      onTick?.call();
+      if (!ok || token.isEmpty) {
+        message = log.isEmpty ? '本机运行没起来（没有输出）' : '本机运行没起来：${log.last}';
+        AppLog.add('dsh', 'warn', '启动失败: ${log.join(' | ')}');
+        await stop();
         return false;
       }
-      // --expose-internals 是手机端替身的关键：让纯 JS 替身能直接 require Node
-      // 内部 loader，无需任何原生 addon。
-      _proc = await Process.start(
-        node,
-        [
-          '--expose-internals',
-          entry,
-          'web',
-          '--host',
-          '127.0.0.1',
-          '--port',
-          '$port',
-          '--no-open',
-        ],
-        environment: {
-          'LD_LIBRARY_PATH': _nativeLib,
-          'HOME': '$_root/home',
-          'DSH_HOME': '$_root/home/.dsh',
-          'TMPDIR': '$_root/tmp',
-          'NODE_ENV': 'production',
-        },
-        workingDirectory: '$_root',
-      );
-      _proc!.stdout.transform(utf8.decoder).listen((s) {
-        if (s.trim().isNotEmpty) AppLog.add('dsh', 'info', s.trim());
-      });
-      _proc!.stderr.transform(utf8.decoder).listen((s) {
-        if (s.trim().isNotEmpty) AppLog.add('dsh', 'warn', s.trim());
-      });
-      // 最多等 12 秒起服务
-      for (var i = 0; i < 24; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+      // 端口真能连上再算就绪（token 行是插件都加载完之后才打印的，一般已经可连）
+      for (var i = 0; i < 20; i++) {
         if (await _alive()) return true;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
       }
-      message = '本机运行没起来（详见日志 dsh-local）';
+      message = '端口 $port 没接受连接';
+      await stop();
       return false;
     } catch (e) {
       message = '本机运行启动失败：$e';
+      AppLog.add('dsh', 'warn', message);
+      _proc = null;
       return false;
     }
   }
@@ -376,14 +544,41 @@ class DshPack {
     }
   }
 
+  /// 停止：proot 忽略 SIGTERM，所以先 SIGTERM rootfs 里的 node（pid 文件），
+  /// 再 SIGQUIT proot 收割所有 tracee。只 destroy() 会留下孤儿 node 占端口。
   Future<void> stop() async {
-    try {
-      _proc?.kill();
-    } catch (_) {}
+    final p = _proc;
+    token = '';
+    if (p == null) return;
     _proc = null;
+    try {
+      final pidFile = File('$_rootfs/tmp/dsh-web.pid');
+      if (await pidFile.exists()) {
+        final pid = int.tryParse((await pidFile.readAsString()).trim());
+        if (pid != null && pid > 1) {
+          try {
+            Process.killPid(pid, ProcessSignal.sigterm);
+          } catch (_) {}
+          for (var i = 0; i < 20; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            if (_exited) break;
+          }
+        }
+      }
+      if (!_exited) {
+        try {
+          p.kill(ProcessSignal.sigquit);
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      if (!_exited) p.kill(ProcessSignal.sigkill);
+    } catch (_) {}
+    try {
+      await p.exitCode.timeout(const Duration(seconds: 3));
+    } catch (_) {}
   }
 
-  /// 拆除数据包（回到「连家里服务」形态），运行时不动
+  /// 拆除运行包（回到「连家里服务」形态）
   Future<void> remove() async {
     await stop();
     try {
@@ -395,6 +590,7 @@ class DshPack {
     state = DshPackState.none;
     version = '';
     installedBytes = 0;
+    token = '';
     await setEnabled(false);
   }
 

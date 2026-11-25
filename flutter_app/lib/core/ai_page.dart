@@ -21,6 +21,8 @@ import 'ai_attach.dart';
 import 'ai_caps.dart';
 import 'ai_providers_page.dart';
 import 'dsh_remote.dart';
+import 'dsh_pack.dart';
+import 'app_log.dart';
 import 'dsh_remote_page.dart';
 import 'ai_settings_page.dart';
 import 'ai_skills.dart';
@@ -143,6 +145,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   //   _useLight 仅在未配对、用户主动选「轻量对话」临时降级时为真。
   bool _dshPaired = false; String _dshUrl = '';
   bool _useLight = false;
+  /// 本机运行包正在起服务：给用户一个明确的「正在启动」而不是白屏
+  bool _dshStarting = false;
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
@@ -201,13 +205,43 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     _confirmMcp = prefs.getBool('ai_confirm_mcp') ?? false;
     // ★4.81.92 融合：AI 对话页默认就是 DSH，不再有模式切换/档位记忆。
     await DshRemote.load();
-    _dshPaired = DshRemote.base.isNotEmpty && DshRemote.token.trim().isNotEmpty;
+    // ★4.81.106 两种形态：装了运行包并选了「本机运行」就走 127.0.0.1 上的 PRoot 容器；
+    //   否则仍是连家里那台。启动要几十秒，所以先让页面出来、再异步起服务。
+    await DshPack.I.load();
     _dshUrl = DshRemote.consoleUrl();
+    _dshPaired = DshRemote.base.isNotEmpty && DshRemote.token.trim().isNotEmpty;
+    if (DshPack.I.enabled) {
+      _dshStarting = true;
+      if (mounted) setState(() {});
+      // 不 await：首帧不能被 180 秒的启动预算堵住
+      unawaited(_startLocalDsh());
+    }
     final (p, m) = await AiRegistry.lastModel();
     if (AiStore.sessions.isEmpty) { session = AiStore.create(p, m); }
     else { session = AiStore.sessions.first; }
     _refreshCapsule();
     if (mounted) setState(() {});
+  }
+
+  /// 起本机 DSH：成功后 _dshUrl 必须用**带 token 的地址**，
+  /// 否则 DSH 一律 401（它会下发 dsh-auth cookie，只用拿一次 token 换）。
+  Future<void> _startLocalDsh() async {
+    try {
+      final ok = await DshPack.I.start();
+      if (!mounted) return;
+      setState(() {
+        _dshStarting = false;
+        if (ok) {
+          _dshUrl = DshPack.I.consoleUrl;
+          _dshPaired = true;
+          _useLight = false;
+        }
+      });
+      if (!ok) AppLog.add('dsh', 'warn', '本机 DSH 未启动: ${DshPack.I.message}');
+    } catch (e) {
+      if (mounted) setState(() => _dshStarting = false);
+      AppLog.add('dsh', 'warn', '本机 DSH 启动异常: $e');
+    }
   }
 
   // ── 抽屉手势(边缘36px右滑开·跟手·速度/距离双判定·惯性动画·震动反馈) ──
@@ -779,9 +813,22 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
             onPressed: () => setState(() => _useLight = false)),
           IconButton(icon: const Icon(Icons.add), tooltip: '新对话', onPressed: () => _newChat()),
         ]),
-      body: dshMode
+      body: _dshStarting
+        ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(width: 28, height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5)),
+            const SizedBox(height: 14),
+            Text(tr('正在启动本机 AI 引擎'),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(tr('首次启动要展开运行环境，之后会快很多'),
+                style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.outline)),
+          ]))
+        : dshMode
         // ★融合关键：不再有分段/IndexedStack —— 配对后这一整块就是 DSH 对话。
-        ? DshConsolePage(url: _dshUrl, title: tr('完全体'), embedded: true, autoChat: true)
+        // ★4.81.106：url 里带 token，且必须随 url 变而重建 WebView（改 key），
+        //   否则第二次启动换了 token 还在用旧 cookie 的页面。
+        ? DshConsolePage(key: ValueKey(_dshUrl), url: _dshUrl, title: tr('完全体'), embedded: true, autoChat: true)
         : (_useLight
           ? Column(children: [
               if (_queue.isNotEmpty) InkWell(onTap: _queueSheet, child: Container(

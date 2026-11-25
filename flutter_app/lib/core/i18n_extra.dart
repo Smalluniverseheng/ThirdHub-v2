@@ -22,6 +22,8 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '正在启动本机 AI 引擎': 'Demarrage du moteur IA local',
+    '首次启动要展开运行环境，之后会快很多': 'Le premier demarrage deploie le runtime ; les suivants sont bien plus rapides',
     '去连接自己的服务器': 'Connecter mon serveur',
     '还没有稍后再看的视频': 'Aucune vidéo dans « À regarder plus tard »',
     '在视频页点一下「稍后再看」，就会出现在这里。': 'Touchez « À regarder plus tard » sur une vidéo pour la retrouver ici.',
@@ -754,6 +756,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '正在启动本机 AI 引擎': 'Запуск локального ИИ-движка',
+    '首次启动要展开运行环境，之后会快很多': 'Первый запуск разворачивает окружение, дальше намного быстрее',
     '去连接自己的服务器': 'Подключить свой сервер',
     '还没有稍后再看的视频': 'В «Смотреть позже» пока пусто',
     '在视频页点一下「稍后再看」，就会出现在这里。': 'Нажмите «Смотреть позже» на видео — оно появится здесь.',
@@ -1486,6 +1490,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '正在启动本机 AI 引擎': 'Iniciando el motor de IA local',
+    '首次启动要展开运行环境，之后会快很多': 'El primer arranque despliega el entorno; los siguientes son mucho mas rapidos',
     '去连接自己的服务器': 'Conectar mi servidor',
     '还没有稍后再看的视频': 'No hay vídeos en «Ver más tarde»',
     '在视频页点一下「稍后再看」，就会出现在这里。': 'Toca «Ver más tarde» en un vídeo y aparecerá aquí.',
@@ -2219,6 +2225,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '正在启动本机 AI 引擎': 'جارٍ تشغيل محرك الذكاء الاصطناعي المحلي',
+    '首次启动要展开运行环境，之后会快很多': 'التشغيل الأول يوسّع بيئة التشغيل، وما بعده أسرع بكثير',
     '去连接自己的服务器': 'ربط خادمي',
     '还没有稍后再看的视频': 'لا توجد فيديوهات في «المشاهدة لاحقاً»',
     '在视频页点一下「稍后再看」，就会出现在这里。': 'اضغط «المشاهدة لاحقاً» على أي فيديو ليظهر هنا.',
@@ -2951,6 +2959,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '正在启动本机 AI 引擎': 'Starting the on-device AI engine',
+    '首次启动要展开运行环境，之后会快很多': 'The first launch unpacks the runtime; later starts are much faster',
     '去连接自己的服务器': 'Connect my server',
     '还没有稍后再看的视频': 'Nothing in Watch later yet',
     '在视频页点一下「稍后再看」，就会出现在这里。': 'Tap "Watch later" on any video and it shows up here.',
@@ -3592,6 +3602,8 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '正在启动本机 AI 引擎': '端末のAIエンジンを起動しています',
+    '首次启动要展开运行环境，之后会快很多': '初回起動時は実行環境を展開します。2回目以降は速くなります',
     '去连接自己的服务器': '自分のサーバーにつなぐ',
     '还没有稍后再看的视频': '「後で見る」はまだ空です',
     '在视频页点一下「稍后再看」，就会出现在这里。': '動画ページで「後で見る」を押すとここに追加されます。',
