@@ -18,6 +18,7 @@ import 'bili_auth.dart' show BiliAuth;
 import 'bili_wbi.dart' show BiliWbi;
 import 'bili_social.dart'
     show fetchFavFolders, fetchFavList, fetchSpaceInfo, fetchSpaceVideos;
+import 'bili_subtitle_parser.dart' show parseSubtitle;
 
 const String biliUA =
     'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
@@ -527,6 +528,55 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
         'total': items.length,
         'items': items,
         if (items.isEmpty) 'error': '这条视频还没人发弹幕，或弹幕接口暂时不可用',
+      };
+    }
+
+    // ── 字幕 4.81.103 ──────────────────────────────────
+    // B站 /x/player/v2 的 data.subtitle.subtitles[] = [{lan,lan_doc,subtitle_url}]
+    // 未登录时通常为空（给出明确原因，不静默）；登录 cookie 下能拿到 AI/CC 字幕。
+    // 字幕体在 CDN（//i0.hdslb.com/bfs/subtitle/*.json），要带 UA+Referer+cookie
+    // 单独下载，且可能是 json（原生）/srt/ass 三态 —— 统一走 parseSubtitle。
+    if (op == '/subtitle') {
+      final bvid = q['bvid'] ?? '';
+      final cid = q['cid'] ?? '';
+      if (bvid.isEmpty) return {'ok': false, 'error': '缺少 bvid'};
+      final j = await BiliWbi.I.getJson(
+          '/x/player/v2?bvid=${Uri.encodeQueryComponent(bvid)}&cid=${Uri.encodeQueryComponent(cid)}');
+      final subtitles = (((j['data'] as Map?)?['subtitle'] as Map?)?['subtitles'] as List?) ?? const [];
+      final tracks = <Map<String, dynamic>>[];
+      for (final raw in subtitles.whereType<Map>()) {
+        final url = _https(raw['subtitle_url']);
+        if (url.isEmpty) continue;
+        // 字幕体可能与 B站 API 不同域，必须带登录态 headers 单独取
+        List<int> bytes = const [];
+        try {
+          final r = await http.get(Uri.parse(url), headers: BiliAuth.I.headers())
+              .timeout(const Duration(seconds: 20));
+          bytes = r.bodyBytes;
+        } catch (_) {}
+        if (bytes.isEmpty) continue;
+        String text;
+        try {
+          text = utf8.decode(bytes, allowMalformed: true);
+        } catch (_) {
+          continue;
+        }
+        final cues = parseSubtitle(text);
+        if (cues.isEmpty) continue;
+        tracks.add({
+          'lan': '${raw['lan'] ?? ''}',
+          'label': '${raw['lan_doc'] ?? raw['lan'] ?? '字幕'}',
+          'url': url,
+          'cues': cues,
+        });
+      }
+      return {
+        'ok': tracks.isNotEmpty,
+        'tracks': tracks,
+        if (tracks.isEmpty)
+          'error': BiliAuth.I.loggedIn
+              ? '这条视频没有可用字幕，或字幕暂时无法加载'
+              : '登录后可以显示这条视频的字幕',
       };
     }
 

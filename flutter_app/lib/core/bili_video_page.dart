@@ -18,6 +18,8 @@ import 'bili_actions.dart' show BiliActionResult, BiliActions;
 import 'bili_auth.dart' show BiliAuth;
 import 'bili_auth_page.dart' show BiliAuthPage;
 import 'bili_danmaku_layer.dart';
+import 'bili_subtitle.dart';
+import 'bili_subtitle_parser.dart' show SubTrack;
 import 'bili_dash_player.dart';
 import 'bili_space_page.dart' show BiliSpacePage;
 import 'design_tokens.dart';
@@ -51,6 +53,14 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   bool _dmOn = true;
   String _dmCid = '';
   String _dmNote = ''; // 弹幕为空时的原因（别让用户以为功能没做）
+
+  // 字幕（4.81.103）
+  List<SubTrack> _subTracks = const [];
+  int _subIdx = 0; // 当前轨；-1 表示关闭
+  String _subCid = '';
+  String _subNote = ''; // 无字幕原因
+  bool _subTop = false;
+  double _subFont = 18;
 
   final List<Map<String, dynamic>> _replies = [];
   int _replyPage = 1;
@@ -192,9 +202,12 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     // ★4.81.94 1080p DASH：音视频分离，交给 media_kit 播放器（外挂音轨同步）
     final isDash = j?['dash'] == true;
     if (isDash) {
-      // 先拉弹幕再跳（与 720p 共用同一份数据）
+      // 先拉弹幕+字幕再跳（与 720p 共用同一份数据）
       if (cid != null && (_dmCid != '$cid' || _dm.isEmpty)) {
         await _loadDanmaku('$cid');
+      }
+      if (cid != null && _subCid != '$cid') {
+        await _loadSubtitle('$cid');
       }
       if (!mounted) return;
       await Navigator.push(
@@ -207,6 +220,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             cid: '$cid',
             quality: (j?['quality'] is num) ? (j?['quality'] as num).toInt() : 80,
             danmaku: _dm,
+            subtitleTracks: _subTracks,
           ),
         ),
       );
@@ -225,7 +239,10 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       setState(() {
         _vp = vp;
       });
-      if (cid != null) _loadDanmaku('$cid');
+      if (cid != null) {
+        _loadDanmaku('$cid');
+        _loadSubtitle('$cid');
+      }
     } catch (e) {
       if (mounted) setState(() => _playErr = '${tr('播放失败')}：$e');
     }
@@ -290,6 +307,120 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       _dmNote = items.isNotEmpty
           ? ''
           : (errRaw.isEmpty ? tr('这条视频还没人发弹幕，或弹幕接口暂时不可用') : errRaw);
+    });
+  }
+
+  Future<void> _loadSubtitle(String cid) async {
+    if (_subCid == cid && _subTracks.isNotEmpty) return;
+    _subCid = cid;
+    final j = await biliGet(
+      widget.ctx,
+      '/v1/bili/subtitle?bvid=${Uri.encodeQueryComponent(_bvid)}'
+      '&cid=${Uri.encodeQueryComponent(cid)}',
+    );
+    if (!mounted) return;
+    final raw = ((j == null ? null : j['tracks'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => SubTrack(
+              lan: '${e['lan'] ?? ''}',
+              label: '${e['label'] ?? e['lan'] ?? ''}',
+              url: '${e['url'] ?? ''}',
+              cues: ((e['cues'] as List?) ?? const [])
+                  .whereType<Map>()
+                  .map((c) => Map<String, dynamic>.from(c))
+                  .toList(),
+            ))
+        .where((t) => t.cues.isNotEmpty)
+        .toList(growable: false);
+    final errRaw = '${j == null ? '' : (j['error'] ?? '')}'.trim();
+    setState(() {
+      _subTracks = raw;
+      _subIdx = raw.isEmpty ? -1 : 0;
+      _subNote = raw.isEmpty
+          ? (errRaw.isEmpty ? tr('这条视频没有可用字幕') : errRaw)
+          : '';
+    });
+  }
+
+  /// 字幕设置面板：选轨 / 字号 / 位置 / 关闭。
+  Future<void> _openSubtitleSheet() async {
+    if (_subTracks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_subNote.isEmpty ? tr('这条视频没有可用字幕') : _subNote)),
+      );
+      return;
+    }
+    int pick = _subIdx;
+    var top = _subTop;
+    var font = _subFont;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (c2) => StatefulBuilder(builder: (c2, setSheet) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: Gap.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.closed_caption_off),
+                  title: Text(tr('关闭字幕')),
+                  trailing: pick < 0 ? const Icon(Icons.check, size: 18) : null,
+                  onTap: () => setSheet(() => pick = -1),
+                ),
+                for (var i = 0; i < _subTracks.length; i++)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.closed_caption),
+                    title: Text(_subTracks[i].label.isEmpty
+                        ? tr('字幕')
+                        : _subTracks[i].label),
+                    trailing: pick == i ? const Icon(Icons.check, size: 18) : null,
+                    onTap: () => setSheet(() => pick = i),
+                  ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.format_size),
+                  title: Text(tr('字号')),
+                  trailing: Text('${font.round()}'),
+                ),
+                Slider(
+                  value: font,
+                  min: 12,
+                  max: 30,
+                  divisions: 18,
+                  onChanged: (v) => setSheet(() => font = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: Text(tr('字幕显示在顶部')),
+                  value: top,
+                  onChanged: (v) => setSheet(() => top = v),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(c2),
+                      child: Text(tr('完成')),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+    if (!mounted) return;
+    setState(() {
+      _subIdx = pick;
+      _subTop = top;
+      _subFont = font;
     });
   }
 
@@ -386,6 +517,11 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             onPressed: () => setState(() => _dmOn = !_dmOn),
           ),
           IconButton(
+            tooltip: tr('字幕'),
+            icon: const Icon(Icons.closed_caption_outlined),
+            onPressed: _openSubtitleSheet,
+          ),
+          IconButton(
             tooltip: tr('下载'),
             icon: const Icon(Icons.download_outlined),
             onPressed: () => _download(all: false),
@@ -413,12 +549,24 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                       controller: _vp!,
                       title: title,
                       subtitle: '${owner['name'] ?? ''}',
-                      overlay: BiliDanmaku(
-                        vp: _vp!,
-                        items: _dm,
-                        enabled: _dmOn,
+                      overlay: Stack(
+                        children: [
+                          BiliDanmaku(
+                            vp: _vp!,
+                            items: _dm,
+                            enabled: _dmOn,
+                          ),
+                          if (_subIdx >= 0 && _subIdx < _subTracks.length)
+                            BiliSubtitleLayer(
+                              vp: _vp!,
+                              cues: _subTracks[_subIdx].cues,
+                              top: _subTop,
+                              fontSize: _subFont,
+                            ),
+                        ],
                       ),
                       hasDanmaku: true,
+                      hasSubtitle: _subIdx >= 0,
                       onDownload: () => _download(all: false),
                       onEpisodes:
                           _pages.length > 1 ? () => _pickPage() : null,
@@ -463,6 +611,23 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(_dmNote,
+                        style: TextStyle(fontSize: 11, color: cs.outline)),
+                  ),
+                ],
+              ),
+            ),
+          // 字幕拿不到时明确说一句（未登录会提示登录，不静默）
+          if (_subNote.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: cs.surfaceContainerHighest,
+              padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.closed_caption_off, size: 13, color: cs.outline),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_subNote,
                         style: TextStyle(fontSize: 11, color: cs.outline)),
                   ),
                 ],

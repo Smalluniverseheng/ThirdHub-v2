@@ -713,6 +713,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'Cache hors ligne : sera mis à jour une fois le serveur connecté',
     '还没连上后端，本机也没有保存过短剧内容': 'Pas encore connecté au serveur, et aucun contenu enregistré sur cet appareil',
     '这部剧没缓存过，联网后才能搜': 'Cette série n’est pas en cache, connectez-vous pour la rechercher',
+    '字幕': 'Sous-titres',
+    '字幕设置': 'Réglages des sous-titres',
+    '关闭字幕': 'Désactiver les sous-titres',
+    '字幕显示在顶部': 'Afficher les sous-titres en haut',
+    '这条视频没有可用字幕': 'Aucun sous-titre disponible pour cette vidéo',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -1408,6 +1413,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'Офлайн-кэш: обновится после подключения к серверу',
     '还没连上后端，本机也没有保存过短剧内容': 'Нет соединения с сервером и сохранённых на устройстве сериалов',
     '这部剧没缓存过，联网后才能搜': 'Этот сериал не сохранён, подключитесь к сети для поиска',
+    '字幕': 'Субтитры',
+    '字幕设置': 'Настройки субтитров',
+    '关闭字幕': 'Выключить субтитры',
+    '字幕显示在顶部': 'Показывать субтитры сверху',
+    '这条视频没有可用字幕': 'Для этого видео нет доступных субтитров',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -2104,6 +2114,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'Caché sin conexión: se actualizará al conectar con el servidor',
     '还没连上后端，本机也没有保存过短剧内容': 'Sin conexión con el servidor y sin contenido guardado en el dispositivo',
     '这部剧没缓存过，联网后才能搜': 'Esta serie no está en caché, conéctate para buscarla',
+    '字幕': 'Subtítulos',
+    '字幕设置': 'Ajustes de subtítulos',
+    '关闭字幕': 'Desactivar subtítulos',
+    '字幕显示在顶部': 'Mostrar subtítulos arriba',
+    '这条视频没有可用字幕': 'No hay subtítulos disponibles para este vídeo',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -2800,6 +2815,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'ذاكرة تخزين مؤقت دون اتصال — ستُحدَّث عند الاتصال بالخادم',
     '还没连上后端，本机也没有保存过短剧内容': 'لم يتم الاتصال بالخادم، ولا توجد محتويات محفوظة على الجهاز',
     '这部剧没缓存过，联网后才能搜': 'هذا المسلسل غير محفوظ — اتصل بالإنترنت للبحث',
+    '字幕': 'الترجمة',
+    '字幕设置': 'إعدادات الترجمة',
+    '关闭字幕': 'إيقاف الترجمة',
+    '字幕显示在顶部': 'عرض الترجمة في الأعلى',
+    '这条视频没有可用字幕': 'لا توجد ترجمة متاحة لهذا الفيديو',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -3402,6 +3422,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'Offline cache: will update once connected to the server',
     '还没连上后端，本机也没有保存过短剧内容': 'Not connected to the server, and no shows saved on this device',
     '这部剧没缓存过，联网后才能搜': 'This show is not cached; connect to the internet to search',
+    '字幕': 'Subtitles',
+    '字幕设置': 'Subtitle settings',
+    '关闭字幕': 'Turn off subtitles',
+    '字幕显示在顶部': 'Show subtitles at the top',
+    '这条视频没有可用字幕': 'No subtitles available for this video',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -4010,6 +4035,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '离线缓存：连上后端后会更新': 'オフラインキャッシュ：サーバー接続後に更新されます',
     '还没连上后端，本机也没有保存过短剧内容': 'サーバーに未接続で、端末にも保存された作品がありません',
     '这部剧没缓存过，联网后才能搜': 'この作品はキャッシュがありません。オンライン検索が必要です',
+    '字幕': '字幕',
+    '字幕设置': '字幕設定',
+    '关闭字幕': '字幕をオフ',
+    '字幕显示在顶部': '字幕を上部に表示',
+    '这条视频没有可用字幕': 'この動画には字幕がありません',
   },
 
 };

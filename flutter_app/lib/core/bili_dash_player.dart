@@ -16,6 +16,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'bili_auth.dart' show BiliAuth;
+import 'bili_subtitle.dart' show BiliDashSubtitleLayer;
+import 'bili_subtitle_parser.dart' show SubTrack;
 import 'design_tokens.dart';
 import 'i18n.dart';
 
@@ -28,6 +30,7 @@ class BiliDashPlayerPage extends StatefulWidget {
     this.cid = '',
     this.quality = 80,
     this.danmaku = const [],
+    this.subtitleTracks = const [],
   });
 
   final String title;
@@ -38,6 +41,9 @@ class BiliDashPlayerPage extends StatefulWidget {
 
   /// 上层已加载的弹幕 [{t:秒, mode:1/4/5, color:int, text:String}]
   final List<Map<String, dynamic>> danmaku;
+
+  /// 上层已加载的字幕轨（4.81.103）；空 = 该视频无字幕
+  final List<SubTrack> subtitleTracks;
 
   @override
   State<BiliDashPlayerPage> createState() => _BiliDashPlayerPageState();
@@ -70,6 +76,11 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
   double _dmDuration = 8;
   double _dmArea = 1.0;
   bool _hideTop = false, _hideBottom = false, _hideScroll = false;
+
+  // 字幕（4.81.103）
+  int _subIdx = 0;
+  bool _subTop = false;
+  double _subFont = 18;
 
   @override
   void initState() {
@@ -264,6 +275,15 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
                           ),
                         ),
                       ),
+                    if (_subIdx >= 0 && _subIdx < widget.subtitleTracks.length)
+                      Positioned.fill(
+                        child: BiliDashSubtitleLayer(
+                          position: () => _pos,
+                          cues: widget.subtitleTracks[_subIdx].cues,
+                          top: _subTop,
+                          fontSize: _subFont,
+                        ),
+                      ),
                     if (_ctrl) _topBar(),
                     if (_ctrl) _bottomBar(),
                   ]),
@@ -379,6 +399,11 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
                 onPressed: _openDmSheet,
                 child: Text(tr('弹幕设置'), style: const TextStyle(color: Colors.white, fontSize: 12)),
               ),
+              if (widget.subtitleTracks.isNotEmpty)
+                TextButton(
+                  onPressed: _openSubtitleSheet,
+                  child: Text(tr('字幕设置'), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.fullscreen, color: Colors.white),
@@ -388,6 +413,68 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
           ]),
         ),
       );
+
+  void _openSubtitleSheet() {
+    final tracks = widget.subtitleTracks;
+    if (tracks.isEmpty) return;
+    int pick = _subIdx;
+    var top = _subTop;
+    var font = _subFont;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (c) => StatefulBuilder(builder: (c, setSheet) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.closed_caption_off),
+                  title: Text(tr('关闭字幕')),
+                  trailing: pick < 0 ? const Icon(Icons.check, size: 18) : null,
+                  onTap: () => setSheet(() => pick = -1),
+                ),
+                for (var i = 0; i < tracks.length; i++)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.closed_caption),
+                    title: Text(tracks[i].label.isEmpty ? tr('字幕') : tracks[i].label),
+                    trailing: pick == i ? const Icon(Icons.check, size: 18) : null,
+                    onTap: () => setSheet(() => pick = i),
+                  ),
+                const Divider(height: 1),
+                _slider(c, tr('字号'), font, 12, 30, (v) => setSheet(() => font = v)),
+                SwitchListTile(
+                  dense: true,
+                  title: Text(tr('字幕显示在顶部')),
+                  value: top,
+                  onChanged: (v) => setSheet(() => top = v),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(c),
+                    child: Text(tr('完成')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    ).then((_) {
+      if (!mounted) return;
+      setState(() {
+        _subIdx = pick;
+        _subTop = top;
+        _subFont = font;
+      });
+    });
+  }
 
   void _openDmSheet() {
     showModalBottomSheet(
