@@ -34,13 +34,14 @@ android {
                             else signingConfigs.getByName("debug")
         }
     }
-    // ★ 2026-11-24 (4.81.97)：不再为「塞进 50MB」而压缩 native .so。
-    //   产品方向是「功能优先、体积不设上限」（装到 200MB 也接受），压缩换来的是
-    //   首次启动解压耗时 + 额外占用内部存储，没有必要。大包改由「云端分片 + App 端
-    //   分段下载合并」承载（清单 parts 字段），整包只是保底通道。
+    // ★ 2026-11-25 (4.81.99)：DSH 本机运行要求 node 以可执行文件落在 nativeLibraryDir。
+    //   Android 的 W^X 策略只允许 exec 从 APK 里**解包出来**的 lib*.so；若
+    //   useLegacyPackaging=false，native libs 只在 APK 内映射、不落盘，exec 直接失败。
+    //   所以这里必须回到 true。体积不是约束：大包走云端分片 + App 端分段下载合并。
+    //   （4.81.97~98 曾为省首次解压耗时设为 false，本轮为 DSH 完全体回退。）
     packaging {
         jniLibs {
-            useLegacyPackaging = false
+            useLegacyPackaging = true
         }
     }
     compileOptions {

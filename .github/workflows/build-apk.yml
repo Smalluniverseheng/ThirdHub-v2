@@ -108,6 +108,14 @@ jobs:
           echo "--- local.properties ---"
           cat android/local.properties
 
+      # ★4.81.99：DSH 本机运行的 arm64 Node 运行时不入库（95MB 二进制会被 Git API
+      #   以 422 拒绝，且污染历史），改为 CI 现场从 Termux 镜像拉预编译包并做 ELF
+      #   改造（等长改名 + RUNPATH=$ORIGIN）。产物只进 APK，不落仓库。
+      - name: build DSH runtime (arm64)
+        if: contains(env.TARGET_PLATFORMS, 'android-arm64')
+        working-directory: flutter_app
+        run: python3 tool/build_dsh_runtime.py
+
       - name: abi tag
         run: |
           ABI_TAG=$(printf '%s' "$TARGET_PLATFORMS" | tr ',' '\n' | sed 's/^android-//' | paste -sd+ -)
