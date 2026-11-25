@@ -35,6 +35,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/app_log.dart';
+import 'dsh_local_argv.dart';
 import 'dsh_tar.dart';
 import 'kv.dart' show aiStore;
 
@@ -108,7 +109,7 @@ class DshPack {
 
   /// 给 WebView 用的地址：**必须带 token**，否则 DSH 一律 401。
   /// 打开一次后 DSH 会 303 下发 dsh-auth cookie，后续同站点请求都靠 cookie。
-  String get consoleUrl => token.isEmpty ? '$localBase/' : '$localBase/?token=$token';
+  String get consoleUrl => DshLocalLaunch.consoleUrl(localBase, token);
 
   Future<void> load() async {
     try {
@@ -386,47 +387,21 @@ class DshPack {
     return p;
   }
 
-  /// PRoot 启动命令（配方对齐 dsh-Go 的 manifest.launch，改过的只有路径与端口）
-  List<String> _argv(int port) => [
-        '$_nativeLib/libproot.so',
-        '--kill-on-exit',
-        '--link2symlink',
-        '--sysvipc',
-        '-L',
-        '-0',
-        '--rootfs=$_rootfs',
-        '--cwd=/root',
-        '-b', '/dev',
-        '-b', '/dev/urandom:/dev/random',
-        '-b', '/proc',
-        '-b', '/proc/self/fd:/dev/fd',
-        '-b', '/proc/self/fd/0:/dev/stdin',
-        '-b', '/proc/self/fd/1:/dev/stdout',
-        '-b', '/proc/self/fd/2:/dev/stderr',
-        '-b', '/sys',
-        '-b', '$_rootfs/var/lib/dsh-app/empty:/sys/fs/selinux',
-        '-b', '$_rootfs/var/lib/dsh-app/shm:/dev/shm',
-        '-b', '/system',
-        '-b', '/apex',
-        '/usr/bin/env', '-i',
-        'HOME=/root',
-        'USER=root',
-        'LOGNAME=root',
-        'SHELL=/bin/bash',
-        'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-        'LANG=C.UTF-8',
-        'TERM=xterm-256color',
-        'TMPDIR=/tmp',
-        'DSH_HOME=/root/.dsh',
-        // 中文字体与 Android 自带字体都在 /system（已 bind）
-        'XDG_DATA_DIRS=/usr/local/share:/usr/share:/system',
-        'NODE_OPTIONS=--dns-result-order=ipv4first',
-        'UV_USE_IO_URING=0',
-        '/bin/sh', '-c',
-        // $$ 必须是 raw：Dart 里会被当成插值
-        r'echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web --host 127.0.0.1 --port '
-            '$port --no-open',
-      ];
+  /// PRoot 启动命令与环境（配方见 dsh_local_argv.dart，自检逐条钉死）
+  List<String> _argv(int port) => DshLocalLaunch.argv(
+        nativeLib: _nativeLib,
+        rootfs: _rootfs,
+        tmp: _tmp,
+        port: port,
+      );
+
+  Map<String, String> _env() => <String, String>{
+        ...DshLocalLaunch.env(
+            nativeLib: _nativeLib, rootfs: _rootfs, tmp: _tmp),
+        // proot 进程自己的工作目录（guest 里由 --cwd 决定）
+        'HOME': _root,
+        'TMPDIR': _tmp,
+      };
 
   /// 启动本机 DSH（成功时 `token` 已就绪，可直接给 WebView）
   Future<bool> start({void Function()? onTick}) async {
@@ -455,15 +430,7 @@ class DshPack {
       _proc = await Process.start(
         '$_nativeLib/libproot.so',
         _argv(port),
-        environment: {
-          'PROOT_LOADER': '$_nativeLib/libproot-loader.so',
-          'PROOT_TMP_DIR': _tmp,
-          'PROOT_L2S_DIR': '$_rootfs/root/.l2s',
-          'LD_LIBRARY_PATH': '$_nativeLib',
-          'PATH': '/system/bin:/system/xbin',
-          'HOME': _root,
-          'TMPDIR': _tmp,
-        },
+        environment: _env(),
         workingDirectory: _root,
       );
       final proc = _proc!;
@@ -474,7 +441,6 @@ class DshPack {
       } catch (_) {}
 
       final ready = Completer<bool>();
-      final tokenRe = RegExp(r'dsh web:\s*(http://127\.0\.0\.1:(\d+)/)\?token=([A-Za-z0-9_\-]+)');
 
       void scan(String line, bool isErr) {
         final s = line.trim();
@@ -487,8 +453,9 @@ class DshPack {
           AppLog.add('dsh', 'info', s);
         }
         if (token.isEmpty) {
-          final m = tokenRe.firstMatch(s);
-          if (m != null) {
+          final url = DshLocalLaunch.tokenFrom(s);
+          if (url != null) {
+            final m = DshLocalLaunch.tokenLine.firstMatch(s)!;
             port = int.tryParse(m.group(2) ?? '') ?? port;
             token = m.group(3) ?? '';
             if (!ready.isCompleted) ready.complete(true);
@@ -554,8 +521,8 @@ class DshPack {
     try {
       final pidFile = File('$_rootfs/tmp/dsh-web.pid');
       if (await pidFile.exists()) {
-        final pid = int.tryParse((await pidFile.readAsString()).trim());
-        if (pid != null && pid > 1) {
+        final pid = DshLocalLaunch.pidFrom(await pidFile.readAsString());
+        if (pid != null) {
           try {
             Process.killPid(pid, ProcessSignal.sigterm);
           } catch (_) {}

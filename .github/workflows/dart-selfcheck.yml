@@ -361,6 +361,19 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/dsh_remote_selfcheck.dart
 
+      # 第 N 条 dsh_local（2026-11-25 加）—— 本机运行（PRoot 方案）的守门人。
+      #
+      #   4.81.99 那版"完全体"装进 APK 后用户点进去白屏，复盘发现根因全是字符串层面：
+      #   ① 就绪信号是 `dsh web: http://…/?token=…` 这一行，不是"端口能连"；
+      #   ② WebView 地址必须带 token，否则 DSH 一律 401；
+      #   ③ 停止要 SIGTERM guest node + SIGQUIT proot（proot 忽略 SIGTERM）。
+      #   三条都不会让 analyze 报错，只会在真机上白屏。所以把启动参数（含 Termux
+      #   三个专有参数）、token 识别、URL 拼接、pid 解析与接线全部钉成断言。
+      #   本机实测 2026-11-25：PASS 48 / FAIL 0。
+      - name: dsh_local（本机 DSH：proot 配方 / token 就绪 / 停止两枪 / 接线）
+        working-directory: flutter_app
+        run: dart run tool/dsh_local_selfcheck.dart
+
       # 第 N 条 device_sync_contract（2026-11-07 加，全盘升级 #202）—— 三端统一同步契约。
       #
       #   为什么必须进 CI：6 张同步表此前在 App cloud.dart、网页端 supabase.js、
