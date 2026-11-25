@@ -22,6 +22,11 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '去连接自己的服务器': 'Connecter mon serveur',
+    '还没有稍后再看的视频': 'Aucune vidéo dans « À regarder plus tard »',
+    '在视频页点一下「稍后再看」，就会出现在这里。': 'Touchez « À regarder plus tard » sur une vidéo pour la retrouver ici.',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'Les vidéos disparaîtront de cette liste ; vous pourrez les rajouter à tout moment.',
+    '移除': 'Retirer',
     '我的收藏夹': 'Mes favoris',
     '登录 B 站': 'Se connecter à Bilibili',
     '这里还没有收藏夹': 'Aucun dossier pour le moment',
@@ -749,6 +754,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '去连接自己的服务器': 'Подключить свой сервер',
+    '还没有稍后再看的视频': 'В «Смотреть позже» пока пусто',
+    '在视频页点一下「稍后再看」，就会出现在这里。': 'Нажмите «Смотреть позже» на видео — оно появится здесь.',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'Видео исчезнут из этого списка, но их можно добавить снова.',
+    '移除': 'Убрать',
     '我的收藏夹': 'Моё избранное',
     '登录 B 站': 'Войти в Bilibili',
     '这里还没有收藏夹': 'Папок пока нет',
@@ -1476,6 +1486,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '去连接自己的服务器': 'Conectar mi servidor',
+    '还没有稍后再看的视频': 'No hay vídeos en «Ver más tarde»',
+    '在视频页点一下「稍后再看」，就会出现在这里。': 'Toca «Ver más tarde» en un vídeo y aparecerá aquí.',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'Los vídeos saldrán de esta lista; puedes volver a añadirlos.',
+    '移除': 'Quitar',
     '我的收藏夹': 'Mis favoritos',
     '登录 B 站': 'Iniciar sesión en Bilibili',
     '这里还没有收藏夹': 'Aún no hay carpetas',
@@ -2204,6 +2219,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '去连接自己的服务器': 'ربط خادمي',
+    '还没有稍后再看的视频': 'لا توجد فيديوهات في «المشاهدة لاحقاً»',
+    '在视频页点一下「稍后再看」，就会出现在这里。': 'اضغط «المشاهدة لاحقاً» على أي فيديو ليظهر هنا.',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'ستُزال الفيديوهات من هذه القائمة، ويمكنك إضافتها مجدداً في أي وقت.',
+    '移除': 'إزالة',
     '我的收藏夹': 'المفضلة لديّ',
     '登录 B 站': 'تسجيل الدخول إلى Bilibili',
     '这里还没有收藏夹': 'لا توجد مجلدات بعد',
@@ -2931,6 +2951,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '去连接自己的服务器': 'Connect my server',
+    '还没有稍后再看的视频': 'Nothing in Watch later yet',
+    '在视频页点一下「稍后再看」，就会出现在这里。': 'Tap "Watch later" on any video and it shows up here.',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'Videos leave this list; you can add them again anytime.',
+    '移除': 'Remove',
     '我的收藏夹': 'My favorites',
     '登录 B 站': 'Sign in to Bilibili',
     '这里还没有收藏夹': 'No folders yet',
@@ -3567,6 +3592,11 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '去连接自己的服务器': '自分のサーバーにつなぐ',
+    '还没有稍后再看的视频': '「後で見る」はまだ空です',
+    '在视频页点一下「稍后再看」，就会出现在这里。': '動画ページで「後で見る」を押すとここに追加されます。',
+    '清空后这个列表里的视频就都不在了，随时可以重新加。': 'この一覧から動画が消えます。いつでも追加し直せます。',
+    '移除': '削除',
     '我的收藏夹': 'マイお気に入り',
     '登录 B 站': 'B站にログイン',
     '这里还没有收藏夹': 'フォルダはまだありません',

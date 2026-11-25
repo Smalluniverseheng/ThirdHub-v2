@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import '../main.dart' show Api;
 import 'app_widgets.dart';
 import 'hg_cache.dart';
+import 'my_backend_page.dart' show MyBackendPage;
 import 'haptic.dart';
 import 'i18n.dart';
 import 'play_resolver.dart';
@@ -339,6 +340,13 @@ class _HongguoPageState extends State<HongguoPage> {
             FilledButton.tonal(
               onPressed: () => _searched ? _search() : _feed(),
               child: Text(tr('重试')),
+            ),
+            // 红果的接口带专用签名，手机端无法直连 —— 这一栏必须给出路，
+            // 否则普通版用户只能看到一个"连不上"的死胡同。
+            TextButton(
+              onPressed: () => Navigator.of(c).push(MaterialPageRoute(
+                  builder: (_) => const MyBackendPage())),
+              child: Text(tr('去连接自己的服务器')),
             ),
           ]),
         ),

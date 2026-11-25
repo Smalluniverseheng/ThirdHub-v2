@@ -1960,6 +1960,11 @@ class _Ob extends State<OnboardingPage> {
 
   Future<void> finish() async {
     await AppModeStore.set(_mode);
+    // 选了进阶版就在进主界面后补一次探测：启动阶段跳过后端探测是为了
+    // 让普通版不等 6 秒，进阶版用户不该因此少连一次。
+    if (_mode == AppMode.pro) {
+      unawaited(Cloud.resolveBackend().catchError((_) => false));
+    }
     final p = await SharedPreferences.getInstance();
     await saveNavModules(
         kModules.keys.where((k) => _mods.contains(k)).toList());

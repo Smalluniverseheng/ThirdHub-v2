@@ -40,6 +40,7 @@ import 'bili_swipe_page.dart';
 import 'bili_direct.dart';
 import 'bili_live_page.dart';
 import 'bili_space_page.dart';
+import 'bili_later_page.dart' show BiliLaterPage;
 import 'ui/app_skeleton.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
@@ -501,6 +502,14 @@ class _BiliModulePageState extends State<BiliModulePage>
         MaterialPageRoute(builder: (_) => BiliFavPage(ctx: ctx)),
       ),
     );
+    final laterBtn = IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: tr('稍后再看'),
+      icon: const Icon(Icons.watch_later_outlined, size: 20),
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => BiliLaterPage(ctx: ctx)),
+      ),
+    );
     if (widget.embedded) {
       return Column(children: [
         _biliBanner(context, cs),
@@ -510,6 +519,7 @@ class _BiliModulePageState extends State<BiliModulePage>
           Expanded(child: tabs),
           tabBtn,
           favBtn,
+          laterBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: _biliLogged ? _biliName : tr('B站登录'),
@@ -553,6 +563,7 @@ class _BiliModulePageState extends State<BiliModulePage>
         actions: [
           tabBtn,
           favBtn,
+          laterBtn,
           IconButton(
             tooltip: _biliLogged ? _biliName : tr('B站登录'),
             icon: Icon(_biliLogged
@@ -763,16 +774,22 @@ Widget biliCover(BuildContext context, BiliCtx ctx, String raw,
           ? const <String, String>{}
           : biliHeaders(ctx),
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Image.network(
-        '${ctx.base}/v1/bili/cover?u=${Uri.encodeQueryComponent(u)}',
-        headers: biliHeaders(ctx),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Icon(Icons.broken_image_outlined,
-              color: Theme.of(context).colorScheme.outline),
-        ),
-      ),
+      errorBuilder: (_, __, ___) {
+        // 普通版（没有后端）时，`/v1/bili/cover` 这个回退根本没有接收方，
+        // 再请求一次只会多一个失败日志 + 一张破图。直接用占位块。
+        Widget placeholder() => Container(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Icon(Icons.broken_image_outlined,
+                  color: Theme.of(context).colorScheme.outline),
+            );
+        if (ctx.base.isEmpty) return placeholder();
+        return Image.network(
+          '${ctx.base}/v1/bili/cover?u=${Uri.encodeQueryComponent(u)}',
+          headers: biliHeaders(ctx),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => placeholder(),
+        );
+      },
     ),
   );
 }
