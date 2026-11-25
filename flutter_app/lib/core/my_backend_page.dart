@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_mode.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 import 'cloud.dart';
@@ -95,6 +96,7 @@ class _MyBackendPageState extends State<MyBackendPage> {
           _selfHosted = true;
           _msg = tr('已找到后端：') + (p.getString('base') ?? '');
         });
+        await AppModeStore.upgradeToPro();
         return;
       }
     } catch (_) {}
@@ -187,6 +189,8 @@ class _MyBackendPageState extends State<MyBackendPage> {
       _msg = '已切换到这个后端。数据现在存在你那台设备上。';
       _ok = true;
     });
+    // 真的连上了就是进阶版：以后启动会主动探测后端，B站登录态也会自动授权过去。
+    await AppModeStore.upgradeToPro();
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('已切换。重启应用后生效。'))));
   }
@@ -200,6 +204,8 @@ class _MyBackendPageState extends State<MyBackendPage> {
       _selfHosted = false;
       _msg = tr('已切回官方云端');
     });
+    // 没有自建后端了 → 回到普通版，启动不再白等探测。
+    await AppModeStore.downgradeToLite();
   }
 
   void _copy(String text, String what) {
@@ -216,6 +222,75 @@ class _MyBackendPageState extends State<MyBackendPage> {
     return Scaffold(
       appBar: AppBar(title: Text(tr('我的后端'))),
       body: ListView(padding: const EdgeInsets.all(Gap.md), children: [
+        // ── 使用方式（★4.81.104）──
+        // 这一页是"进阶版"的东西，但普通版用户也会点进来看看是什么。
+        // 所以第一眼先告诉他"你现在是哪种、要不要升级"，而不是直接甩地址输入框。
+        ValueListenableBuilder<AppMode?>(
+          valueListenable: AppModeStore.mode,
+          builder: (_, m, __) {
+            final pro = m == AppMode.pro;
+            return Container(
+              padding: const EdgeInsets.all(Gap.md),
+              decoration: BoxDecoration(
+                color: (pro ? scheme.primary : scheme.outline)
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: (pro ? scheme.primary : scheme.outline)
+                        .withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(pro ? Icons.dns_outlined : Icons.smartphone,
+                          size: 18, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                          pro
+                              ? tr('当前：进阶版（已连自己的服务器）')
+                              : tr('当前：普通版（只用手机）'),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text(
+                      pro
+                          ? tr('下载、同步、远程访问都已开启。想回到只用手机，随时可以断开。')
+                          : tr('不连服务器也能正常用：B站、红果、小说、漫画全部手机直接跑。这一页是可选增强，不装也没关系。'),
+                      style: const TextStyle(fontSize: 12, height: 1.6),
+                    ),
+                    if (pro) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (d) => AlertDialog(
+                              title: Text(tr('断开自己的服务器？')),
+                              content: Text(tr('断开后回到普通版：手机上的内容照常能看，只有下载到服务器、跨设备同步和远程访问会停用。服务器上的数据不会被删除。')),
+                              actions: [
+                                TextButton(
+                                    onPressed: () => Navigator.pop(d, false),
+                                    child: Text(tr('取消'))),
+                                FilledButton(
+                                    onPressed: () => Navigator.pop(d, true),
+                                    child: Text(tr('断开'))),
+                              ],
+                            ),
+                          );
+                          if (ok == true) await _backToOfficial();
+                        },
+                        icon: const Icon(Icons.power_settings_new, size: 15),
+                        label: Text(tr('断开，回到普通版')),
+                      ),
+                    ],
+                  ]),
+            );
+          },
+        ),
+        const SizedBox(height: Gap.md),
+
         // ── 服务广场入口（★2026-11-11）──
         // 直接调用 NAS 上的影视库/音乐库等第三方能力，不用跳出去开别的应用。
         Card(

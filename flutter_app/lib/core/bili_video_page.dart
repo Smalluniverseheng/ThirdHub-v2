@@ -72,6 +72,10 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
 
   List<Map<String, dynamic>> _related = const [];
   bool _inWatchLater = false;
+  // 我有没有赞过/投过币/收藏过（4.81.104：以前按钮永远是灰的，投完了也看不出来）
+  bool _liked = false;
+  bool _coined = false;
+  bool _faved = false;
   final TextEditingController _commentCtrl = TextEditingController();
   bool _postingComment = false;
   bool _descOpen = false;
@@ -104,6 +108,8 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         _pages = pages;
       });
       await _play(0);
+      // 互动状态在播放之后拉：先出画面，别让一个状态请求挡住播不了
+      unawaited(_loadRelation());
     } else {
       setState(() => _playErr =
           (j == null || '${j['error'] ?? ''}'.trim().isEmpty) ? tr('失败') : '${j['error']}');
@@ -116,7 +122,8 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   }
 
   /// 统一互动：未登录先提示，登录后执行并 toast 结果
-  Future<void> _doAction(Future<BiliActionResult> Function() act) async {
+  Future<void> _doAction(Future<BiliActionResult> Function() act,
+      {VoidCallback? onOk}) async {
     await BiliAuth.I.load();
     if (!BiliAuth.I.loggedIn) {
       if (mounted) {
@@ -131,11 +138,58 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
       return;
     }
     final r = await act();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.ok ? tr('操作成功') : r.message)),
-      );
-    }
+    if (!mounted) return;
+    if (r.ok) onOk?.call();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(r.ok ? tr('操作成功') : r.message)),
+    );
+  }
+
+  /// 拉一次"我的互动状态"，让按钮能高亮。没登录就跳过（不发无谓请求）。
+  Future<void> _loadRelation() async {
+    await BiliAuth.I.load();
+    if (!BiliAuth.I.loggedIn) return;
+    final rel = await BiliActions.I.relation(_bvid);
+    if (!mounted || rel.isEmpty) return;
+    setState(() {
+      _liked = rel['like'] == 1 || rel['like'] == true;
+      _coined = ((rel['coin'] as num?)?.toInt() ?? 0) > 0;
+      _faved = rel['favorite'] == true || rel['favorite'] == 1;
+    });
+  }
+
+  /// 投币：B站 允许 1 或 2 枚，默认 2（和网页端一致），让用户自己选。
+  Future<void> _pickCoin() async {
+    final n = await showModalBottomSheet<int>(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              const Icon(Icons.monetization_on_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(tr('投币支持一下'),
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]),
+          ),
+          ListTile(
+            leading: const Icon(Icons.looks_one_outlined),
+            title: Text(tr('投 1 枚')),
+            onTap: () => Navigator.pop(c, 1),
+          ),
+          ListTile(
+            leading: const Icon(Icons.looks_two_outlined),
+            title: Text(tr('投 2 枚')),
+            onTap: () => Navigator.pop(c, 2),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (n == null) return;
+    await _doAction(() => BiliActions.I.coin(_bvid, multiply: n),
+        onOk: () => setState(() => _coined = true));
   }
 
   /// 发表评论（oid 用 aid；从 item 里取，没有则用 cid）
@@ -659,12 +713,36 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _statBtn(Icons.thumb_up_outlined, _fmtNum(stat['like']),
-                        () => _doAction(() => BiliActions.I.like(_bvid))),
-                    _statBtn(Icons.monetization_on_outlined, _fmtNum(stat['coin']),
-                        () => _doAction(() => BiliActions.I.coin(_bvid))),
-                    _statBtn(Icons.star_border_rounded, _fmtNum(stat['favorite']),
-                        () => _doAction(() => BiliActions.I.favorite(_bvid))),
+                    _statBtn(
+                        _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                        _fmtNum(stat['like']),
+                        () => _doAction(
+                            () => BiliActions.I.like(_bvid, cancel: _liked),
+                            onOk: () => setState(() => _liked = !_liked)),
+                        active: _liked),
+                    _statBtn(
+                        _coined
+                            ? Icons.monetization_on
+                            : Icons.monetization_on_outlined,
+                        _fmtNum(stat['coin']),
+                        _coined ? () {} : _pickCoin,
+                        active: _coined),
+                    _statBtn(
+                        _faved ? Icons.star_rounded : Icons.star_border_rounded,
+                        _fmtNum(stat['favorite']),
+                        () => _doAction(
+                            () => BiliActions.I.favorite(_bvid, cancel: _faved),
+                            onOk: () => setState(() => _faved = !_faved)),
+                        active: _faved),
+                    // 一键三连：点赞 + 投 1 币 + 收藏，省得点三次
+                    _statBtn(Icons.favorite, tr('一键三连'), () async {
+                      await _doAction(() => BiliActions.I.triple(_bvid),
+                          onOk: () => setState(() {
+                                _liked = true;
+                                _coined = true;
+                                _faved = true;
+                              }));
+                    }, active: _liked && _coined && _faved),
                     _statBtn(Icons.share_outlined, _fmtNum(stat['share']), _openInBili),
                     _statBtn(Icons.chat_bubble_outline, _fmtNum(stat['reply']),
                         _openInBili),
@@ -886,21 +964,25 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     ]);
   }
 
-  Widget _statBtn(IconData icon, String text, VoidCallback onTap) {
+  Widget _statBtn(IconData icon, String text, VoidCallback onTap,
+      {bool active = false}) {
     final cs = Theme.of(context).colorScheme;
+    final fg = active ? cs.primary : cs.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
+          color: active
+              ? cs.primary.withValues(alpha: 0.14)
+              : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 15, color: cs.onSurfaceVariant),
+          Icon(icon, size: 15, color: fg),
           const SizedBox(width: 4),
-          Text(text, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+          Text(text, style: TextStyle(fontSize: 11, color: fg)),
         ]),
       ),
     );

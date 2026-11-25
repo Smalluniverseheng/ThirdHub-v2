@@ -52,6 +52,7 @@ import 'vendor/mangayomi/reader_motion.dart';
 import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
+import 'core/app_mode.dart';
 import 'core/bili_auth.dart';
 import 'core/auth_delegate.dart';
 import 'core/bili_module_page.dart';
@@ -444,13 +445,21 @@ Future<void> main() async {
   await Boot.guard('B站登录态', () => BiliAuth.I.load(),
       timeout: const Duration(seconds: 3));
 
-  // 启动就自动连 NAS 后端（不管登不登录）。连不上也不拖死启动。
-  await Boot.guard('连接后端', Cloud.resolveBackend,
-      timeout: const Duration(seconds: 6));
+  // ★4.81.104 使用方式：普通版（只用手机）/ 进阶版（额外连自建后端）。
+  //   以前无条件探测后端，普通版用户每次启动白等 6 秒超时，还常被误判成
+  //   "必须连服务器才能用"。这里先读用户意愿，只有进阶版才去做探测。
+  await Boot.guard('使用方式', AppModeStore.load,
+      timeout: const Duration(seconds: 2));
+  if (AppModeStore.isPro) {
+    // 启动就自动连 NAS 后端（不管登不登录）。连不上也不拖死启动。
+    await Boot.guard('连接后端', Cloud.resolveBackend,
+        timeout: const Duration(seconds: 6));
 
-  // 连上后端后把前端登录态授权过去：后端不再要求二次登录。
-  // 没连后端时静默返回，普通版用户完全感知不到这一段。
-  unawaited(AuthDelegate.syncFromPrefs());
+    // 连上后端后把前端登录态授权过去：后端不再要求二次登录。
+    unawaited(AuthDelegate.syncFromPrefs());
+  } else {
+    Boot.step('普通版：跳过后端探测');
+  }
 
   // 远端配置中心：先用本地缓存，云端返回后覆盖。都不阻塞启动。
   unawaited(RemoteConfig.init());
@@ -1937,14 +1946,20 @@ class _Ob extends State<OnboardingPage> {
   // 一眼可见：选了 Français，标题还写「选择语言」、按钮还写「下一步」——
   // 引导页是全应用第一个界面，"选了外语还是中文"的第一印象就坏在这里。
   // 现在只留 key（中文原文），取值在 build() 里走 tr()，译文补进 i18n_extra.dart。
-  static const _titleKeys = ['选择语言', '外观偏好', '选择模块', '账号'];
+  static const _titleKeys = ['选择语言', '外观偏好', '使用方式', '选择模块', '账号'];
   static const _subKeys = [
     '选择你的语言',
     '主题与强调色, 之后随时可改',
+    '只用手机就能用; 连自己的服务器可以解锁更多',
     '勾选底部导航要显示的模块(我的固定保留)',
     '登录可云端同步并远程连接; 游客模式仅用本地与局域网',
   ];
+  // ★4.81.104 使用方式，默认普通版：绝大多数人不会去装后端，
+  //   默认值必须落在"装了就能用"，而不是"先去配个服务器"。
+  AppMode _mode = AppMode.lite;
+
   Future<void> finish() async {
+    await AppModeStore.set(_mode);
     final p = await SharedPreferences.getInstance();
     await saveNavModules(
         kModules.keys.where((k) => _mods.contains(k)).toList());
@@ -1957,7 +1972,7 @@ class _Ob extends State<OnboardingPage> {
   }
 
   void next() {
-    if (step < 3) {
+    if (step < 4) {
       ctrl.nextPage(
           duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
     } else {
@@ -2053,6 +2068,112 @@ class _Ob extends State<OnboardingPage> {
                 child: Text(tr('预览: 卡片、按钮、进度条都会使用强调色'),
                     style: const TextStyle(fontSize: 12)))
           ])),
+    ]);
+  }
+
+  /// 使用方式：普通版 / 进阶版。
+  /// 这里刻意把"普通版"排在前面并且默认选中 —— 用户群体里绝大多数只用手机，
+  /// 把进阶版做成默认等于逼他们先搞一台服务器。两者都能随时切换。
+  Widget _modeStep() {
+    final accent = Color(AppSettings.accentColor);
+    Widget card({
+      required AppMode value,
+      required IconData icon,
+      required String title,
+      required String desc,
+      required List<String> points,
+      String? badge,
+    }) {
+      final on = _mode == value;
+      return GestureDetector(
+        onTap: () => setState(() => _mode = value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+                color: on ? accent : Colors.grey.withValues(alpha: 0.25),
+                width: on ? 2 : 1),
+          ),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(icon, size: 20, color: on ? accent : null),
+                  const SizedBox(width: 8),
+                  Text(title,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (badge != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6)),
+                      child: Text(badge,
+                          style: TextStyle(fontSize: 10, color: accent)),
+                    ),
+                  ],
+                  const Spacer(),
+                  Icon(on ? Icons.radio_button_checked : Icons.radio_button_off,
+                      size: 18, color: on ? accent : Colors.grey),
+                ]),
+                const SizedBox(height: 6),
+                Text(desc,
+                    style: const TextStyle(fontSize: 12, height: 1.6)),
+                const SizedBox(height: 8),
+                for (final p in points)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.check, size: 13, color: accent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                              child: Text(p,
+                                  style: const TextStyle(
+                                      fontSize: 11, height: 1.5))),
+                        ]),
+                  ),
+              ]),
+        ),
+      );
+    }
+
+    return ListView(padding: const EdgeInsets.all(24), children: [
+      card(
+        value: AppMode.lite,
+        icon: Icons.smartphone,
+        title: tr('普通版'),
+        badge: tr('推荐'),
+        desc: tr('只用手机，什么都不用装。'),
+        points: [
+          tr('B站、红果、小说、漫画全部手机直接使用'),
+          tr('B站可扫码登录，解锁高清、收藏夹和互动'),
+          tr('不连服务器，不需要任何地址和密钥'),
+          tr('以后想连服务器了，随时可以在「我的」里切换'),
+        ],
+      ),
+      card(
+        value: AppMode.pro,
+        icon: Icons.dns_outlined,
+        title: tr('进阶版'),
+        desc: tr('手机 + 自己装在 NAS 或电脑上的服务器。'),
+        points: [
+          tr('包含普通版的全部能力'),
+          tr('视频下载到自己的硬盘，手机不占空间'),
+          tr('书架、进度、收藏多设备同步'),
+          tr('外出时也能远程连回家里那台'),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(tr('只是使用偏好，之后在「我的 → 我的后端」里随时能改。'),
+          style: const TextStyle(fontSize: 11, height: 1.6)),
     ]);
   }
 
@@ -2155,6 +2276,7 @@ class _Ob extends State<OnboardingPage> {
               children: [
             _langStep(),
             _lookStep(),
+            _modeStep(),
             _modStep(),
             _accountStep()
           ])),
@@ -2162,7 +2284,7 @@ class _Ob extends State<OnboardingPage> {
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
           child: Row(children: [
             Row(children: [
-              for (var i = 0; i < 4; i++)
+              for (var i = 0; i < 5; i++)
                 AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     width: i == step ? 22 : 8,
@@ -2183,7 +2305,7 @@ class _Ob extends State<OnboardingPage> {
                   child: Text(tr('上一步'))),
             const SizedBox(width: 8),
             FilledButton(
-                onPressed: next, child: Text(tr(step < 3 ? '下一步' : '完成'))),
+                onPressed: next, child: Text(tr(step < 4 ? '下一步' : '完成'))),
           ])),
     ])));
   }
