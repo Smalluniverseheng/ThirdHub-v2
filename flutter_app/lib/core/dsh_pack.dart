@@ -25,9 +25,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
-import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -195,7 +196,8 @@ class DshPack {
       state = DshPackState.unpacking;
       progressText = '正在解压';
       onTick?.call();
-      await _unzip(tmp, _root);
+      // 6.5 万个文件同步解压会卡住 UI isolate 数分钟，丢到独立 isolate 跑。
+      await Isolate.run(() => _unzipSync(tmp.path, _root, version));
       await tmp.delete();
       await load();
       if (state == DshPackState.noRuntime) {
@@ -287,20 +289,23 @@ class DshPack {
   }
 
   Future<String> _fileSha256(File f) async {
-    final h = sha256.newHash();
+    // 与 main.dart 的分片校验保持同一套实现（cryptography，流式不占内存）
+    final sink = Sha256().newHashSink();
     await for (final chunk in f.openRead()) {
-      h.add(chunk);
+      sink.add(chunk);
     }
-    return h.toString();
+    sink.close();
+    final h = await sink.hash();
+    return h.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
-  Future<void> _unzip(File zip, String root) async {
-    // archive 3.x：extractArchiveToDisk 内部流式解压，不把整包读进内存
-    await Directory(root).create(recursive: true);
-    final af = ZipDecoder().decodeBuffer(InputFileStream(zip.path));
+  /// 顶层函数（Isolate.run 不能捕获 this / 实例成员）
+  void _unzipSync(String zipPath, String root, String version) {
+    Directory(root).createSync(recursive: true);
+    final af = ZipDecoder().decodeBuffer(InputFileStream(zipPath));
     extractArchiveToDisk(af, root);
     // 记一份 meta，卸载后也能看出装过什么版本
-    await File('$root/meta.json').writeAsString(
+    File('$root/meta.json').writeAsStringSync(
         jsonEncode({'version': version, 'at': DateTime.now().millisecondsSinceEpoch}));
   }
 
