@@ -203,6 +203,17 @@ Future<void> main() async {
   ck('监听器有摘除（否则 State 泄漏）',
       page.contains('removeObserver(this)'));
 
+  // ── 6. Kotlin 语法地雷（4.81.107 踩过一次，白烧一轮 7 分钟 CI）──────
+  // 表达式体（`= try { ... }` / `= run { ... }`）里不允许 return。写了就是
+  // `e: Returns are prohibited in functions with expression body`，
+  // 而 dart analyze 完全看不到 —— 只有 :app:compileReleaseKotlin 会红。
+  for (final f in [
+    'android/app/src/main/kotlin/com/thirdhub/app/MainActivity.kt',
+    'android/app/src/main/kotlin/com/thirdhub/app/DshKeepAliveService.kt',
+  ]) {
+    ck('$f 表达式体里没有 return', _noReturnInExpressionBody(_read(f)), f);
+  }
+
   // ── 汇总 ────────────────────────────────────────────────────────────
   print('─' * 44);
   print('PASS $_pass   FAIL ${_fail.length}');
@@ -215,4 +226,26 @@ Future<void> main() async {
     }
     exitCode = 1;
   }
+}
+
+/// 扫出「表达式体函数里写了 return」这种 Kotlin 硬错误。
+/// 判定很朴素但够用：`fun ... = try {` / `= run {` 开头，按大括号配平往下扫，
+/// 配平结束前出现独立的 `return` 就是错。误报风险：字符串字面量里出现 return
+/// （本项目没有），可接受。
+bool _noReturnInExpressionBody(String src) {
+  final lines = src.split('\n');
+  final re = RegExp(r'^\s*(?:private |internal |public )?fun\s+[\w<>]+\(.*\)\s*(?::\s*[\w<>?. ]+)?\s*=\s*(?:try|run|with|let)\s*\{');
+  for (var i = 0; i < lines.length; i++) {
+    if (!re.hasMatch(lines[i])) continue;
+    var depth = 0;
+    for (var j = i; j < lines.length; j++) {
+      for (final ch in lines[j].split('')) {
+        if (ch == '{') depth++;
+        if (ch == '}') depth--;
+      }
+      if (j > i && RegExp(r'^\s*return\b').hasMatch(lines[j])) return false;
+      if (depth <= 0 && j > i) break;
+    }
+  }
+  return true;
 }

@@ -396,19 +396,23 @@ class MainActivity : FlutterActivity() {
      * ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 而不是 ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS。
      * 个别 ROM 没有这个对话框（抛 ActivityNotFoundException），回落到应用详情页。
      */
-    private fun requestBatteryExempt(): Boolean = try {
+    private fun requestBatteryExempt(): Boolean {
+        // 表达式体里不允许 return（Kotlin: "Returns are prohibited in functions
+        // with expression body"），而这里前两行就要早退，所以必须是块体。
         if (isBatteryExempt()) return true
-        val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-        i.data = android.net.Uri.parse("package:$packageName")
-        startActivity(i)
-        true
-    } catch (_: Exception) {
-        try {
-            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                android.net.Uri.parse("package:$packageName")))
+        return try {
+            val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            i.data = android.net.Uri.parse("package:$packageName")
+            startActivity(i)
             true
         } catch (_: Exception) {
-            false
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+                true
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 
