@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth_delegate.dart';
 import 'bili_auth.dart' show BiliAuth;
 import 'bili_auth_page.dart';
 import 'bili_down_page.dart';
@@ -414,6 +415,7 @@ class _BiliModulePageState extends State<BiliModulePage>
             tooltip: tr('退出登录'),
             icon: const Icon(Icons.logout, size: 15),
             onPressed: () async {
+              await AuthDelegate.revokeFromPrefs();
               await BiliAuth.I.logout();
               if (!mounted) return;
               setState(() {

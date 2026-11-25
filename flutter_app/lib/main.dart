@@ -53,6 +53,7 @@ import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
 import 'core/bili_auth.dart';
+import 'core/auth_delegate.dart';
 import 'core/bili_module_page.dart';
 import 'core/hongguo_page.dart';
 import 'core/splash_page.dart';
@@ -446,6 +447,10 @@ Future<void> main() async {
   // 启动就自动连 NAS 后端（不管登不登录）。连不上也不拖死启动。
   await Boot.guard('连接后端', Cloud.resolveBackend,
       timeout: const Duration(seconds: 6));
+
+  // 连上后端后把前端登录态授权过去：后端不再要求二次登录。
+  // 没连后端时静默返回，普通版用户完全感知不到这一段。
+  unawaited(AuthDelegate.syncFromPrefs());
 
   // 远端配置中心：先用本地缓存，云端返回后覆盖。都不阻塞启动。
   unawaited(RemoteConfig.init());

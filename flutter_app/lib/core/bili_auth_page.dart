@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'auth_delegate.dart';
 import 'bili_auth.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
@@ -83,6 +84,8 @@ class _BiliAuthPageState extends State<BiliAuthPage> {
     switch (r.state) {
       case 'ok':
         _pollTimer?.cancel();
+        // 前端登录一次就够：连着后端时顺手把登录态授权过去。
+        unawaited(AuthDelegate.syncFromPrefs());
         setState(() {
           _logged = true;
           _hint = '';
@@ -109,6 +112,7 @@ class _BiliAuthPageState extends State<BiliAuthPage> {
   }
 
   Future<void> _logout() async {
+    await AuthDelegate.revokeFromPrefs();
     await _auth.logout();
     if (!mounted) return;
     setState(() => _logged = false);

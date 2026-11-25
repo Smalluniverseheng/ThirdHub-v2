@@ -1,0 +1,46 @@
+# ThirdHub 第三方后端（可选增强）—— 任意 Docker 主机可跑
+# ============================================================
+# 产品口径：**前端是主体，后端只是可选增强**。
+#   · 普通版用户：只装 App，浏览/搜索/播放/评论/弹幕/B站扫码登录全部在前端完成；
+#   · 进阶版用户：额外跑这个容器，拿到下载到 NAS、资料库同步等增强能力。
+#
+# 账号规则：前端登录一次就够了。App 连上本后端时会自动把 B站登录态授权过来
+# （POST /v1/auth/delegate），后端不再弹自己的二维码、不再要求第二次登录。
+#
+# 用法：
+#   cd deploy/standalone && docker compose up -d
+#   App 里填 https://<这台机器的IP>:9527 并配对即可。
+services:
+  thirdhub-backend:
+    build: ../../server
+    image: thirdhub-backend:standalone
+    container_name: thirdhub-backend
+    restart: unless-stopped
+
+    ports:
+      - "9527:9527"
+
+    volumes:
+      # 证书 / 配对密钥 / 前端委托的登录态 / 下载记录都在这里
+      - ./data:/data
+
+    environment:
+      - TH_PORT=9527
+      - TH_DATA_DIR=/data
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+      # 想让别的设备只读搜索/阅读，可给一个公开令牌（写操作仍需主密钥）
+      - TH_PUBLIC_TOKEN=${TH_PUBLIC_TOKEN:-}
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://127.0.0.1:9527/v1/meta"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

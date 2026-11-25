@@ -672,7 +672,55 @@ async function webApi(path, timeoutMs = 15000, ref) {
 let biliCookie = '';
 let biliCookieAt = 0;
 
+// ── 前端委托的登录态（4.81.102）──
+// 前端扫码登录一次就够了；后端通过 /v1/auth/delegate 拿到 cookie，
+// 之后所有 B站接口复用它，不再弹自己的二维码、不再要求第二次登录。
+let delegatedCookie = '';
+let delegatedAt = 0;
+const DELEGATED_TTL = 7 * 24 * 60 * 60 * 1000;
+
+function mergeCookie(base, login) {
+  const jar = {};
+  for (const seg of String(base || '').split(';')) {
+    const i = seg.indexOf('=');
+    if (i > 0) jar[seg.slice(0, i).trim()] = seg.slice(i + 1).trim();
+  }
+  for (const seg of String(login || '').split(';')) {
+    const i = seg.indexOf('=');
+    if (i > 0) jar[seg.slice(0, i).trim()] = seg.slice(i + 1).trim();
+  }
+  return Object.entries(jar).map(([k, v]) => k + '=' + v).join('; ');
+}
+
+function setDelegatedCookie(cookie, info) {
+  const c = String(cookie || '').trim();
+  if (!c.includes('SESSDATA=')) return false;
+  delegatedCookie = c;
+  delegatedAt = Number((info && info.at) || Date.now()) || Date.now();
+  biliCookie = mergeCookie(biliCookie, delegatedCookie);
+  biliCookieAt = delegatedAt;
+  console.log('[bili] 已接入前端委托的登录态' + ((info && info.name) ? '：' + info.name : ''));
+  return true;
+}
+
+function clearDelegatedCookie() {
+  delegatedCookie = '';
+  delegatedAt = 0;
+  // 回落匿名指纹，不保留旧登录 cookie
+  biliCookie = '';
+  biliCookieAt = 0;
+}
+
+function hasDelegatedCookie() {
+  return !!delegatedCookie && Date.now() - delegatedAt < DELEGATED_TTL;
+}
+
 async function ensureCookie(force) {
+  if (hasDelegatedCookie()) {
+    biliCookie = mergeCookie(biliCookie, delegatedCookie);
+    biliCookieAt = delegatedAt;
+    return biliCookie;
+  }
   if (!force && biliCookie && Date.now() - biliCookieAt < 30 * 60 * 1000) return biliCookie;
   const jar = {};
   // ① 首页 Set-Cookie（buvid3 等）
@@ -737,11 +785,22 @@ async function handle(req, res, body, u, p) {
 
   // 状态：顺带告诉 App 下载目录在哪，方便提示用户
   if (op === '' || op === 'status') {
-    const [login, info] = await Promise.all([up('/checkLogin'), up('/getServerInfo')]);
+    const info = await up('/getServerInfo');
     const d = (info && info.data) || {};
+    let login = false;
+    if (hasDelegatedCookie()) {
+      // 前端委托的登录态优先；用 nav 实测，不信任本地缓存
+      const nav = await webApi('/x/web-interface/nav');
+      login = !!(nav && nav.code === 0 && nav.data && nav.data.isLogin === true);
+    }
+    if (!login) {
+      const upstream = await up('/checkLogin');
+      login = !!(upstream && upstream.success);
+    }
     send(res, 200, {
       ok: true,
-      login: !!(login && login.success),
+      login,
+      delegated: hasDelegatedCookie(),
       downloadFolder: d.downloadFolder || '/downloads',
       downloadHostPath: d.downloadHostPath || '',
       base: biliBase(),
@@ -1359,4 +1418,7 @@ async function handle(req, res, body, u, p) {
   return true;
 }
 
-module.exports = { handle, biliBase };
+module.exports = {
+  handle, biliBase,
+  setDelegatedCookie, clearDelegatedCookie, hasDelegatedCookie,
+};

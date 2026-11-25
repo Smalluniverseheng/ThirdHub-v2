@@ -493,6 +493,9 @@ const rtLibrary = require('./routes-library');
 const rtThp = require('./routes-thp');
 // ★2026-11-14 B 站下载：把 NAS 上的 bilidown 包成 App 能直接调的接口
 const rtBili = require('./routes-bili');
+const authDelegate = require('./auth-delegate');
+// 容器重启后自动恢复前端委托的登录态，用户不用重新扫码/授权
+authDelegate.restore();
 const rtFanqie = require('./routes-fanqie');
 const rtHongguo = require('./routes-hongguo');
 // ★2026-11-19 安装包分发：局域网内从 NAS 直接下 APK（云端只留一份，见 routes-dl.js）
@@ -567,6 +570,13 @@ async function handle(req, res, body) {
     if (await rtThp.handle(req, res, body, u, p, send)) return;
   }
   if (p.startsWith('/thp') && await thp1.handle(req, res, body, u)) return;
+
+  // ── 前端账号委托授权（★4.81.102）──
+  //   前端扫码登录一次就够；这里接收它的登录态，后端不再要求二次登录。
+  //   必须放在 rtMail 的 /v1/auth/* 之前（那是免令牌的邮箱路由）。
+  if (p === '/v1/auth/delegate') {
+    if (await authDelegate.handle(req, res, body, SECRET)) return;
+  }
 
   // ── B 站下载（★2026-11-14）──
   //   放在鉴权闸门之前，是因为 App 的图片/视频请求走的是同一套客户端，

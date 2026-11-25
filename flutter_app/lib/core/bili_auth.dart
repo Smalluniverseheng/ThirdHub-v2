@@ -102,8 +102,24 @@ class BiliAuth {
           .get(Uri.parse('$_kPoll?qrcode_key=${Uri.encodeQueryComponent(key)}'),
               headers: _headers())
           .timeout(const Duration(seconds: 15));
-      final j = jsonDecode(utf8.decode(r.bodyBytes));
-      if (j is! Map) return const BiliPoll('error', 'bad response');
+      Map<String, dynamic>? j;
+      try {
+        final decoded = jsonDecode(utf8.decode(r.bodyBytes));
+        if (decoded is Map) j = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+      if (j == null) {
+        // 兜底：个别节点在扫码成功后直接 302 到带 cookie 的回调地址，
+        // body 已经不是 JSON。以前这里直接判失败，用户明明扫成功了却登不上。
+        final cb = _parseCookie(
+            '${r.request?.url ?? ''}', r.headers['set-cookie'] ?? '');
+        if (cb.isNotEmpty) {
+          _cookie = cb;
+          await _save();
+          await _fetchProfile();
+          return const BiliPoll('ok', '');
+        }
+        return const BiliPoll('error', 'bad response');
+      }
       final d = (j['data'] as Map?) ?? const {};
       final code = d['code'];
       final msg = '${d['message'] ?? ''}';
