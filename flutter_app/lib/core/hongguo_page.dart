@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 
 import '../main.dart' show Api;
 import 'app_widgets.dart';
+import 'hg_cache.dart';
 import 'haptic.dart';
 import 'i18n.dart';
 import 'play_resolver.dart';
@@ -31,6 +32,48 @@ import 'player/unified_player.dart';
 import 'ui/app_image.dart';
 import 'ui/app_skeleton.dart';
 import 'ui_cover.dart';
+
+/// 本页专用的"没有缓存也没有后端"异常（避免误用 main.dart 带引导文案的那个）。
+class ApiOfflineErrorNoBase implements Exception {
+  const ApiOfflineErrorNoBase();
+  @override
+  String toString() => 'offline_no_cache';
+}
+
+/// 离线缓存提示条（内容来自本机，不是刚从后端拉的）。
+Widget hgOfflineBanner(BuildContext c) => Container(
+      width: double.infinity,
+      color: Theme.of(c).colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          Icon(Icons.cached_outlined,
+              size: 13, color: Theme.of(c).colorScheme.outline),
+          const SizedBox(width: 6),
+          Text(tr('离线缓存：连上后端后会更新'),
+              style: TextStyle(
+                  fontSize: 11, color: Theme.of(c).colorScheme.outline)),
+        ],
+      ),
+    );
+
+/// 后端优先；连不上时读本地缓存。__ageMs 存在表示来自缓存（可标注离线）。
+Future<Map<String, dynamic>> hgGet(String path, String cacheKey) async {
+  if (Api.base.isNotEmpty) {
+    try {
+      final r = await Api.get(path);
+      await HgCache.write(cacheKey, r);
+      return r;
+    } catch (_) {
+      final c = await HgCache.read(cacheKey);
+      if (c != null) return c;
+      rethrow;
+    }
+  }
+  final c = await HgCache.read(cacheKey);
+  if (c != null) return c;
+  throw const ApiOfflineErrorNoBase();
+}
 
 /// 红果短剧的一个剧集条目（对应后端 seriesOut 的字段）。
 class HgSeries {
@@ -100,6 +143,7 @@ class _HongguoPageState extends State<HongguoPage> {
   bool _loading = false;
   bool _searched = false; // true = 当前结果是搜索结果（空态文案不同）
   String _err = '';
+  bool _offline = false; // 当前列表是否来自本地缓存
 
   @override
   void initState() {
@@ -119,27 +163,32 @@ class _HongguoPageState extends State<HongguoPage> {
   }
 
   Future<void> _feed() async {
-    if (Api.base.isEmpty) {
-      setState(() => _err = tr('还没连上后端，请先到「我的后端」完成连接'));
-      return;
-    }
     setState(() {
       _loading = true;
       _err = '';
       _searched = false;
     });
     try {
-      final r = await Api.get('/v1/hongguo/feed?limit=18');
+      final r = await hgGet('/v1/hongguo/feed?limit=18', HgCache.feedKey());
+      final cached = r['__ageMs'] != null;
       final list = (r['data'] as List? ?? const [])
           .whereType<Map>()
           .map(HgSeries.from)
           .where((e) => e.id.isNotEmpty && e.title.isNotEmpty)
           .toList();
       if (!mounted) return;
-      setState(() => _items = list);
+      setState(() {
+        _items = list;
+        _offline = cached;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _err = _friendly(e));
+      setState(() {
+        _err = '$e' == 'offline_no_cache'
+            ? tr('还没连上后端，本机也没有保存过短剧内容')
+            : _friendly(e);
+        _offline = false;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -148,10 +197,6 @@ class _HongguoPageState extends State<HongguoPage> {
   Future<void> _search([String? preset]) async {
     final kw = (preset ?? _q.text).trim();
     if (kw.isEmpty) return;
-    if (Api.base.isEmpty) {
-      setState(() => _err = tr('还没连上后端，请先到「我的后端」完成连接'));
-      return;
-    }
     Haptic.tap();
     setState(() {
       _loading = true;
@@ -159,18 +204,26 @@ class _HongguoPageState extends State<HongguoPage> {
       _searched = true;
     });
     try {
-      final r = await Api.get(
-          '/v1/hongguo/search?q=${Uri.encodeComponent(kw)}&limit=30');
+      final r = await hgGet(
+          '/v1/hongguo/search?q=${Uri.encodeComponent(kw)}&limit=30',
+          HgCache.searchKey(kw));
+      final cached = r['__ageMs'] != null;
       final list = (r['data'] as List? ?? const [])
           .whereType<Map>()
           .map(HgSeries.from)
           .where((e) => e.id.isNotEmpty && e.title.isNotEmpty)
           .toList();
       if (!mounted) return;
-      setState(() => _items = list);
+      setState(() {
+        _items = list;
+        _offline = cached;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _err = _friendly(e));
+      setState(() {
+        _err = '$e' == 'offline_no_cache' ? tr('这部剧没缓存过，联网后才能搜') : _friendly(e);
+        _offline = false;
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -299,46 +352,52 @@ class _HongguoPageState extends State<HongguoPage> {
         onAction: _searched ? null : _feed,
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.62,
-      ),
-      itemCount: _items.length,
-      itemBuilder: (ctx, i) {
-        final s = _items[i];
-        return InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => _openSeries(s),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Stack(fit: StackFit.expand, children: [
-                  CoverImage(s.cover,
-                      fallbackText: s.title,
-                      fallbackIcon: Icons.theaters_outlined),
-                  if (s.episodes > 0)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: _badge(c, trf('{n} 集', {'n': '${s.episodes}'})),
-                    ),
-                ]),
-              ),
-              const SizedBox(height: 6),
-              Text(s.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(c).textTheme.bodySmall),
-            ],
+    return Column(children: [
+      if (_offline) hgOfflineBanner(c),
+      Expanded(
+        child: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.62,
           ),
-        );
-      },
-    );
+          itemCount: _items.length,
+          itemBuilder: (ctx, i) {
+            final s = _items[i];
+            return InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _openSeries(s),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Stack(fit: StackFit.expand, children: [
+                      CoverImage(s.cover,
+                          fallbackText: s.title,
+                          fallbackIcon: Icons.theaters_outlined),
+                      if (s.episodes > 0)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child:
+                              _badge(c, trf('{n} 集', {'n': '${s.episodes}'})),
+                        ),
+                    ]),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(s.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(c).textTheme.bodySmall),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    ]);
   }
 
   Widget _badge(BuildContext c, String text) => Container(
@@ -374,6 +433,7 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
   List<HgEpisode> _eps = const [];
   bool _loading = true;
   String _err = '';
+  bool _offline = false;
 
   @override
   void initState() {
@@ -388,17 +448,20 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
     });
     try {
       // 详情和分集并行拉：详情挂了不该拖累分集（很多剧的详情接口缺字段）
+      final id = Uri.encodeComponent(widget.seriesId);
       final results = await Future.wait([
-        Api.get('/v1/hongguo/series?id=${Uri.encodeComponent(widget.seriesId)}')
+        hgGet('/v1/hongguo/series?id=$id', HgCache.seriesKey(widget.seriesId))
             .catchError((_) => <String, dynamic>{}),
-        Api.get(
-            '/v1/hongguo/episodes?id=${Uri.encodeComponent(widget.seriesId)}'),
+        hgGet('/v1/hongguo/episodes?id=$id',
+            HgCache.episodesKey(widget.seriesId)),
       ]);
       final det = results[0];
       final eps = results[1];
+      final cached = det['__ageMs'] != null || eps['__ageMs'] != null;
       final s = (det['data'] is Map)
           ? HgSeries.from(det['data'] as Map)
-          : HgSeries(id: widget.seriesId, title: widget.title, cover: widget.cover);
+          : HgSeries(
+              id: widget.seriesId, title: widget.title, cover: widget.cover);
       final list = (eps['data'] as List? ?? const [])
           .whereType<Map>()
           .map(HgEpisode.from)
@@ -408,6 +471,7 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
       setState(() {
         _s = s;
         _eps = list;
+        _offline = cached;
         if (list.isEmpty) _err = tr('这部剧暂时没有可播的集');
       });
     } catch (e) {
@@ -507,6 +571,7 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
                 )
               : CustomScrollView(slivers: [
                   SliverToBoxAdapter(child: _header(c)),
+                  if (_offline) SliverToBoxAdapter(child: hgOfflineBanner(c)),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
                     sliver: SliverGrid.builder(
@@ -528,7 +593,9 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
                               color: ep.playable
-                                  ? Theme.of(c).colorScheme.surfaceContainerHighest
+                                  ? Theme.of(c)
+                                      .colorScheme
+                                      .surfaceContainerHighest
                                   : Theme.of(c)
                                       .colorScheme
                                       .surfaceContainerHighest
@@ -566,7 +633,8 @@ class _HongguoSeriesPageState extends State<HongguoSeriesPage> {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(widget.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
