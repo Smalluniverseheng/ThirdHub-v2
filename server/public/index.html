@@ -29,7 +29,7 @@ input{width:100%;background:#0e1014;color:var(--tx);border:1px solid var(--line)
   <div style="text-align:right"><select id="langSel" onchange="setLang(this.value)" style="background:#0e1014;color:#7d8590;border:1px solid #2a2e38;border-radius:6px;padding:2px 6px;font-size:12px">
     <option value="zh">中文</option><option value="en">English</option><option value="ja">日本語</option></select></div>
   <h1>ThirdHub <span data-i18n="控制台">控制台</span></h1><p class="mut" data-i18n="输入访问密钥(thsec_...)解锁">输入访问密钥(thsec_...)解锁</p>
-  <input id="tok" placeholder="thsec_..." type="password"><br><br>
+  <input id="tok" placeholder="thsec_..." type="password" onkeydown="if(event.key==='Enter')saveTok()"><br><br>
   <button class="sm" onclick="saveTok()" data-i18n="连接">连接</button><p id="lockmsg" class="mut"></p>
 </div>
 <div id="main" style="display:none">
@@ -59,19 +59,34 @@ let LANG=localStorage.th_lang||'zh';
 function tr(s){return (I18N_DICT[LANG]||{})[s]||s}
 function setLang(l){LANG=l;localStorage.th_lang=l;applyI18n();boot()}
 function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=tr(el.dataset.i18n)})}
-const $=s=>document.querySelector(s);let T=localStorage.th_token||'';
+const $=s=>document.querySelector(s);let T=localStorage.th_token||'';let AUTH_TRIED=false;
 const kinds=[['book','内容源'],['video','内容源'],['comic','内容源'],['music','内容源'],['test','搜索测试'],['feedback','反馈']];let cur='book';
 async function api(p,opt={}){opt.headers=Object.assign({'X-TH-Token':T},opt.headers||{});
-  const r=await fetch(p,opt);if(r.status===401){lock(true);throw new Error('401')}return r.json()}
+  let r;
+  try{r=await fetch(p,opt)}catch(e){lock(true,'连不上服务器，检查网络或后端是否在运行');throw new Error('offline')}
+  if(r.status===401){
+    localStorage.removeItem('th_token');T='';
+    lock(true,AUTH_TRIED?'访问密钥不对或已过期，请重新输入':'请先输入访问密钥');
+    throw new Error('401')}
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json()}
 // 图片端点要带 X-TH-Token 头，<img src> 给不了头 → 必须 fetch 成 blob 再换对象 URL。
 async function apiBlob(p){const r=await fetch(p,{headers:{'X-TH-Token':T}});
-  if(r.status===401){lock(true);throw new Error('401')}if(!r.ok)throw new Error('HTTP '+r.status);return URL.createObjectURL(await r.blob())}
+  if(r.status===401){localStorage.removeItem('th_token');T='';lock(true,'登录已过期，请重新输入访问密钥');throw new Error('401')}
+  if(!r.ok)throw new Error('HTTP '+r.status);return URL.createObjectURL(await r.blob())}
 // 反馈正文是**用户输入**，直接拼 innerHTML 会被 XSS → 一律先转义。
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmtTime(ms){try{const d=new Date(ms);const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())}catch(e){return ''}}
-function lock(on){$('#lock').style.display=on?'block':'none';$('#main').style.display=on?'none':'block'}
-function saveTok(){T=$('#tok').value.trim();localStorage.th_token=T;boot()}
+function lock(on,msg){$('#lock').style.display=on?'block':'none';$('#main').style.display=on?'none':'block';
+  if(msg){const el=$('#lockmsg');el.textContent=msg;el.style.color='var(--rd)'}
+  else if(on){const el=$('#lockmsg');el.textContent='';el.style.color='var(--mut)'}}
+function saveTok(){
+  const v=$('#tok').value.trim();
+  if(!v){lock(true,'请先填入访问密钥（后端「我的」页里复制）');return}
+  AUTH_TRIED=true;T=v;localStorage.th_token=T;
+  const el=$('#lockmsg');el.textContent='连接中…';el.style.color='var(--mut)';
+  boot()}
 async function boot(){
   try{const m=await api('/v1/meta');$('#ver').textContent=m.data.version+' · 指纹 '+String(m.data.fingerprint).slice(0,19)+'…';
     const s=await api('/v1/status');
@@ -94,8 +109,8 @@ async function boot(){
       <textarea id="imp" placeholder='粘贴JSON…'></textarea><br><br>
       <button class="sm" onclick="doImport()">导入</button> <span id="impmsg" class="mut"></span></div>`}
     `;
-    loadList();lock(false);
-  }catch(e){lock(true)}}
+    loadList();lock(false);AUTH_TRIED=false;
+  }catch(e){/* api() 已经给出具体原因；这里不要再用空提示覆盖它 */}}
 async function loadList(){
   if(cur==='test')return;
   if(cur==='feedback')return loadFeedback();
@@ -157,7 +172,7 @@ async function testSearch(){const q=$('#tq').value.trim();if(!q)return;$('#tres'
     for(const g of d.musics)for(const b of (g.items||[]).slice(0,3))h+=tag('音','#fcd34d')+esc(g.source)+' '+esc(b.name)+' - '+esc(b.artist||'')+'<br>';
     $('#tres').innerHTML=h;
   }catch(e){$('#tres').textContent='失败: '+e.message}}
-T?boot():lock(true);
+T?boot():lock(true,'输入后端「我的」页里的访问密钥（thsec_...）即可解锁');
 </script>
 </body>
 </html>

@@ -24,15 +24,11 @@ Future<bool> showCloudAuthDialog(BuildContext c, {bool isLogin = true}) async {
   String? tip;
   String? notice;
 
-  void Function(void Function())? _set;
-
   final ok = await showDialog<bool>(
     context: c,
     barrierDismissible: false,
     builder: (dCtx) => StatefulBuilder(
       builder: (dCtx2, setSt) {
-        _set = setSt;
-
         Future<void> submit() async {
           if (busy) return;
           final mail = mailC.text.trim();
@@ -194,7 +190,5 @@ Future<bool> showCloudAuthDialog(BuildContext c, {bool isLogin = true}) async {
 
   mailC.dispose();
   passC.dispose();
-  // _set 只是为了在外部需要强刷时留个口子，这里用完即弃
-  _set = null;
   return ok == true;
 }

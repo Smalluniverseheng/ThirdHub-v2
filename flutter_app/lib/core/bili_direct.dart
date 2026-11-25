@@ -16,6 +16,8 @@ import 'package:http/http.dart' as http;
 
 import 'bili_auth.dart' show BiliAuth;
 import 'bili_wbi.dart' show BiliWbi;
+import 'bili_social.dart'
+    show fetchFavFolders, fetchFavList, fetchSpaceInfo, fetchSpaceVideos;
 
 const String biliUA =
     'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
@@ -154,6 +156,24 @@ Future<Map<String, dynamic>?> biliDirect(String path) async {
         'message': p.message,
       };
     }
+    // ── 收藏夹 / UP 主页（4.81.100）─────────────────────
+    // 后端暂时没有这两组 op，直连是唯一通道；返回结构按后端同款约定，
+    // 将来后端补上后上层页面无需改动。
+    if (op == '/fav/folders') {
+      return await fetchFavFolders(mid: q['mid']);
+    }
+    if (op == '/fav/list') {
+      final pn = int.tryParse(q['pn'] ?? '1') ?? 1;
+      return await fetchFavList(q['media_id'] ?? q['id'] ?? '', pn);
+    }
+    if (op == '/space/info') {
+      return await fetchSpaceInfo(q['mid'] ?? '');
+    }
+    if (op == '/space/videos') {
+      final pn = int.tryParse(q['pn'] ?? '1') ?? 1;
+      return await fetchSpaceVideos(q['mid'] ?? '', pn);
+    }
+
     if (op == '/partitions') {
       return {'ok': true, 'items': biliPartitions};
     }

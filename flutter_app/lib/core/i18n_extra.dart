@@ -22,6 +22,18 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '我的收藏夹': 'Mes favoris',
+    '登录 B 站': 'Se connecter à Bilibili',
+    '这里还没有收藏夹': 'Aucun dossier pour le moment',
+    '个视频': 'vidéos',
+    '这里还没有内容': 'Rien ici pour le moment',
+    'UP 主页': 'Profil du créateur',
+    '粉丝': 'abonnés',
+    '关注': 'abonnements',
+    '投稿': 'publications',
+    '收藏夹': 'Favoris',
+    '该 UP 主暂不可查看': 'Créateur indisponible',
+    '加载失败': 'Échec du chargement',
     '这一条没有命中': 'Aucun résultat pour cette recherche',
     '已失效': 'Indisponible',
     '这条打不开了，已标记为失效': 'Ce lien ne fonctionne plus, marqué indisponible',
@@ -701,6 +713,18 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '我的收藏夹': 'Моё избранное',
+    '登录 B 站': 'Войти в Bilibili',
+    '这里还没有收藏夹': 'Папок пока нет',
+    '个视频': 'видео',
+    '这里还没有内容': 'Здесь пока пусто',
+    'UP 主页': 'Страница автора',
+    '粉丝': 'подписчики',
+    '关注': 'подписки',
+    '投稿': 'публикации',
+    '收藏夹': 'Избранное',
+    '该 UP 主暂不可查看': 'Автор недоступен',
+    '加载失败': 'Ошибка загрузки',
     '这一条没有命中': 'По этому запросу ничего не найдено',
     '已失效': 'Недоступно',
     '这条打不开了，已标记为失效': 'Этот элемент не открывается, отмечен как недоступный',
@@ -1380,6 +1404,18 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '我的收藏夹': 'Mis favoritos',
+    '登录 B 站': 'Iniciar sesión en Bilibili',
+    '这里还没有收藏夹': 'Aún no hay carpetas',
+    '个视频': 'vídeos',
+    '这里还没有内容': 'Aún no hay contenido',
+    'UP 主页': 'Perfil del creador',
+    '粉丝': 'seguidores',
+    '关注': 'siguiendo',
+    '投稿': 'publicaciones',
+    '收藏夹': 'Favoritos',
+    '该 UP 主暂不可查看': 'Creador no disponible',
+    '加载失败': 'Error al cargar',
     '这一条没有命中': 'Sin resultados para esta búsqueda',
     '已失效': 'No disponible',
     '这条打不开了，已标记为失效': 'Este elemento no abre, marcado como no disponible',
@@ -2060,6 +2096,18 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '我的收藏夹': 'المفضلة لديّ',
+    '登录 B 站': 'تسجيل الدخول إلى Bilibili',
+    '这里还没有收藏夹': 'لا توجد مجلدات بعد',
+    '个视频': 'فيديو',
+    '这里还没有内容': 'لا يوجد محتوى بعد',
+    'UP 主页': 'صفحة المبدع',
+    '粉丝': 'متابعون',
+    '关注': 'متابعة',
+    '投稿': 'منشورات',
+    '收藏夹': 'المفضلة',
+    '该 UP 主暂不可查看': 'هذا المبدع غير متاح',
+    '加载失败': 'فشل التحميل',
     '这一条没有命中': 'لا نتائج لهذا البحث',
     '已失效': 'غير متاح',
     '这条打不开了，已标记为失效': 'هذا العنصر لا يُفتح، تم وسمه كغير متاح',
@@ -2739,6 +2787,18 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '我的收藏夹': 'My favorites',
+    '登录 B 站': 'Sign in to Bilibili',
+    '这里还没有收藏夹': 'No folders yet',
+    '个视频': 'videos',
+    '这里还没有内容': 'Nothing here yet',
+    'UP 主页': 'Creator profile',
+    '粉丝': 'followers',
+    '关注': 'Following',
+    '投稿': 'videos',
+    '收藏夹': 'Favorites',
+    '该 UP 主暂不可查看': 'This creator is unavailable',
+    '加载失败': 'Failed to load',
     '这一条没有命中': 'No results for this search',
     '已失效': 'Unavailable',
     '这条打不开了，已标记为失效': 'This one no longer opens; marked unavailable',
@@ -3326,6 +3386,18 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '我的收藏夹': 'マイお気に入り',
+    '登录 B 站': 'B站にログイン',
+    '这里还没有收藏夹': 'フォルダはまだありません',
+    '个视频': '本の動画',
+    '这里还没有内容': 'まだ内容がありません',
+    'UP 主页': 'アップ主のページ',
+    '粉丝': 'フォロワー',
+    '关注': 'フォロー中',
+    '投稿': '投稿',
+    '收藏夹': 'お気に入り',
+    '该 UP 主暂不可查看': 'このアップ主は表示できません',
+    '加载失败': '読み込みに失敗しました',
     '这一条没有命中': 'この検索では見つかりませんでした',
     '已失效': '利用できません',
     '这条打不开了，已标记为失效': 'この項目は開けません。利用不可としてマークしました',

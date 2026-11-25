@@ -12,13 +12,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'bili_module_page.dart'
-    show BiliCtx, biliGet, biliPost, biliCover, biliDur, biliPlays, pickBiliTarget,
-    biliHeaders;
+    show BiliCtx, biliGet, biliPost, biliPlayRace, biliCover, biliDur, biliPlays,
+    pickBiliTarget, biliHeaders;
 import 'bili_actions.dart' show BiliActionResult, BiliActions;
 import 'bili_auth.dart' show BiliAuth;
 import 'bili_auth_page.dart' show BiliAuthPage;
 import 'bili_danmaku_layer.dart';
 import 'bili_dash_player.dart';
+import 'bili_space_page.dart' show BiliSpacePage;
 import 'design_tokens.dart';
 import 'i18n.dart';
 import 'player/th_player.dart';
@@ -179,7 +180,8 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     oldVp?.dispose();
     final q = StringBuffer('/v1/bili/playurl?bvid=${Uri.encodeQueryComponent(_bvid)}');
     if (cid != null) q.write('&cid=$cid');
-    final j = await biliGet(widget.ctx, q.toString());
+    // 后端取流与直连 CDN 同时发，谁先给出可播地址用谁（"点了就播"）
+    final j = await biliPlayRace(widget.ctx, q.toString());
     if (!mounted) return;
     final url = (j == null) ? '' : '${j['url'] ?? ''}';
     if (url.isEmpty) {
@@ -517,26 +519,51 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                // UP 主
+                // UP 主（4.81.100：点头像/名字进 UP 主页，看资料与全部投稿）
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: cs.surfaceContainerHighest,
-                      child: (owner['face'] ?? '').toString().isEmpty
-                          ? Icon(Icons.person, size: 16, color: cs.outline)
-                          : ClipOval(
-                              child: biliCover(context, widget.ctx,
-                                  '${owner['face']}', radius: 0)),
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(Radii.sm),
+                        onTap: () {
+                          final mid = '${owner['mid'] ?? ''}';
+                          if (mid.isEmpty || mid == 'null') {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(tr('该 UP 主暂不可查看'))));
+                            return;
+                          }
+                          Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => BiliSpacePage(
+                                  ctx: widget.ctx, mid: mid)));
+                        },
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: cs.surfaceContainerHighest,
+                              child: (owner['face'] ?? '').toString().isEmpty
+                                  ? Icon(Icons.person,
+                                      size: 16, color: cs.outline)
+                                  : ClipOval(
+                                      child: biliCover(context, widget.ctx,
+                                          '${owner['face']}', radius: 0)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text('${owner['name'] ?? ''}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                            Icon(Icons.chevron_right,
+                                size: 16, color: cs.outline),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('${owner['name'] ?? ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w500)),
-                    ),
                     OutlinedButton(
                       onPressed: _openInBili,
                       style: OutlinedButton.styleFrom(

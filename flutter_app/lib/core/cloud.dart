@@ -91,6 +91,11 @@ class Cloud {
           Uri.parse('$base/auth/v1/token?grant_type=password'),
           headers: _authHeaders,
           body: jsonEncode({'email': mail, 'password': password}));
+    } on TimeoutException {
+      // 超时和"网络不通"是两回事：后者多半是没网，前者常常是服务器在休眠/冷启动。
+      // 说清楚差别，用户才知道该等一会儿还是去开网络。
+      AppLog.warn('account', '登录请求超时', d: {'email': mail});
+      throw Exception('连接超时，服务器可能正在启动，稍后再试');
     } catch (e) {
       AppLog.warn('account', '登录请求没发出去', d: {'email': mail, 'e': '$e'});
       throw Exception('网络不通，检查网络后再试');
@@ -108,6 +113,14 @@ class Cloud {
         'reason':
             '${j['error_description'] ?? j['msg'] ?? j['error'] ?? j['error_code'] ?? '未知'}',
       });
+      // ★刚注册完、还没点邮箱确认链接的用户，第一条登录必然 400。
+      //   服务端只会说 "Invalid login credentials"，用户会以为自己密码记错了，
+      //   于是反复改密码、反复重试，永远登不上。这里按「刚提示过去确认邮箱」的
+      //   上下文把它翻成真正的原因。
+      final pendingConfirm = lastNotice.contains('确认') || lastNotice.contains('验证');
+      if (pendingConfirm && '${j['error_code']}' == 'invalid_credentials') {
+        throw Exception('邮箱还没验证，先去邮箱点确认链接，再回来登录');
+      }
       throw Exception(friendlyAuthError(r.statusCode, j));
     }
     accessToken = j['access_token'] ?? '';
@@ -115,6 +128,7 @@ class Cloud {
     userId = j['user']?['id'] ?? '';
     email = j['user']?['email'] ?? mail;
     if (accessToken.isEmpty) throw Exception('服务器没返回登录凭据，稍后重试');
+    lastNotice = ''; // 登录成功，清掉上一轮「去确认邮箱」的残留提示
     AppLog.account('登录成功', d: {
       'email': email,
       'uid': userId.length >= 8 ? userId.substring(0, 8) : userId

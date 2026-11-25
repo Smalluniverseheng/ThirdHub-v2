@@ -37,6 +37,7 @@ import 'bili_player.dart';
 import 'bili_swipe_page.dart';
 import 'bili_direct.dart';
 import 'bili_live_page.dart';
+import 'bili_space_page.dart';
 import 'ui/app_skeleton.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
@@ -375,10 +376,8 @@ class _BiliModulePageState extends State<BiliModulePage>
     if (!_ready) {
       return _shell(const Center(child: AppLoading()));
     }
-    if (_base.isEmpty) {
-      return _shell(
-          Center(child: Text(tr('还没连上后端，请先到「我的后端」完成连接'))));
-    }
+    // 没配后端也要能看：biliGet 在无 base 时自动走端上直连，
+    // 不能因为「我的后端」没连就把整页挡成一句提示（4.81.100 修正）。
     final ctx = BiliCtx(_base, _token);
     // 栏目顺序与显隐来自用户偏好（_tabIds），不再写死 5 个
     final ids = _tabIds.isEmpty ? kBiliTabDefault : _tabIds;
@@ -399,6 +398,14 @@ class _BiliModulePageState extends State<BiliModulePage>
       icon: const Icon(Icons.tune, size: 20),
       onPressed: _openTabSheet,
     );
+    final favBtn = IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: tr('收藏夹'),
+      icon: const Icon(Icons.folder_outlined, size: 20),
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => BiliFavPage(ctx: ctx)),
+      ),
+    );
     if (widget.embedded) {
       return Column(children: [
         // 独立页时这几个入口在 AppBar 的 actions 里；嵌进来以后没有 AppBar 了，
@@ -406,6 +413,7 @@ class _BiliModulePageState extends State<BiliModulePage>
         Row(children: [
           Expanded(child: tabs),
           tabBtn,
+          favBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: tr('B站登录'),
@@ -437,6 +445,7 @@ class _BiliModulePageState extends State<BiliModulePage>
         title: Text(tr('哔哩哔哩')),
         actions: [
           tabBtn,
+          favBtn,
           IconButton(
             tooltip: tr('B站登录'),
             icon: const Icon(Icons.account_circle_outlined),
@@ -488,6 +497,51 @@ Future<Map<String, dynamic>?> biliGet(BiliCtx ctx, String path,
     } catch (_) {}
   }
   return biliDirect(path);
+}
+
+/// 播放地址**双通道竞速**（4.81.97）。
+///
+/// 为什么不是「先后端、失败再直连」：那条路最坏要等后端超时（12~30 秒）才切，
+/// 用户感知就是「点了半天不出画面」。本质上前端要的只是一个能播的 URL，
+/// 谁先给出来就用谁 —— 家里那台要转码/取流，慢；直连 B站 CDN，快；
+/// 但直连被风控时只有家里那台能用。两边同时问，谁先到用谁。
+Future<Map<String, dynamic>?> biliPlayRace(BiliCtx ctx, String path) async {
+  final attempts = <Future<Map<String, dynamic>?>>[];
+
+  Future<Map<String, dynamic>?> soft(Future<Map<String, dynamic>?> f) async {
+    try {
+      return await f;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  if (ctx.base.isNotEmpty) {
+    attempts.add(soft(() async {
+      try {
+        final r = await http
+            .get(Uri.parse('${ctx.base}$path'), headers: ctx.h)
+            .timeout(const Duration(seconds: 10));
+        final j = jsonDecode(utf8.decode(r.bodyBytes));
+        if (j is Map && j['ok'] == true && '${j['url'] ?? ''}'.isNotEmpty) {
+          return Map<String, dynamic>.from(j);
+        }
+      } catch (_) {}
+      return null;
+    }()));
+  }
+  attempts.add(soft(biliDirect(path)));
+
+  final c = Completer<Map<String, dynamic>?>();
+  for (final a in attempts) {
+    a.then((v) {
+      if (v != null && !c.isCompleted) c.complete(v);
+    });
+  }
+  final all = await soft(Future.wait(attempts).then((list) =>
+      list.firstWhere((e) => e != null, orElse: () => null)));
+  if (!c.isCompleted) c.complete(all);
+  return c.future;
 }
 
 /// 播放/图片请求统一头：B 站 CDN 与图床都校验 Referer
