@@ -22,6 +22,9 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '有更新的运行包': 'Un pack d execution plus recent',
+    '重新下载后本机运行才完整（旧包缺部分能力）': 'Reinstallez pour un mode local complet (l ancien pack est incomplet)',
+    '更新': 'Mettre a jour',
     '允许后台运行': 'Autoriser arriere-plan',
     '系统省电会杀掉本机运行，允许后切出去才不会断': 'L economie de batterie coupe l execution locale ; autorisez pour eviter la coupure',
     '去允许': 'Autoriser',
@@ -759,6 +762,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '有更新的运行包': 'Доступен новый пакет',
+    '重新下载后本机运行才完整（旧包缺部分能力）': 'Скачайте заново — старый пакет неполный',
+    '更新': 'Обновить',
     '允许后台运行': 'Разрешить работу в фоне',
     '系统省电会杀掉本机运行，允许后切出去才不会断': 'Экономия заряда останавливает локальный запуск; разрешите, чтобы не обрывалось',
     '去允许': 'Разрешить',
@@ -1496,6 +1502,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '有更新的运行包': 'Hay un paquete mas reciente',
+    '重新下载后本机运行才完整（旧包缺部分能力）': 'Vuelve a descargarlo para un modo local completo',
+    '更新': 'Actualizar',
     '允许后台运行': 'Permitir segundo plano',
     '系统省电会杀掉本机运行，允许后切出去才不会断': 'El ahorro de bateria corta la ejecucion local; permitelo para no perder la conexion',
     '去允许': 'Permitir',
@@ -2234,6 +2243,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '有更新的运行包': 'توجد حزمة تشغيل أحدث',
+    '重新下载后本机运行才完整（旧包缺部分能力）': 'أعد التنزيل ليعمل التشغيل المحلي بالكامل',
+    '更新': 'تحديث',
     '允许后台运行': 'السماح بالتشغيل في الخلفية',
     '系统省电会杀掉本机运行，允许后切出去才不会断': 'موفر الطاقة يوقف التشغيل المحلي؛ اسمح به حتى لا ينقطع',
     '去允许': 'السماح',
@@ -2971,6 +2983,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '有更新的运行包': 'A newer runtime pack is available',
+    '重新下载后本机运行才完整（旧包缺部分能力）': 'Download it again for a complete on-device run',
+    '更新': 'Update',
     '允许后台运行': 'Allow background running',
     '系统省电会杀掉本机运行，允许后切出去才不会断': 'Battery saver stops the on-device run; allow it so switching away does not disconnect',
     '去允许': 'Allow',
@@ -3617,6 +3632,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '有更新的运行包': '新しい実行パッケージがあります',
+    '重新下载后本机运行才完整（旧包缺部分能力）': '再ダウンロードするとローカル実行が完全になります',
+    '更新': '更新',
     '允许后台运行': 'バックグラウンド実行を許可',
     '系统省电会杀掉本机运行，允许后切出去才不会断': '省電力設定はローカル実行を停止します。許可すると切り替えても切断されません',
     '去允许': '許可する',

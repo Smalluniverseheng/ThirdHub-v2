@@ -208,6 +208,31 @@ class _DshPackPageState extends State<DshPackPage> {
               ),
             ),
 
+          // 运行包更新提示：远端清单的 version 与本地 meta.json 不一致，说明我们
+          // 发过新包（例如 4.81.107 修掉了 arm64 原生组件被装成 x64 的缺陷）。
+          // 不提示的话，装过老包的人会一直带着残缺的运行时用 —— 他没法自己发现。
+          if (has &&
+              _remote != null &&
+              _remote!.version.isNotEmpty &&
+              p.version.isNotEmpty &&
+              _remote!.version != p.version)
+            Card(
+              margin: const EdgeInsets.only(bottom: 4),
+              color: cs.secondaryContainer.withValues(alpha: 0.5),
+              child: ListTile(
+                leading: const Icon(Icons.system_update_alt, size: 20),
+                title: Text(tr('有更新的运行包'), style: const TextStyle(fontSize: 14)),
+                subtitle: Text(
+                  tr('重新下载后本机运行才完整（旧包缺部分能力）'),
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: TextButton(
+                  onPressed: _busy ? null : _install,
+                  child: Text(tr('更新')),
+                ),
+              ),
+            ),
+
           // 后台保活：用户切出去以后系统会冻结/回收进程，本机运行会断。
           // 前台服务已经常驻了；这一条是国产 ROM 的那层「省电策略」，不引导用户
           // 加白就还是会被杀（MIUI/EMUI/ColorOS 都不认官方前台服务语义）。

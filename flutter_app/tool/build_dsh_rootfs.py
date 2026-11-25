@@ -39,6 +39,10 @@ HERE = Path(__file__).resolve().parent
 APP = HERE.parent
 
 DSH_VERSION = "0.2.2-rc.1"
+# 运行包自身的修订号：内容有任何变化（换平台包、加组件、改启动脚本）就 +1。
+# 客户端就是靠清单里的 version 判断"要不要提示重新下载"的，忘了加会导致
+# 新包传上去了、老用户永远拿不到。
+ROOTFS_REV = 2
 NODE_VERSION = "24.22.1"
 UBUNTU_VERSION = "24.04.5"
 
@@ -58,6 +62,21 @@ PRUNE = [
     "@img/sharp-wasm32",
 ]
 PRUNE_GLOBS = ["*.map", "*.d.ts", "*.d.mts", "*.d.cts"]
+
+# ═══ 平台相关的二进制包（★ 这是 4.81.107 补的一个真坑）═══
+# npm 的 `--cpu=arm64` 只影响 "os/cpu 字段过滤"，**不改变平台包的选择** ——
+# 平台包名里直接写着 -x64 / -arm64，npm 按构建机的 process.arch 决定装哪一份。
+# 于是在 x86_64 机器上装出来的树里，arm64 运行包躺的是 x64 的 .node。
+# 后果很隐蔽：DSH 主流程照样能启动、能出 token（所以自检和冒烟都绿），
+# 但真机上 sharp 转图、koffi 调 FFI、landlock 沙箱全部加载失败 —— 所谓
+# "完全体"缺了最关键的几块。这里按目标架构重新拉同版本包并替换。
+PLATFORM_PKGS = [
+    "@deepseek-ai/node-addon-system-linux-{cpu}",
+    "@img/sharp-linux-{cpu}",
+    "@img/sharp-libvips-linux-{cpu}",
+    "@koromix/koffi-linux-{cpu}",
+    "node-addon-require-builtin-linux-{cpu}-gnu",
+]
 
 
 def log(msg):
@@ -97,6 +116,51 @@ def _extract(tf: tarfile.TarFile, dest: Path):
         tf.extractall(dest, filter="tar")  # type: ignore[call-arg]
     except TypeError:  # 老 python 没有 filter 参数
         tf.extractall(dest)  # noqa: S202
+
+
+def swap_platform_pkgs(nm: Path, target_cpu: str, work: Path):
+    """把平台二进制包换成目标架构的同版本包，删掉构建机那一份。
+
+    为什么不能靠 npm 的 --cpu 解决：包名里写死了架构（@img/sharp-linux-arm64），
+    npm 用构建机的 process.arch 选包，--cpu 只过滤 os/cpu 字段。
+    """
+    host_cpu = "x64" if target_cpu == "arm64" else "arm64"
+    if host_cpu == target_cpu:
+        return
+    tmp = work / "platform-pkgs"
+    tmp.mkdir(parents=True, exist_ok=True)
+    for pat in PLATFORM_PKGS:
+        host_rel = pat.format(cpu=host_cpu)
+        want_rel = pat.format(cpu=target_cpu)
+        host_manifest = nm / host_rel / "package.json"
+        if not host_manifest.exists():
+            continue
+        ver = json.loads(host_manifest.read_text())["version"]
+        spec = f"{want_rel}@{ver}"
+        log(f"  平台包 {host_rel} -> {want_rel}@{ver}")
+        # npm pack 不做平台校验（npm install 会 EBADPLATFORM），正好用来取包
+        out = subprocess.run(
+            ["npm", "pack", spec, f"--registry={NPM_REGISTRY}", f"--pack-destination={tmp}"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip().splitlines()[-1].strip()
+        tgz = tmp / out
+        if not tgz.exists():
+            raise SystemExit(f"npm pack 没产出 {spec}: {out}")
+        staging = tmp / "x"
+        if staging.exists():
+            shutil.rmtree(staging)
+        staging.mkdir()
+        with tarfile.open(tgz, "r:gz") as tf:
+            tf.extractall(staging)  # noqa: S202 —— 来自固定 registry 的字节
+        dest = nm / want_rel
+        if dest.exists():
+            shutil.rmtree(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(staging / "package", dest, symlinks=True)
+        # 构建机那一份留着只会白占几十 MB，而且在真机上是错误架构
+        shutil.rmtree(nm / host_rel, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
+        tgz.unlink(missing_ok=True)
 
 
 def main():
@@ -191,6 +255,10 @@ def main():
         if (npx / f).exists():
             shutil.copy2(npx / f, dsh_dst / f)
 
+    # ④.5 把平台二进制包换成目标架构（否则真机上 sharp/koffi/landlock 全废）
+    log(f"替换平台二进制包 -> {npm_cpu}")
+    swap_platform_pkgs(dsh_dst / "node_modules", npm_cpu, work)
+
     # ⑤ 运行期需要的目录与入口
     dsh_bin = rootfs / "usr/local/bin/dsh"
     dsh_bin.parent.mkdir(parents=True, exist_ok=True)
@@ -236,7 +304,8 @@ def main():
 
     digest = sha256(tgz)
     manifest = {
-        "version": f"{DSH_VERSION}+node{NODE_VERSION}+ubuntu{UBUNTU_VERSION}",
+        "version": f"{DSH_VERSION}+node{NODE_VERSION}+ubuntu{UBUNTU_VERSION}+r{ROOTFS_REV}",
+        "rev": ROOTFS_REV,
         "abi": args.abi,
         "dshVersion": DSH_VERSION,
         "nodeVersion": NODE_VERSION,
