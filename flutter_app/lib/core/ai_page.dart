@@ -147,6 +147,8 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
   bool _useLight = false;
   /// 本机运行包正在起服务：给用户一个明确的「正在启动」而不是白屏
   bool _dshStarting = false;
+  /// 本机启动失败原因（非空时引导页改成「重试」而不是「去连服务器」）
+  String _dshErr = '';
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
@@ -237,7 +239,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
           _useLight = false;
         }
       });
-      if (!ok) AppLog.add('dsh', 'warn', '本机 DSH 未启动: ${DshPack.I.message}');
+      if (!ok) {
+        setState(() => _dshErr = DshPack.I.message);
+        AppLog.add('dsh', 'warn', '本机 DSH 未启动: ${DshPack.I.message}');
+      }
     } catch (e) {
       if (mounted) setState(() => _dshStarting = false);
       AppLog.add('dsh', 'warn', '本机 DSH 启动异常: $e');
@@ -852,6 +857,9 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
 
   // 未配对引导：点「去连接」配对后自动进入 DSH 对话；也可临时用轻量对话
   Widget _dshGuide(BuildContext c) {
+    // 装了运行包但没起来：这时候引导用户「去连服务器」是错的方向 ——
+    // 他本来就想脱离服务器。给出失败原因 + 重试。
+    if (DshPack.I.usable) return _localFailed(c);
     final cs = Theme.of(c).colorScheme;
     return Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Column(
       mainAxisSize: MainAxisSize.min, children: [
@@ -870,6 +878,46 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
         TextButton(onPressed: () => setState(() => _useLight = true),
           child: Text(tr('轻量对话'))),
       ])));
+  }
+
+  /// 本机运行包在、但服务没起来时的卡片（重试而不是劝用户去连服务器）
+  Widget _localFailed(BuildContext c) {
+    final cs = Theme.of(c).colorScheme;
+    return Center(
+        child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.memory, size: 48, color: cs.primary),
+              const SizedBox(height: 12),
+              Text(tr('本机运行'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(
+                _dshErr.isEmpty ? tr('正在启动本机 AI') : _dshErr,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12,
+                    height: 1.6,
+                    color: cs.onSurface.withValues(alpha: 0.6)),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(tr('重试')),
+                onPressed: () {
+                  setState(() {
+                    _dshStarting = true;
+                    _dshErr = '';
+                  });
+                  unawaited(_startLocalDsh());
+                },
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                  onPressed: () => setState(() => _useLight = true),
+                  child: Text(tr('轻量对话'))),
+            ])));
   }
 
   Widget _emptyHint(BuildContext c) {
