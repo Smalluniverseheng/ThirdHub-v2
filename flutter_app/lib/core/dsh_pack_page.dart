@@ -40,6 +40,25 @@ class _DshPackPageState extends State<DshPackPage> {
   }
 
   Future<void> _install() async {
+    // 首次下载是 170MB 量级，先让用户知道自己在下载什么、会占多少地方
+    if (DshPack.I.state == DshPackState.none) {
+      final size = _sizeText;
+      final yes = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(tr('下载数据包')),
+          content: Text(
+            '${size.isEmpty ? '' : '$size\n'}${tr('装到手机后断网也能用，随时可以拆掉。')}',
+            style: const TextStyle(fontSize: 13, height: 1.6),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('取消'))),
+            TextButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('下载数据包'))),
+          ],
+        ),
+      );
+      if (yes != true || !mounted) return;
+    }
     setState(() => _busy = true);
     final ok = await DshPack.I.install(onTick: () {
       if (mounted) setState(() {});

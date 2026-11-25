@@ -818,7 +818,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
             const SizedBox(width: 28, height: 28,
                 child: CircularProgressIndicator(strokeWidth: 2.5)),
             const SizedBox(height: 14),
-            Text(tr('正在启动本机 AI 引擎'),
+            Text(tr('正在启动本机 AI'),
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             Text(tr('首次启动要展开运行环境，之后会快很多'),
