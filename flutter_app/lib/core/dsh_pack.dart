@@ -119,6 +119,15 @@ class DshPack {
       _tmp = '${paths['cache'] ?? files}/dsh-tmp';
       _root = '$files/dsh';
       _rootfs = '$_root/rootfs';
+      // 4.81.99 那版把 zip 数据包解在 files/dsh-pack（120MB），形态已废弃 ——
+      // 不主动清掉，用户会白白多占一百多兆，且还以为"装过了"。
+      try {
+        final legacy = Directory('$files/dsh-pack');
+        if (await legacy.exists()) {
+          await legacy.delete(recursive: true);
+          AppLog.add('dsh', 'info', '已清理旧版数据包目录');
+        }
+      } catch (_) {}
       final d = Directory(_rootfs);
       if (!await d.exists()) {
         state = DshPackState.none;
