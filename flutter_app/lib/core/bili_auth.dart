@@ -51,6 +51,9 @@ class BiliAuth {
 
   String get cookie => _cookie;
   String get name => _name;
+  /// 已登录用户的 mid。收藏夹/个人主页直接用它，不再依赖 nav 接口
+  /// （nav 被风控时返回空，会把已登录用户误判成未登录）。
+  String get mid => _mid;
   bool get loggedIn => _cookie.contains('SESSDATA=');
 
   Future<void> load() async {

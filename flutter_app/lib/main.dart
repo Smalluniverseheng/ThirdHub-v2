@@ -52,6 +52,7 @@ import 'vendor/mangayomi/reader_motion.dart';
 import 'vendor/mangayomi/reader_page_index_math.dart';
 import 'vendor/mangayomi/webtoon_scroll_physics.dart';
 import 'core/haptic.dart';
+import 'core/bili_auth.dart';
 import 'core/bili_module_page.dart';
 import 'core/hongguo_page.dart';
 import 'core/splash_page.dart';
@@ -62,6 +63,8 @@ import 'core/module_shell.dart';
 import 'core/mini_modules.dart';
 import 'core/backend_admin_page.dart';
 import 'core/dsh_remote_page.dart';
+import 'core/dsh_pack.dart';
+import 'core/dsh_pack_page.dart';
 import 'core/recents.dart';
 import 'core/read_stats.dart';
 import 'core/mini_modules2.dart';
@@ -432,6 +435,13 @@ Future<void> main() async {
   // 国内网络下这是最常见的"卡在开屏"来源之一。
   await Boot.guard('云端账号', Cloud.init,
       timeout: const Duration(seconds: 5));
+
+  // B站登录态纯本机读取，不依赖云端也不依赖 NAS。
+  // ★4.81.101：以前只在账号中心/播放页才 load，冷启动直接进 B站时
+  //   cookie 还是空的 —— 收藏夹被判未登录、互动全部失效，
+  //   用户看到的就是"点进去要登录/要连后端"。这里启动就恢复。
+  await Boot.guard('B站登录态', () => BiliAuth.I.load(),
+      timeout: const Duration(seconds: 3));
 
   // 启动就自动连 NAS 后端（不管登不登录）。连不上也不拖死启动。
   await Boot.guard('连接后端', Cloud.resolveBackend,
@@ -3155,6 +3165,16 @@ class _Pf extends State<ProfilePage> {
             //   地址/令牌可一次粘贴整条连接串自动拆开；令牌只存本机、不进日志。
             entry(Icons.desktop_windows_outlined, tr('DSH 遥控'),
                 page: const DshRemotePage()),
+            _sep(),
+            // ★4.81.97：完全体数据包（可选装、可拆除）。与「DSH 遥控」区分：
+            //   遥控是连家里那台；数据包是把完全体搬到手机上断网也能用。
+            entry(Icons.download_for_offline_outlined, tr('AI 完全体数据包'),
+                value: DshPack.I.state == DshPackState.ready
+                    ? tr('已装好，可以本机运行')
+                    : (DshPack.I.state == DshPackState.noRuntime
+                        ? tr('已装好数据包')
+                        : tr('数据包未安装')),
+                page: const DshPackPage()),
             _sep(),
             // ★2026-10-12：云端「管理后台」（站长管理：用户 / 订单 / 定价；
             //   admin.html 自带登录，App 内浏览器页打开，不跳出应用）。

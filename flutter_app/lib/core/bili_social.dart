@@ -12,6 +12,7 @@
 //   · /x/v3/fav/folder/created/list-all → code 0；未登录或无公开收藏夹时 data=null
 //   · /x/v3/fav/resource/list       → code 0，data.medias
 // 风控时一律返回 ok=false + 明确 error，绝不返回空列表假装"没有内容"。
+import 'bili_auth.dart' show BiliAuth;
 import 'bili_wbi.dart' show BiliWbi;
 
 String _https(Object? u) {
@@ -61,19 +62,30 @@ List<Map<String, dynamic>> _videos(Object? raw) {
 Future<Map<String, dynamic>> fetchFavFolders({String? mid}) async {
   var uid = (mid ?? '').trim();
   if (uid.isEmpty) {
-    final nav = await BiliWbi.I.getJson('/x/web-interface/nav');
-    final login = nav['isLogin'] == true;
-    if (!login) {
-      return _fail('请先登录 B 站后再查看收藏夹', needLogin: true);
+    // ★4.81.101：本地已有 mid 就直接用。以前无论登录与否都先打 nav，
+    // nav 一旦被风控（空 data / -352）就把已登录用户误判成"请先登录"，
+    // 用户看到的就是"点收藏夹要重新登录"，实际 cookie 好好的。
+    if (BiliAuth.I.loggedIn && BiliAuth.I.mid.isNotEmpty) {
+      uid = BiliAuth.I.mid;
+    } else {
+      final nav = await BiliWbi.I.getJson('/x/web-interface/nav');
+      final login = nav['isLogin'] == true;
+      if (!login) {
+        return _fail('扫码登录后可查看自己的收藏夹', needLogin: true);
+      }
+      uid = '${((nav['data'] as Map?) ?? const {})['mid'] ?? ''}';
     }
-    uid = '${((nav['data'] as Map?) ?? const {})['mid'] ?? ''}';
   }
-  if (uid.isEmpty) return _fail('取不到用户 ID', needLogin: true);
+  if (uid.isEmpty) return _fail('取不到用户 ID，请重新扫码登录', needLogin: true);
 
   final j = await BiliWbi.I.getJson('/x/v3/fav/folder/created/list-all',
       query: {'up_mid': uid, 'jsonp': 'jsonp'});
-  if ((j['code'] ?? -1) != 0) {
-    return _fail('${j['message'] ?? '收藏夹读取失败'}', code: j['code'] is int ? j['code'] : null);
+  final code = j['code'];
+  if ((code ?? -1) != 0) {
+    // cookie 过期（-101）也要给「去登录」按钮，不能只扔一句失败。
+    final expired = code == -101 || code == -400;
+    return _fail(expired ? '登录已过期，请重新扫码' : '${j['message'] ?? '收藏夹读取失败'}',
+        code: code is int ? code : null, needLogin: expired);
   }
   final raw = j['data'];
   if (raw is! List) {
@@ -106,8 +118,11 @@ Future<Map<String, dynamic>> fetchFavList(String mediaId, int pn) async {
         'tid': 0,
         'platform': 'web',
       });
-  if ((j['code'] ?? -1) != 0) {
-    return _fail('${j['message'] ?? '收藏夹内容读取失败'}', code: j['code'] is int ? j['code'] : null);
+  final code = j['code'];
+  if ((code ?? -1) != 0) {
+    final expired = code == -101 || code == -400;
+    return _fail(expired ? '登录已过期，请重新扫码' : '${j['message'] ?? '收藏夹内容读取失败'}',
+        code: code is int ? code : null, needLogin: expired);
   }
   final d = (j['data'] as Map?) ?? const {};
   return _ok(<String, dynamic>{

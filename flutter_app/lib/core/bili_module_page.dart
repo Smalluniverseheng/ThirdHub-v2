@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'bili_auth.dart' show BiliAuth;
 import 'bili_auth_page.dart';
 import 'bili_down_page.dart';
 import 'bili_player.dart';
@@ -135,6 +136,9 @@ class _BiliModulePageState extends State<BiliModulePage>
   String _base = '';
   String _token = '';
   bool _ready = false;
+  // B站登录态是纯本机的：普通版用户没有 NAS 也能扫码登录。
+  bool _biliLogged = false;
+  String _biliName = '';
 
   @override
   void initState() {
@@ -182,6 +186,10 @@ class _BiliModulePageState extends State<BiliModulePage>
   }
 
   Future<void> _boot() async {
+    // ★4.81.101：以前只在账号中心/播放页才 load，冷启动直接进 B站时
+    // cookie 还是空的，收藏夹被判未登录、互动全失效。这里先恢复本机登录态，
+    // 与后端是否连接完全无关。
+    await BiliAuth.I.load();
     final p = await SharedPreferences.getInstance();
     if (!mounted) return;
     // 只保留认识的 id，顺序按用户存的来；一个都不剩就回落默认
@@ -192,6 +200,8 @@ class _BiliModulePageState extends State<BiliModulePage>
     setState(() {
       _base = (p.getString('base') ?? '').trim();
       _token = (p.getString('token') ?? '').trim();
+      _biliLogged = BiliAuth.I.loggedIn;
+      _biliName = BiliAuth.I.name;
       _tabIds = List<String>.from(use);
       _tab = TabController(length: use.length, vsync: this);
       _ready = true;
@@ -371,6 +381,88 @@ class _BiliModulePageState extends State<BiliModulePage>
     );
   }
 
+  /// 下载到 NAS 才需要后端；普通版的在线播放完全不需要。
+  void _openDownload(BuildContext context, BiliCtx ctx) {
+    if (ctx.base.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('在线看不用后端'))));
+      return;
+    }
+    openBiliLinkSheet(context, ctx, '');
+  }
+
+  /// 常驻的 B站登录状态条：扫码登录完全在本机完成，不需要 NAS。
+  /// 放在栏目上方，避免用户把「要登录」误读成「要连接后端」。
+  Widget _biliBanner(BuildContext context, ColorScheme cs) {
+    if (_biliLogged) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 4),
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+        child: Row(children: [
+          Icon(Icons.verified_user, size: 15, color: cs.primary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '${tr('B站已登录')}${_biliName.isEmpty ? '' : ' · $_biliName'}',
+              style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: tr('退出登录'),
+            icon: const Icon(Icons.logout, size: 15),
+            onPressed: () async {
+              await BiliAuth.I.logout();
+              if (!mounted) return;
+              setState(() {
+                _biliLogged = false;
+                _biliName = '';
+              });
+            },
+          ),
+        ]),
+      );
+    }
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const BiliAuthPage()));
+        if (!mounted) return;
+        await BiliAuth.I.load();
+        if (!mounted) return;
+        setState(() {
+          _biliLogged = BiliAuth.I.loggedIn;
+          _biliName = BiliAuth.I.name;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 6),
+        color: cs.primaryContainer.withValues(alpha: 0.35),
+        child: Row(children: [
+          Icon(Icons.qr_code_2, size: 16, color: cs.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr('扫码登录解锁高清与收藏'),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w600)),
+                Text(tr('不需要后端，登录态只存本机'),
+                    style: TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, size: 18, color: cs.primary),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
@@ -379,6 +471,7 @@ class _BiliModulePageState extends State<BiliModulePage>
     // 没配后端也要能看：biliGet 在无 base 时自动走端上直连，
     // 不能因为「我的后端」没连就把整页挡成一句提示（4.81.100 修正）。
     final ctx = BiliCtx(_base, _token);
+    final cs = Theme.of(context).colorScheme;
     // 栏目顺序与显隐来自用户偏好（_tabIds），不再写死 5 个
     final ids = _tabIds.isEmpty ? kBiliTabDefault : _tabIds;
     final tabs = TabBar(
@@ -408,6 +501,7 @@ class _BiliModulePageState extends State<BiliModulePage>
     );
     if (widget.embedded) {
       return Column(children: [
+        _biliBanner(context, cs),
         // 独立页时这几个入口在 AppBar 的 actions 里；嵌进来以后没有 AppBar 了，
         // 但「栏目」「链接下载」「下载管理」不能因此消失 —— 挪成 tab 右侧的小按钮。
         Row(children: [
@@ -416,17 +510,28 @@ class _BiliModulePageState extends State<BiliModulePage>
           favBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: tr('B站登录'),
-            icon: const Icon(Icons.account_circle_outlined, size: 20),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BiliAuthPage()),
-            ),
+            tooltip: _biliLogged ? _biliName : tr('B站登录'),
+            icon: Icon(
+                _biliLogged ? Icons.verified_user : Icons.account_circle_outlined,
+                size: 20),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BiliAuthPage()),
+              );
+              if (!mounted) return;
+              await BiliAuth.I.load();
+              if (!mounted) return;
+              setState(() {
+                _biliLogged = BiliAuth.I.loggedIn;
+                _biliName = BiliAuth.I.name;
+              });
+            },
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link, size: 20),
-            onPressed: () => openBiliLinkSheet(context, ctx, ''),
+            onPressed: () => _openDownload(context, ctx),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -447,16 +552,27 @@ class _BiliModulePageState extends State<BiliModulePage>
           tabBtn,
           favBtn,
           IconButton(
-            tooltip: tr('B站登录'),
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BiliAuthPage()),
-            ),
+            tooltip: _biliLogged ? _biliName : tr('B站登录'),
+            icon: Icon(_biliLogged
+                ? Icons.verified_user
+                : Icons.account_circle_outlined),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BiliAuthPage()),
+              );
+              if (!mounted) return;
+              await BiliAuth.I.load();
+              if (!mounted) return;
+              setState(() {
+                _biliLogged = BiliAuth.I.loggedIn;
+                _biliName = BiliAuth.I.name;
+              });
+            },
           ),
           IconButton(
             tooltip: tr('链接下载'),
             icon: const Icon(Icons.link),
-            onPressed: () => openBiliLinkSheet(context, ctx, ''),
+            onPressed: () => _openDownload(context, ctx),
           ),
           IconButton(
             tooltip: tr('下载管理'),
@@ -468,7 +584,7 @@ class _BiliModulePageState extends State<BiliModulePage>
         ],
         bottom: tabs,
       ),
-      body: view,
+      body: Column(children: [_biliBanner(context, cs), Expanded(child: view)]),
     );
   }
 
@@ -480,11 +596,20 @@ class _BiliModulePageState extends State<BiliModulePage>
 
 // ───────────────────────── 通用请求 ─────────────────────────
 
+/// 会话内后端失败计数：普通版误填了后端地址时，不能每次都等 30 秒超时
+/// 才回落到直连。连续两次失败就本会话内直接走端上，换地址后自动重试。
+String _lastBackend = '';
+int _backendFails = 0;
+
 /// 通用 GET：**先走后端，后端不可达（或明确失败）就直连 B 站**。
 /// 这样 NAS 关机/断网时，浏览、搜索、详情、评论、弹幕全都还能用（下载除外）。
 Future<Map<String, dynamic>?> biliGet(BiliCtx ctx, String path,
     {int sec = 30}) async {
-  if (ctx.base.isNotEmpty) {
+  if (ctx.base != _lastBackend) {
+    _lastBackend = ctx.base;
+    _backendFails = 0;
+  }
+  if (ctx.base.isNotEmpty && _backendFails < 2) {
     try {
       final r = await http
           .get(Uri.parse('${ctx.base}$path'), headers: ctx.h)
@@ -492,9 +617,15 @@ Future<Map<String, dynamic>?> biliGet(BiliCtx ctx, String path,
       final j = jsonDecode(utf8.decode(r.bodyBytes));
       if (j is Map) {
         final m = Map<String, dynamic>.from(j);
-        if (m['ok'] == true) return m;
+        if (m['ok'] == true) {
+          _backendFails = 0;
+          return m;
+        }
       }
-    } catch (_) {}
+      _backendFails++;
+    } catch (_) {
+      _backendFails++;
+    }
   }
   return biliDirect(path);
 }
