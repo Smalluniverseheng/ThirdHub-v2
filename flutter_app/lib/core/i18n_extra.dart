@@ -22,6 +22,9 @@
 const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>{
   // ─────────────────────────── 法语 ───────────────────────────
   'fr': <String, String>{
+    '允许后台运行': 'Autoriser arriere-plan',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': 'L economie de batterie coupe l execution locale ; autorisez pour eviter la coupure',
+    '去允许': 'Autoriser',
     '正在启动本机 AI': 'Demarrage de l IA locale',
     '首次启动要展开运行环境，之后会快很多': 'Le premier demarrage deploie le runtime ; les suivants sont bien plus rapides',
     '去连接自己的服务器': 'Connecter mon serveur',
@@ -756,6 +759,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 俄语 ───────────────────────────
   'ru': <String, String>{
+    '允许后台运行': 'Разрешить работу в фоне',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': 'Экономия заряда останавливает локальный запуск; разрешите, чтобы не обрывалось',
+    '去允许': 'Разрешить',
     '正在启动本机 AI': 'Запуск локального ИИ',
     '首次启动要展开运行环境，之后会快很多': 'Первый запуск разворачивает окружение, дальше намного быстрее',
     '去连接自己的服务器': 'Подключить свой сервер',
@@ -1490,6 +1496,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
   'es': <String, String>{
+    '允许后台运行': 'Permitir segundo plano',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': 'El ahorro de bateria corta la ejecucion local; permitelo para no perder la conexion',
+    '去允许': 'Permitir',
     '正在启动本机 AI': 'Iniciando la IA local',
     '首次启动要展开运行环境，之后会快很多': 'El primer arranque despliega el entorno; los siguientes son mucho mas rapidos',
     '去连接自己的服务器': 'Conectar mi servidor',
@@ -2225,6 +2234,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
   'ar': <String, String>{
+    '允许后台运行': 'السماح بالتشغيل في الخلفية',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': 'موفر الطاقة يوقف التشغيل المحلي؛ اسمح به حتى لا ينقطع',
+    '去允许': 'السماح',
     '正在启动本机 AI': 'جارٍ تشغيل محرك الذكاء الاصطناعي المحلي',
     '首次启动要展开运行环境，之后会快很多': 'التشغيل الأول يوسّع بيئة التشغيل، وما بعده أسرع بكثير',
     '去连接自己的服务器': 'ربط خادمي',
@@ -2959,6 +2971,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
+    '允许后台运行': 'Allow background running',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': 'Battery saver stops the on-device run; allow it so switching away does not disconnect',
+    '去允许': 'Allow',
     '正在启动本机 AI': 'Starting the on-device AI',
     '首次启动要展开运行环境，之后会快很多': 'The first launch unpacks the runtime; later starts are much faster',
     '去连接自己的服务器': 'Connect my server',
@@ -3602,6 +3617,9 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
 
   // ─────────────────────────── 日语 ───────────────────────────
   'ja': <String, String>{
+    '允许后台运行': 'バックグラウンド実行を許可',
+    '系统省电会杀掉本机运行，允许后切出去才不会断': '省電力設定はローカル実行を停止します。許可すると切り替えても切断されません',
+    '去允许': '許可する',
     '正在启动本机 AI': '端末のAIを起動しています',
     '首次启动要展开运行环境，之后会快很多': '初回起動時は実行環境を展開します。2回目以降は速くなります',
     '去连接自己的服务器': '自分のサーバーにつなぐ',

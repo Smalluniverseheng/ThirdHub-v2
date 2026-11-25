@@ -36,6 +36,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- ═══ 本机 AI 保活（★三个都必需，勿删）═══
+         FOREGROUND_SERVICE_DATA_SYNC：Android 14(34)+ 前台服务按类型授权，缺它与
+             清单里的 foregroundServiceType="dataSync" 对不上 → startForeground 抛异常；
+         WAKE_LOCK：PARTIAL 唤醒锁，防 CPU 休眠把 node 的定时器/回调一起冻住；
+         REQUEST_IGNORE_BATTERY_OPTIMIZATIONS：国产 ROM（MIUI/EMUI/ColorOS）默认对
+             后台进程做「省电」，光有前台服务照样被杀 —— 必须能引导用户把本 App 加白。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- ═══ 局域网明文 HTTP 放行（★必需，勿删）═══
          本 App 的核心链路是「前端直连局域网引擎」：引擎是用户自己设备上跑的 THP 服务
          (阅读引擎 :1234 / 资源库 :9527)，地址为运行时发现的局域网 IP，无法提前枚举域名；
@@ -147,6 +156,16 @@
             </intent-filter>
         </receiver>
             <service android:name=".OverlayService" android:exported="false" />
+        <!-- ═══ 本机 AI 保活（★`dataSync` 这个类型不能删）═══
+             PRoot 拉起的 node 跑在 App 进程里，系统把进程判为后台空闲就会冻结/回收，
+             表现为「切出去一会儿回来 AI 断了要重新等一分钟」。前台服务是系统唯一认可的
+             「还在干活」声明。
+             foregroundServiceType 必须是 dataSync：targetSdk 34+ 起不带类型的
+             startForeground 会直接抛异常（服务起不来，等于保活没接）。
+             不能用 specialUse —— 它要求额外的 PROPERTY_SPECIAL_USE_FGS_SUBTYPE 声明，
+             我们不经应用商店分发，没必要为它背一份解释文档。 -->
+        <service android:name=".DshKeepAliveService" android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- ═══ 「安装后删除安装包」的权威钩子（★勿删）═══
              覆盖安装成功后，系统只会把 ACTION_MY_PACKAGE_REPLACED 发给本应用，
              这是「新版真的装上了」的唯一可靠信号。删包必须挂在这上面 ——

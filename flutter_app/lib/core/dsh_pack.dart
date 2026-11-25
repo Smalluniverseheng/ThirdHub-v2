@@ -35,6 +35,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/app_log.dart';
+import 'dsh_keepalive.dart';
 import 'dsh_local_argv.dart';
 import 'dsh_tar.dart';
 import 'kv.dart' show aiStore;
@@ -112,6 +113,13 @@ class DshPack {
   String get consoleUrl => DshLocalLaunch.consoleUrl(localBase, token);
 
   Future<void> load() async {
+    // 通知栏那颗「停止」按钮的落点：用户主动喊停 = 真的不要本机运行了，
+    // 所以顺手把开关关掉 —— 否则回到 App 会被「回前台自动重连」立刻拉起来，
+    // 变成一个关不掉的循环。
+    DshKeepAlive.onUserStop = () async {
+      await stop();
+      await setEnabled(false);
+    };
     try {
       final paths = await _paths();
       final files = '${paths['files'] ?? ''}';
@@ -495,7 +503,15 @@ class DshPack {
       }
       // 端口真能连上再算就绪（token 行是插件都加载完之后才打印的，一般已经可连）
       for (var i = 0; i < 20; i++) {
-        if (await _alive()) return true;
+        if (await _alive()) {
+          // 起来了才开保活：起不来还挂一条「运行中」的通知是骗人。
+          // 失败不影响可用（用户自己别切走就行），所以不 await 结果。
+          unawaited(DshKeepAlive.start(
+            title: '本机 AI 运行中',
+            text: '断网也能用，点这里回到对话',
+          ));
+          return true;
+        }
         await Future<void>.delayed(const Duration(milliseconds: 250));
       }
       message = '端口 $port 没接受连接';
@@ -507,6 +523,14 @@ class DshPack {
       _proc = null;
       return false;
     }
+  }
+
+  /// 还活着吗：进程在、token 在、端口真能连。
+  /// 「回前台自动重连」就靠这个判断 —— 只看 `running`（进程对象非空）不够：
+  /// 系统冻结再解冻是有可能只弄死 guest 里的 node、proot 外壳还在的。
+  Future<bool> healthOk() async {
+    if (_proc == null || _exited || token.isEmpty) return false;
+    return _alive();
   }
 
   Future<bool> _alive() async {
@@ -525,6 +549,9 @@ class DshPack {
   Future<void> stop() async {
     final p = _proc;
     token = '';
+    // 保活先收：进程都没了还挂着「运行中」的通知，用户会以为后台还在干活。
+    // 放在早退之前，因为 `_proc` 可能已经是 null（进程自己退出过）而服务还活着。
+    await DshKeepAlive.stop();
     if (p == null) return;
     _proc = null;
     try {

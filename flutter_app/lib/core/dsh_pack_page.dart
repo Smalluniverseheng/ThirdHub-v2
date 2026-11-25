@@ -4,6 +4,7 @@
 // 手机上（断网也能用，随时可以拆）。这一页就是那个开关 + 数据包的家。
 import 'package:flutter/material.dart';
 
+import 'dsh_keepalive.dart';
 import 'dsh_pack.dart';
 import 'i18n.dart';
 
@@ -17,6 +18,8 @@ class DshPackPage extends StatefulWidget {
 class _DshPackPageState extends State<DshPackPage> {
   DshPackInfo? _remote;
   bool _busy = false;
+  /// 是否已在系统电池优化白名单里（国产 ROM 上这个比前台服务还关键）
+  bool _exempt = true;
 
   @override
   void initState() {
@@ -27,8 +30,12 @@ class _DshPackPageState extends State<DshPackPage> {
   Future<void> _boot() async {
     await DshPack.I.load();
     final r = await DshPack.I.remote();
+    final ex = await DshKeepAlive.batteryExempt();
     if (!mounted) return;
-    setState(() => _remote = r);
+    setState(() {
+      _remote = r;
+      _exempt = ex;
+    });
   }
 
   String get _sizeText {
@@ -198,6 +205,29 @@ class _DshPackPageState extends State<DshPackPage> {
               subtitle: Text(
                 '${tr('关掉就回到连家里服务，数据包留在手机上不占额外流量')}',
                 style: const TextStyle(fontSize: 11),
+              ),
+            ),
+
+          // 后台保活：用户切出去以后系统会冻结/回收进程，本机运行会断。
+          // 前台服务已经常驻了；这一条是国产 ROM 的那层「省电策略」，不引导用户
+          // 加白就还是会被杀（MIUI/EMUI/ColorOS 都不认官方前台服务语义）。
+          if (ready && p.enabled && !_exempt)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.battery_saver, size: 20),
+              title: Text(tr('允许后台运行'), style: const TextStyle(fontSize: 14)),
+              subtitle: Text(
+                tr('系统省电会杀掉本机运行，允许后切出去才不会断'),
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: FilledButton.tonal(
+                onPressed: () async {
+                  await DshKeepAlive.requestBatteryExempt();
+                  // 系统对话框是异步的，回来重新查一次真实状态
+                  final ex = await DshKeepAlive.batteryExempt();
+                  if (mounted) setState(() => _exempt = ex);
+                },
+                child: Text(tr('去允许')),
               ),
             ),
 

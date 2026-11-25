@@ -145,6 +145,64 @@ Future<void> main() async {
   ck('WebView 随 url 重建（换 token 要换页面）',
       page.contains('key: ValueKey(_dshUrl)'));
 
+  // ── 5. 后台保活（4.81.107）───────────────────────────────────────────
+  // 这一节守的是「切出去回来 AI 就断」那个坑。它同样是编译期抓不到的：
+  // 少一个权限、少一个 foregroundServiceType、服务起了但没释放唤醒锁，
+  // analyze / build 全都会绿，只有真机在后台待一会儿才暴露。
+  final mf = _read('android/app/src/main/AndroidManifest.xml');
+  ck('清单声明了前台服务类型权限（targetSdk 34+ 缺它 startForeground 直接抛）',
+      mf.contains('android.permission.FOREGROUND_SERVICE_DATA_SYNC'));
+  ck('清单声明了 WAKE_LOCK', mf.contains('android.permission.WAKE_LOCK'));
+  ck('清单声明了忽略电池优化（国产 ROM 那一层）',
+      mf.contains('android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'));
+  ck('保活服务已注册', mf.contains('.DshKeepAliveService'));
+  ck('服务类型是 dataSync（漏了服务起不来）',
+      mf.contains('android:foregroundServiceType="dataSync"'));
+  ck('服务不导出', RegExp(r'DshKeepAliveService"[^>]*android:exported="false"').hasMatch(mf));
+
+  final svc = _read(
+      'android/app/src/main/kotlin/com/thirdhub/app/DshKeepAliveService.kt');
+  ck('服务真的调了 startForeground', svc.contains('startForeground(NOTI_ID'));
+  ck('用的是 PARTIAL 唤醒锁（只保 CPU 不保屏）',
+      svc.contains('PARTIAL_WAKE_LOCK'));
+  ck('唤醒锁一定会释放（漏放会留一条永不消失的持锁记录）',
+      svc.contains('l.isHeld) l.release()'));
+  ck('通知栏有停止按钮', svc.contains('ACTION_STOP'));
+  // 刻意不用 START_STICKY：服务被重拉时 PRoot 里的 node 已经没了，
+  // 硬顶着"运行中"的通知等于对用户撒谎。
+  ck('服务被重拉时不假装还在跑（用 NOT_STICKY）',
+      svc.contains('START_NOT_STICKY') && !svc.contains('return START_STICKY'));
+
+  final ma = _read('android/app/src/main/kotlin/com/thirdhub/app/MainActivity.kt');
+  ck('原生通道名与 Dart 侧一致', ma.contains('"thirdhub/keepalive"'));
+  ck('服务持有了 channel（通知栏停止按钮的回传出口）',
+      ma.contains('DshKeepAliveService.channel = keepCh'));
+  ck('能查电池优化白名单', ma.contains('isIgnoringBatteryOptimizations'));
+  ck('能弹系统授权对话框',
+      ma.contains('ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'));
+
+  final ka = _read('lib/core/dsh_keepalive.dart');
+  ck('Dart 桥接用同一个通道名', ka.contains("MethodChannel('thirdhub/keepalive')"));
+  ck('非 Android 平台直接短路（不炸桌面/网页端）', ka.contains('Platform.isAndroid'));
+  ck('通知栏停止回调挂在 DshPack 上', pack.contains('DshKeepAlive.onUserStop'));
+  ck('保活只在本机真的起来之后开',
+      pack.indexOf('DshKeepAlive.start(') > pack.indexOf('if (await _alive())'));
+  ck('停止时先收保活（进程没了不该还挂"运行中"）',
+      pack.indexOf('await DshKeepAlive.stop();') <
+          pack.indexOf('    if (p == null) return;'));
+  ck('有健康检查供回前台自愈', pack.contains('Future<bool> healthOk()'));
+  // 只看「函数在不在」是假绿灯：把 body 直接 return true 也照样过。
+  // 所以钉住判断条件本身 —— 三个条件缺一个都会漏掉"进程半死"的情况。
+  ck('健康检查真的看了进程/token（不是恒真）',
+      pack.contains('_proc == null || _exited || token.isEmpty'));
+
+  ck('AI 页监听生命周期', page.contains('WidgetsBindingObserver'));
+  ck('回到前台检查本机运行是否还活着', page.contains('healthOk()'));
+  ck('死了才重起（活着无脑重起会换 token 白闪）',
+      page.contains('await DshPack.I.healthOk()) return;'));
+  ck('监听器有摘除（否则 State 泄漏）',
+      page.contains('removeObserver(this)'));
+
   // ── 汇总 ────────────────────────────────────────────────────────────
   print('─' * 44);
   print('PASS $_pass   FAIL ${_fail.length}');

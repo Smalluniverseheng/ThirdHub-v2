@@ -32,6 +32,47 @@ class MainActivity : FlutterActivity() {
         }
 
 
+        // 路径：可选数据包（DSH 完全体）要 exec 放在 nativeLibraryDir 的运行时，
+        // targetSdk 36 下 filesDir 里的可执行文件是禁止 exec 的（W^X）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/app_paths").setMethodCallHandler { call, result ->
+            if (call.method == "paths") {
+                result.success(mapOf(
+                    "nativeLib" to applicationInfo.nativeLibraryDir,
+                    "files" to filesDir.absolutePath,
+                    "cache" to cacheDir.absolutePath
+                ))
+            } else result.notImplemented()
+        }
+
+        // 本机 AI 保活（thirdhub/keepalive）
+        // Flutter 层没法常驻前台服务，也没法持有 WakeLock —— 这两件事只能在原生做。
+        // 这一通道同时是「通知栏那颗停止按钮」的回传出口：Dart 侧在同一个 channel 上
+        // 设 handler，用户点停止 → 服务 invokeMethod("stop") → Dart 拆 PRoot。
+        val keepCh = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/keepalive")
+        DshKeepAliveService.channel = keepCh
+        keepCh.setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "start" -> {
+                        DshKeepAliveService.start(
+                            applicationContext,
+                            call.argument<String>("title") ?: "",
+                            call.argument<String>("text") ?: ""
+                        )
+                        result.success(true)
+                    }
+                    "stop" -> {
+                        DshKeepAliveService.stop(applicationContext)
+                        result.success(true)
+                    }
+                    "running" -> result.success(DshKeepAliveService.running)
+                    "batteryExempt" -> result.success(isBatteryExempt())
+                    "requestExempt" -> result.success(requestBatteryExempt())
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) { result.error("KEEP_ERR", e.message, null) }
+        }
+
         // 均衡器: 挂到 just_audio 的音频会话
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/eq").setMethodCallHandler { call, result ->
             try {
@@ -336,6 +377,41 @@ class MainActivity : FlutterActivity() {
     private var mcastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
     /** 持有/释放 WiFi 多播锁。返回当前是否持有。 */
+    /**
+     * 是否已在系统电池优化白名单里。
+     * 国产 ROM 上这一项比前台服务还关键：MIUI/EMUI/ColorOS 的「省电策略」不认
+     * Android 官方的前台服务语义，会直接冻结后台进程。拿不到 PowerManager 时
+     * 保守返回 false（当作「未加白」，界面上给用户入口，不会骗他）。
+     */
+    private fun isBatteryExempt(): Boolean = try {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.isIgnoringBatteryOptimizations(packageName)
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * 弹系统的「允许后台运行」对话框。
+     * 只想让系统放行本 App，不想把用户带去电池设置里自己找 —— 所以用
+     * ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 而不是 ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS。
+     * 个别 ROM 没有这个对话框（抛 ActivityNotFoundException），回落到应用详情页。
+     */
+    private fun requestBatteryExempt(): Boolean = try {
+        if (isBatteryExempt()) return true
+        val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        i.data = android.net.Uri.parse("package:$packageName")
+        startActivity(i)
+        true
+    } catch (_: Exception) {
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:$packageName")))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun setMulticastLock(enable: Boolean): Boolean {
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
             ?: return false

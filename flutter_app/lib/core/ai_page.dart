@@ -97,7 +97,8 @@ class AiStore {
 class AiSection extends StatefulWidget {
   // 顶栏「新会话」按钮: +1 触发(RootNav 调用)
   static final ValueNotifier<int> newSessionTick = ValueNotifier(0); const AiSection({super.key}); @override State<AiSection> createState() => _AiSec(); }
-class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
+class _AiSec extends State<AiSection>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   AiSession? session; bool sending = false; String streaming = '';
   bool _autoRead = false; // 语音：自动朗读回复
   String _ttsLabel = '…'; // 语音：当前引擎显示名
@@ -152,7 +153,10 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
 
   double _drawerW(BuildContext c) => (MediaQuery.of(c).size.width * 0.8).clamp(0.0, 340.0);
 
-  @override void initState() { super.initState(); _boot();
+  @override void initState() { super.initState();
+    // 4.81.107：本机运行会被系统在后台回收，回前台要能自己补起来
+    WidgetsBinding.instance.addObserver(this);
+    _boot();
     // ★2026-10-17 对话头像开关（默认**关** —— 对齐 Kimi 的纯文字对话；设置里可打开）
     SharedPreferences.getInstance().then((p) {
       final v = p.getBool('ai_show_avatar') ?? false;
@@ -179,6 +183,7 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
     });
   }
   @override void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _regSub?.cancel();
     RootNav.moduleTick.removeListener(_onModuleTick);
     AiSection.newSessionTick.removeListener(_onNewSessionTick);
@@ -247,6 +252,30 @@ class _AiSec extends State<AiSection> with SingleTickerProviderStateMixin {
       if (mounted) setState(() => _dshStarting = false);
       AppLog.add('dsh', 'warn', '本机 DSH 启动异常: $e');
     }
+  }
+
+  /// 回到前台时把本机运行补齐。
+  ///
+  /// 为什么必须做：Android 会在后台冻结/回收进程，PRoot 里的 node 跟着一起没。
+  /// 用户看到的是「AI 页白屏/连不上」，而修复动作（重启 PRoot）本来可以自动完成。
+  /// 三种情况要分开：
+  ///   · 用户根本没选本机运行 → 什么都不做；
+  ///   · 还活着 → 什么都不做（无脑重起会换 token、WebView 重载，白闪一下）；
+  ///   · 死了 → 重起；起完 token 变了，`ValueKey(url)` 会让 WebView 换新页重新鉴权。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s != AppLifecycleState.resumed) return;
+    unawaited(_healLocalDsh());
+  }
+
+  Future<void> _healLocalDsh() async {
+    if (!DshPack.I.enabled || _dshStarting) return;
+    if (await DshPack.I.healthOk()) return;
+    _dshStarting = true;
+    _dshErr = '';
+    AppLog.add('dsh', 'info', '回到前台发现本机运行已断开，自动重启');
+    if (mounted) setState(() {});
+    await _startLocalDsh();
   }
 
   // ── 抽屉手势(边缘36px右滑开·跟手·速度/距离双判定·惯性动画·震动反馈) ──
