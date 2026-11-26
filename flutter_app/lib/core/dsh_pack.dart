@@ -215,14 +215,25 @@ class DshPack {
     onTick?.call();
     final tmp = File('$_root.download.tar.gz');
     try {
-      final j = jsonDecode(
-          await http.read(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 15)));
-      if (j is! Map) throw '清单格式不对';
-      final url = '${j['url'] ?? ''}';
-      final parts = j['parts'] is List ? List<dynamic>.from(j['parts'] as List) : null;
-      final wantVer = '${j['version'] ?? ''}';
-      final wantSha = '${j['sha256'] ?? ''}'.trim().toLowerCase();
-      final wantSize = (j['size'] is num) ? (j['size'] as num).toInt() : 0;
+      // ★4.81.113：清单拉不到（飞机上 / 纯内网 / 服务端挂了）不能让安装直接失败 ——
+      //   运行包就在安装包里，清单只用来核对版本与 sha256。拿不到就按包里这份装，
+      //   这正是「没有后端也得能用」。真没网络又没内置包时，下面会给出明确提示。
+      Map? j;
+      try {
+        final raw = await http
+            .read(Uri.parse(manifestUrl))
+            .timeout(const Duration(seconds: 8));
+        final p = jsonDecode(raw);
+        if (p is Map) j = p;
+      } catch (_) {
+        AppLog.add('dsh', 'info', '清单拉不到，改用安装包内置运行包');
+      }
+      final url = '${j?['url'] ?? ''}';
+      final parts =
+          (j?['parts'] is List) ? List<dynamic>.from(j!['parts'] as List) : null;
+      final wantVer = '${j?['version'] ?? ''}';
+      final wantSha = '${j?['sha256'] ?? ''}'.trim().toLowerCase();
+      final wantSize = (j?['size'] is num) ? (j!['size'] as num).toInt() : 0;
 
       await Directory(_root).create(recursive: true);
 
@@ -232,7 +243,7 @@ class DshPack {
       final bundled = await _copyBundled(tmp, wantVer, wantSha, wantSize, onTick);
       if (!bundled) {
         if (url.isEmpty && (parts == null || parts.isEmpty)) {
-          throw '清单里没有下载地址';
+          throw '连不上网络，安装包里也没有运行组件';
         }
         await _fetch(url, tmp, parts, onTick);
       }

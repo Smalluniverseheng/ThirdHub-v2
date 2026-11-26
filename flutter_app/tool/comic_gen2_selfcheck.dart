@@ -45,6 +45,8 @@ void main() {
   ok('抓包脚本分片校验', bundler.contains('分片 sha256 不符'));
   ok('客户端优先提取内置包', dsh.contains('_copyBundled(tmp'));
   ok('内置包失败回退网络下载', dsh.contains('if (!bundled)'));
+  ok('清单拉不到也能装（离线可用内置包）',
+      dsh.contains('清单拉不到，改用安装包内置运行包'));
   ok('内置包走原生流式(不 OOM)',
       dsh.contains("invokeMethod<int>('extractAsset'"));
   ok('Dart 未调用 loadStream（无此 API，注释提及不算）',
