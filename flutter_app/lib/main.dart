@@ -18341,13 +18341,46 @@ class _Ecr extends State<EngineComicReader>
   /// 屏幕左 / 右各 30% 翻上一页 / 下一页，翻到头自动切上一话 / 下一话；
   /// 中间 40% 留给工具栏（当前没有工具栏，保持不动，避免误翻页）。
   /// 与底部「上一话 / 下一话」按钮共用 _go，不另写一套章节跳转。
+  // ── 第2代 OmniHub：双击缩放 ─────────────────────────────────────────────
+  // 为什么挂在「中间区」而不是全页：中间区本来就是 ComicTapAction.toggleUi（单击无动作），
+  // 在这里做双击检测**不需要延迟单击**，左右翻页区仍然立刻响应，手感一点没变。
+  // 缩放围绕落点而不是画面中心 —— 双击画面右侧时，放大后要能看到右半边。
+  final Map<int, TransformationController> _zoomCtl = <int, TransformationController>{};
+  TransformationController _zoomCtlOf(int i) =>
+      _zoomCtl.putIfAbsent(i, () => TransformationController());
+  int _lastCenterTapMs = 0;
+  Offset _lastCenterTapPos = Offset.zero;
+
+  void _toggleZoom(int i, Offset at) {
+    final ctl = _zoomCtlOf(i);
+    if (ctl.value.getMaxScaleOnAxis() > 1.05) {
+      ctl.value = Matrix4.identity();
+      return;
+    }
+    const s = 2.5;
+    ctl.value = Matrix4.identity()
+      ..translate(-at.dx * (s - 1), -at.dy * (s - 1))
+      ..scale(s);
+  }
+
   void _onReaderTap(Offset pos, Size size, int i) {
     // Mangayomi ReaderInteractiveRegion：页内按钮（图片失败态「重试」）优先于
     // 全屏翻页手势，命中已登记交互区时不翻页，避免点一次重试顺带翻一页。
     if (ReaderInteractiveRegions.containsPosition(pos)) return;
     final hit = ComicTapHit.at(pos.dx, pos.dy, size.width, size.height);
     final action = tapActionOf(ComicReadMode.galleryLeftToRight, hit);
-    if (action == ComicTapAction.toggleUi) return;
+    if (action == ComicTapAction.toggleUi) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final near = (pos - _lastCenterTapPos).distance < 60;
+      if (now - _lastCenterTapMs < 300 && near) {
+        _lastCenterTapMs = 0;
+        _toggleZoom(i, pos);
+      } else {
+        _lastCenterTapMs = now;
+        _lastCenterTapPos = pos;
+      }
+      return;
+    }
     final target = action == ComicTapAction.next ? i + 1 : i - 1;
     if (target >= 0 && target < pageMath.pageViewPageCount) {
       pc.animateToPage(target,
@@ -18525,8 +18558,10 @@ class _Ecr extends State<EngineComicReader>
                             behavior: HitTestBehavior.translucent,
                             onTapUp: (d) => _onReaderTap(
                                 d.globalPosition, MediaQuery.sizeOf(c), i),
-                            child:
-                                InteractiveViewer(child: Center(child: page)));
+                            child: InteractiveViewer(
+                                transformationController: _zoomCtlOf(i),
+                                maxScale: 5,
+                                child: Center(child: page)));
                       })
                   : ListView.builder(
                       controller: autoScrollController,

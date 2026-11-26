@@ -78,6 +78,14 @@ void main() {
   ok('沉浸时底栏隐藏', main.contains('bottomNavigationBar: _showChrome'));
   ok('亮度黑色遮罩', main.contains('alpha: (1 - comicBright) * 0.55'));
   ok('夜间暖色罩', main.contains('Color(0x18FFB74D)'));
+  // 4.81.114 双击缩放：三条一起钉 —— 只钉「有这个函数」不钉落点算法，等于没钉
+  // （照印象重写最容易把「围绕落点」写成围绕中心，用户感觉就是双开放大后看不到想看的半边）。
+  ok('双击缩放：围绕落点换算', main.contains('translate(-at.dx * (s - 1)'));
+  ok('双击缩放：控制器接进 InteractiveViewer',
+      main.contains('transformationController: _zoomCtlOf(i)'));
+  ok('双击只在中间区检测（翻页手感不变）',
+      main.contains('if (now - _lastCenterTapMs < 300 && near)'));
+  ok('双击缩放：再次双击还原', main.contains('getMaxScaleOnAxis() > 1.05'));
 
   print('=== 3. 六语言新键 ===');
   for (final k in [
