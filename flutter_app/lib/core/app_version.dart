@@ -24,4 +24,4 @@ const String kAppVersion = '4.81.110';
 
 /// 安卓 versionCode。语义：4.73.0 → 50650（与 pubspec 的 `+50650` 必须一致）。
 /// 只增不减；`Updater` 用它与云端清单的 versionCode 比对来判断"有没有新版"。
-const int kAppCode = 50780;
+const int kAppCode = 50781;
