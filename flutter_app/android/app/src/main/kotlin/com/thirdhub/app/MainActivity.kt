@@ -2,6 +2,7 @@ package com.thirdhub.app
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -45,6 +46,11 @@ class MainActivity : FlutterActivity() {
                 //   Flutter 的 AssetBundle 没有流式 API（load 会整包进内存直接 OOM），
                 //   Android AssetManager.open 是流式的，必须在原生做。
                 //   Kotlin 侧用后台线程，避免跑在主线程触发 ANR。
+                // ★4.81.113 两处修正（不修等于内置包白放）：
+                //   ① 路径：Dart 传的是 pubspec 里的键（assets/dsh/rootfs.tar.gz），
+                //      而 APK 里实际落在 assets/flutter_assets/assets/dsh/rootfs.tar.gz，
+                //      AssetManager 只认后半段 → 必须自己补 flutter_assets/ 前缀（两种都试）。
+                //   ② 回传：MethodChannel 的 result 只能在主线程回，后台线程回会被引擎丢弃/抛错。
                 "extractAsset" -> {
                     val asset = call.argument<String>("asset") ?: ""
                     val dest = call.argument<String>("dest") ?: ""
@@ -52,23 +58,43 @@ class MainActivity : FlutterActivity() {
                         result.error("EXTRACT_ARG", "asset/dest 为空", null)
                         return@setMethodCallHandler
                     }
+                    val candidates = listOf("flutter_assets/$asset", asset)
                     Thread {
                         try {
                             val out = File(dest)
                             out.parentFile?.mkdirs()
-                            val buf = ByteArray(256 * 1024)
-                            assets.open(asset).use { input ->
-                                java.io.BufferedOutputStream(java.io.FileOutputStream(out)).use { os ->
-                                    while (true) {
-                                        val n = input.read(buf)
-                                        if (n <= 0) break
-                                        os.write(buf, 0, n)
-                                    }
+                            var opened: java.io.InputStream? = null
+                            var used = ""
+                            for (c in candidates) {
+                                try {
+                                    opened = assets.open(c)
+                                    used = c
+                                    break
+                                } catch (_: Exception) {
                                 }
                             }
-                            result.success(out.length())
+                            // 必须提成局部 val/null 判空后再 use：use 的接收者是可空 Closeable，
+                            // 直接 opened.use 里面拿到的是 InputStream? ，read 过不了编译。
+                            val input = opened
+                            if (input == null) {
+                                runOnUiThread { result.error("EXTRACT_MISS", "安装包里没有 $asset", null) }
+                            } else {
+                                Log.i("ThirdHub", "extractAsset 命中 $used -> ${out.absolutePath}")
+                                val buf = ByteArray(256 * 1024)
+                                input.use { ins ->
+                                    java.io.BufferedOutputStream(java.io.FileOutputStream(out)).use { os ->
+                                        while (true) {
+                                            val n = ins.read(buf)
+                                            if (n <= 0) break
+                                            os.write(buf, 0, n)
+                                        }
+                                    }
+                                }
+                                val n = out.length()
+                                runOnUiThread { result.success(n) }
+                            }
                         } catch (e: Exception) {
-                            result.error("EXTRACT_ERR", e.message, null)
+                            runOnUiThread { result.error("EXTRACT_ERR", e.message, null) }
                         }
                     }.start()
                 }

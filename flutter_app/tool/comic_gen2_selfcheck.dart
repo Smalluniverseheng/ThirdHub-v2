@@ -49,8 +49,16 @@ void main() {
       dsh.contains("invokeMethod<int>('extractAsset'"));
   ok('Dart 未调用 loadStream（无此 API，注释提及不算）',
       !dsh.contains('rootBundle.loadStream'));
-  ok('原生 AssetManager.open 流式写盘', kt.contains('assets.open(asset)'));
+  // ★4.81.113：这两条是「内置包到底能不能取出来」的命门，必须钉死。
+  //   ① Dart 传的是 pubspec 键 assets/dsh/rootfs.tar.gz，APK 里实际落在
+  //     assets/flutter_assets/…，原生不补前缀 → 永远 EXTRACT_MISS → 静默回退联网下载，
+  //     用户看到的就是「完全体没放进安装包」。
+  ok('原生补 flutter_assets 前缀（否则内置包取不到）',
+      kt.contains('"flutter_assets/\$asset"'));
+  ok('原生逐个候选路径尝试', kt.contains('for (c in candidates)'));
+  ok('原生 AssetManager.open 流式写盘', kt.contains('assets.open(c)'));
   ok('原生用后台线程（避免 ANR）', kt.contains('Thread {'));
+  ok('原生回传必须回主线程', kt.contains('runOnUiThread { result.success'));
 
   print('=== 2. 漫画阅读器 OmniHub 二代对齐 ===');
   ok('Scaffold key 接通目录抽屉', main.contains('key: _ecrKey'));
