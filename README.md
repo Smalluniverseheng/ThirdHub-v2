@@ -50,7 +50,7 @@ flowchart LR
 > 内容源不在 App 里，而在你自己的 NAS 上 —— 换源不用等新版，改一份配置就生效。
 > 没有广告、没有会员墙、不收集数据：所有请求都走你家的机器。
 
-**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.112（50781）
+**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.112（50783）
 
 ---
 
@@ -106,12 +106,14 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.112**（versionCode 50781），安装包约 **26 MB**（**arm64-v8a 单 ABI**）。
-> ★体积口径（2026-09-28 定）：分发通道的 Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
-> 而双 ABI 通用包是 **54,371,575 B（51.85 MiB）→ 塞不进去**（实测上游 400 `EntityTooLarge`，且会出现「清单写成功、包没传上」的分叉）。
-> 故 push 默认只打 `android-arm64`；32 位（armeabi-v7a）按需 `workflow_dispatch abis=android-arm` 出包，
-> 单独放 `downloads/thirdhub/thirdhub-app-<ver>-armeabi-v7a.apk`，并在网页端下载页作次入口。
-> 要恢复「一个包覆盖全部真机」，必须先解决通道（开 R2 / 升套餐 / 端内按 ABI 取包）。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.112**（versionCode 50783），安装包约 **195 MB**（**arm64-v8a 单 ABI**）。
+> ★体积口径（2026-11-26 改）：4.81.112 起把 **DSH 完全体运行包（ubuntu-base + 官方 node 24 + dsh 0.2.2-rc.1，解压 696 MB）**
+> 打进安装包，装完即用、不再依赖首次联网下载 170 MB。代价是包体从 26 MB 涨到约 195 MB。
+> ★分发口径：Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
+> 故 >45 MB 的包一律**分片**：`thirdhub/parts/<ver>/p1..pN`（40 MB/片）+ 清单 `latest-app.json` 带 `parts[{url,size,sha256}]`；
+> 版本化整包与固定别名跳过（塞不进），`url`/`aliasUrl` 指向 ghfast 代理的 Release 资产。
+> 端内更新按清单逐片 `curl -C -` 续传到目标 size 后校验 sha256 再合并。
+> push 默认只打 `android-arm64`；32 位（armeabi-v7a）按需 `workflow_dispatch abis=android-arm` 出包。
 > 仓库名里的 `-v2` 是历史遗留（第二代聚合平台 OmniHub 之后的第二个仓），与版本号 `4.x` 无关 —— 不要按仓名推断版本。
 
 ---
@@ -123,7 +125,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 | 产品线 | 源码位置 | 仓库 | 包名 | 当前版本 | 体积 | 谁是主力 |
 |---|---|---|---|---|---|---|
-| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.90** | ~31 MB | **★ 用户在用的主线** |
+| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.112** | ~195 MB | **★ 用户在用的主线** |
 | Android 轻壳版 | `ThirdHub-Android` | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 备用 |
 | 完全体客户端（旁支） | `D:/ai/thirdhub-flutter` | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | **旁支，已搁置** |
 | 漫画稳定版（第二代） | `OmniHub-Android` | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | 历史存档 |
@@ -133,7 +135,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 判别技巧（三条里任一条对上就是本仓）：
 
 1. 包名 `com.thirdhub.app`；
-2. 安装包 29 MB 左右（arm64 单 ABI；旁支是 105 MB，轻壳是 10 MB）；
+2. 安装包约 195 MB（arm64 单 ABI，含 DSH 完全体运行包；轻壳版是 10 MB）；
 3. 应用内「检查更新」读的是 Supabase 桶里的 `latest-app.json`（旁支读的是网页端 `app-versions.json`）。
 
 ---

@@ -228,7 +228,18 @@ void main() {
           mainSrc.contains('duration: ReaderMotion.settle('));
   // main.dart 里另有 3 处 child: Slider( 在 _Ecr 之前，必须从阅读器类之后开始找。
   final ecrAt = mainSrc.indexOf('class _Ecr extends State<EngineComicReader>');
-  final sliderAt = ecrAt < 0 ? -1 : mainSrc.indexOf('child: Slider(', ecrAt);
+  // ★4.81.112：_Ecr 里新增了「阅读设置」亮度滑条（child: Slider( value: comicBright），
+  //   若仍取第一个 Slider 会命中它、把它后面新加的 tr('亮度') 误判成「滑杆新增文案」。
+  //   改为以**页码 label 为锚点**、向前找最近的 child: Slider( ——那才是本闸门守的
+  //   页码滑杆；判据强度不降（仍要求它存在且在 _Ecr 之后）。
+  final labelAt = ecrAt < 0
+      ? -1
+      : mainSrc.indexOf('label: pageMath.currentIndexLabel(', ecrAt);
+  var sliderAt = -1;
+  if (labelAt > ecrAt) {
+    final before = mainSrc.lastIndexOf('child: Slider(', labelAt);
+    if (before > ecrAt) sliderAt = before;
+  }
   ck('§4 阅读器类仍存在且滑杆在其后', ecrAt >= 0 && sliderAt > ecrAt);
 
   // ── §5 台账 / CI / 版本 / 合规 ─────────────────────────────────
