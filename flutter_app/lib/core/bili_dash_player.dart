@@ -20,6 +20,7 @@ import 'bili_subtitle.dart' show BiliDashSubtitleLayer;
 import 'bili_subtitle_parser.dart' show SubTrack;
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'pip.dart';
 
 class BiliDashPlayerPage extends StatefulWidget {
   const BiliDashPlayerPage({
@@ -68,6 +69,11 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
   double _dur = 0;
   bool _playing = false;
   double _rate = 1.0;
+
+  // ── 画中画（与本地/在线播放器同一套 Pip 桥；4.81.110）──
+  bool _pipOk = false;
+  bool _pipLastPlaying = false;
+  int _pipGen = 0;
 
   // 弹幕设置（持久化在 bili_player 里，这里读同一批 key）
   bool _dmOn = true;
@@ -127,9 +133,33 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
       if (!mounted) return;
       setState(() => _ready = true);
       await _player.play();
+      unawaited(_setupPip());
     } catch (e) {
       if (mounted) setState(() => _err = '${tr('播放失败')}：$e');
     }
+  }
+
+  /// 声明「正在放视频」并接上画中画小窗里的播放/暂停按钮（4.81.110）。
+  /// media_kit 的播放态走 stream，这里用一个 stream 订阅单独刷按钮图标。
+  StreamSubscription<bool>? _pipPlayingSub;
+
+  Future<void> _setupPip() async {
+    _pipOk = await Pip.supported();
+    Pip.onToggle = () => _player.playOrPause();
+    _pipPlayingSub = _player.stream.playing.listen((v) {
+      if (v == _pipLastPlaying) return;
+      _pipLastPlaying = v;
+      Pip.updatePlaying(v);
+    });
+    if (!mounted) return;
+    setState(() {});
+    if (!_pipOk) return;
+    _pipGen = await Pip.claimAuto(aspect: _aspect, playing: _player.state.playing);
+  }
+
+  double get _aspect {
+    final r = _player.state.videoParams.aspect;
+    return r != null && r > 0 ? r : 16 / 9;
   }
 
   /// 通过 libmpv 原生命令加外置音轨（media_kit 高层 API 未封装）
@@ -229,7 +259,11 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
   void dispose() {
     _posSub?.cancel();
     _doneSub?.cancel();
+    _pipPlayingSub?.cancel();
     _hideTimer?.cancel();
+    Pip.releaseAuto(_pipGen);
+    Pip.onToggle = null;
+    Pip.inPip.value = false;
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _player.dispose();
@@ -237,7 +271,24 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: Pip.inPip,
+        builder: (c, pip, _) {
+          // 画中画里只留视频画面（4.81.110）；controller 复用同一个 _vc，播的不中断。
+          if (pip && _ready)
+            return Scaffold(
+                backgroundColor: Colors.black,
+                body: Center(
+                    child: Video(
+                  controller: _vc,
+                  fit: BoxFit.contain,
+                  controls: (state) => const SizedBox.shrink(),
+                )));
+          return _buildFull(c);
+        },
+      );
+
+  Widget _buildFull(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: _err.isNotEmpty
@@ -405,6 +456,19 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
                   child: Text(tr('字幕设置'), style: const TextStyle(color: Colors.white, fontSize: 12)),
                 ),
               const Spacer(),
+              if (_pipOk)
+                IconButton(
+                  icon: const Icon(Icons.picture_in_picture_alt,
+                      color: Colors.white),
+                  tooltip: tr('画中画'),
+                  onPressed: () async {
+                    final ok = await Pip.enter(
+                        aspect: _aspect, playing: _player.state.playing);
+                    if (!ok && mounted)
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(tr('当前状态进不了画中画'))));
+                  },
+                ),
               IconButton(
                 icon: const Icon(Icons.fullscreen, color: Colors.white),
                 onPressed: _toggleFullscreen,

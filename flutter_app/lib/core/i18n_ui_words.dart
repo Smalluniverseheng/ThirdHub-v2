@@ -2978,6 +2978,7 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "View more", "正在搜索全部板块": "Searching all sections",
     "该板块搜索失败": "This section failed to load", "该板块暂无结果": "No results in this section",
     "全部": "All", "小说": "Novel", "漫画": "Comic", "视频": "Video", "音乐": "Music",
+    "当前状态进不了画中画": "Can't enter picture-in-picture in the current state",
   },
   'ja': {
     "全网搜": "全体検索", "全网搜索": "全体検索", "B站": "Bilibili",
@@ -2985,6 +2986,7 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "もっと見る", "正在搜索全部板块": "すべてのセクションを検索中",
     "该板块搜索失败": "このセクションの検索に失敗しました", "该板块暂无结果": "このセクションに結果はありません",
     "全部": "すべて", "小说": "小説", "漫画": "漫画", "视频": "動画", "音乐": "音楽",
+    "当前状态进不了画中画": "現在の状態ではピクチャインピクチャーを開始できません",
   },
   'fr': {
     "全网搜": "Recherche globale", "全网搜索": "Recherche globale", "B站": "Bilibili",
@@ -2992,6 +2994,7 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "Voir plus", "正在搜索全部板块": "Recherche de toutes les sections",
     "该板块搜索失败": "Échec de la recherche dans cette section", "该板块暂无结果": "Aucun résultat dans cette section",
     "全部": "Tout", "小说": "Roman", "漫画": "Bande dessinée", "视频": "Vidéo", "音乐": "Musique",
+    "当前状态进不了画中画": "Impossible d'ouvrir le mode image dans l'image dans l'état actuel",
   },
   'ru': {
     "全网搜": "Общий поиск", "全网搜索": "Общий поиск", "B站": "Bilibili",
@@ -2999,6 +3002,7 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "Показать ещё", "正在搜索全部板块": "Поиск по всем разделам",
     "该板块搜索失败": "Не удалось выполнить поиск в этом разделе", "该板块暂无结果": "В этом разделе нет результатов",
     "全部": "Все", "小说": "Книги", "漫画": "Комиксы", "视频": "Видео", "音乐": "Музыка",
+    "当前状态进不了画中画": "Не удалось включить режим «картинка в картинке» в текущем состоянии",
   },
   'es': {
     "全网搜": "Búsqueda global", "全网搜索": "Búsqueda global", "B站": "Bilibili",
@@ -3006,6 +3010,7 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "Ver más", "正在搜索全部板块": "Buscando en todas las secciones",
     "该板块搜索失败": "Error al buscar en esta sección", "该板块暂无结果": "Sin resultados en esta sección",
     "全部": "Todo", "小说": "Novela", "漫画": "Cómic", "视频": "Vídeo", "音乐": "Música",
+    "当前状态进不了画中画": "No se puede activar la imagen en imagen en el estado actual",
   },
   'ar': {
     "全网搜": "البحث الشامل", "全网搜索": "البحث الشامل", "B站": "بيليبيلي",
@@ -3013,5 +3018,6 @@ const Map<String, Map<String, String>> i18nUiWords25 = {
     "查看更多": "عرض المزيد", "正在搜索全部板块": "جارٍ البحث في جميع الأقسام",
     "该板块搜索失败": "فشل البحث في هذا القسم", "该板块暂无结果": "لا توجد نتائج في هذا القسم",
     "全部": "الكل", "小说": "رواية", "漫画": "مانجا", "视频": "فيديو", "音乐": "موسيقى",
+    "当前状态进不了画中画": "تعذّر بدء وضع الصورة داخل الصورة في الحالة الحالية",
   },
 };

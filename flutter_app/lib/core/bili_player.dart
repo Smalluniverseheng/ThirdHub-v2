@@ -29,6 +29,9 @@ import 'package:video_player/video_player.dart';
 
 import 'design_tokens.dart';
 import 'i18n.dart';
+import 'pip.dart';
+import 'player/th_player.dart';
+import 'player/th_player_types.dart';
 
 /// 清晰度码 → 人话（与后端 / bili_down_page 的 FORMAT_LABEL 对齐）
 String biliQualityLabel(int q) => switch (q) {
@@ -123,6 +126,11 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   bool _fullscreen = false;
   Timer? _ctrlTimer;
 
+  // ── 画中画（与本地/在线播放器同一套 Pip 桥）──
+  bool _pipOk = false;
+  bool _pipLastPlaying = false;
+  int _pipGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -194,6 +202,39 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
     _vp!.addListener(_tick);
     await _vp!.play();
     if (mounted) setState(() => _err = '');
+    unawaited(_setupPip());
+  }
+
+  /// 声明「正在放视频」并接上画中画小窗里的播放/暂停按钮（4.81.110）。
+  /// 缩窗由 MainActivity 做，这里只声明状态、接回调、刷按钮图标。
+  Future<void> _setupPip() async {
+    _pipOk = await Pip.supported();
+    Pip.onToggle = () {
+      final v = _vp;
+      if (v == null || !v.value.isInitialized) return;
+      v.value.isPlaying ? v.pause() : v.play();
+    };
+    _vp?.addListener(_onPipTick);
+    if (!mounted) return;
+    setState(() {});
+    if (!_pipOk) return;
+    _pipGen = await Pip.claimAuto(
+        aspect: _aspect, playing: _vp?.value.isPlaying ?? false);
+  }
+
+  void _onPipTick() {
+    final v = _vp;
+    if (v == null || !v.value.isInitialized) return;
+    if (v.value.isPlaying == _pipLastPlaying) return;
+    _pipLastPlaying = v.value.isPlaying;
+    Pip.updatePlaying(_pipLastPlaying);
+  }
+
+  double get _aspect {
+    final v = _vp;
+    if (v == null || !v.value.isInitialized) return 16 / 9;
+    final a = v.value.aspectRatio;
+    return a > 0 ? a : 16 / 9;
   }
 
   /// 真切一档清晰度：向后台按 qn 重新取流，成功才换源。
@@ -441,7 +482,11 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   void dispose() {
     _ctrlTimer?.cancel();
     _dm = null; // 弹幕控制器随 DanmakuScreen 一起销毁，先断开引用
+    Pip.releaseAuto(_pipGen);
+    Pip.onToggle = null;
+    Pip.inPip.value = false;
     _vp?.removeListener(_tick);
+    _vp?.removeListener(_onPipTick);
     _vp?.dispose();
     // 恢复屏幕方向与系统栏，避免退出播放器后整个 App 停在横屏
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -450,11 +495,26 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: Pip.inPip,
+        builder: (c, pip, _) {
+          // 画中画里只留视频画面，别把弹幕设置/选集等整页 UI 缩成小方块（4.81.110）。
+          if (pip) {
+            final v = _vp;
+            return Scaffold(
+                backgroundColor: Colors.black,
+                body: Center(
+                    child: v == null || !v.value.isInitialized
+                        ? const SizedBox.shrink()
+                        : AspectRatio(
+                            aspectRatio: _aspect, child: VideoPlayer(v))));
+          }
+          return _buildFull(c);
+        },
+      );
+
+  Widget _buildFull(BuildContext context) {
     final vp = _vp;
-    final ar = (vp != null && vp.value.isInitialized && vp.value.aspectRatio > 0)
-        ? vp.value.aspectRatio
-        : 16 / 9;
 
     // 不用 PopScope：它的回调签名在 Flutter 3.22 / 3.24 之间改过名
     // （onPopInvoked → onPopInvokedWithResult），写哪个都可能在另一版编译不过。
@@ -472,50 +532,63 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
             )
           : (vp == null || !vp.value.isInitialized
               ? const Center(child: CircularProgressIndicator())
-              : Stack(children: [
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: ar,
-                      child: Stack(children: [
-                        VideoPlayer(vp),
-                        // 弹幕层贴在**视频画面**内，黑边上不出现弹幕
-                        if (_dmOn)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: DanmakuScreen<int>(
-                                createdController: (e) {
-                                  _dm = e;
-                                  _applyDmOption();
-                                  _replayFrom(_currentPos());
-                                },
-                                option: DanmakuOption(
-                                  fontSize: _dmFontSize,
-                                  opacity: _dmOpacity,
-                                  duration: _dmDuration,
-                                  area: _dmArea,
-                                  hideTop: _hideTop,
-                                  hideBottom: _hideBottom,
-                                  hideScroll: _hideScroll,
-                                  strokeWidth: 1.5,
-                                  lineHeight: 1.6,
-                                ),
-                              ),
-                            ),
-                          ),
-                        // 单击显示/隐藏控制层；双击播放暂停
-                        Positioned.fill(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onTap: _toggleCtrl,
-                            onDoubleTap: _togglePlay,
-                          ),
-                        ),
-                      ]),
+              // ★4.81.84 换成 ThPlayer：B 站那套手势（双击暂停、长按 2 倍速、
+              //   左右滑快进、左半屏竖滑亮度、右半屏竖滑音量）+ 倍速面板 +
+              //   横屏全屏。原来的自绘控制层只有单击/双击，连倍速都没有。
+              : ThPlayer(
+                  controller: vp,
+                  title: widget.title,
+                  qualities: _accept
+                      .map((q) => ThQuality(biliQualityLabel(q), tag: '$q'))
+                      .toList(growable: false),
+                  qualityIndex: _accept.indexOf(_quality) < 0
+                      ? 0
+                      : _accept.indexOf(_quality),
+                  onQuality: (i) {
+                    if (i >= 0 && i < _accept.length) _switchQuality(_accept[i]);
+                  },
+                  // 画中画（4.81.110）：设备支持才显示按钮，复用本地播放器同一套 Pip 桥。
+                  onPip: _pipOk
+                      ? () async {
+                          final ok = await Pip.enter(
+                              aspect: _aspect,
+                              playing: vp.value.isPlaying);
+                          if (!ok && mounted)
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(tr('当前状态进不了画中画'))));
+                        }
+                      : null,
+                  hasDanmaku: true,
+                  overlay: IgnorePointer(
+                    child: DanmakuScreen<int>(
+                      createdController: (e) {
+                        _dm = e;
+                        _applyDmOption();
+                        _replayFrom(_currentPos());
+                      },
+                      option: DanmakuOption(
+                        fontSize: _dmFontSize,
+                        opacity: _dmOpacity,
+                        duration: _dmDuration,
+                        area: _dmArea,
+                        hideTop: _hideTop,
+                        hideBottom: _hideBottom,
+                        hideScroll: _hideScroll,
+                        strokeWidth: 1.5,
+                        lineHeight: 1.6,
+                      ),
                     ),
                   ),
-                  if (!_fullscreen) _topBar(),
-                  if (_ctrl) _bottomBar(),
-                ])),
+                  moreExtras: [
+                    ThMoreItem(
+                      icon: Icons.tune,
+                      label: tr('弹幕设置'),
+                      sub: _dmCount > 0 ? '$_dmCount' : '',
+                      onTap: _openDanmakuSheet,
+                    ),
+                  ],
+                )),
     );
   }
 
