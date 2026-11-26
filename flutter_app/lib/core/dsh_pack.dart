@@ -211,7 +211,7 @@ class DshPack {
     await stop();
     state = DshPackState.downloading;
     progress = 0;
-    progressText = '准备下载';
+    progressText = '准备安装';
     onTick?.call();
     final tmp = File('$_root.download.tar.gz');
     try {
@@ -220,12 +220,22 @@ class DshPack {
       if (j is! Map) throw '清单格式不对';
       final url = '${j['url'] ?? ''}';
       final parts = j['parts'] is List ? List<dynamic>.from(j['parts'] as List) : null;
-      if (url.isEmpty && (parts == null || parts.isEmpty)) throw '清单里没有下载地址';
       final wantVer = '${j['version'] ?? ''}';
       final wantSha = '${j['sha256'] ?? ''}'.trim().toLowerCase();
+      final wantSize = (j['size'] is num) ? (j['size'] as num).toInt() : 0;
 
       await Directory(_root).create(recursive: true);
-      await _fetch(url, tmp, parts, onTick);
+
+      // ★完全体内置：178MB rootfs 随 APK 发（assets/dsh/rootfs.tar.gz）。
+      //   优先从包内资产流式落盘（不占内存），校验 sha256/size 与云端清单一致后直接用，
+      //   省掉首装 178MB 下载。旧包没带资产时回退原来的分片下载，行为不变。
+      final bundled = await _copyBundled(tmp, wantVer, wantSha, wantSize, onTick);
+      if (!bundled) {
+        if (url.isEmpty && (parts == null || parts.isEmpty)) {
+          throw '清单里没有下载地址';
+        }
+        await _fetch(url, tmp, parts, onTick);
+      }
 
       if (wantSha.isNotEmpty) {
         progressText = '校验完整性';
@@ -306,6 +316,50 @@ class DshPack {
       }
     } catch (_) {}
     return total;
+  }
+
+  /// 从 APK 内置资产流式复制到落盘位置。
+  /// 返回 true 表示资产有效且已落盘；false 表示包里没带资产或版本不符，调用方回退下载。
+  /// 178MB 用 loadStream 分块写，绝不 load() 进内存（否则首启直接 OOM）。
+  Future<bool> _copyBundled(File to, String wantVer, String wantSha, int wantSize,
+      void Function()? onTick) async {
+    const key = 'assets/dsh/rootfs.tar.gz';
+    try {
+      progressText = '从安装包提取运行包';
+      onTick?.call();
+      // Flutter 的 AssetBundle 没有流式 API（load 会整包进内存，178MB 必 OOM），
+      // 走原生 AssetManager.open 流式写盘。旧包 MainActivity 没这个方法会抛
+      // MissingPluginException → 回退网络下载，行为不变。
+      final got = await const MethodChannel('thirdhub/app_paths')
+          .invokeMethod<int>('extractAsset', {'asset': key, 'dest': to.path});
+      final bytes = got ?? 0;
+      if (bytes <= 0) {
+        await to.delete();
+        return false;
+      }
+      progress = 1;
+      onTick?.call();
+      if (wantSize > 0 && got != wantSize) {
+        AppLog.add('dsh', 'warn', '内置包大小 $got != 清单 $wantSize，回退网络下载');
+        await to.delete();
+        return false;
+      }
+      if (wantSha.isNotEmpty && await _fileSha256(to) != wantSha) {
+        AppLog.add('dsh', 'warn', '内置包 sha 不符（可能 APK 较旧），回退网络下载');
+        await to.delete();
+        return false;
+      }
+      progress = 1;
+      onTick?.call();
+      AppLog.add('dsh', 'info', '已从安装包提取 DSH 运行包 v$wantVer');
+      return true;
+    } catch (e) {
+      AppLog.add('dsh', 'warn', '内置包不可用（$e），回退网络下载');
+      try {
+        if (await to.exists()) await to.delete();
+      } catch (_) {}
+      return false;
+    }
   }
 
   /// 下载。清单带 parts 时逐段下载 + 逐段校验 + 顺序合并；否则整包。

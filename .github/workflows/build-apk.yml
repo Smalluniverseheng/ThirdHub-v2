@@ -118,6 +118,19 @@ jobs:
         working-directory: flutter_app
         run: python3 tool/build_dsh_proot.py
 
+      # ★4.81.112：DSH 完全体 rootfs 内置进 APK。
+      #   云端 5 片（约 178MB）现场下载 + 逐片/整包 sha256 校验，落到 assets/dsh/，
+      #   flutter 打包时随包发出。装完即用，首启不再等 178MB 下载。
+      #   只为正式 arm64 包内置；测试包（32位/x64）跳过，避免白拉 178MB。
+      - name: bundle DSH rootfs into APK (arm64)
+        if: contains(env.TARGET_PLATFORMS, 'android-arm64')
+        working-directory: flutter_app
+        run: |
+          python3 tool/fetch_dsh_bundle.py
+          ls -lh assets/dsh/rootfs.tar.gz
+          [ "$(stat -c%s assets/dsh/rootfs.tar.gz)" -gt 150000000 ] \
+            || { echo "::error::DSH rootfs 小于 150MB，疑似拉包失败"; exit 1; }
+
       - name: abi tag
         run: |
           ABI_TAG=$(printf '%s' "$TARGET_PLATFORMS" | tr ',' '\n' | sed 's/^android-//' | paste -sd+ -)

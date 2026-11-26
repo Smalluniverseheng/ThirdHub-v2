@@ -791,6 +791,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': 'Nécessite votre propre serveur, pour gérer ses fichiers',
     '已加入下载队列（{n} 集）': 'Ajouté à la file de téléchargement ({n} épisodes)',
     '这个视频拿不到分集信息，换不了清晰度': 'Aucune info d épisode pour cette vidéo, qualité indisponible',
+    '夜间模式': 'Mode nuit',
+    '目录': 'Sommaire',
+    '沉浸阅读': 'Lecture immersive',
+    '翻页': 'Tourner page',
+    '条漫滚动': 'Défilement webtoon',
+    '双页': 'Double page',
+    '共{n}话': '{n} épisodes',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -1564,6 +1571,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': 'Нужен свой сервер для управления файлами на нём',
     '已加入下载队列（{n} 集）': 'Добавлено в очередь загрузки ({n} серий)',
     '这个视频拿不到分集信息，换不了清晰度': 'Нет данных об эпизоде, смена качества недоступна',
+    '夜间模式': 'Ночной режим',
+    '目录': 'Оглавление',
+    '沉浸阅读': 'Режим чтения',
+    '翻页': 'Листание',
+    '条漫滚动': 'Прокрутка вебтун',
+    '双页': 'Разворот',
+    '共{n}话': '{n} серий',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -2338,6 +2352,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': 'Requiere tu propio servidor para gestionar sus archivos',
     '已加入下载队列（{n} 集）': 'Añadido a la cola de descarga ({n} episodios)',
     '这个视频拿不到分集信息，换不了清晰度': 'Sin información del episodio, no se puede cambiar la calidad',
+    '夜间模式': 'Modo nocturno',
+    '目录': 'Índice',
+    '沉浸阅读': 'Lectura inmersiva',
+    '翻页': 'Pasar página',
+    '条漫滚动': 'Desplazamiento webtoon',
+    '双页': 'Doble página',
+    '共{n}话': '{n} episodios',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -3112,6 +3133,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': 'يتطلب خادمًا خاصًا لإدارة الملفات عليه',
     '已加入下载队列（{n} 集）': 'تمت الإضافة إلى قائمة التنزيل ({n} حلقات)',
     '这个视频拿不到分集信息，换不了清晰度': 'لا توجد معلومات عن الحلقة، لا يمكن تغيير الجودة',
+    '夜间模式': 'الوضع الليلي',
+    '目录': 'المحتويات',
+    '沉浸阅读': 'قراءة غامرة',
+    '翻页': 'تقليب الصفحة',
+    '条漫滚动': 'تمرير ويبتون',
+    '双页': 'صفحتان',
+    '共{n}话': '{n} حلقة',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -3795,6 +3823,14 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': 'Requires your own server, for managing files on it',
     '已加入下载队列（{n} 集）': 'Added to download queue ({n} episodes)',
     '这个视频拿不到分集信息，换不了清晰度': 'No episode info for this video, cannot switch quality',
+    '夜间模式': 'Night mode',
+    '目录': 'Contents',
+    '沉浸阅读': 'Immersive reading',
+    '翻页': 'Page turn',
+    '条漫滚动': 'Webtoon scroll',
+    '双页': 'Double page',
+    '阅读设置': 'Reading settings',
+    '共{n}话': '{n} episodes',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -4484,6 +4520,14 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '需自建后端，用来管理服务器上的文件': '自前のサーバーが必要、サーバー上のファイル管理に使います',
     '已加入下载队列（{n} 集）': 'ダウンロード待機に追加しました（{n} 話）',
     '这个视频拿不到分集信息，换不了清晰度': 'この動画のエピソード情報がなく、画質を切り替えられません',
+    '夜间模式': 'ナイトモード',
+    '目录': '目次',
+    '沉浸阅读': '没入型読書',
+    '翻页': 'ページめくり',
+    '条漫滚动': '縦スクロール',
+    '双页': '見開き',
+    '阅读设置': '読書設定',
+    '共{n}话': '全{n}話',
   },
 
 };

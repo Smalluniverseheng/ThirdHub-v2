@@ -35,13 +35,45 @@ class MainActivity : FlutterActivity() {
         // 路径：可选数据包（DSH 完全体）要 exec 放在 nativeLibraryDir 的运行时，
         // targetSdk 36 下 filesDir 里的可执行文件是禁止 exec 的（W^X）。
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "thirdhub/app_paths").setMethodCallHandler { call, result ->
-            if (call.method == "paths") {
-                result.success(mapOf(
+            when (call.method) {
+                "paths" -> result.success(mapOf(
                     "nativeLib" to applicationInfo.nativeLibraryDir,
                     "files" to filesDir.absolutePath,
                     "cache" to cacheDir.absolutePath
                 ))
-            } else result.notImplemented()
+                // ★4.81.112：把 APK 内置的 178MB DSH rootfs 流式写到 app 私有目录。
+                //   Flutter 的 AssetBundle 没有流式 API（load 会整包进内存直接 OOM），
+                //   Android AssetManager.open 是流式的，必须在原生做。
+                //   Kotlin 侧用后台线程，避免跑在主线程触发 ANR。
+                "extractAsset" -> {
+                    val asset = call.argument<String>("asset") ?: ""
+                    val dest = call.argument<String>("dest") ?: ""
+                    if (asset.isEmpty() || dest.isEmpty()) {
+                        result.error("EXTRACT_ARG", "asset/dest 为空", null)
+                        return@setMethodCallHandler
+                    }
+                    Thread {
+                        try {
+                            val out = File(dest)
+                            out.parentFile?.mkdirs()
+                            val buf = ByteArray(256 * 1024)
+                            assets.open(asset).use { input ->
+                                java.io.BufferedOutputStream(java.io.FileOutputStream(out)).use { os ->
+                                    while (true) {
+                                        val n = input.read(buf)
+                                        if (n <= 0) break
+                                        os.write(buf, 0, n)
+                                    }
+                                }
+                            }
+                            result.success(out.length())
+                        } catch (e: Exception) {
+                            result.error("EXTRACT_ERR", e.message, null)
+                        }
+                    }.start()
+                }
+                else -> result.notImplemented()
+            }
         }
 
         // 本机 AI 保活（thirdhub/keepalive）

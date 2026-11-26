@@ -17990,6 +17990,12 @@ class _Ecr extends State<EngineComicReader>
   int curPage = 0;
   final PageController pc = PageController();
 
+  // ★第2代 OmniHub 漫画阅读器对齐（4.81.112）：亮度 / 夜间 / 阅读设置 / 目录抽屉。
+  double comicBright = 1.0;
+  bool comicNight = false;
+  bool _showChrome = true;
+  final GlobalKey<ScaffoldState> _ecrKey = GlobalKey<ScaffoldState>();
+
   // 上游算法的合成路径（pages 为空）：一屏一个 DoublePageSpread，
   // 单页模式一屏一张，双页模式一屏两张，跨话不会把两话的页配在一起。
   ReaderPageIndexMath get pageMath => ReaderPageIndexMath(
@@ -18018,11 +18024,105 @@ class _Ecr extends State<EngineComicReader>
   @override
   void initState() {
     super.initState();
+    // 第2代 OmniHub：亮度/夜间从本机设置恢复
+    final p = AppSettings.p;
+    comicBright = (p.getDouble('comicBrightness') ?? 1.0).clamp(0.2, 1.0);
+    comicNight = p.getBool('comicNight') ?? false;
     // 滚到尾部时 mixin 会自己关掉开关，这里同步刷新图标
     autoScrollEnabled.addListener(() {
       if (mounted) setState(() {});
     });
     _load();
+  }
+
+  /// 亮度滑条落盘（第2代 OmniHub：滑条 + 黑色遮罩 + 持久化）
+  Future<void> _setBright(double v) async {
+    setState(() => comicBright = v);
+    await AppSettings.p.setDouble('comicBrightness', v);
+  }
+
+  /// 阅读设置底部弹窗（第2代 OmniHub：亮度 / 夜间 / 翻页 / 双页）
+  void _openComicSettings(BuildContext c) {
+    showModalBottomSheet(
+      context: c,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) => StatefulBuilder(builder: (ctx, setS) {
+        return SafeArea(
+            child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(tr('阅读设置'),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    SizedBox(
+                        width: 52,
+                        child: Text(tr('亮度'),
+                            style: const TextStyle(fontSize: 13))),
+                    Expanded(
+                        child: Slider(
+                            value: comicBright,
+                            min: 0.2,
+                            max: 1.0,
+                            onChanged: (v) async {
+                              setS(() => comicBright = v);
+                              await _setBright(v);
+                            })),
+                    Text('${(comicBright * 100).round()}%',
+                        style: const TextStyle(fontSize: 12)),
+                  ]),
+                  SwitchListTile(
+                      value: comicNight,
+                      title: Text(tr('夜间模式')),
+                      onChanged: (v) async {
+                        setS(() => comicNight = v);
+                        setState(() => comicNight = v);
+                        await AppSettings.p.setBool('comicNight', v);
+                      }),
+                  Row(children: [
+                    SizedBox(
+                        width: 52,
+                        child: Text(tr('翻页'),
+                            style: const TextStyle(fontSize: 13))),
+                    Expanded(
+                        child: Wrap(spacing: 8, children: [
+                      ChoiceChip(
+                          label: Text(tr('条漫滚动')),
+                          selected: !paged,
+                          onSelected: (_) async {
+                            setS(() => paged = false);
+                            setState(() => paged = false);
+                            await AppSettings.p.setString(
+                                'comic_mode', 'webtoon');
+                          }),
+                      ChoiceChip(
+                          label: Text(tr('翻页模式')),
+                          selected: paged,
+                          onSelected: (_) async {
+                            setS(() => paged = true);
+                            setState(() => paged = true);
+                            await AppSettings.p.setString('comic_mode', 'paged');
+                          }),
+                    ])),
+                  ]),
+                  if (paged)
+                    SwitchListTile(
+                        value: doublePage,
+                        title: Text(tr('双页')),
+                        onChanged: (v) {
+                          setS(() => doublePage = v);
+                          setState(() {
+                            doublePage = v;
+                            curPage = 0;
+                          });
+                          if (pc.hasClients) pc.jumpToPage(0);
+                        }),
+                ])));
+      }),
+    );
   }
 
   @override
@@ -18265,10 +18365,85 @@ class _Ecr extends State<EngineComicReader>
 
   @override
   Widget build(BuildContext c) => Scaffold(
-      appBar: AppBar(
+      key: _ecrKey,
+      // 第2代 OmniHub：目录面板从左侧滑入（书籍信息 + 当前章高亮 + 底部操作栏）
+      drawer: Drawer(
+        child: SafeArea(
+            child: Column(children: [
+          Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(children: [
+                const Icon(Icons.auto_stories, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text(widget.comicName,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis)),
+              ])),
+          Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('$chapName · ${trf('共{n}话', {'n': widget.chapters.length})}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey))),
+          const Divider(),
+          Expanded(
+              child: ListView.builder(
+                  itemCount: widget.chapters.length,
+                  itemBuilder: (_, i) {
+                    final n = '${widget.chapters[i]['name'] ?? ''}';
+                    return ListTile(
+                      selected: i == idx,
+                      selectedTileColor:
+                          Colors.deepPurple.withValues(alpha: .12),
+                      title: Text(n.isNotEmpty ? n : '第${i + 1}话',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: i == idx ? Colors.deepPurple : null,
+                              fontWeight: i == idx
+                                  ? FontWeight.w700
+                                  : FontWeight.w400)),
+                      onTap: () {
+                        Navigator.of(c).pop();
+                        if (i != idx) _go(i);
+                      },
+                    );
+                  })),
+          Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: Colors.grey.shade300))),
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                TextButton(
+                    onPressed: idx > 0 ? () => _go(idx - 1) : null,
+                    child: Text(tr('上一话'))),
+                TextButton(
+                    onPressed: idx < widget.chapters.length - 1
+                        ? () => _go(idx + 1)
+                        : null,
+                    child: Text(tr('下一话'))),
+              ])),
+        ]))),
+      appBar: _showChrome
+          ? AppBar(
+          leading: IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: tr('目录'),
+              onPressed: () => _ecrKey.currentState?.openDrawer()),
           title: Text('${widget.comicName} · $chapName',
               maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+                icon: const Icon(Icons.tune, size: 20),
+                tooltip: tr('阅读设置'),
+                onPressed: () => _openComicSettings(c)),
+            IconButton(
+                icon: Icon(_showChrome ? Icons.visibility_off : Icons.visibility,
+                    size: 20),
+                tooltip: tr('沉浸阅读'),
+                onPressed: () => setState(() => _showChrome = !_showChrome)),
             // ★阶段6 平台门：iOS 不开批量下载（Apple 5.2.3），按钮整个不渲染。
             if (OfflineUI.batchDownloadAllowed)
               IconButton(
@@ -18317,8 +18492,11 @@ class _Ecr extends State<EngineComicReader>
                     });
                     onAutoScrollChanged();
                   }),
-          ]),
-      body: loading
+          ])
+          : null,
+      // 第2代 OmniHub：亮度黑罩 + 夜间暖罩（Stack 叠层，IgnorePointer 不拦手势）
+      body: Stack(children: [
+        Positioned.fill(child: loading
           ? const AppLoading()
           : err.isNotEmpty
               ? Center(
@@ -18374,8 +18552,27 @@ class _Ecr extends State<EngineComicReader>
                                   ]));
                         }
                         return _img(i, fit: BoxFit.fitWidth);
-                      }),
-      bottomNavigationBar: paged && !loading && err.isEmpty
+                      })),
+        if (comicNight)
+          Positioned.fill(
+              child: IgnorePointer(
+                  child: Container(color: const Color(0x18FFB74D)))),
+        if (comicBright < 1.0)
+          Positioned.fill(
+              child: IgnorePointer(
+                  child: Container(
+                      color: Colors.black.withValues(
+                          alpha: (1 - comicBright) * 0.55)))),
+        if (!_showChrome)
+          Positioned(
+              right: 12,
+              bottom: 76,
+              child: FloatingActionButton.small(
+                  heroTag: 'comic-chrome-restore',
+                  onPressed: () => setState(() => _showChrome = true),
+                  child: const Icon(Icons.visibility))),
+      ]),
+      bottomNavigationBar: _showChrome && paged && !loading && err.isEmpty
           ? BottomAppBar(
               height: 48,
               child: Row(

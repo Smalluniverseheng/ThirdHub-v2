@@ -34,3 +34,6 @@ _*.log
 *.tmp
 .DS_Store
 Thumbs.db
+
+# ★4.81.112 DSH 完全体运行包：178MB 二进制，CI 现场生成，绝不入库
+flutter_app/assets/dsh/

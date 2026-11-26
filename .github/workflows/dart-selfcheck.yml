@@ -374,6 +374,13 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/dsh_local_selfcheck.dart
 
+      # 4.81.112：DSH 完全体内置 APK + 漫画阅读器对齐第2代 OmniHub。
+      #   这两处改动跨 main.dart 一万多行，最容易被后续清理误删：
+      #   DSH 内置链路断了 → 用户首启又要等 178MB；漫画二代 UI 断了 → 功能静默回退。
+      - name: comic_gen2（DSH 完全体内置 + 漫画阅读器二代功能）
+        working-directory: flutter_app
+        run: dart run tool/comic_gen2_selfcheck.dart
+
       # 第 N 条 hg_cache（4.81.108）—— 红果缓存管理的三条静默故障：
       #   ① 管理页自己调后端 → 断网连页都打不开；
       #   ② 离线列表点了还走取流接口 → 已下载内容播不了；
