@@ -1,8 +1,8 @@
-// 红果短剧（4.81.94）——个人授权使用，管理员或激活码解锁。
+// 红果短剧（4.81.94 建，4.81.111 测试阶段全开 + 端上直连成为视频板块首选）
 //
 // 数据源：openhongguo Flutter SDK（Go 原生库，匿名设备，无需登录红果账号）。
 // 播放：media_kit 支持 CENC-AES-CTR 解密（contentKey 由 SDK 本地推导）。
-// 门控：DramaGate —— 管理员账号或本地激活码二选一。
+// 门控：4.81.111 起 DramaGate.unlocked 恒 true —— 所有用户直接可用，无需后端。
 //
 // 合规：不做内容分发、不内置片源、不提供下载，仅播放 SDK 返回的公开流。
 import 'package:flutter/material.dart';
@@ -11,10 +11,14 @@ import 'package:openhongguo/openhongguo.dart';
 import 'design_tokens.dart';
 import 'drama_gate.dart';
 import 'drama_player.dart';
+import 'hg_cache_page.dart';
 import 'i18n.dart';
 
 class DramaPage extends StatefulWidget {
-  const DramaPage({super.key});
+  const DramaPage({super.key, this.embedded = false});
+
+  /// true = 外层已有平台切换条，不画自己的标题栏，只留 TabBar + 内容。
+  final bool embedded;
 
   @override
   State<DramaPage> createState() => _DramaPageState();
@@ -114,26 +118,53 @@ class _DramaPageState extends State<DramaPage> {
     super.dispose();
   }
 
+  TabBar _tabs() => TabBar(
+        onTap: (i) => setState(() => _tab = i),
+        tabs: [Tab(text: tr('发现')), Tab(text: tr('搜索'))],
+      );
+
+  Widget _content() => _tab == 0 ? _discoverView() : _searchView();
+
   @override
   Widget build(BuildContext context) {
-    if (!_unlocked) return _gateView();
+    if (!_unlocked) {
+      return widget.embedded ? _gateView(embedded: true) : _gateView();
+    }
+    if (widget.embedded) {
+      // 外层已有平台切换条：不画自己的 Scaffold/AppBar，只留 TabBar + 内容。
+      return Column(
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: _tabs(),
+          ),
+          Expanded(child: _content()),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(tr('短剧')),
-        bottom: TabBar(
-          onTap: (i) => setState(() => _tab = i),
-          tabs: [
-            Tab(text: tr('发现')),
-            Tab(text: tr('搜索')),
-          ],
-        ),
+        bottom: _tabs(),
+        actions: [
+          IconButton(
+            tooltip: tr('缓存管理'),
+            icon: const Icon(Icons.cached_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HgCachePage()),
+            ),
+          ),
+        ],
       ),
-      body: _tab == 0 ? _discoverView() : _searchView(),
+      body: _content(),
     );
   }
 
-  Widget _gateView() => Scaffold(
-        appBar: AppBar(title: Text(tr('短剧'))),
+  Widget _gateView({bool embedded = false}) => Scaffold(
+        appBar: embedded
+            ? null
+            : AppBar(title: Text(tr('短剧'))),
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(Gap.lg),

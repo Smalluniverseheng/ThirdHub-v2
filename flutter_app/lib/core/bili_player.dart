@@ -27,6 +27,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
+import 'bili_direct.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
 import 'pip.dart';
@@ -165,6 +166,29 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
     await p.setBool('bili_dm_hide_scroll', _hideScroll);
   }
 
+  /// 后端优先、失败直连 B 站（4.81.111）：普通版用户没连 NAS 也能换清晰度/看弹幕。
+  /// 返回后端同款 JSON；两端都拿不到时返回 null。
+  Future<Map<String, dynamic>?> _biliJson(String path) async {
+    final base = widget.apiBase.trim();
+    if (base.isNotEmpty) {
+      try {
+        final r = await http
+            .get(Uri.parse('$base$path'), headers: _hdrs)
+            .timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) {
+          final j = jsonDecode(utf8.decode(r.bodyBytes));
+          if (j is Map && j['ok'] == true) return Map<String, dynamic>.from(j);
+        }
+      } catch (_) {}
+    }
+    // 后端不可用（普通版/断网）→ 端上直连
+    try {
+      return await biliDirect(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _init() async {
     try {
       final p = await SharedPreferences.getInstance();
@@ -240,10 +264,9 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   /// 真切一档清晰度：向后台按 qn 重新取流，成功才换源。
   Future<void> _switchQuality(int qn) async {
     if (_switching) return;
-    final base = widget.apiBase.trim();
-    if (base.isEmpty || widget.bvid.isEmpty || widget.cid.isEmpty) {
+    if (widget.bvid.isEmpty || widget.cid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('没连后端，换不了清晰度'))));
+          SnackBar(content: Text(tr('这个视频拿不到分集信息，换不了清晰度'))));
       return;
     }
     if (qn == _quality) return;
@@ -251,26 +274,20 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
     final wasPlaying = _vp?.value.isPlaying ?? true;
     setState(() => _switching = true);
     try {
-      final r = await http
-          .get(
-            Uri.parse('$base/v1/bili/playurl'
-                '?bvid=${Uri.encodeQueryComponent(widget.bvid)}'
-                '&cid=${Uri.encodeQueryComponent(widget.cid)}'
-                '&qn=$qn'),
-            headers: _hdrs,
-          )
-          .timeout(const Duration(seconds: 25));
-      final j = jsonDecode(utf8.decode(r.bodyBytes));
-      final u = (j is Map) ? '${j['url'] ?? ''}' : '';
+      final j = await _biliJson('/v1/bili/playurl'
+          '?bvid=${Uri.encodeQueryComponent(widget.bvid)}'
+          '&cid=${Uri.encodeQueryComponent(widget.cid)}'
+          '&qn=$qn');
+      final u = (j != null) ? '${j['url'] ?? ''}' : '';
       if (u.isEmpty) {
-        final msg = (j is Map) ? '${j['error'] ?? ''}' : '';
+        final msg = j != null ? '${j['error'] ?? ''}' : '';
         throw Exception(msg.isEmpty ? tr('这个清晰度拿不到地址') : msg);
       }
       if (!mounted) return;
-      final aq = (j is Map) ? j['acceptQuality'] : null;
+      final aq = j?['acceptQuality'];
       setState(() {
         _url = u;
-        _quality = (j is Map ? (j['quality'] as num?)?.toInt() : null) ?? qn;
+        _quality = (j != null ? (j['quality'] as num?)?.toInt() : null) ?? qn;
         if (aq is List && aq.isNotEmpty) {
           _accept = aq.whereType<num>().map((e) => e.toInt()).toList();
         }
@@ -296,23 +313,13 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
   /// 拉弹幕。失败**不阻断播放** —— 弹幕是增强，不是前提。
   Future<void> _loadDanmaku() async {
     final cid = widget.cid.trim();
-    final base = widget.apiBase.trim();
-    if (cid.isEmpty || base.isEmpty) return;
+    if (cid.isEmpty) return;
     try {
-      final r = await http.get(
-        Uri.parse('$base/v1/bili/danmaku?cid=${Uri.encodeComponent(cid)}'),
-        headers: widget.token.isEmpty ? const {} : {'x-th-token': widget.token},
-      ).timeout(const Duration(seconds: 20));
-      if (r.statusCode != 200) {
+      final j = await _biliJson(
+          '/v1/bili/danmaku?cid=${Uri.encodeComponent(cid)}');
+      if (j == null || j['ok'] != true) {
         if (mounted) {
-          setState(() => _dmErr = trf('弹幕接口返回 {c}（不影响播放）', {'c': '${r.statusCode}'}));
-        }
-        return;
-      }
-      final j = jsonDecode(utf8.decode(r.bodyBytes));
-      if (j is! Map || j['ok'] != true) {
-        if (mounted) {
-          final m = (j is Map) ? '${j['error'] ?? ''}' : '';
+          final m = j != null ? '${j['error'] ?? ''}' : '';
           setState(() => _dmErr = m.isEmpty ? tr('这个视频没有弹幕') : m);
         }
         return;

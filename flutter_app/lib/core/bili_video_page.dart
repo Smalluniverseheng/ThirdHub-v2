@@ -23,6 +23,7 @@ import 'bili_subtitle_parser.dart' show SubTrack;
 import 'bili_dash_player.dart';
 import 'bili_space_page.dart' show BiliSpacePage;
 import 'design_tokens.dart';
+import 'download_queue.dart' show DlJob, DownloadQueue;
 import 'i18n.dart';
 import 'player/th_player.dart';
 import 'player/th_player_types.dart';
@@ -490,7 +491,83 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     });
   }
 
+  /// 选择下载落点：本机（端上直连，普通版可用）/ 后端 NAS（进阶，需自建后端）。
+  Future<bool?> _pickDownloadDestination() => showModalBottomSheet<bool>(
+        context: context,
+        showDragHandle: true,
+        builder: (c) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(tr('下载到哪里'),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.smartphone_outlined),
+                title: Text(tr('存到本机')),
+                subtitle: Text(tr('离线可看，不用连接服务器')),
+                onTap: () => Navigator.pop(c, true),
+              ),
+              ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: Text(tr('存到后端 NAS')),
+                subtitle: Text(tr('需自建后端，用来管理服务器上的文件')),
+                onTap: () => Navigator.pop(c, false),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  /// 本机下载：用端上直连拿到的播放 URL + Referer，交给离线下载队列。
+  Future<int> _downloadLocal({required bool all}) async {
+    final pages = _pages;
+    final list = all && pages.length > 1
+        ? List<int>.generate(pages.length, (i) => i)
+        : <int>[_pageIdx.clamp(0, pages.length - 1 < 0 ? 0 : pages.length - 1)];
+    final headers = biliHeaders(widget.ctx);
+    var ok = 0;
+    for (final idx in list) {
+      final p = pages[idx];
+      final cid = '${p['cid'] ?? ''}';
+      if (cid.isEmpty) continue;
+      final r = await biliPlayRace(widget.ctx,
+          '/v1/bili/playurl?bvid=${Uri.encodeQueryComponent(_bvid)}&cid=${Uri.encodeQueryComponent(cid)}&qn=64');
+      final url = '${r?['url'] ?? ''}';
+      if (url.isEmpty) continue;
+      final page = (p['page'] is num) ? (p['page'] as num).toInt() : idx + 1;
+      final part = '${p['part'] ?? ''}'.trim();
+      final title = part.isEmpty ? '$_bvid P$page' : '$_bvid P$page $part';
+      DownloadQueue.i.submit(DlJob(
+        id: DownloadQueue.i.newId(),
+        kind: 'video',
+        key: 'video:bili:$_bvid:$cid',
+        title: title,
+        payload: {
+          'directUrl': url,
+          'headers': headers,
+          'subtitle': tr('B站'),
+          'sourceId': 'bili',
+        },
+      ));
+      ok++;
+    }
+    return ok;
+  }
+
   Future<void> _download({required bool all}) async {
+    final local = await _pickDownloadDestination();
+    if (local == null || !mounted) return;
+    if (local) {
+      final n = await _downloadLocal(all: all);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(n > 0 ? trf('已加入下载队列（{n} 集）', {'n': n}) : tr('下载失败'))));
+      return;
+    }
+    // 后端 NAS：进阶功能，走自建后端的下载服务。
     final target = await pickBiliTarget(context, widget.ctx);
     if (target == null || !mounted) return;
     final pages = _pages;

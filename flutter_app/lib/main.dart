@@ -56,7 +56,7 @@ import 'core/app_mode.dart';
 import 'core/bili_auth.dart';
 import 'core/auth_delegate.dart';
 import 'core/bili_module_page.dart';
-import 'core/hongguo_page.dart';
+import 'core/drama_page.dart';
 import 'core/splash_page.dart';
 import 'core/apple_gate.dart';
 import 'core/local_tools.dart';
@@ -9147,7 +9147,8 @@ class _Vs extends State<VideoSection> {
     final thirdParty = currentGate().allowThirdPartyVideoSources;
     final plats = _platforms(thirdParty);
     final pages = <Widget>[
-      const HongguoPage(embedded: true),
+      // 4.81.111：红果首选端上 SDK 直连（无后端可用）；HongguoPage 保留为缓存/后端备用路径。
+      const DramaPage(embedded: true),
       const BiliModulePage(embedded: true),
       const ShelfPage(kind: 'video', builder: _videoDetail),
       HistoryPage(kind: 'video', builder: _videoDetail),
@@ -14548,27 +14549,37 @@ void _initDownloadQueue() {
   q.persistLoad = () async => AppSettings.p.getString('dl_queue');
   q.runner = (job) async* {
     if (job.kind == 'video') {
-      // 视频：先解析直链（与播放页同一接口），再按直链类型分流 HLS / 整文件。
-      final sid = '${job.payload['sourceId'] ?? ''}';
-      final flag = '${job.payload['flag'] ?? ''}';
-      final epUrl = '${job.payload['epUrl'] ?? ''}';
-      final r = await Api.get(
-          '/v1/video/play?sourceId=${Uri.encodeComponent(sid)}&flag=${Uri.encodeComponent(flag)}&id=${Uri.encodeComponent(epUrl)}');
-      final url = r['data']?['url'] as String? ?? '';
-      if (url.isEmpty) throw Exception('${r['data']?['message'] ?? '解析失败'}');
+      // 4.81.111：端上直连下载（payload.directUrl，普通版无后端）优先；
+      // 没有则回退到后端的通用视频解析（书源/影视板块）。
+      final direct = '${job.payload['directUrl'] ?? ''}';
+      final hdrs = Map<String, String>.from(job.payload['headers'] ?? {});
+      String url = direct;
+      if (url.isEmpty) {
+        final sid = '${job.payload['sourceId'] ?? ''}';
+        final flag = '${job.payload['flag'] ?? ''}';
+        final epUrl = '${job.payload['epUrl'] ?? ''}';
+        final r = await Api.get(
+            '/v1/video/play?sourceId=${Uri.encodeComponent(sid)}&flag=${Uri.encodeComponent(flag)}&id=${Uri.encodeComponent(epUrl)}');
+        url = r['data']?['url'] as String? ?? '';
+        if (url.isEmpty) throw Exception('${r['data']?['message'] ?? '解析失败'}');
+      }
       final stream = HlsPlan.isHls(url)
           ? MediaOfflineStore.downloadHls(
               kind: 'video',
               key: job.key,
               title: job.title,
               url: url,
-              subtitle: '${job.payload['subtitle'] ?? ''}')
+              subtitle: '${job.payload['subtitle'] ?? ''}',
+              sourceId: '${job.payload['sourceId'] ?? 'engine'}',
+              headers: hdrs)
           : MediaOfflineStore.downloadFile(
               kind: 'video',
               key: job.key,
               title: job.title,
               url: url,
-              subtitle: '${job.payload['subtitle'] ?? ''}');
+              subtitle: '${job.payload['subtitle'] ?? ''}',
+              sourceId: '${job.payload['sourceId'] ?? 'engine'}',
+              headers: hdrs);
       await for (final p in stream) {
         yield DlRunProgress(
             done: p.done, total: p.total, message: p.message, bytes: p.bytes);

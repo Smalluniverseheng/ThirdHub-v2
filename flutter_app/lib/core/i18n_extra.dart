@@ -784,6 +784,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': 'Les liens de lecture ne sont jamais enregistrés ici ; les épisodes téléchargés sont lus depuis cet appareil.',
     '本机占用 {size}': 'Utilisé sur cet appareil : {size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': '{n} épisodes téléchargés · {m} éléments enregistrés',
+    '下载到哪里': 'Télécharger vers',
+    '存到本机': 'Enregistrer sur cet appareil',
+    '离线可看，不用连接服务器': 'Regardez hors ligne, aucun serveur requis',
+    '存到后端 NAS': 'Enregistrer sur le NAS',
+    '需自建后端，用来管理服务器上的文件': 'Nécessite votre propre serveur, pour gérer ses fichiers',
+    '已加入下载队列（{n} 集）': 'Ajouté à la file de téléchargement ({n} épisodes)',
+    '这个视频拿不到分集信息，换不了清晰度': 'Aucune info d épisode pour cette vidéo, qualité indisponible',
   },
 
   // ─────────────────────────── 俄语 ───────────────────────────
@@ -1550,6 +1557,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': 'Ссылки на воспроизведение здесь не сохраняются; загруженные серии читаются только с устройства.',
     '本机占用 {size}': 'Занято на устройстве: {size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': 'Загружено серий: {n} · сохранено записей: {m}',
+    '下载到哪里': 'Скачать в',
+    '存到本机': 'Сохранить на устройство',
+    '离线可看，不用连接服务器': 'Просмотр офлайн без сервера',
+    '存到后端 NAS': 'Сохранить на NAS',
+    '需自建后端，用来管理服务器上的文件': 'Нужен свой сервер для управления файлами на нём',
+    '已加入下载队列（{n} 集）': 'Добавлено в очередь загрузки ({n} серий)',
+    '这个视频拿不到分集信息，换不了清晰度': 'Нет данных об эпизоде, смена качества недоступна',
   },
 
   // ─────────────────────────── 西班牙语 ───────────────────────────
@@ -2317,6 +2331,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': 'Los enlaces de reproducción no se guardan aquí; los episodios descargados se leen solo desde el dispositivo.',
     '本机占用 {size}': 'Usado en este dispositivo: {size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': '{n} episodios descargados · {m} elementos guardados',
+    '下载到哪里': 'Descargar en',
+    '存到本机': 'Guardar en este dispositivo',
+    '离线可看，不用连接服务器': 'Ver sin conexión, sin servidor',
+    '存到后端 NAS': 'Guardar en NAS',
+    '需自建后端，用来管理服务器上的文件': 'Requiere tu propio servidor para gestionar sus archivos',
+    '已加入下载队列（{n} 集）': 'Añadido a la cola de descarga ({n} episodios)',
+    '这个视频拿不到分集信息，换不了清晰度': 'Sin información del episodio, no se puede cambiar la calidad',
   },
 
   // ─────────────────────────── 阿拉伯语（RTL） ───────────────────────────
@@ -3084,6 +3105,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': 'لا يتم حفظ روابط التشغيل هنا؛ تتم قراءة الحلقات التي تم تنزيلها من الجهاز فقط.',
     '本机占用 {size}': 'المستخدم على الجهاز: {size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': '{n} حلقات تم تنزيلها · {m} عنصراً محفوظاً',
+    '下载到哪里': 'تنزيل إلى',
+    '存到本机': 'حفظ على هذا الجهاز',
+    '离线可看，不用连接服务器': 'مشاهدة دون اتصال بدون خادم',
+    '存到后端 NAS': 'حفظ على NAS',
+    '需自建后端，用来管理服务器上的文件': 'يتطلب خادمًا خاصًا لإدارة الملفات عليه',
+    '已加入下载队列（{n} 集）': 'تمت الإضافة إلى قائمة التنزيل ({n} حلقات)',
+    '这个视频拿不到分集信息，换不了清晰度': 'لا توجد معلومات عن الحلقة، لا يمكن تغيير الجودة',
   },
   // ─────────────────────────── 英语 ───────────────────────────
   'en': <String, String>{
@@ -3760,6 +3788,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': 'Playback links are never saved here; downloaded episodes are read from this device only.',
     '本机占用 {size}': 'Used on this device: {size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': '{n} episodes downloaded · {m} saved items',
+    '下载到哪里': 'Download to',
+    '存到本机': 'Save on this device',
+    '离线可看，不用连接服务器': 'Watch offline, no server needed',
+    '存到后端 NAS': 'Save to NAS server',
+    '需自建后端，用来管理服务器上的文件': 'Requires your own server, for managing files on it',
+    '已加入下载队列（{n} 集）': 'Added to download queue ({n} episodes)',
+    '这个视频拿不到分集信息，换不了清晰度': 'No episode info for this video, cannot switch quality',
   },
 
   // ─────────────────────────── 日语 ───────────────────────────
@@ -4442,6 +4477,13 @@ const Map<String, Map<String, String>> i18nExtra = <String, Map<String, String>>
     '播放地址不会保存在这里，点已下载的集只读取本机文件。': '再生リンクは保存されません。ダウンロード済みの集は端末内のファイルだけを読み込みます。',
     '本机占用 {size}': '端末内の使用量：{size}',
     '已下载 {n} 集 · 资料缓存 {m} 条': 'ダウンロード済み {n} 集 · 保存済み情報 {m} 件',
+    '下载到哪里': 'ダウンロード先',
+    '存到本机': 'この端末に保存',
+    '离线可看，不用连接服务器': 'オフラインで視聴可能、サーバー不要',
+    '存到后端 NAS': 'NAS サーバーに保存',
+    '需自建后端，用来管理服务器上的文件': '自前のサーバーが必要、サーバー上のファイル管理に使います',
+    '已加入下载队列（{n} 集）': 'ダウンロード待機に追加しました（{n} 話）',
+    '这个视频拿不到分集信息，换不了清晰度': 'この動画のエピソード情報がなく、画質を切り替えられません',
   },
 
 };

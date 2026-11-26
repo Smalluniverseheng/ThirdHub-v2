@@ -1,18 +1,13 @@
-// 短剧模块解锁门控（4.81.94）——管理员账号或激活码二选一放行。
+// 短剧模块门控（4.81.94 建，4.81.111 测试阶段全开）。
 //
-// 用户诉求："软件本身要有这个功能，当我输入激活码或者检测到是我这个管理员账号
-// 的时候，就能够正常使用。" 本模块实现这个门控：
-//   · 管理员：复用 ChangelogStore.isAdmin（登录态里 role=admin / is_admin=true）
-//   · 激活码：本地 SHA256 比对，成功状态存 prefs；激活码常量只存 hash 不存明文
-//
-// 注意：这是**功能开关**不是安全边界——所有内容都在端上，破解者绕过开关没有
-// 意义（他们直接改包即可）。它只是让普通用户不会误入、授权用户能正常用。
+// 4.81.111：用户明确「目前在测试，所有权限全部开放，让第一时间能体验」。
+// 因此 unlocked 恒 true，去掉激活码/管理员门槛。门控代码保留但不再拦截，
+// 后期要做「账号鉴权 → 云端下发模块解锁」时在这里恢复即可（见 README）。
+// 注意：这**不是**安全边界，所有能力都在端上，门控只决定要不要拦普通用户。
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'changelog.dart' show ChangelogStore;
 
 const String _kUnlocked = 'drama_unlocked';
 
@@ -26,9 +21,13 @@ class DramaGate {
   DramaGate._();
   static final DramaGate I = DramaGate._();
 
+  // 后期恢复门控时启用；测试阶段恒 true，字段仅保留状态供设置页读写。
+  // ignore: unused_field
   bool _localUnlocked = false;
 
-  bool get unlocked => _localUnlocked || ChangelogStore.isAdmin;
+  /// 测试阶段（4.81.111）恒放行：所有用户直接可用，无需激活码 / 管理员账号。
+  /// 后期要做账号鉴权时把这里改回 `_localUnlocked || ChangelogStore.isAdmin` 即可。
+  bool get unlocked => true;
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
