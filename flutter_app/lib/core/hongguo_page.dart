@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import '../main.dart' show Api;
 import 'app_widgets.dart';
 import 'hg_cache.dart';
+import 'hg_cache_page.dart';
 import 'my_backend_page.dart' show MyBackendPage;
 import 'haptic.dart';
 import 'i18n.dart';
@@ -296,6 +297,13 @@ class _HongguoPageState extends State<HongguoPage> {
           FilledButton(
             onPressed: _loading ? null : () => _search(),
             child: Text(tr('搜索')),
+          ),
+          // 4.81.108：红果自己的缓存管理入口（通用「离线内容」页看不到资料缓存）。
+          IconButton(
+            tooltip: tr('缓存管理'),
+            icon: const Icon(Icons.inventory_2_outlined, size: 20),
+            onPressed: () => Navigator.of(c).push(
+                MaterialPageRoute(builder: (_) => const HgCachePage())),
           ),
         ]),
       ),

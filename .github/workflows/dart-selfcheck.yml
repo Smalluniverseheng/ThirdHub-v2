@@ -374,6 +374,15 @@ jobs:
         working-directory: flutter_app
         run: dart run tool/dsh_local_selfcheck.dart
 
+      # 第 N 条 hg_cache（4.81.108）—— 红果缓存管理的三条静默故障：
+      #   ① 管理页自己调后端 → 断网连页都打不开；
+      #   ② 离线列表点了还走取流接口 → 已下载内容播不了；
+      #   ③ 顺手缓存播放地址 → 存下来的是会过期的死链。
+      # 本闸门真写/真删索引，并从源码断言取流路径不写缓存、离线路径不联网。
+      - name: hg_cache（红果缓存：索引增删 / 离线可播 / 播放地址不缓存 / 六语言）
+        working-directory: flutter_app
+        run: dart run tool/hg_cache_selfcheck.dart
+
       # 第 N 条 device_sync_contract（2026-11-07 加，全盘升级 #202）—— 三端统一同步契约。
       #
       #   为什么必须进 CI：6 张同步表此前在 App cloud.dart、网页端 supabase.js、
