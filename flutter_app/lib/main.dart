@@ -79,6 +79,8 @@ import 'core/mini_modules8.dart';
 import 'core/mini_modules9.dart';
 import 'core/mini_modules10.dart';
 import 'core/mini_modules11.dart';
+// ★4.81.109：全网搜 —— 一个入口聚合五板块，脱离后端也能用。
+import 'core/agg/unified_search.dart';
 import 'core/neu.dart';
 import 'core/adaptive.dart';
 import 'core/design_tokens.dart';
@@ -10393,7 +10395,7 @@ const List<String> kDefaultNav = <String>[
   //   core/agg/board_feed.dart），板块首屏直接出内容。
   //   模块定义仍保留在 kModules 里 —— AI 控制总线与深链还能打开它，
   //   老用户也能从导航设置里手动加回来。
-  '搜索', '小说', '漫画', '视频', '音乐', 'AI',
+  '搜索', '全网搜', '小说', '漫画', '视频', '音乐', 'AI',
   '聊天', '社区', '相册', '工具箱', '我的',
 ];
 
@@ -10419,6 +10421,7 @@ const Map<String, String> agentModuleAlias = {
   'ai': 'AI', '助手': 'AI', 'assistant': 'AI',
   'chat': '聊天', '聊天': '聊天',
   'search': '搜索', '搜索': '搜索', 'home': '搜索', '首页': '搜索',
+  'allsearch': '全网搜', '全网搜': '全网搜', '全网搜索': '全网搜', 'unified': '全网搜',
   'me': '我的', 'profile': '我的', 'settings': '我的', '设置': '我的', '我的': '我的',
   'gallery': '相册', 'photos': '相册', '相册': '相册',
   'files': '文件', '文件': '文件',
@@ -10431,6 +10434,10 @@ const Map<String, String> agentModuleAlias = {
 
 final Map<String, ModuleDef> kModules = {
   '搜索': ModuleDef(tr('搜索'), Icons.search, () => (const SearchSection())),
+  // ★4.81.109：全网搜 —— 小说/漫画/视频/音乐/B站 五个板块一起搜，
+  //   每板块三路并发（资料库/局域网/本机源），B站端上直连；任一路挂了不影响其余。
+  '全网搜': ModuleDef(tr('全网搜'), Icons.travel_explore,
+      () => (const UnifiedSearchSection())),
   // ★4.81.77 开放源：音乐 / 电台 / 播客 / 漫画 / 视频 / 公版书，
   //   全部直连公网正规接口，**不经过后端**。
   //   这是「既能用后端，也能脱离后端」的落点：NAS 关机或断网时，
@@ -11404,6 +11411,17 @@ class _RootNavState extends State<RootNav> with WidgetsBindingObserver {
         await p.setStringList('nav_modules', migrated);
       }
       await p.setBool('_freeSrcMerged', true);
+    }
+    // ★4.81.109：新模块「全网搜」对老用户默认可见 —— nav_modules 已在盘里，
+    //   不补就永远看不到（4.81.77「模块被藏起来」那个坑）。一次性插到「搜索」后，
+    //   打标记；用户自己移除后不再强行塞回。
+    if (!(p.getBool('_unifiedSearchAdded') ?? false)) {
+      if (!migrated.contains('全网搜')) {
+        final at = migrated.indexOf('搜索');
+        migrated.insert(at >= 0 ? at + 1 : 0, '全网搜');
+        await p.setStringList('nav_modules', migrated);
+      }
+      await p.setBool('_unifiedSearchAdded', true);
     }
     final visible =
         migrated.where((k) => currentGate().allowModule(k)).toList();

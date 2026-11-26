@@ -491,6 +491,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords24.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-26 第二十五批：全网搜五板块聚合（4.81.109）。
+    i18nUiWords25.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
