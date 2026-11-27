@@ -499,6 +499,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords26.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-27 第二十七批：AI 页「完全体」一键启用本机（4.81.117）。
+    i18nUiWords27.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

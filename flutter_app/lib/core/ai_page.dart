@@ -884,29 +884,110 @@ class _AiSec extends State<AiSection>
     );
   }
 
-  // 未配对引导：点「去连接」配对后自动进入 DSH 对话；也可临时用轻量对话
+  // 未配对引导。
+  //
+  // ★4.81.117 改版（用户截图反馈）：安装包里**已经带了** 170MB 运行环境，
+  //   但这一页只给了「去连接（服务器）」一个主按钮 —— 用户看到的就是
+  //   「明明塞进来了却还要我连服务器」。现在把「用手机自带的完全体」提为主操作：
+  //   点一下 = 从安装包提取（内置包不联网）→ 启动 PRoot → 进对话。
+  //   「连家里的服务器」降为次操作（多智能体/插件更强时再用）。
   Widget _dshGuide(BuildContext c) {
-    // 装了运行包但没起来：这时候引导用户「去连服务器」是错的方向 ——
-    // 他本来就想脱离服务器。给出失败原因 + 重试。
     if (DshPack.I.usable) return _localFailed(c);
     final cs = Theme.of(c).colorScheme;
-    return Center(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Column(
-      mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.bolt_outlined, size: 52, color: cs.primary),
-        const SizedBox(height: 14),
-        Text(tr('完全体'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Text(tr('连接家庭服务器上的 DSH 后，在这里直接使用多智能体、群聊与插件'),
-          textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, height: 1.6, color: cs.onSurface.withValues(alpha: 0.6))),
-        const SizedBox(height: 18),
-        FilledButton.icon(
-          icon: const Icon(Icons.link, size: 18),
-          label: Text(tr('去连接')),
-          onPressed: () => _pairDsh(c)),
-        const SizedBox(height: 6),
-        TextButton(onPressed: () => setState(() => _useLight = true),
-          child: Text(tr('轻量对话'))),
-      ])));
+    final p = DshPack.I;
+    return Center(
+        child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.bolt_outlined, size: 52, color: cs.primary),
+              const SizedBox(height: 14),
+              Text(tr('完全体'),
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(
+                tr('运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.6,
+                    color: cs.onSurface.withValues(alpha: 0.6)),
+              ),
+              const SizedBox(height: 18),
+              if (_dshStarting) ...[
+                LinearProgressIndicator(
+                    value: (p.progress > 0 && p.progress < 1) ? p.progress : null),
+                const SizedBox(height: 10),
+                Text(
+                    p.progressText.isEmpty
+                        ? tr('正在准备运行环境')
+                        : p.progressText,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: cs.onSurface.withValues(alpha: 0.55))),
+                if (_dshErr.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(_dshErr,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.redAccent)),
+                ],
+              ] else ...[
+                FilledButton.icon(
+                  icon: const Icon(Icons.offline_bolt_outlined, size: 18),
+                  label: Text(tr('启用本机完全体')),
+                  onPressed: _enableLocal,
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.link, size: 18),
+                  label: Text(tr('连接家里的服务器')),
+                  onPressed: () => _pairDsh(c),
+                ),
+                const SizedBox(height: 4),
+                TextButton(
+                    onPressed: () => setState(() => _useLight = true),
+                    child: Text(tr('轻量对话'))),
+              ],
+            ])));
+  }
+
+  /// 一键启用本机完全体：装（需要时）→ 打开开关 → 启动 → 进对话。
+  ///
+  /// 「装」这一步对内置包是**纯本地**的（assets 里 170MB 流式落盘 + 解压），
+  /// 所以断网也能完成；只有旧包没带资产时才会去云端拉分片（dsh_pack 内部兜底）。
+  Future<void> _enableLocal() async {
+    if (_dshStarting) return;
+    setState(() {
+      _dshStarting = true;
+      _dshErr = '';
+    });
+    try {
+      if (DshPack.I.state != DshPackState.ready) {
+        final ok = await DshPack.I.install(onTick: () {
+          if (mounted) setState(() {});
+        });
+        if (!ok) {
+          if (!mounted) return;
+          setState(() {
+            _dshStarting = false;
+            _dshErr = DshPack.I.message.isEmpty
+                ? tr('运行环境没装好')
+                : DshPack.I.message;
+          });
+          return;
+        }
+      }
+      await DshPack.I.setEnabled(true);
+      await _startLocalDsh();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _dshStarting = false;
+        _dshErr = '$e';
+      });
+    }
   }
 
   /// 本机运行包在、但服务没起来时的卡片（重试而不是劝用户去连服务器）

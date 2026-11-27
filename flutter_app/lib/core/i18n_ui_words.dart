@@ -3184,3 +3184,56 @@ const Map<String, Map<String, String>> i18nUiWords26 =
         'بدون تسجيل: تشغيل محلي + مكتبة الشبكة المحلية',
   },
 };
+
+/// 第 27 批（4.81.117）：AI「完全体」页 —— 本机一键启用。
+const Map<String, Map<String, String>> i18nUiWords27 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '启用本机完全体': 'Use the local full build',
+    '连接家里的服务器': 'Connect home server',
+    '正在准备运行环境': 'Preparing runtime…',
+    '运行环境没装好': 'Runtime did not install',
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        'The runtime ships inside the APK — one tap runs it on this phone. You can also connect your home server for agents and plugins.',
+  },
+  'ja': <String, String>{
+    '启用本机完全体': 'この端末で完全版を動かす',
+    '连接家里的服务器': '自宅サーバーに接続',
+    '正在准备运行环境': '実行環境を準備中…',
+    '运行环境没装好': '実行環境をインストールできませんでした',
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        '実行環境はインストールパッケージに同梱済み。タップするだけでこの端末で動きます。自宅サーバーに繋げばエージェントやプラグインも使えます。',
+  },
+  'fr': <String, String>{
+    '启用本机完全体': "Utiliser la version locale",
+    '连接家里的服务器': 'Connecter le serveur maison',
+    '正在准备运行环境': "Préparation de l'environnement…",
+    '运行环境没装好': "L'environnement ne s'est pas installé",
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        "L'environnement est déjà dans l'APK : un appui et il tourne sur ce téléphone. Vous pouvez aussi connecter votre serveur maison pour les agents et plugins.",
+  },
+  'ru': <String, String>{
+    '启用本机完全体': 'Запустить локальную сборку',
+    '连接家里的服务器': 'Подключить домашний сервер',
+    '正在准备运行环境': 'Подготовка окружения…',
+    '运行环境没装好': 'Окружение не установилось',
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        'Окружение уже входит в APK: одно касание — и оно работает на телефоне. Можно также подключить домашний сервер ради агентов и плагинов.',
+  },
+  'es': <String, String>{
+    '启用本机完全体': 'Usar la versión local',
+    '连接家里的服务器': 'Conectar servidor de casa',
+    '正在准备运行环境': 'Preparando el entorno…',
+    '运行环境没装好': 'El entorno no se instaló',
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        'El entorno ya viene dentro del APK: un toque y funciona en este teléfono. También puedes conectar tu servidor de casa para agentes y plugins.',
+  },
+  'ar': <String, String>{
+    '启用本机完全体': 'تشغيل النسخة الكاملة محليًا',
+    '连接家里的服务器': 'الاتصال بخادم المنزل',
+    '正在准备运行环境': 'جارٍ تهيئة بيئة التشغيل…',
+    '运行环境没装好': 'لم يتم تثبيت بيئة التشغيل',
+    '运行环境就在安装包里，点一下就能在这台手机上跑；也可以连家里的服务器用多智能体与插件':
+        'بيئة التشغيل مضمّنة داخل الحزمة: بلمسة واحدة تعمل على هذا الهاتف. ويمكنك أيضًا الاتصال بخادم المنزل للوكلاء والإضافات.',
+  },
+};
