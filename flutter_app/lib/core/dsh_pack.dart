@@ -256,7 +256,8 @@ class DshPack {
 
       // 6 万文件 + 800MB，必须离开 UI isolate
       state = DshPackState.unpacking;
-      progressText = '正在解压（首次约 1-3 分钟）';
+      progress = 0.35;
+      progressText = '正在解压运行环境（首次约 1-3 分钟）';
       onTick?.call();
       final target = _rootfs;
       // 旧目录先删干净，避免半旧半新
@@ -266,7 +267,25 @@ class DshPack {
       } catch (_) {}
       await Directory(target).create(recursive: true);
       final tpath = tmp.path;
-      await Isolate.run(() => extractTarGzToDisk(tpath, target));
+      // ★4.81.119：解压阶段给**确定进度**。原来用 Isolate.run，中间什么都不回传，
+      //   界面只能画无限转圈 —— 用户的原话是「没有进度条，不知道要多久」。
+      //   现在每 500 个文件回一条，按解压后字节数估算百分比（696MB 量级）。
+      const expectUnpacked = 700 * 1024 * 1024;
+      var lastTick = 0;
+      await extractTarGzInIsolate(tpath, target, onProgress: (files, bytes) {
+        final f = (bytes / expectUnpacked).clamp(0.0, 1.0);
+        progress = 0.35 + 0.6 * f;
+        progressText =
+            '正在解压 $files 个文件 · ${(bytes / 1048576).toStringAsFixed(0)} MB';
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - lastTick > 400) {
+          lastTick = now;
+          onTick?.call();
+        }
+      });
+      progress = 0.97;
+      progressText = '正在收尾（写入配置与权限）';
+      onTick?.call();
       try {
         await tmp.delete();
       } catch (_) {}

@@ -507,6 +507,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords28.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-27 第二十九批：短剧列表空态与到底提示（4.81.119）。
+    i18nUiWords29.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

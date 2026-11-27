@@ -137,7 +137,11 @@ Future<void> main() async {
   ck('停止要发 SIGTERM 给 guest node', pack.contains('ProcessSignal.sigterm'));
   ck('兜底要发 SIGQUIT 给 proot（它忽略 SIGTERM）',
       pack.contains('ProcessSignal.sigquit'));
-  ck('解压走流式 tar（内存解压会 OOM）', pack.contains('extractTarGzToDisk'));
+  ck('解压走流式 tar（内存解压会 OOM）',
+      pack.contains('extractTarGzInIsolate') || pack.contains('extractTarGzToDisk'));
+  // 4.81.119：解压阶段必须有确定进度（用户报「没有进度条，不知道要多久」）
+  ck('解压阶段回传进度', pack.contains('onProgress: (files, bytes)'));
+  ck('解压进度折算成百分比', pack.contains('0.35 + 0.6 * f'));
 
   final page = _read('lib/core/ai_page.dart');
   ck('AI 页用带 token 的地址开 WebView',

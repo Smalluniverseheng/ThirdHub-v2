@@ -36,10 +36,30 @@ class _DramaPageState extends State<DramaPage> {
   String _err = '';
   bool _loading = false;
 
+  // ★4.81.119 分页：SDK 本来就给游标（PagedResult.cursor/hasMore），
+  //   旧代码只取了第一页就再也不管 —— 用户看到的就是「往下拉永远只有那一屏」。
+  final ScrollController _sc = ScrollController();
+  String _cursor = '';
+  bool _hasMore = false;
+  bool _more = false; // 正在加载下一页
+
   @override
   void initState() {
     super.initState();
+    _sc.addListener(_onScroll);
     _boot();
+  }
+
+  /// 距底部还有 400px 就开始预取，滚动不会卡在「到底才转圈」。
+  void _onScroll() {
+    if (!_sc.hasClients || _more || _loading) return;
+    final left = _sc.position.maxScrollExtent - _sc.position.pixels;
+    if (left > 400) return;
+    if (_tab == 0) {
+      _discover(more: true);
+    } else if (_searchCtrl.text.trim().isNotEmpty) {
+      _search(more: true);
+    }
   }
 
   Future<void> _boot() async {
@@ -70,37 +90,73 @@ class _DramaPageState extends State<DramaPage> {
     }
   }
 
-  Future<void> _discover() async {
+  Future<void> _discover({bool more = false}) async {
     final c = _client;
     if (c == null) return;
-    setState(() => _loading = true);
+    if (more && (!_hasMore || _more)) return;
+    setState(() {
+      if (more) {
+        _more = true;
+      } else {
+        _loading = true;
+        _cursor = '';
+      }
+    });
     try {
-      final page = await c.discover();
+      final page = await c.discover(
+          DiscoverOptions(cursor: more && _cursor.isNotEmpty ? _cursor : null));
       if (!mounted) return;
       setState(() {
-        _series = page.items;
+        _series = more ? [..._series, ...page.items] : page.items;
+        _cursor = page.cursor;
+        _hasMore = page.hasMore;
         _err = '';
         _loading = false;
+        _more = false;
       });
     } catch (e) {
-      if (mounted) setState(() { _err = '$e'; _loading = false; });
+      if (mounted) {
+        setState(() {
+          if (!more) _err = '$e';
+          _loading = false;
+          _more = false;
+        });
+      }
     }
   }
 
-  Future<void> _search() async {
+  Future<void> _search({bool more = false}) async {
     final q = _searchCtrl.text.trim();
     if (q.isEmpty || _client == null) return;
-    setState(() => _loading = true);
+    if (more && (!_hasMore || _more)) return;
+    setState(() {
+      if (more) {
+        _more = true;
+      } else {
+        _loading = true;
+        _cursor = '';
+      }
+    });
     try {
-      final page = await _client!.search(q);
+      final page = await _client!.search(q,
+          SearchOptions(cursor: more && _cursor.isNotEmpty ? _cursor : null));
       if (!mounted) return;
       setState(() {
-        _series = page.items;
+        _series = more ? [..._series, ...page.items] : page.items;
+        _cursor = page.cursor;
+        _hasMore = page.hasMore;
         _err = '';
         _loading = false;
+        _more = false;
       });
     } catch (e) {
-      if (mounted) setState(() { _err = '$e'; _loading = false; });
+      if (mounted) {
+        setState(() {
+          if (!more) _err = '$e';
+          _loading = false;
+          _more = false;
+        });
+      }
     }
   }
 
@@ -115,6 +171,7 @@ class _DramaPageState extends State<DramaPage> {
   void dispose() {
     _codeCtrl.dispose();
     _searchCtrl.dispose();
+    _sc.dispose();
     super.dispose();
   }
 
@@ -222,7 +279,14 @@ class _DramaPageState extends State<DramaPage> {
         ),
       );
     }
+    if (_series.isEmpty) {
+      return Center(
+          child: Text(tr('这里暂时没有内容，下拉或换个分类试试'),
+              style: const TextStyle(fontSize: 12, color: Colors.grey)));
+    }
+    final tail = _hasMore || _more ? 1 : 0;
     return GridView.builder(
+      controller: _sc,
       padding: const EdgeInsets.all(Gap.sm),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
@@ -230,8 +294,22 @@ class _DramaPageState extends State<DramaPage> {
         crossAxisSpacing: 8,
         mainAxisSpacing: 12,
       ),
-      itemCount: _series.length,
-      itemBuilder: (c, i) => _seriesCard(_series[i]),
+      itemCount: _series.length + tail,
+      itemBuilder: (c, i) {
+        if (i >= _series.length) {
+          // 底部那一格：加载中转圈；到底了给一句人话，不再是"莫名其妙没了"
+          return Center(
+              child: _more
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(tr('没有更多了'),
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.grey)));
+        }
+        return _seriesCard(_series[i]);
+      },
     );
   }
 

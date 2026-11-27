@@ -12,6 +12,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 /// 解压结果
 class TarExtractResult {
@@ -288,4 +289,54 @@ class _Reader {
       left -= take;
     }
   }
+}
+
+/// 在**独立 isolate** 里解压，并把进度回传给 UI（4.81.119）。
+///
+/// 为什么不能直接 `Isolate.run(extractTarGzToDisk)`：Isolate.run 只回最终值，
+/// 中间一个字节都传不出来 —— 界面上就只能是「转圈 + 一句话」，
+/// 用户不知道还要等 10 秒还是 3 分钟（实测 170MB gz → 696MB、6 万文件，1~3 分钟）。
+///
+/// 这里用 Isolate.spawn + SendPort：每 500 个文件回一条 `[files, bytes]`，
+/// 调用方据此画确定进度条。bytes 是**已写出的解压后字节数**。
+Future<TarExtractResult> extractTarGzInIsolate(
+  String archivePath,
+  String destDir, {
+  void Function(int files, int bytes)? onProgress,
+}) async {
+  final rp = ReceivePort();
+  final errRp = ReceivePort();
+  final iso = await Isolate.spawn(_extractWorker, [archivePath, destDir, rp.sendPort],
+      onError: errRp.sendPort);
+  TarExtractResult? result;
+  Object? failure;
+  final done = Completer<void>();
+  rp.listen((m) {
+    if (m is List && m.length == 2) {
+      onProgress?.call(m[0] as int, m[1] as int);
+    } else if (m is List && m.length == 4) {
+      result = TarExtractResult(m[0] as int, m[1] as int, m[2] as int, m[3] as int);
+      if (!done.isCompleted) done.complete();
+    }
+  });
+  errRp.listen((m) {
+    failure = m;
+    if (!done.isCompleted) done.complete();
+  });
+  await done.future;
+  iso.kill(priority: Isolate.immediate);
+  rp.close();
+  errRp.close();
+  if (failure != null) throw Exception('解压失败：$failure');
+  return result ?? const TarExtractResult(0, 0, 0, 0);
+}
+
+Future<void> _extractWorker(List<Object> args) async {
+  final path = args[0] as String;
+  final dir = args[1] as String;
+  final sp = args[2] as SendPort;
+  final r = await extractTarGzToDisk(path, dir, onProgress: (f, b) {
+    sp.send([f, b]);
+  });
+  sp.send([r.files, r.dirs, r.links, r.skipped]);
 }

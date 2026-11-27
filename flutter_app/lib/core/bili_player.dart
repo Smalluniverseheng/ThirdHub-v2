@@ -27,6 +27,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
+import 'app_log.dart';
 import 'bili_direct.dart';
 import 'design_tokens.dart';
 import 'i18n.dart';
@@ -318,9 +319,11 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
       final j = await _biliJson(
           '/v1/bili/danmaku?cid=${Uri.encodeComponent(cid)}');
       if (j == null || j['ok'] != true) {
+        final m = j != null ? '${j['error'] ?? ''}' : '';
+        AppLog.add('bili', 'warn', '弹幕为空 cid=$cid err=$m');
         if (mounted) {
-          final m = j != null ? '${j['error'] ?? ''}' : '';
           setState(() => _dmErr = m.isEmpty ? tr('这个视频没有弹幕') : m);
+          _toastDm();
         }
         return;
       }
@@ -347,10 +350,32 @@ class _BiliPlayerPageState extends State<BiliPlayerPage> {
       _replayFrom(_currentPos());
     } catch (e) {
       // 弹幕失败不阻断播放，但要让用户知道为什么没有弹幕
+      AppLog.add('bili', 'warn', '弹幕拉取异常 cid=$cid e=$e');
       if (mounted) {
         setState(() => _dmErr = trf('弹幕拉取失败：{e}', {'e': '$e'}));
+        _toastDm();
       }
     }
+  }
+
+  /// 弹幕没出来时说一句话（带重试）。
+  ///
+  /// ★4.81.119：原因原来只写在「弹幕设置」面板里 —— 用户不点开那个面板就只看到
+  ///   "屏幕上一条弹幕都没有"，等于没有提示。弹幕是 B 站播放器的核心功能，
+  ///   失败必须当场可见且一键可重试。
+  void _toastDm() {
+    if (!mounted) return;
+    final msg = _dmErr.isEmpty ? tr('这个视频没有弹幕') : _dmErr;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: const TextStyle(fontSize: 12)),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+          label: tr('重试'),
+          onPressed: () {
+            setState(() => _dmErr = '');
+            unawaited(_loadDanmaku());
+          }),
+    ));
   }
 
   double _currentPos() =>

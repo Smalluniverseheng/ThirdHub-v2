@@ -3314,3 +3314,37 @@ const Map<String, Map<String, String>> i18nUiWords28 =
     '已添加：': 'تمت الإضافة: ',
   },
 };
+
+/// 第 29 批（4.81.119）：短剧/红果列表的空态与"到底了"。
+const Map<String, Map<String, String>> i18nUiWords29 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试':
+        'Nothing here yet — pull to refresh or try another category',
+    '没有更多了': 'No more items',
+  },
+  'ja': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试': 'まだありません。引っ張って更新するか別の分類を試してください',
+    '没有更多了': 'これ以上ありません',
+  },
+  'fr': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试':
+        'Rien pour le moment — actualisez ou changez de catégorie',
+    '没有更多了': 'Plus de résultats',
+  },
+  'ru': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试':
+        'Пока пусто — обновите или выберите другую категорию',
+    '没有更多了': 'Больше нет',
+  },
+  'es': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试':
+        'Nada por aquí — actualiza o prueba otra categoría',
+    '没有更多了': 'No hay más',
+  },
+  'ar': <String, String>{
+    '这里暂时没有内容，下拉或换个分类试试':
+        'لا يوجد شيء بعد — حدّث أو جرّب تصنيفًا آخر',
+    '没有更多了': 'لا مزيد',
+  },
+};
