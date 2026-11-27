@@ -11,6 +11,7 @@
 //   ③ 服务端英文错误码翻成人话（见 Cloud.friendlyAuthError）。
 import 'package:flutter/material.dart';
 
+import 'brand_orb.dart';
 import 'cloud.dart';
 import 'i18n.dart';
 
@@ -76,6 +77,10 @@ Future<bool> showCloudAuthDialog(BuildContext c, {bool isLogin = true}) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 品牌一致性（4.81.116）：登录弹窗与开屏用同一个立体商标，
+              // 小尺寸关掉自转（弹窗里转圈会跟"正在登录"的转圈打架，读者分不清哪个是进度）。
+              const Center(child: BrandOrb(size: 72, anim: false)),
+              const SizedBox(height: 10),
               TextField(
                 controller: mailC,
                 autofocus: true,

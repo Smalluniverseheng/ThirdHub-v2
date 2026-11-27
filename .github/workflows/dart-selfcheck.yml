@@ -481,6 +481,14 @@ jobs:
         run: dart run tool/mangayomi_retry_selfcheck.dart
 
 
+      # 第 N 条 update_safety（2026-11-27 加）—— 应用内更新链路。
+      #   真实事故：家里 NAS 的 latest.apk 停在 54MB 旧包，App 下完才校验失败，
+      #   用户看到「下了一个用不了的东西」。这条钉死「下载前先对体积」+
+      #   「自家后端带 Bearer」+「分片逐段校验」三件事，防止被顺手改回去。
+      - name: update_safety（更新链路：体积预检 / 后端令牌 / 分片校验）
+        working-directory: flutter_app
+        run: dart run tool/update_safety_selfcheck.dart
+
       # 第 N 条 local_agent（2026-11-07 加）—— 本机 Agent 运行时。
       #   「AI 突然只会聊天了」不会报错，只会静默退化：模型输出解析变了、
       #   事件顺序乱了、审批闸漏了、回合上限失效。这条闸门把这几处钉死，

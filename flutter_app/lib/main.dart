@@ -13704,7 +13704,10 @@ class Updater {
           return;
         }
         _downloadAndInstall(c, url,
-            sha: m['sha256'] as String?, parts: parts, route: route);
+            sha: m['sha256'] as String?,
+            size: m['size'] as int?,
+            parts: parts,
+            route: route);
       }
     }
   }
@@ -13881,6 +13884,10 @@ class Updater {
       // 与 autoUncompress=false 配套：明确告诉服务器别压缩，避免「头里写全长、
       // 流里是压缩字节」这种口径错位。
       req.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      // ★4.81.116：自己 NAS 的**版本化包**要求 Bearer（未登录 401），
+      //   而客户端本来就持有访问令牌 —— 不带的话「局域网秒下」那条线永远 401，
+      //   只能一直走公网，家里千兆宽带的优势完全用不上。
+      _addBackendAuth(req, url);
       if (pos > 0) req.headers.add('Range', 'bytes=$pos-');
       final resp = await req.close().timeout(const Duration(seconds: 30));
       final status = resp.statusCode;
@@ -13960,12 +13967,42 @@ class Updater {
   ///   继续换下一条。改之前是「只要有线路下完就进入校验，不对就直接抛」——
   ///   镜像顺序里只要有一条坏线路（CDN 缓存了旧版、ghfast 返回拦截页），
   ///   整个更新就永久失败，用户只能自己去浏览器下。这才是「老是校验失败」的根。
+  /// 给「自己后端」的请求补 Authorization —— 只有目标是我们连的后端才带，
+  /// 公网镜像（Supabase / GitHub / ghfast）绝不外发令牌。
+  static void _addBackendAuth(HttpClientRequest req, String url) {
+    final b = Api.base.trim();
+    if (b.isEmpty || Api.token.isEmpty) return;
+    if (!url.startsWith(b)) return;
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${Api.token}');
+  }
+
+  /// 取远端文件体积（用于「这条线路是不是旧包」的预检）。
+  /// 失败返回 0 = 未知，调用方按「未知」处理，不因此拒绝线路。
+  static Future<int> _headSize(String url) async {
+    final client = HttpClient()
+      ..badCertificateCallback = ThirdHubHttpOverrides.trustCert
+      ..autoUncompress = false;
+    try {
+      final req = await client.headUrl(Uri.parse(url)).timeout(const Duration(seconds: 8));
+      req.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      _addBackendAuth(req, url);
+      final resp = await req.close().timeout(const Duration(seconds: 8));
+      await resp.drain<void>();
+      return resp.contentLength > 0 ? resp.contentLength : 0;
+    } catch (_) {
+      return 0;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   static Future<({bool ok, String url, String err})> _downloadVerified({
     required File f,
     required List<String> mirrors,
     required ValueNotifier<double> progress,
     required ValueNotifier<String> detail,
     String? sha,
+    int wantSize = 0,
     void Function(int i, int n)? onSwitch,
     bool Function()? abort,
   }) async {
@@ -13977,6 +14014,20 @@ class Updater {
         if (i > 0) onSwitch?.call(i, mirrors.length);
         progress.value = 0;
         if (i > 0) detail.value = '切换线路…';
+        // ★4.81.116：先 HEAD 对体积再决定下不下。
+        //   起因（真实事故）：家里 NAS 的 latest.apk 停在 4.81.94（54MB），
+        //   清单已经指向 195MB 的新包，App 先花了十几分钟下完 54MB，
+        //   再报「校验未通过」—— 用户看到的是「下了一个没用的包」。
+        //   体积不符直接跳过这条线路，连一个字节都不浪费。
+        if (wantSize > 0) {
+          final cl = await _headSize(mirrors[i]);
+          if (cl > 0 && cl != wantSize) {
+            last = '线路 ${i + 1} 体积 ${(cl / 1048576).toStringAsFixed(1)}MB 与清单 '
+                '${(wantSize / 1048576).toStringAsFixed(1)}MB 不符，已跳过';
+            detail.value = last;
+            continue;
+          }
+        }
         await _fetchTo(mirrors[i], f, progress, detail: detail, abort: abort);
         if (want.isNotEmpty) {
           detail.value = '校验文件…';
@@ -14299,7 +14350,7 @@ class Updater {
   }
 
   static Future<void> _downloadAndInstall(BuildContext c, String url,
-      {String? sha, List? parts, String route = 'fast'}) async {
+      {String? sha, int? size, List? parts, String route = 'fast'}) async {
     final progress = ValueNotifier<double>(0);
     final detail = ValueNotifier<String>(tr('连接中…'));
     var background = false;
@@ -14402,6 +14453,7 @@ class Updater {
                 progress: progress,
                 detail: detail,
                 sha: sha,
+                wantSize: size ?? 0,
                 abort: ab,
                 onSwitch: (i, n) {
                   if (!c.mounted) return;
