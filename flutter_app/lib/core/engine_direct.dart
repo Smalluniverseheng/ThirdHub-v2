@@ -221,6 +221,48 @@ class DiagItem {
   const DiagItem(this.label, this.ok, this.detail);
 }
 
+/// 一个可并行的资料库端点（4.81.118）。
+///
+/// 与 [EngineNode] 的区别：EngineNode 是**发现**出来的临时快照，
+/// 这里是**用户显式加过、落盘保存**的端点（重启后仍在）。
+/// 两者都会进模块路由表，所以「家里的后端」和「手机上的引擎」可以同时生效。
+class EngineEp {
+  const EngineEp({
+    required this.url,
+    required this.name,
+    required this.caps,
+    required this.version,
+  });
+
+  final String url;
+  final String name;
+  final List<String> caps;
+  final String version;
+
+  int get port {
+    final m = RegExp(r':(\d{2,5})(?:/|$)').firstMatch(url);
+    return m == null ? 0 : (int.tryParse(m.group(1)!) ?? 0);
+  }
+
+  /// 这个端点能不能提供某模块。有 `m:` 标签只认标签，没标签才按端口兜底 ——
+  /// 否则跑在 1234 上的漫画资料库会被并进小说结果（老 bug）。
+  bool supports(String mod) {
+    if (caps.contains('m:$mod')) return true;
+    if (caps.any((c) => c.startsWith('m:'))) return false;
+    const byPort = {1234: 'novel', 1235: 'comic', 1236: 'music', 9978: 'video'};
+    return byPort[port] == mod;
+  }
+}
+
+/// 把用户输入归一成 `scheme://host:port`（无 scheme 补 http，去掉尾部斜杠）。
+String normalizeEngineUrl(String input) {
+  var u = input.trim();
+  if (u.isEmpty) return '';
+  if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://$u';
+  u = u.replaceAll(RegExp(r'/+$'), '');
+  return u;
+}
+
 class EngineDirect {
   /// ★ 唯一的连接状态来源。UI 必须订阅它，不要直接读静态字段后再也不刷新。
   static final ValueNotifier<EngineState> state =
@@ -294,29 +336,21 @@ class EngineDirect {
   /// 所以把 prefs 里的 `base`（后端地址）喂给同一套客户端即可，模块页一行都不用改。
   /// 探测超时压到 5s：不通时要尽快回落，不能让开机白等十几秒。
   static Future<bool> _tryBackendAsEngine(String base) async {
-    final u = base.replaceAll(RegExp(r'/+$'), '');
-    if (u.isEmpty) return false;
+    // ★4.81.118：这里原来会**覆盖** `engine_direct_url` 并把后端设成唯一主连接，
+    //   本机引擎那条记录随之失效 —— 用户看到的就是「连了后端就用不了本机引擎」。
+    //   现在后端只作为**额外端点**登记；只有当还没有任何主连接时才让它当主连接。
     try {
-      final j = await _probeMeta(u, const Duration(seconds: 5));
-      final m = (j['data'] is Map ? j['data'] : j) as Map;
-      final nm = '${m['name'] ?? ''}'.trim();
-      final cp = m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : <String>[];
-      final ver = '${m['version'] ?? ''}';
-      // 只认「真的能搜」的资料库：caps 里必须有 m:novel，否则说明连到的不是我们的 NAS
-      if (!cp.contains('m:novel')) return false;
-      final p = await SharedPreferences.getInstance();
-      await p.setString('engine_direct_url', u);
-      await p.setString('engine_direct_name', nm.isEmpty ? '资料库' : nm);
-      await p.setStringList('engine_direct_caps', cp);
-      await p.setString('engine_direct_version', ver);
-      state.value = EngineState(
-        status: EngineStatus.connected,
-        url: u,
-        name: nm.isEmpty ? '资料库' : nm,
-        caps: cp,
-        version: ver,
-        message: '',
-      );
+      final ep = await addEndpoint(base);
+      if (ep == null) return false;
+      if (!connected) {
+        state.value = EngineState(
+          status: EngineStatus.connected,
+          url: ep.url,
+          name: ep.name,
+          caps: ep.caps,
+          version: ep.version,
+        );
+      }
       return true;
     } catch (_) {
       return false;
@@ -337,15 +371,20 @@ class EngineDirect {
     // ★2026-11-13：优先把「已连上的后端 NAS」当资料库。
     //   通了就用它（2000+ 书源、250+ 实测可用源都在 NAS 侧），
     //   没通再回落到原来的 savedUrl / 局域网广播发现，行为不变。
+    await _loadExtra(); // 用户显式加过的并行端点（含上次自动登记的后端）
+    // 启动 THP 发现监听(全局常驻, 模块页随时可读设备列表)
+    unawaited(ThpDiscovery.start());
     final backendBase = (p.getString('base') ?? '').trim();
     if (backendBase.isNotEmpty) {
       unawaited(() async {
-        if (await _tryBackendAsEngine(backendBase)) return;
+        // ★4.81.118：后端与本机引擎**并存**。旧写法在后端探测成功时直接 return，
+        //   本机引擎永远没机会校验/上线，用户体感就是"二选一"。
+        await _tryBackendAsEngine(backendBase);
         if (savedUrl.isNotEmpty) {
           await _verifySaved(savedUrl, savedName, savedCaps);
-          return;
+        } else if (!connected) {
+          await autoConnect();
         }
-        await autoConnect();
       }());
       return;
     }
@@ -1275,6 +1314,89 @@ class EngineDirect {
   /// 单资料库时两者等价；多台时前者只是后者的第一个。
   static final Map<String, List<String>> _moduleEngines = {};
 
+  /// ★4.81.118 多端点共存：除了「主连接」，再记一份**用户显式加过的**端点。
+  ///
+  /// 起因（用户原话）：「我本机上开的那个引擎 + 家里的后端，想两边一起用，根本没法用」。
+  /// 根因是 init() 里「把后端当资料库」的逻辑会**覆盖**主连接并直接 return ——
+  /// 本机引擎那条记录被悄悄丢掉，界面上看就是"连了后端就没了引擎"。
+  ///
+  /// 现在两者并存：后端也进这份清单，本机引擎保留，搜索时按模块并行发给两边。
+  static final List<EngineEp> _extra = <EngineEp>[];
+  static const _kExtra = 'engine_extra';
+
+  static List<EngineEp> get extraEndpoints => List<EngineEp>.unmodifiable(_extra);
+
+  static Future<void> _loadExtra() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString(_kExtra) ?? '';
+      if (raw.isEmpty) return;
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      _extra
+        ..clear()
+        ..addAll(list
+            .whereType<Map>()
+            .map((m) => EngineEp(
+                  url: '${m['url'] ?? ''}',
+                  name: '${m['name'] ?? ''}',
+                  caps: [for (final c in (m['caps'] as List? ?? const [])) '$c'],
+                  version: '${m['version'] ?? ''}',
+                ))
+            .where((e) => e.url.isNotEmpty));
+    } catch (_) {}
+  }
+
+  static Future<void> _saveExtra() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(
+          _kExtra,
+          jsonEncode([
+            for (final e in _extra)
+              {'url': e.url, 'name': e.name, 'caps': e.caps, 'version': e.version}
+          ]));
+    } catch (_) {}
+  }
+
+  /// 探测并登记一个额外端点（可重复调用，同地址覆盖）。
+  /// 返回 null = 这个地址不是可用的资料库（资源库 / 连不上 / 没有内容能力）。
+  static Future<EngineEp?> addEndpoint(String input) async {
+    final u = normalizeEngineUrl(input);
+    if (u.isEmpty) return null;
+    if (u == url) return EngineEp(url: u, name: name, caps: caps, version: version);
+    final j = await _probeMeta(u, _probeTimeout);
+    final m = (j['data'] is Map ? j['data'] : j) as Map;
+    final cp = m['caps'] is List ? [for (final x in m['caps'] as List) '$x'] : <String>[];
+    final nm = '${m['name'] ?? '资料库'}';
+    final ver = '${m['version'] ?? ''}';
+    // 资源库(:9527 那一类)不是内容提供方，加进来只会污染路由
+    if ('${m['role'] ?? ''}' == 'library' || cp.contains('library')) {
+      throw const NotAnEngineException('这个地址是「资源库」，不是「资料库」；'
+          '资源库管源清单与账号，内容要从资料库来。');
+    }
+    if (!cp.any((c) => c.startsWith('m:'))) {
+      throw const NotAnEngineException('这个地址没有声明任何内容能力（m:novel / m:comic …）');
+    }
+    final ep = EngineEp(url: u, name: nm, caps: cp, version: ver);
+    final i = _extra.indexWhere((e) => e.url == u);
+    if (i >= 0) {
+      _extra[i] = ep;
+    } else {
+      _extra.add(ep);
+    }
+    await _saveExtra();
+    refreshModuleRoutes();
+    AppLog.engine('已添加并行资料库', d: {'url': u, 'caps': cp.length});
+    return ep;
+  }
+
+  static Future<void> removeEndpoint(String u) async {
+    _extra.removeWhere((e) => e.url == u);
+    await _saveExtra();
+    refreshModuleRoutes();
+  }
+
   /// 多资料库并行开关（#193）。默认开 —— 只有真发现 2 台以上同模块资料库才生效，
   /// 单资料库用户完全感觉不到差别。关掉后一律只问主连接（= 老行为）。
   static bool _fanout = true;
@@ -1431,6 +1553,20 @@ class EngineDirect {
         if (!l.contains(node.url)) l.add(node.url);
       }
     }
+    // ★4.81.118：把用户显式加的端点（本机引擎 / 家里后端）也并进路由表。
+    //   发现机制靠 UDP + 扫描，本机 127.0.0.1 的引擎经常扫不到，只靠发现
+    //   就会出现"明明连着却搜不出东西"。落盘端点不看发现，永远参与路由。
+    for (final e in _extra) {
+      for (final mod in kContentModules) {
+        if (!e.supports(mod)) continue;
+        map.putIfAbsent(mod, () => e.url);
+        final l = all.putIfAbsent(mod, () => <String>[]);
+        if (!l.contains(e.url)) l.add(e.url);
+      }
+    }
+    _moduleUrls
+      ..clear()
+      ..addAll(map);
     _moduleEngines
       ..clear()
       ..addAll(all);

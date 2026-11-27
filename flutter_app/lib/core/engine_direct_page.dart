@@ -27,6 +27,52 @@ class _Ed extends State<EngineDirectPage> {
   }
   @override void dispose() { _sub?.cancel(); super.dispose(); }
 
+  /// 添加一个**并行**端点：不影响主连接，直接进路由表参与搜索。
+  Future<void> _addParallel() async {
+    final ctl = TextEditingController();
+    final input = await showDialog<String>(
+        context: context,
+        builder: (c) => AlertDialog(
+                title: Text(tr('添加并行资料库')),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TextField(
+                      controller: ctl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                          hintText: '192.168.31.156:9527 / 127.0.0.1:1234')),
+                  const SizedBox(height: 8),
+                  Text(tr('家里的后端与手机上的资料库可以同时添加'),
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.grey, height: 1.4)),
+                ]),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(c),
+                      child: Text(tr('取消'))),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(c, ctl.text.trim()),
+                      child: Text(tr('添加'))),
+                ]));
+    if (input == null || input.isEmpty) return;
+    setState(() => busy = true);
+    try {
+      final ep = await EngineDirect.addEndpoint(input);
+      if (!mounted) return;
+      setState(() {
+        busy = false;
+        msg = ep == null
+            ? tr('这个地址不可用')
+            : tr('已添加：') + ep.url;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        busy = false;
+        msg = '$e'.replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   Future<void> _connect(ThpDevice d) async {
     setState(() { busy = true; msg = ''; });
     try {
@@ -270,6 +316,61 @@ class _Ed extends State<EngineDirectPage> {
               subtitle: Text(_fanoutHint(),
                   style: const TextStyle(fontSize: 11, height: 1.4)),
             ),
+          ),
+          const SizedBox(height: 10),
+          // ── 并行资料库（4.81.118）──
+          //   用户诉求：「后端 + 本机引擎要能同时用」。
+          //   这一栏列的是**额外**端点（主连接在上面那张卡），都在参与搜索路由；
+          //   加进来就常驻，不依赖 UDP 发现（本机 127.0.0.1 的引擎经常扫不到）。
+          Card(
+            child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.hub_outlined, size: 16),
+                        const SizedBox(width: 6),
+                        Text(tr('并行资料库'),
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                        const Spacer(),
+                        TextButton(
+                            onPressed: busy ? null : _addParallel,
+                            child: Text(tr('添加'),
+                                style: const TextStyle(fontSize: 12))),
+                      ]),
+                      Text(tr('家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效'),
+                          style: const TextStyle(
+                              fontSize: 10.5, color: Colors.grey, height: 1.4)),
+                      if (EngineDirect.extraEndpoints.isEmpty)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(tr('还没有并行端点（只有上面那个主连接在工作）'),
+                                style: const TextStyle(
+                                    fontSize: 10.5, color: Colors.grey)))
+                      else
+                        for (final e in EngineDirect.extraEndpoints)
+                          ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.link,
+                                  size: 16, color: _c(EngineStatus.connected)),
+                              title: Text(e.url,
+                                  style: const TextStyle(fontSize: 11.5)),
+                              subtitle: Text(
+                                  '${e.name}${e.caps.isEmpty ? '' : ' · ${e.caps.join(' ')}'}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10)),
+                              trailing: IconButton(
+                                  icon: const Icon(Icons.close, size: 16),
+                                  tooltip: tr('移除'),
+                                  onPressed: () async {
+                                    await EngineDirect.removeEndpoint(e.url);
+                                    if (mounted) setState(() {});
+                                  })),
+                    ])),
           ),
           const SizedBox(height: 10),
           Row(children: [ const Text('发现的资料库（广播 + 主动扫描）', style: TextStyle(fontSize: 12, color: Colors.grey)),

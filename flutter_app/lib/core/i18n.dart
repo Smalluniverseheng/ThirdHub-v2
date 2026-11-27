@@ -503,6 +503,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords27.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-27 第二十八批：并行资料库（4.81.118）。
+    i18nUiWords28.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

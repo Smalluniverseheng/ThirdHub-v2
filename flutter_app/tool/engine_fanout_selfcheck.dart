@@ -243,6 +243,30 @@ void main() {
     ok(!allText.contains(banned), '新文案不含禁用词「$banned」');
   }
 
+  print('== 6. 多端点共存（4.81.118：后端 + 本机资料库同时用） ==');
+  final src = File('lib/core/engine_direct.dart').existsSync()
+      ? File('lib/core/engine_direct.dart').readAsStringSync()
+      : File('flutter_app/lib/core/engine_direct.dart').readAsStringSync();
+  ok(src.contains("_kExtra = 'engine_extra'"), '额外端点有独立持久化键');
+  ok(src.contains('static Future<EngineEp?> addEndpoint('), '存在 addEndpoint');
+  ok(src.contains('static List<EngineEp> get extraEndpoints'), '对外可读额外端点');
+  // 反证：后端当资料库时**不许**再覆盖主连接（旧实现写 engine_direct_url）
+  final fnStart = src.indexOf('_tryBackendAsEngine(String base)');
+  final fnEnd = src.indexOf('static Future<void> init()', fnStart);
+  final fnBody = fnStart < 0 ? '' : src.substring(fnStart, fnEnd);
+  ok(!fnBody.contains("setString('engine_direct_url'"),
+      '后端探测成功不再覆盖主连接（不写 engine_direct_url）');
+  ok(fnBody.contains('addEndpoint(base)'), '后端改为登记为额外端点');
+  // init 里后端分支也要继续校验本机那条
+  final initStart = src.indexOf('static Future<void> init()');
+  final initEnd = src.indexOf('_verifySaved(String u', initStart);
+  final initBody = src.substring(initStart, initEnd);
+  ok(initBody.contains('_tryBackendAsEngine(backendBase);') &&
+          initBody.contains('_verifySaved(savedUrl'),
+      'init 中后端与本机引擎都校验（不提前 return 掉本机那条）');
+  ok(src.contains('for (final e in _extra)'), '路由表会并入额外端点');
+  ok(src.contains('这个地址是「资源库」'), '资源库仍被拒绝登记');
+
   print('\n$pass 通过 / $fail 失败');
   if (fail > 0) exitCode = 1;
 }

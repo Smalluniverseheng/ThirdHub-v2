@@ -3237,3 +3237,80 @@ const Map<String, Map<String, String>> i18nUiWords27 =
         'بيئة التشغيل مضمّنة داخل الحزمة: بلمسة واحدة تعمل على هذا الهاتف. ويمكنك أيضًا الاتصال بخادم المنزل للوكلاء والإضافات.',
   },
 };
+
+/// 第 28 批（4.81.118）：资料库直连「并行资料库」——后端与本机引擎同时参与搜索。
+const Map<String, Map<String, String>> i18nUiWords28 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '并行资料库': 'Parallel libraries',
+    '添加并行资料库': 'Add parallel library',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'Home backend and on-device library can search together; entries persist.',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        'No parallel endpoint yet (only the primary above)',
+    '家里的后端与手机上的资料库可以同时添加':
+        'You can add both the home backend and the on-device library.',
+    '这个地址不可用': 'This address is not usable',
+    '已添加：': 'Added: ',
+  },
+  'ja': <String, String>{
+    '并行资料库': '並列ライブラリ',
+    '添加并行资料库': '並列ライブラリを追加',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'バックエンドと端末内エンジンを同時に検索できます。追加は保存されます。',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        '並列エンドポイントは未登録（上の主接続のみ）',
+    '家里的后端与手机上的资料库可以同时添加':
+        '自宅バックエンドと端末内エンジンの両方を追加できます。',
+    '这个地址不可用': 'このアドレスは使えません',
+    '已添加：': '追加しました: ',
+  },
+  'fr': <String, String>{
+    '并行资料库': 'Bibliothèques parallèles',
+    '添加并行资料库': 'Ajouter une bibliothèque',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'Serveur et moteur local peuvent chercher ensemble ; conservé.',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        'Aucun point parallèle (seule la connexion principale)',
+    '家里的后端与手机上的资料库可以同时添加':
+        'Vous pouvez ajouter le serveur maison et le moteur local.',
+    '这个地址不可用': 'Adresse inutilisable',
+    '已添加：': 'Ajouté : ',
+  },
+  'ru': <String, String>{
+    '并行资料库': 'Параллельные библиотеки',
+    '添加并行资料库': 'Добавить библиотеку',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'Сервер и локальный движок ищут вместе; запись сохраняется.',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        'Параллельных точек нет (работает только основная)',
+    '家里的后端与手机上的资料库可以同时添加':
+        'Можно добавить и домашний сервер, и локальный движок.',
+    '这个地址不可用': 'Адрес недоступен',
+    '已添加：': 'Добавлено: ',
+  },
+  'es': <String, String>{
+    '并行资料库': 'Bibliotecas en paralelo',
+    '添加并行资料库': 'Añadir biblioteca',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'Servidor y motor local buscan juntos; se guarda.',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        'Sin puntos paralelos (solo la conexión principal)',
+    '家里的后端与手机上的资料库可以同时添加':
+        'Puedes añadir el servidor de casa y el motor local.',
+    '这个地址不可用': 'Esta dirección no sirve',
+    '已添加：': 'Añadido: ',
+  },
+  'ar': <String, String>{
+    '并行资料库': 'مكتبات متوازية',
+    '添加并行资料库': 'إضافة مكتبة متوازية',
+    '家里的后端与手机上的资料库可以同时参与搜索，添加后一直有效':
+        'يمكن للخادم والمحرك المحلي البحث معًا، وتبقى الإضافة محفوظة.',
+    '还没有并行端点（只有上面那个主连接在工作）':
+        'لا توجد نقاط متوازية (الاتصال الأساسي فقط)',
+    '家里的后端与手机上的资料库可以同时添加':
+        'يمكنك إضافة خادم المنزل والمحرك على الجهاز معًا.',
+    '这个地址不可用': 'هذا العنوان غير صالح',
+    '已添加：': 'تمت الإضافة: ',
+  },
+};
