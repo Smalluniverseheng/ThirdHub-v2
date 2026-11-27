@@ -22,12 +22,23 @@ import 'package:http/http.dart' as http;
 /// 卡太紧会把正常用户判成失败；而超过 18 秒还没回，用户早就以为"坏了"。
 const Duration kNetTimeout = Duration(seconds: 18);
 
+/// 进程内复用的 HTTP 客户端。
+///
+/// ★2026-11-27（登录卡顿根因）：`package:http` 的顶层 `get/post` **每次调用都新建
+/// 一个 Client**，请求结束就关 —— 等于每次都要 DNS + TCP + TLS 握手。
+/// 登录是「token 一次 + 拉资料一次」两个串行请求，4G 下光握手就吃掉 1～3 秒，
+/// 用户看到的就是「点登录要愣一下」。换成同一个 Client 后，第二个请求
+/// 直接复用同一条连接（HTTPS keep-alive），同域名往返只剩 RTT。
+///
+/// 仍然会走 `HttpOverrides.global`（自建 NAS 的自签证书放行逻辑不变）。
+final http.Client _shared = http.Client();
+
 Future<http.Response> thGet(
   Uri url, {
   Map<String, String>? headers,
   Duration? timeout,
 }) =>
-    http.get(url, headers: headers).timeout(timeout ?? kNetTimeout);
+    _shared.get(url, headers: headers).timeout(timeout ?? kNetTimeout);
 
 Future<http.Response> thPost(
   Uri url, {
@@ -36,7 +47,7 @@ Future<http.Response> thPost(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http
+    _shared
         .post(url, headers: headers, body: body, encoding: encoding)
         .timeout(timeout ?? kNetTimeout);
 
@@ -47,7 +58,7 @@ Future<http.Response> thDelete(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http
+    _shared
         .delete(url, headers: headers, body: body, encoding: encoding)
         .timeout(timeout ?? kNetTimeout);
 
@@ -58,6 +69,6 @@ Future<http.Response> thPatch(
   Encoding? encoding,
   Duration? timeout,
 }) =>
-    http
+    _shared
         .patch(url, headers: headers, body: body, encoding: encoding)
         .timeout(timeout ?? kNetTimeout);

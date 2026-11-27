@@ -495,6 +495,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords25.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-27 第二十六批：「我的」页重排 + 账号与安全页 + 头像弹层（4.81.115）。
+    i18nUiWords26.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

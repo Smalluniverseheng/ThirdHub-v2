@@ -2,6 +2,7 @@
 // 前后端共用同一账号: 登录后互发密钥, 免填地址自动连接
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'settings_bridge.dart';
@@ -20,6 +21,11 @@ class Cloud {
   static String userId = '';
   static String email = '';
   static Map<String, dynamic> profileData = {};
+
+  /// 资料版本号：`profile()` 每次拉到新数据就 +1。
+  /// 登录不再等资料回来（见 signIn 注释），界面靠它「资料到了再刷一次」，
+  /// 否则等级/昵称会停在登录前的旧值，用户以为没登录成功。
+  static final ValueNotifier<int> profileRev = ValueNotifier<int>(0);
   static bool get loggedIn => accessToken.isNotEmpty;
 
   static Future<void> init() async {
@@ -136,11 +142,14 @@ class Cloud {
     // ★先落盘再拉资料：凭据已经拿到了，绝不能因为后面一次 GET 超时
     //   就告诉用户「登录失败」——那会让他在明明已登录的状态下反复重试。
     await _save();
-    try {
-      await profile();
-    } catch (e) {
+    // ★4.81.115（登录卡顿根因之二）：**不再等资料回来才让登录返回**。
+    //   凭据落盘之后登录态就已经成立，再多等一次 GET（弱网 0.5–3 秒）
+    //   只会让用户觉得「点登录要愣半天」。资料走后台，回来 bump profileRev，
+    //   界面自己刷新等级/昵称。
+    unawaited(profile().catchError((Object e) {
       AppLog.warn('account', '登录成功但资料拉取失败', d: {'e': '$e'});
-    }
+      return <String, dynamic>{};
+    }));
   }
 
   /// 登录态是否还活着（自动识别用）。
@@ -309,6 +318,7 @@ class Cloud {
       final list = jsonDecode(utf8.decode(r.bodyBytes)) as List;
       if (list.isNotEmpty) {
         profileData = Map<String, dynamic>.from(list.first);
+        profileRev.value++;
         // ★2026-10-18 开屏要用（那时 Cloud.init 还没跑完，读不到内存里的 profile）——
         //   把会员等级落到本地，开屏据此决定「显示广告」还是「会员直通」。
         try {

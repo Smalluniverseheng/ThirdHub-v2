@@ -2898,15 +2898,24 @@ class _Pf extends State<ProfilePage> {
     return Container(
         margin: const EdgeInsets.only(bottom: 4),
         decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(26),
+            // 轻 3D：外阴影给"厚度"，顶部白色内高光给"受光面"，再压一层深色渐变做球感
+            boxShadow: [
+              BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.35),
+                  blurRadius: 26,
+                  offset: const Offset(0, 12),
+                  spreadRadius: -4),
+            ],
             gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  scheme.primary.withValues(alpha: 0.85),
-                  scheme.tertiary.withValues(alpha: 0.75),
+                  scheme.primary.withValues(alpha: 0.92),
+                  scheme.tertiary.withValues(alpha: 0.78),
                   scheme.primaryContainer,
-                ])),
+                ],
+                stops: const [0, .55, 1])),
         // ★2026-09-19 修「我的」页头像/昵称/身份码整体左贴:
         //   Stack 默认 alignment 是 topStart, 非定位子节点会被摆到左上角;
         //   而 Column 在松约束下宽度只等于"最宽的那个孩子", 于是整块内容左贴而不是居中。
@@ -2914,7 +2923,7 @@ class _Pf extends State<ProfilePage> {
         child: Stack(alignment: Alignment.center, children: [
           const Positioned.fill(
               child: ClipRRect(
-                  borderRadius: BorderRadius.all(Radius.circular(24)),
+                  borderRadius: BorderRadius.all(Radius.circular(26)),
                   child: _Particles())),
           Padding(
               padding: const EdgeInsets.symmetric(vertical: 26),
@@ -2922,13 +2931,11 @@ class _Pf extends State<ProfilePage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // 点头像 → 账号与设置子页; 点右下角相机角标 → 换头像
+                    // 点头像 → 轻量弹层（大厂做法：先看人，再决定做什么）；
+                    // 弹层里才有「编辑资料 / 换头像 / 账号与安全」。
+                    // 旧版直接 push 整页，弱网下还要顺手拉等级，点了会愣一下。
                     GestureDetector(
-                        onTap: () => Navigator.push(context,
-                                    smoothRoute(const ProfileSubPage()))
-                                .then((_) {
-                              if (mounted) setState(() {});
-                            }),
+                        onTap: _profileSheet,
                         child: Stack(clipBehavior: Clip.none, children: [
                           Container(
                               padding: const EdgeInsets.all(3.5),
@@ -3217,42 +3224,223 @@ class _Pf extends State<ProfilePage> {
     );
   }
 
+  /// 头像底部弹层：大厂做法是「点一下先看到人，再决定要做什么」。
+  ///
+  /// 旧版点头像直接 push 一个整页（还要顺手拉等级），弱网下会明显愣一下；
+  /// 现在先出弹层（纯本地数据，瞬时），要改资料再进整页。
+  Future<void> _profileSheet() async {
+    final scheme = Theme.of(context).colorScheme;
+    final logged = Cloud.loggedIn;
+    final nick = AppSettings.nickname;
+    final lv = memberLevelById(logged ? Cloud.profileData['level'] as String? : null);
+    await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (c2) => Container(
+            margin: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              color: Theme.of(c2).colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10)),
+              ],
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(4))),
+              Row(children: [
+                CircleAvatar(
+                    radius: 28,
+                    backgroundColor: scheme.primary.withValues(alpha: 0.12),
+                    backgroundImage: AppSettings.avatarB64.isNotEmpty
+                        ? MemoryImage(base64Decode(AppSettings.avatarB64))
+                        : null,
+                    child: AppSettings.avatarB64.isEmpty
+                        ? Icon(Icons.person, color: scheme.primary, size: 28)
+                        : null),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(
+                          logged
+                              ? (nick.isEmpty ? Cloud.email : nick)
+                              : tr('未登录'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(logged ? Cloud.email : tr('登录后可同步书架与进度'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 11.5, color: Colors.grey)),
+                    ])),
+                if (logged)
+                  Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: Color(lv.colorValue).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color:
+                                  Color(lv.colorValue).withValues(alpha: 0.35))),
+                      child: Text(lv.name,
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(lv.colorValue)))),
+              ]),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                    child: _sheetAction(c2, Icons.edit_outlined,
+                        tr('编辑资料'), const ProfileSubPage())),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _sheetAction(
+                        c2, Icons.photo_camera_outlined, tr('更换头像'), null,
+                        onTap: () {
+                      Navigator.pop(c2);
+                      pickAvatar();
+                    })),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _sheetAction(c2, Icons.shield_outlined,
+                        tr('账号与安全'), const AccountSecurityPage())),
+              ]),
+            ])));
+  }
+
+  Widget _sheetAction(BuildContext c, IconData icon, String label, Widget? page,
+          {VoidCallback? onTap}) =>
+      InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap ??
+              () {
+                Navigator.pop(c);
+                if (page != null)
+                  Navigator.push(context, smoothRoute(page)).then((_) {
+                    if (mounted) setState(() {});
+                  });
+              },
+          child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                  color: Theme.of(c).colorScheme.primary.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(children: [
+                Icon(icon, size: 20, color: Theme.of(c).colorScheme.primary),
+                const SizedBox(height: 6),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w600)),
+              ])));
+
+  /// 未登录时的登录引导卡（渐变 + 一点厚度，不再是白底一行字）
+  Widget _loginPrompt() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  scheme.primary.withValues(alpha: 0.14),
+                  scheme.tertiary.withValues(alpha: 0.09),
+                ]),
+            border:
+                Border.all(color: scheme.primary.withValues(alpha: 0.20))),
+        child: Row(children: [
+          Icon(Icons.cloud_sync_outlined, size: 26, color: scheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(tr('登录后可同步书架与进度'),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text(tr('不登录也能用：本地播放 + 局域网资料库'),
+                    style: const TextStyle(fontSize: 10.5, color: Colors.grey)),
+              ])),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999))),
+              onPressed: () => Navigator.push(
+                      context, smoothRoute(const ProfileSubPage()))
+                  .then((_) {
+                if (mounted) setState(() {});
+              }),
+              child: Text(tr('登录 / 注册'),
+                  style: const TextStyle(fontSize: 12))),
+        ]));
+  }
+
   @override
   Widget build(BuildContext c) {
     final nick = AppSettings.nickname;
     final logged = Cloud.loggedIn;
-    return ListView(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+    // 资料是后台拉的（见 Cloud.signIn）：回来后靠 profileRev 触发一次重建，
+    // 否则登录成功那一刻等级还停在"游客"。
+    return ValueListenableBuilder<int>(
+        valueListenable: Cloud.profileRev,
+        builder: (_, __, ___) => ListView(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 26),
         children: [
           _heroCard(),
+          if (!logged) ...[
+            const SizedBox(height: 10),
+            _loginPrompt(),
+          ],
           const SizedBox(height: 10),
           // ★4.81.76：后端在不在，一进来就说清楚（离线时这里是唯一能用的入口）。
           _backendStrip(),
-          const SizedBox(height: 10),
-          // ★4.57.0 重构：「我的」= 身份 + 设置 + 全局。
-          //
-          //   原先这里堆了 25 项，把「阅读进阶 / 影音进阶 / 相册闭环 / AI 工作台」
-          //   这类**功能**也塞了进来 —— 影音的功能就该在影音模块里能找到，
-          //   而不是翻到「我的」才看得见。现在那些入口各自回到所属模块的
-          //   ⋯ 菜单里（见 openModuleMenu），这里只留"关于这个 App 本身"的事：
-          //   我是谁、怎么显示、连着哪儿、数据在哪、出问题去哪看。
-          _section('', [
-            entry(Icons.person_outline, '账号安全',
-                value: logged ? (nick.isEmpty ? Cloud.email : nick) : '未登录',
+          // ★4.81.115 重排（用户：很多事情上下放反了、删号不该摆在首页）
+          //   分组顺序按「大厂我的页」的通用认知：账号 → 内容 → 连接 → 设置 → 支持。
+          //   入口总数不增不减，只是把「设置类」与「内容类」拆开，
+          //   危险操作（退出/删号）全部沉到「账号与安全」二级页。
+          _section(tr('账号'), [
+            entry(Icons.badge_outlined, tr('个人资料'),
+                value: logged ? (nick.isEmpty ? Cloud.email : nick) : tr('未登录'),
                 page: const ProfileSubPage()),
             _sep(),
-            // ★4.81.96 账号与在线状态：云端 / 后端 / B站 / 短剧 / 完全体 / AI 供应商
-            //   一页看全，进来就自动探活，不用逐个点「测试连接」。
+            entry(Icons.shield_outlined, tr('账号与安全'),
+                value: logged ? tr('已登录') : tr('登录 / 注册'),
+                page: const AccountSecurityPage()),
+            _sep(),
             entry(Icons.verified_user_outlined, tr('账号与在线状态'),
                 value: tr('自动识别各账号登录态与连通性'),
                 page: const AccountCenterPage()),
             _sep(),
-            entry(Icons.cloud_outlined, tr('云端'), page: const CloudPage()),
+            entry(Icons.cloud_outlined, tr('云端'),
+                value: tr('云同步'), page: const CloudPage()),
+          ]),
+          _section(tr('内容与数据'), [
+            entry(Icons.download_done_outlined, tr('离线内容'),
+                value: tr('已下载的影视 / 漫画 / 音乐 / 小说'),
+                page: const MediaOfflinePage()),
             _sep(),
-            // ★4.81.88：「开放源」不再是一个并列的内容分类。
-            //   它的内容已经并进漫画 / 影视 / 音乐 / 小说四个板块 ——
-            //   用户点「漫画」就是漫画，不需要先学一个叫"开放源"的概念。
-            //   这里只留两个**设置性质**的入口：换源、看源的健康。
             entry(Icons.tune, tr('我的源'),
                 value: tr('导入 / 同步 / 删除内容源，不装在安装包里'),
                 page: FreeSourceManagePage(
@@ -3261,8 +3449,37 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.monitor_heart_outlined, tr('源状态'),
                 value: tr('哪些源能连上、哪些被自动跳过'),
                 page: const SourceHealthPage()),
+            _sep(),
+            entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
+            _sep(),
+            entry(Icons.receipt_long_outlined, '日志中心',
+                value: '运行透明 · 含报错中心', page: const LogCenterPage()),
           ]),
-          _section('设置', [
+          _section(tr('连接'), [
+            entry(Icons.storage_outlined, '我的后端',
+                value: Cloud.selfHosted ? '用自己的设备' : '官方云端',
+                page: const MyBackendPage()),
+            _sep(),
+            entry(Icons.dns_outlined, '后端管理',
+                value: Api.base.isEmpty ? '未连接' : '已连接',
+                page: const BackendAdminPage()),
+            _sep(),
+            entry(Icons.extension_outlined, '资料库直连',
+                value: EngineDirect.connected ? '已连接' : '',
+                page: const EngineDirectPage()),
+            _sep(),
+            entry(Icons.desktop_windows_outlined, tr('DSH 遥控'),
+                page: const DshRemotePage()),
+            _sep(),
+            entry(Icons.download_for_offline_outlined, tr('AI 完全体数据包'),
+                value: DshPack.I.state == DshPackState.ready
+                    ? tr('已装好，可以本机运行')
+                    : (DshPack.I.state == DshPackState.noRuntime
+                        ? tr('已装好数据包')
+                        : tr('数据包未安装')),
+                page: const DshPackPage()),
+          ]),
+          _section(tr('设置'), [
             entry(Icons.notifications_none, '通知',
                 page: const NotificationSettingsPage()),
             _sep(),
@@ -3272,51 +3489,22 @@ class _Pf extends State<ProfilePage> {
             entry(Icons.dashboard_customize_outlined, '功能管理',
                 page: const NavSettingsPage()),
             _sep(),
-            // ★语音/密钥/Agent 已挪到「AI」模块抽屉里（2026-11-07 模块重组）
-            // 公开数据源仍留在「我的」（属于全局数据配置）
-            entry(Icons.public_outlined, tr('公开数据源'),
-                value: tr('公开接口清单'),
-                page: const PublicSourcesPage()),
-            _sep(),
-            // 2026-11-06：会员把数据放到自己设备上的入口（装后端 → 连上 → 切换）。
-            // 与下面的「后端管理」不是一回事：那个是已连上之后的管理，这个是还没连上时怎么装。
-            // 2026-11-06：按需安装的资源包（本机 AI 运行时 / 各引擎）。
-            // 软件本体 32MB 就能看漫画，重资源放这里让用户自己决定装不装。
             entry(Icons.inventory_2_outlined, '资源包',
                 value: '${Extensions.catalog.where((e) => e.available).length} 个可装',
                 page: const ExtensionsPage()),
             _sep(),
-            entry(Icons.storage_outlined, '我的后端',
-                value: Cloud.selfHosted ? '用自己的设备' : '官方云端',
-                page: const MyBackendPage()),
+            entry(Icons.public_outlined, tr('公开数据源'),
+                value: tr('公开接口清单'),
+                page: const PublicSourcesPage()),
             _sep(),
-            entry(Icons.dns_outlined, '后端管理',
-                value: Api.base.isEmpty ? '未连接' : '已连接',
-                page: const BackendAdminPage()),
+            entry(Icons.hub_outlined, tr('系统与生态'),
+                value: tr('模块 · 多后端 · 迁移 · 授权'),
+                page: const SystemCenterPage()),
             _sep(),
-            // ★4.81.30：DSH 遥控 —— 用手机操作电脑上的 DSH（清单第 6 项）。
-            //   与「后端管理」并列：两者都在回答"我这台手机现在连着哪台电脑"。
-            //   地址/令牌可一次粘贴整条连接串自动拆开；令牌只存本机、不进日志。
-            entry(Icons.desktop_windows_outlined, tr('DSH 遥控'),
-                page: const DshRemotePage()),
-            _sep(),
-            // ★4.81.97：完全体数据包（可选装、可拆除）。与「DSH 遥控」区分：
-            //   遥控是连家里那台；数据包是把完全体搬到手机上断网也能用。
-            entry(Icons.download_for_offline_outlined, tr('AI 完全体数据包'),
-                value: DshPack.I.state == DshPackState.ready
-                    ? tr('已装好，可以本机运行')
-                    : (DshPack.I.state == DshPackState.noRuntime
-                        ? tr('已装好数据包')
-                        : tr('数据包未安装')),
-                page: const DshPackPage()),
-            _sep(),
-            // ★2026-10-12：云端「管理后台」（站长管理：用户 / 订单 / 定价；
-            //   admin.html 自带登录，App 内浏览器页打开，不跳出应用）。
-            // ★2026-10-31 用户要求：只有管理员账号才显示这个入口 ——
-            //   普通人登录后「我的」里不该出现「管理后台」，否则等于把后台地址发给所有人。
-            //   角色来自 th_profiles.role（profile() 里 select=* 已带回）。
+            entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
             if (Cloud.profileData['role'] == 'admin' ||
                 Cloud.profileData['level'] == 'admin') ...[
+              _sep(),
               entry(Icons.admin_panel_settings_outlined, '管理后台',
                   value: '云端管理 · 用户 / 订单 / 定价',
                   onTap: () => Navigator.push(
@@ -3324,39 +3512,12 @@ class _Pf extends State<ProfilePage> {
                       smoothRoute(const BrowserPage(
                           initialUrl:
                               'https://thirdhub.pages.dev/admin.html')))),
-              _sep(),
             ],
-            entry(Icons.extension_outlined, '资料库直连',
-                value: EngineDirect.connected ? '已连接' : '',
-                page: const EngineDirectPage()),
             _sep(),
-            entry(Icons.hub_outlined, tr('系统与生态'),
-                value: tr('模块 · 多后端 · 迁移 · 授权'),
-                page: const SystemCenterPage()),
-            _sep(),
-            entry(Icons.settings_outlined, tr('系统'), page: const SystemPage()),
-            _sep(),
-            // ★4.81.81：AI 控制总线 —— 悬浮球 + 本地桥，让 AI 不触屏就能操控
-            //   本机做真机测试（切模块 / 左右滑 / 点控件 / 截图 / 跑用例）。
-            //   放在「设置」而不是藏进 AI 模块：它调的是"这台手机"，
-            //   和 DSH 遥控一样属于"设备连接"一类。
             entry(Icons.smart_toy_outlined, tr('AI 控制（真机测试）'),
                 page: const AgentControlPage()),
           ]),
-          _section('数据与诊断', [
-            // ★4.81.76：离线内容此前**没有任何入口** —— `MediaOfflinePage`
-            //   早就写好了（offline_ui.dart 420 行），但 main.dart 只 import
-            //   没挂载，用户根本找不到"我下载的东西在哪"。
-            entry(Icons.download_done_outlined, tr('离线内容'),
-                value: tr('已下载的影视 / 漫画 / 音乐 / 小说'),
-                page: const MediaOfflinePage()),
-            _sep(),
-            entry(Icons.delete_outline, '回收站', page: const RecycleBinPage()),
-            _sep(),
-            entry(Icons.receipt_long_outlined, '日志中心',
-                value: '运行透明 · 含报错中心', page: const LogCenterPage()),
-          ]),
-          _section('帮助与关于', [
+          _section(tr('支持'), [
             entry(Icons.help_outline, '帮助中心', page: const HelpPage()),
             _sep(),
             entry(Icons.mail_outline, '反馈中心',
@@ -3368,8 +3529,121 @@ class _Pf extends State<ProfilePage> {
                 value: 'v${Updater.currentVersion}',
                 onTap: () => Updater.check(context, manual: true)),
           ]),
+          const SizedBox(height: 16),
+          Center(
+              child: Text(
+                  'ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey))),
+        ]));
+  }
+}
+
+/// 账号与安全（4.81.115 新增）
+///
+/// 为什么必须单独一页：用户原话「删除/注册账号应该放在很里面的子页面」。
+/// 删号是**不可逆**动作，摆在一级页面底部既能被误触，也让整个「我的」看起来
+/// 像个后台管理页。这里把「登录态 / 校验 / 退出 / 注销」收在一处，
+/// 危险动作单独一栏红字，与退出登录区分开。
+class AccountSecurityPage extends StatefulWidget {
+  const AccountSecurityPage({super.key});
+  @override
+  State<AccountSecurityPage> createState() => _Asp();
+}
+
+class _Asp extends State<AccountSecurityPage> {
+  String _state = '';
+  bool _checking = false;
+
+  Future<void> _check() async {
+    if (_checking) return;
+    setState(() {
+      _checking = true;
+      _state = '';
+    });
+    final r = await Cloud.sessionState();
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _state = r;
+    });
+  }
+
+  String get _stateText {
+    if (_checking) return tr('校验中…');
+    switch (_state) {
+      case 'ok':
+        return tr('登录态有效');
+      case 'expired':
+        return tr('已过期，请重新登录');
+      case 'offline':
+        return tr('网络不通，登录态未知');
+      case 'none':
+        return tr('未登录');
+    }
+    return '';
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final logged = Cloud.loggedIn;
+    final scheme = Theme.of(c).colorScheme;
+    Widget row(String name, String val) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(children: [
+          Text(name, style: const TextStyle(fontSize: 14)),
+          const Spacer(),
+          Flexible(
+              child: Text(val,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5, color: Colors.grey))),
+        ]));
+    return Scaffold(
+        appBar: AppBar(title: Text(tr('账号与安全'))),
+        body: ListView(padding: const EdgeInsets.all(14), children: [
+          Card(
+              margin: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(children: [
+                row(tr('登录状态'), logged ? tr('已登录') : tr('未登录')),
+                const Divider(height: 1, indent: 16),
+                row(tr('登录邮箱'), logged ? Cloud.email : '—'),
+                if (_stateText.isNotEmpty) ...[
+                  const Divider(height: 1, indent: 16),
+                  row(tr('校验结果'), _stateText),
+                ],
+                const Divider(height: 1, indent: 16),
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: Row(children: [
+                      Expanded(
+                          child: OutlinedButton.icon(
+                              onPressed: _checking ? null : _check,
+                              icon: _checking
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.verified_outlined,
+                                      size: 17),
+                              label: Text(tr('校验登录态')))),
+                      if (!logged) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                            child: FilledButton(
+                                onPressed: () => Navigator.push(context,
+                                        smoothRoute(const ProfileSubPage()))
+                                    .then((_) {
+                                  if (mounted) setState(() {});
+                                }),
+                                child: Text(tr('登录 / 注册')))),
+                      ],
+                    ])),
+              ])),
           if (logged) ...[
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             FilledButton.tonal(
                 style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(46),
@@ -3377,30 +3651,33 @@ class _Pf extends State<ProfilePage> {
                         borderRadius: BorderRadius.circular(24))),
                 onPressed: () async {
                   await Cloud.signOut();
-                  if (mounted) setState(() {});
+                  if (mounted) Navigator.pop(c);
                 },
                 child: Text(tr('退出登录'))),
-            // ★ 5.1.1（Apple）：账号体系必须 App 内可删号。
-            //   与「退出登录」并列放在登录后区域；确认强度见 confirmDeleteAccount。
-            const SizedBox(height: 10),
-            OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(46),
-                    foregroundColor: Colors.redAccent,
-                    side: const BorderSide(color: Colors.redAccent),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24))),
-                onPressed: () => confirmDeleteAccount(context, after: () {
-                      if (mounted) setState(() {});
-                    }),
-                child: const Text('删除账号')),
+            const SizedBox(height: 26),
+            Padding(
+                padding: const EdgeInsets.only(left: 6, bottom: 6),
+                child: Text(tr('危险操作'),
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.error, letterSpacing: .3))),
+            Card(
+                margin: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                child: ListTile(
+                    leading: Icon(Icons.delete_forever_outlined,
+                        color: scheme.error),
+                    title: Text(tr('删除账号与云端数据'),
+                        style: TextStyle(fontSize: 14, color: scheme.error)),
+                    subtitle: Text(tr('不可恢复：书架 / 进度 / 收藏 / 资料全部清空'),
+                        style: const TextStyle(fontSize: 10.5)),
+                    trailing: Icon(Icons.chevron_right, color: scheme.error),
+                    onTap: () => confirmDeleteAccount(context, after: () {
+                          if (mounted) Navigator.pop(c);
+                        }))),
           ],
-          const SizedBox(height: 12),
-          Center(
-              child: Text(
-                  'ThirdHub v${Updater.currentVersion} · 纯播放器前端 · 支持 IPv6',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey))),
-        ]);
+          const SizedBox(height: 20),
+        ]));
   }
 }
 

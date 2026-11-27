@@ -23,6 +23,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -162,7 +163,7 @@ class _Sp extends State<SplashPage> with TickerProviderStateMixin {
             child: ScaleTransition(
               scale: Tween<double>(begin: 0.985, end: 1).animate(
                   CurvedAnimation(parent: _in, curve: Curves.easeOutCubic)),
-              child: const _AdSlot(),
+              child: _AdSlot(anim: widget.anim),
             ),
           ),
         ),
@@ -236,8 +237,16 @@ class _Sp extends State<SplashPage> with TickerProviderStateMixin {
 ///
 /// **接入真实广告时只改这里**：把内部换成广告 SDK 的 view 即可，
 /// 外层的「加载中→倒计时→跳过」流程一行都不用动。
+///
+/// ★2026-11-27 改版（用户：商标没安好 / 想要 3D 星球）：
+///   旧版中间是个 `Icons.hub_rounded`（Material 通用图标）—— 那不是我们的商标，
+///   所以开屏看起来像"别人家的 Demo"。现在换成**真实商标资产**
+///   `assets/branding/logo-96.png`，外面套一层自绘 3D 星体：
+///   球面明暗 + 高光 + 旋转经线 + 倾斜轨道环 + 卫星，全部 CustomPainter 手绘，
+///   零第三方 3D 依赖（为一个小动效塞引擎不值当），60fps 只画几十条路径。
 class _AdSlot extends StatelessWidget {
-  const _AdSlot();
+  const _AdSlot({required this.anim});
+  final bool anim;
 
   @override
   Widget build(BuildContext context) {
@@ -247,36 +256,197 @@ class _AdSlot extends StatelessWidget {
 
     return Center(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        // 品牌标记（占位 = 自家图标；将来换成广告主的图）
-        Container(
-          width: 84,
-          height: 84,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
-                width: 0.8),
-          ),
-          child: Icon(Icons.hub_rounded,
-              size: 40, color: Theme.of(context).colorScheme.primary),
-        ),
-        const SizedBox(height: 18),
-        Text('第三方聚合',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: fg)),
-        const SizedBox(height: 6),
-        Text('一个入口 · One Hub', style: TextStyle(fontSize: 12.5, color: sub)),
+        _BrandPlanet(anim: anim),
         const SizedBox(height: 22),
-        // 宣传语（占位内容，以后可以换成广告文案）
+        Text('第三方聚合',
+            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: fg, letterSpacing: .5)),
+        const SizedBox(height: 6),
+        Text('一个入口 · One Hub', style: TextStyle(fontSize: 12.5, color: sub, letterSpacing: .3)),
+        const SizedBox(height: 20),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Text(
             'AI 对话 · 小说 · 漫画 · 影视 · 音乐\n你的资料库，一个入口全都在',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, height: 1.8, color: sub),
+            style: TextStyle(fontSize: 12, height: 1.9, color: sub),
           ),
         ),
       ]),
     );
   }
+}
+
+/// 3D 观感的品牌星球：球体本身是自家商标，外面是旋转的经纬线与轨道。
+///
+/// 用 2D Canvas 模拟 3D，而不是引入 three_dart / model_viewer：
+///   ① 开屏只有 1–5 秒，为它加载几十 MB 的渲染器不划算；
+///   ② 球体是"圆 + 明暗 + 纬线椭圆"，用投影公式算出来就能骗过眼睛；
+///   ③ 全程只依赖 Canvas.drawCircle / drawArc / drawPath，没有 shader 编译等待。
+class _BrandPlanet extends StatefulWidget {
+  const _BrandPlanet({required this.anim});
+  final bool anim;
+  @override
+  State<_BrandPlanet> createState() => _BrandPlanetState();
+}
+
+class _BrandPlanetState extends State<_BrandPlanet> with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(
+      vsync: this, duration: const Duration(seconds: 14));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.anim) _spin.repeat();
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final base = Theme.of(context).colorScheme.primary;
+    const size = 168.0;
+    // 系统开了「减少动态效果」就只画静态帧：眩晕敏感用户不该被强制转圈。
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: AnimatedBuilder(
+        animation: _spin,
+        builder: (_, __) => CustomPaint(
+          painter: _PlanetPainter(
+            t: (widget.anim && !reduce) ? _spin.value : 0.18,
+            base: base,
+            dark: dark,
+          ),
+          child: Center(
+            // 商标本体：比球体略小，压在球面中间，看起来像"球心就是它"
+            child: Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: base.withValues(alpha: dark ? 0.45 : 0.28),
+                    blurRadius: 26,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Image.asset('assets/branding/logo-96.png',
+                    width: 96, height: 96, fit: BoxFit.cover),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanetPainter extends CustomPainter {
+  _PlanetPainter({required this.t, required this.base, required this.dark});
+  final double t; // 0..1 自转相位
+  final Color base;
+  final bool dark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width * 0.42;
+
+    // 外层光晕：两圈不同透明度的圆，代替高斯模糊（开屏不该有 blur 的帧开销）
+    canvas.drawCircle(c, r * 1.05, Paint()..color = base.withValues(alpha: dark ? 0.13 : 0.10));
+    canvas.drawCircle(c, r * 0.92, Paint()..color = base.withValues(alpha: dark ? 0.08 : 0.06));
+
+    // 球体：径向渐变（左上亮、右下暗）制造体积感
+    final body = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.35, -0.4),
+        radius: 0.95,
+        colors: dark
+            ? [base.withValues(alpha: 0.55), const Color(0xFF11162A), const Color(0xFF0B0E18)]
+            : [Colors.white, base.withValues(alpha: 0.16), base.withValues(alpha: 0.32)],
+        stops: const [0, 0.55, 1],
+      ).createShader(Rect.fromCircle(center: c, radius: r));
+    canvas.drawCircle(c, r, body);
+
+    // 球面边缘：一圈细描边把球"扣"出来
+    canvas.drawCircle(
+        c,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = base.withValues(alpha: dark ? 0.5 : 0.28));
+
+    // 纬线：横向椭圆，越靠上下越扁（球面投影）
+    canvas.save();
+    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: c, radius: r)));
+    for (var i = -2; i <= 2; i++) {
+      if (i == 0) continue;
+      final ry = r * (0.22 + 0.16 * i.abs());
+      final rect = Rect.fromCenter(center: c.translate(0, i * r * 0.20), width: r * 2, height: ry * 2);
+      canvas.drawArc(rect, 0, 3.14159 * 2, false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8
+            ..color = base.withValues(alpha: dark ? 0.30 : 0.22));
+    }
+
+    // 经线：相位随 t 平移，形成"转起来"的错觉（用椭圆宽度做余弦压缩）
+    for (var k = 0; k < 6; k++) {
+      final phase = (t + k / 6) % 1.0;
+      final w = (sin(phase * 3.14159 * 2)).abs() * r * 2;
+      if (w < 2) continue;
+      final rect = Rect.fromCenter(center: c, width: w.clamp(2.0, r * 2), height: r * 2);
+      canvas.drawOval(
+          rect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.9
+            ..color = base.withValues(alpha: (dark ? 0.34 : 0.24) * (1 - w / (r * 2.2))));
+    }
+    canvas.restore();
+
+    // 高光：左上一块柔光，球体立刻有"塑料球"质感
+    canvas.drawCircle(
+        c.translate(-r * 0.34, -r * 0.40),
+        r * 0.22,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [Colors.white.withValues(alpha: dark ? 0.30 : 0.75), Colors.white.withValues(alpha: 0)],
+          ).createShader(Rect.fromCircle(center: c.translate(-r * 0.34, -r * 0.40), radius: r * 0.22)));
+
+    // 倾斜轨道环 + 环上卫星：这是"3D"读感最强的一笔
+    canvas.save();
+    canvas.translate(c.dx, c.dy);
+    canvas.rotate(-0.42);
+    final orbit = Rect.fromCenter(center: Offset.zero, width: r * 2.62, height: r * 0.86);
+    canvas.drawOval(
+        orbit,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = base.withValues(alpha: dark ? 0.55 : 0.35));
+    // 卫星沿椭圆走一圈（参数方程），前半圈画亮、后半圈藏到球后
+    final ang = t * 3.14159 * 2;
+    final sx = cos(ang) * orbit.width / 2;
+    final sy = sin(ang) * orbit.height / 2;
+    if (sin(ang) >= -0.15) {
+      canvas.drawCircle(Offset(sx, sy), 3.2, Paint()..color = Colors.white.withValues(alpha: dark ? 0.9 : 0.95));
+      canvas.drawCircle(Offset(sx, sy), 6.0, Paint()..color = base.withValues(alpha: 0.35));
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_PlanetPainter old) => old.t != t || old.base != base || old.dark != dark;
 }
