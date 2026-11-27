@@ -751,13 +751,6 @@ ThemeData buildSkinTheme(Skin skin, Brightness b) {
     typography: Typography.material2021(platform: TargetPlatform.android),
     canvasColor: surface,
     splashFactory: InkSparkle.splashFactory, // 安卓原生级涟漪
-    // ★4.81.115 全局转场统一：安卓默认是「整页横向推进」，层级感觉像十年前的后台。
-    //   M3 推荐的前进式淡入（横向 30dp + 淡入）在手机上更轻、更快，也更像大厂 App。
-    //   所有 `MaterialPageRoute`（包括 smoothRoute）一次生效，不用逐页改。
-    pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
-      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-    }),
     cardTheme: CardThemeData(
       // 阴影档由 pack.shadow 决定（none/flat/soft/float/hard/glow）
       elevation: pack.elevation,
