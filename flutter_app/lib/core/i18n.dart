@@ -515,6 +515,14 @@ class I18n extends ChangeNotifier {
     i18nUiWords30.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-28 第三十一批：相册模块重做（4.81.121）。
+    i18nUiWords31.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
+    // ★2026-11-28 第三十二批：B站长按预取（4.81.121）。
+    i18nUiWords32.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

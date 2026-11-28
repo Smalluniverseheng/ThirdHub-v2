@@ -30,6 +30,7 @@ class BiliDashPlayerPage extends StatefulWidget {
     this.audioUrl = '',
     this.cid = '',
     this.quality = 80,
+    this.acceptQuality = const [80],
     this.danmaku = const [],
     this.subtitleTracks = const [],
   });
@@ -39,6 +40,9 @@ class BiliDashPlayerPage extends StatefulWidget {
   final String audioUrl;
   final String cid;
   final int quality;
+
+  /// 可选清晰度（后端 accept_quality）。空/只有一个时按钮不显示 —— 不给假入口。
+  final List<int> acceptQuality;
 
   /// 上层已加载的弹幕 [{t:秒, mode:1/4/5, color:int, text:String}]
   final List<Map<String, dynamic>> danmaku;
@@ -379,20 +383,68 @@ class _BiliDashPlayerPageState extends State<BiliDashPlayerPage> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 14)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(10),
+            // ★4.81.121：DASH 页面原来只显示"高清"是块死牌，点不了。
+            //   现在可选清晰度直接可点；选择后带 qn 退出，上层重新取流再进。
+            if (widget.acceptQuality.length > 1)
+              InkWell(
+                onTap: () => _pickQuality(context),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(biliQualityLabel(widget.quality),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 11)),
+                    const Icon(Icons.expand_more,
+                        size: 13, color: Colors.white),
+                  ]),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${biliQualityLabel(widget.quality)} · ${tr('高清')}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                ),
               ),
-              child: Text(
-                '${biliQualityLabel(widget.quality)} · ${tr('高清')}',
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-              ),
-            ),
           ]),
         ),
       );
+
+  /// 选清晰度 → 把 qn 回传上层（上层重新 resolve playurl 再进播放页）。
+  Future<void> _pickQuality(BuildContext c) async {
+    final v = await showMenu<int>(
+        context: c,
+        position: RelativeRect.fromLTRB(
+            MediaQuery.sizeOf(c).width - 120, 100,
+            MediaQuery.sizeOf(c).width - 12, 100),
+        items: [
+          for (final q in widget.acceptQuality)
+            PopupMenuItem<int>(
+                value: q,
+                child: Row(children: [
+                  Icon(
+                      q == widget.quality
+                          ? Icons.check
+                          : Icons.radio_button_unchecked,
+                      size: 15),
+                  const SizedBox(width: 8),
+                  Text(biliQualityLabel(q)),
+                ])),
+        ]);
+    if (v != null && v != widget.quality && c.mounted) {
+      Navigator.pop(c, v);
+    }
+  }
 
   Widget _bottomBar() => Positioned(
         left: 0, right: 0, bottom: 0,

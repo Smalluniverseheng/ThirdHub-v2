@@ -34,6 +34,36 @@ class BiliVideoPage extends StatefulWidget {
 
   const BiliVideoPage({super.key, required this.ctx, required this.item});
 
+  /// ★4.81.121 预取：列表长按卡片就把播放地址取回来，点进去直接播。
+  ///
+  /// 用户原话「没有预加载，每次点击视频都要等半天」—— 那半天就是在等
+  /// 详情页 loadView + playurl 两次往返。这里在列表页提前把最慢的那次做完，
+  /// 缓存 2 分钟（太老的地址会过期），命中后详情页跳过 playurl 请求。
+  static final Map<String, ({Map<String, dynamic> data, int at})> _prefetch =
+      <String, ({Map<String, dynamic> data, int at})>{};
+
+  static bool hasPrefetched(String bvid) {
+    final e = _prefetch[bvid];
+    return e != null &&
+        DateTime.now().millisecondsSinceEpoch - e.at <
+            const Duration(minutes: 2).inMilliseconds;
+  }
+
+  static void prefetch(BiliCtx ctx, Map<String, dynamic> item) {
+    final bv = '${item['bvid'] ?? ''}';
+    if (bv.isEmpty || hasPrefetched(bv)) return;
+    unawaited(biliPlayRace(
+            ctx, '/v1/bili/playurl?bvid=${Uri.encodeQueryComponent(bv)}')
+        .then((j) {
+      if (j != null && j['url'] is String && '${j['url']}'.isNotEmpty) {
+        _prefetch[bv] = (
+          data: j,
+          at: DateTime.now().millisecondsSinceEpoch
+        );
+      }
+    }).catchError((_) {}));
+  }
+
   @override
   State<BiliVideoPage> createState() => _BiliVideoPageState();
 }
@@ -231,7 +261,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     }
   }
 
-  Future<void> _play(int idx) async {
+  Future<void> _play(int idx, {int qn = 0}) async {
     final pages = _pages;
     final cid = pages.isEmpty
         ? null
@@ -245,8 +275,15 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     oldVp?.dispose();
     final q = StringBuffer('/v1/bili/playurl?bvid=${Uri.encodeQueryComponent(_bvid)}');
     if (cid != null) q.write('&cid=$cid');
-    // 后端取流与直连 CDN 同时发，谁先给出可播地址用谁（"点了就播"）
-    final j = await biliPlayRace(widget.ctx, q.toString());
+    // ★4.81.121：播放器里切清晰度把 qn 带回来，重新取流即可（无需退出详情页）
+    if (qn > 0) q.write('&qn=$qn');
+    // 命中列表页长按预取：省掉一次 playurl 往返（2 分钟有效期）
+    final cached = qn == 0 ? _prefetch[_bvid] : null;
+    final j = (cached != null &&
+            DateTime.now().millisecondsSinceEpoch - cached.at <
+                const Duration(minutes: 2).inMilliseconds)
+        ? cached.data
+        : await biliPlayRace(widget.ctx, q.toString());
     if (!mounted) return;
     final url = (j == null) ? '' : '${j['url'] ?? ''}';
     if (url.isEmpty) {
@@ -265,7 +302,15 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
         await _loadSubtitle('$cid');
       }
       if (!mounted) return;
-      await Navigator.push(
+      final curQ = (j?['quality'] is num)
+          ? (j?['quality'] as num).toInt()
+          : 80;
+      final accept = <int>[
+        for (final x in (j?['acceptQuality'] as List? ?? const []))
+          if (x is num) x.toInt()
+      ];
+      if (accept.isEmpty) accept.add(curQ);
+      final picked = await Navigator.push<int>(
         context,
         MaterialPageRoute(
           builder: (_) => BiliDashPlayerPage(
@@ -273,12 +318,17 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
             videoUrl: url,
             audioUrl: '${j?['audioUrl'] ?? ''}',
             cid: '$cid',
-            quality: (j?['quality'] is num) ? (j?['quality'] as num).toInt() : 80,
+            quality: curQ,
+            acceptQuality: accept,
             danmaku: _dm,
             subtitleTracks: _subTracks,
           ),
         ),
       );
+      // 用户在播放器里选了别的清晰度 → 带 qn 回来重开这一集
+      if (picked != null && picked != curQ && mounted) {
+        await _play(idx, qn: picked);
+      }
       return;
     }
 

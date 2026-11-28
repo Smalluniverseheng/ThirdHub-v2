@@ -379,6 +379,13 @@ class _ChannelGridState extends State<_ChannelGrid>
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => BiliVideoPage(ctx: widget.ctx, item: it),
               )),
+              // ★4.81.121：长按卡片预取播放地址，之后点进去少等一次往返
+              onLongPress: () {
+                BiliVideoPage.prefetch(widget.ctx, it);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text(tr('已提前准备播放地址')),
+                    duration: Duration(seconds: 2)));
+              },
             );
           },
         );

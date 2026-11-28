@@ -481,6 +481,13 @@ jobs:
         run: dart run tool/mangayomi_retry_selfcheck.dart
 
 
+      # 第 N 条 gallery（2026-11-28 加）—— 相册四视图 + B站清晰度/预加载接线。
+      #   这类 bug 不报错不崩：按钮画了但没接回调、视图没挂进 TabBar，
+      #   用户只看到「难看 / 点了没用」，只有断言能钉住。
+      - name: gallery（相册四视图 / B站清晰度 / 长按预取）
+        working-directory: flutter_app
+        run: dart run tool/gallery_selfcheck.dart
+
       # 第 N 条 update_safety（2026-11-27 加）—— 应用内更新链路。
       #   真实事故：家里 NAS 的 latest.apk 停在 54MB 旧包，App 下完才校验失败，
       #   用户看到「下了一个用不了的东西」。这条钉死「下载前先对体积」+
