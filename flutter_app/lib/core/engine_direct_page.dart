@@ -558,7 +558,7 @@ class _Edv extends State<EngineDiscoverView> {
             orElse: () => sources.first));
 
     return Column(children: [
-      _header(c, cs),
+      _header(c, cs, curTags.length),
       if (sources.isNotEmpty) _sourceStrip(c, cs),
       if (curTags.isNotEmpty) _tagWrap(c, cs, curTags),
       if (notice.isNotEmpty)
@@ -574,12 +574,24 @@ class _Edv extends State<EngineDiscoverView> {
           ]),
         ),
       if (loading) const LinearProgressIndicator(minHeight: 2),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 2),
+        child: Row(children: [
+          Icon(Icons.auto_awesome_outlined, size: 14, color: cs.primary),
+          const SizedBox(width: 5),
+          Text(tr('为你推荐'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 6),
+          Text(items.isEmpty ? '' : '${items.length}',
+              style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: .5))),
+        ]),
+      ),
       Expanded(child: _content(c, cs)),
     ]);
   }
 
   // ── ① 头部：渐变 + 大标题 + 引擎徽章 + 搜索 ──
-  Widget _header(BuildContext c, ColorScheme cs) {
+  Widget _header(BuildContext c, ColorScheme cs, int tagCount) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -621,10 +633,18 @@ class _Edv extends State<EngineDiscoverView> {
               ),
             ]),
           ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: tr('换一批'),
+            icon: const Icon(Icons.refresh, size: 18),
+            onPressed: () => _explore(reset: true),
+          ),
         ]),
         Padding(
           padding: const EdgeInsets.only(top: 3),
-          child: Text('内容来自资料库各源的推荐与分类，不用搜也能逛',
+          child: Text(
+              trf('{n} 个来源 · {m} 个分类 · 先到先上屏',
+                  {'n': sources.length, 'm': tagCount}),
               style: TextStyle(
                   fontSize: 11, color: cs.onSurface.withValues(alpha: 0.55))),
         ),
@@ -755,9 +775,40 @@ class _Edv extends State<EngineDiscoverView> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
-        itemCount: tags.length,
+        itemCount: tags.length + 1,
         itemBuilder: (_, i) {
-          final t = tags[i];
+          // 第 0 格固定「全部」—— 老版没有回退入口，选了分类就回不去全量推荐
+          if (i == 0) {
+            final on = selTag.isEmpty;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => selTag = '');
+                  _explore(reset: true);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: on ? cs.primary : cs.surfaceContainerHighest.withValues(alpha: 0.42),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      width: 1,
+                      color: on ? cs.primary : cs.outlineVariant.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(tr('全部'),
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                          color: on ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.78))),
+                ),
+              ),
+            );
+          }
+          final t = tags[i - 1];
           final on = selTag == '${t['url']}';
           return Padding(
             padding: const EdgeInsets.only(right: 6),

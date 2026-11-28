@@ -3526,3 +3526,38 @@ const Map<String, Map<String, String>> i18nUiWords32 =
     '已提前准备播放地址': 'تم تجهيز رابط التشغيل',
   },
 };
+
+/// 第 33 批（4.81.122）：发现页重做。
+const Map<String, Map<String, String>> i18nUiWords33 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '换一批': 'Refresh',
+    '为你推荐': 'Picked for you',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} sources · {m} categories · shows as they arrive',
+  },
+  'ja': <String, String>{
+    '换一批': 'もう一批',
+    '为你推荐': 'おすすめ',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} ソース · {m} 分類 · 先に届いた順に表示',
+  },
+  'fr': <String, String>{
+    '换一批': 'Actualiser',
+    '为你推荐': 'Sélection pour vous',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} sources · {m} catégories · affichage au fur et à mesure',
+  },
+  'ru': <String, String>{
+    '换一批': 'Обновить',
+    '为你推荐': 'Рекомендуем',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} источников · {m} категорий · по мере поступления',
+  },
+  'es': <String, String>{
+    '换一批': 'Actualizar',
+    '为你推荐': 'Para ti',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} fuentes · {m} categorías · se muestra al llegar',
+  },
+  'ar': <String, String>{
+    '换一批': 'تحديث',
+    '为你推荐': 'مختارة لك',
+    '{n} 个来源 · {m} 个分类 · 先到先上屏': '{n} مصادر · {m} تصنيفات · تظهر عند الوصول',
+  },
+};

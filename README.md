@@ -50,7 +50,7 @@ flowchart LR
 > 内容源不在 App 里，而在你自己的 NAS 上 —— 换源不用等新版，改一份配置就生效。
 > 没有广告、没有会员墙、不收集数据：所有请求都走你家的机器。
 
-**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.121（50792）
+**下载安装**：[thirdhub.pages.dev/download.html](https://thirdhub.pages.dev/download.html)　·　**当前版本**：4.81.122（50793）
 
 ---
 
@@ -106,7 +106,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 
 > **本仓就是用户手机上正在用的那条产品线。**
-> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.121**（versionCode 50792），安装包约 **195 MB**（**arm64-v8a 单 ABI**）。
+> 客户端包名 `com.thirdhub.app`，当前版本 **4.81.122**（versionCode 50793），安装包约 **195 MB**（**arm64-v8a 单 ABI**）。
 > ★体积口径（2026-11-26 改）：4.81.112 起把 **DSH 完全体运行包（ubuntu-base + 官方 node 24 + dsh 0.2.2-rc.1，解压 696 MB）**
 > 打进安装包，装完即用、不再依赖首次联网下载 170 MB。代价是包体从 26 MB 涨到约 195 MB。
 > ★分发口径：Supabase `downloads` 桶有 **50 MiB 硬上限**（`file_size_limit=52428800`，套餐限制、调不高），
@@ -125,7 +125,7 @@ server/        Node.js 后端（四类内容引擎 + B 站桥 + 安装包分发�
 
 | 产品线 | 源码位置 | 仓库 | 包名 | 当前版本 | 体积 | 谁是主力 |
 |---|---|---|---|---|---|---|
-| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.121** | ~195 MB | **★ 用户在用的主线** |
+| **第三方聚合 V4** | `flutter_app/` | **本仓 `ThirdHub-v2`** | `com.thirdhub.app` | **4.81.122** | ~195 MB | **★ 用户在用的主线** |
 | Android 轻壳版 | `ThirdHub-Android` | `ThirdHub-Android`（私有） | `com.thirdhub.android` | 3.0.16 | ~10 MB | 备用 |
 | 完全体客户端（旁支） | `D:/ai/thirdhub-flutter` | `ThirdHub-Flutter`（私有） | `com.thirdhub.thirdhub_flutter` | 0.4.4 | ~105 MB | **旁支，已搁置** |
 | 漫画稳定版（第二代） | `OmniHub-Android` | `OmniHub-Android`（私有） | — | 2.4.0 | ~60 MB | 历史存档 |

@@ -27,6 +27,7 @@ void main() {
   final dash = read('${base}lib/core/bili_dash_player.dart');
   final video = read('${base}lib/core/bili_video_page.dart');
   final home = read('${base}lib/core/bili_home_page.dart');
+  final disc = read('${base}lib/core/engine_direct_page.dart');
 
   print('== 1. 相册四视图 ==');
   ok('TabController 长度 4', gallery.contains('TabController(length: 4'));
@@ -57,6 +58,16 @@ void main() {
   ok('命中缓存跳过 playurl', video.contains('? cached.data'));
   ok('列表长按触发预取', home.contains('onLongPress:'));
   ok('调用 prefetch', home.contains('BiliVideoPage.prefetch(widget.ctx, it)'));
+
+  print('== 5. 发现页 ==');
+  ok('分类条有「全部」回退入口', disc.contains('itemCount: tags.length + 1'));
+  ok('全部分类可清空选择', disc.contains("setState(() => selTag = '')"));
+  ok('换一批按钮', disc.contains("tooltip: tr('换一批')"));
+  ok('推荐区块标题', disc.contains("Text(tr('为你推荐')"));
+  ok('状态串显示来源/分类数', disc.contains("{n} 个来源 · {m} 个分类"));
+  ok('头部接收分类数', disc.contains('Widget _header(BuildContext c, ColorScheme cs, int tagCount)'));
+  // 反证：不许回到那句没信息量的说明文案
+  ok('无旧版空话说明', !disc.contains('内容来自资料库各源的推荐与分类'));
 
   print('\n$pass 通过 / $fail 失败');
   if (fail > 0) exit(1);

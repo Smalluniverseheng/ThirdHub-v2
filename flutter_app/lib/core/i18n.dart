@@ -523,6 +523,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords32.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-28 第三十三批：发现页重做（4.81.122）。
+    i18nUiWords33.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 
