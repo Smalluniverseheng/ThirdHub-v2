@@ -38,7 +38,7 @@ void main() {
   ok('多选删除', gallery.contains('_deleteSelected'));
   ok('收藏切换', gallery.contains('_favorite(') && gallery.contains('gallery_favs'));
   ok('按月分组时间线', gallery.contains('d.year') && gallery.contains('d.month'));
-  ok('大图双击缩放', gallery.contains('InteractiveViewer(\n                      maxScale: 5'));
+  ok('大图双击缩放', gallery.contains('InteractiveViewer(') && gallery.contains('maxScale: 5'));
   ok('排序菜单', gallery.contains('_openSortMenu'));
   ok('搜索', gallery.contains('_queryC'));
 

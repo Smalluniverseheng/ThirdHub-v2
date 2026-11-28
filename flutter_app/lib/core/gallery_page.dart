@@ -53,8 +53,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     _loadFavs();
     _boot();
     _scroll.addListener(() {
-      if (_scroll.position.pixels >
-          _scroll.position.maxScrollExtent - 500) {
+      if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 500) {
         _more();
       }
     });
@@ -80,7 +79,11 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
   Future<void> _boot() async {
     final ps = await PhotoManager.requestPermissionExtend();
     if (!ps.hasAccess) {
-      if (mounted) setState(() { _loading = false; _denied = true; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _denied = true;
+        });
       return;
     }
     final image = await PhotoManager.getAssetPathList(
@@ -126,13 +129,15 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     final out = List<AssetEntity>.from(src);
     switch (_sort) {
       case 1:
-        out.sort((a, b) => (a.createDateSecond ?? 0).compareTo(b.createDateSecond ?? 0));
+        out.sort((a, b) =>
+            (a.createDateSecond ?? 0).compareTo(b.createDateSecond ?? 0));
         break;
       case 2:
         out.sort((a, b) => (a.title ?? '').compareTo(b.title ?? ''));
         break;
       default:
-        out.sort((a, b) => b.createTimeSecond.compareTo(a.createTimeSecond));
+        out.sort((a, b) =>
+            (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0));
     }
     return out;
   }
@@ -164,7 +169,8 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     if (_tab == 3) list = list.where(_isFav).toList();
     if (_query.trim().isNotEmpty) {
       final q = _query.trim().toLowerCase();
-      list = list.where((e) => (e.title ?? '').toLowerCase().contains(q)).toList();
+      list =
+          list.where((e) => (e.title ?? '').toLowerCase().contains(q)).toList();
     }
     return list;
   }
@@ -252,9 +258,8 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
   Future<void> _openSortMenu() async {
     final v = await showMenu<int>(
         context: context,
-        position: RelativeRect.fromLTRB(
-            MediaQuery.sizeOf(context).width - 16, 96,
-            MediaQuery.sizeOf(context).width - 16, 96),
+        position: RelativeRect.fromLTRB(MediaQuery.sizeOf(context).width - 16,
+            96, MediaQuery.sizeOf(context).width - 16, 96),
         items: [
           PopupMenuItem(value: 0, child: Text(tr('最新在前'))),
           PopupMenuItem(value: 1, child: Text(tr('最早在前'))),
@@ -284,7 +289,8 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
                         style: const TextStyle(fontSize: 14)),
                     const SizedBox(height: 6),
                     Text(tr('照片只在本机处理，不会自动上传'),
-                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        style:
+                            const TextStyle(fontSize: 11, color: Colors.grey)),
                     const SizedBox(height: 18),
                     FilledButton(
                         onPressed: () => PhotoManager.openSetting(),
@@ -312,8 +318,10 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
         leading: _selectMode
             ? IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () =>
-                    setState(() { _selectMode = false; _selected.clear(); }))
+                onPressed: () => setState(() {
+                      _selectMode = false;
+                      _selected.clear();
+                    }))
             : null,
         actions: [
           if (_selectMode)
@@ -341,12 +349,12 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
           : visible.isEmpty
               ? Center(
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.image_not_supported_outlined,
-                        size: 44, color: cs.onSurface.withValues(alpha: .25)),
-                    const SizedBox(height: 10),
-                    Text(tr('这里还没有照片'),
-                        style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                  ]))
+                  Icon(Icons.image_not_supported_outlined,
+                      size: 44, color: cs.onSurface.withValues(alpha: .25)),
+                  const SizedBox(height: 10),
+                  Text(tr('这里还没有照片'),
+                      style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                ]))
               : (_tab == 2 ? _timeline(visible) : _photoGrid(visible)),
       floatingActionButton: _selectMode
           ? FloatingActionButton.extended(
@@ -362,12 +370,11 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     final q = _query.trim().toLowerCase();
     final albums = q.isEmpty
         ? _albums
-        : _albums
-            .where((a) => a.name.toLowerCase().contains(q))
-            .toList();
+        : _albums.where((a) => a.name.toLowerCase().contains(q)).toList();
     if (albums.isEmpty) {
-      return Center(child: Text(tr('没有匹配的相册'),
-          style: const TextStyle(fontSize: 12, color: Colors.grey)));
+      return Center(
+          child: Text(tr('没有匹配的相册'),
+              style: const TextStyle(fontSize: 12, color: Colors.grey)));
     }
     return GridView.builder(
         controller: _scroll,
@@ -393,28 +400,31 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
                     FutureBuilder<List<AssetEntity>>(
                         future: a.getAssetListPaged(page: 0, size: 1),
                         builder: (_, s) {
-                          final e = s.data?.isNotEmpty == true
-                              ? s.data!.first
-                              : null;
+                          final e =
+                              s.data?.isNotEmpty == true ? s.data!.first : null;
                           return e == null
                               ? Container(color: Colors.grey.shade300)
                               : AssetEntityImage(e,
                                   isOriginal: false,
-                                  thumbnailSize: const ThumbnailSize.square(360),
+                                  thumbnailSize:
+                                      const ThumbnailSize.square(360),
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) =>
                                       Container(color: Colors.grey.shade300));
                         }),
                     const DecoratedBox(
-                        decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Color(0xAA000000),
-                                ],
-                                stops: [0.4, 1])),
+                      decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                            Colors.transparent,
+                            Color(0xAA000000),
+                          ],
+                              stops: [
+                            0.4,
+                            1
+                          ])),
                     ),
                     Positioned(
                         left: 12,
@@ -436,7 +446,8 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
                                   builder: (_, s) => Text(
                                       trf('{n} 张', {'n': s.data ?? 0}),
                                       style: const TextStyle(
-                                          color: Colors.white70, fontSize: 11))),
+                                          color: Colors.white70,
+                                          fontSize: 11))),
                             ])),
                   ])));
         });
@@ -461,9 +472,8 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
           final e = list[i];
           final on = _selected.contains(e.id);
           return GestureDetector(
-              onTap: () => _selectMode
-                  ? _toggleSelect(e)
-                  : _openViewer(list, i),
+              onTap: () =>
+                  _selectMode ? _toggleSelect(e) : _openViewer(list, i),
               onLongPress: () =>
                   _selectMode ? _toggleSelect(e) : _enterSelect(e),
               child: Stack(fit: StackFit.expand, children: [
@@ -508,39 +518,42 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
         itemBuilder: (_, gi) {
           final key = groups.keys.elementAt(gi);
           final items = groups[key]!;
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-                child: Row(children: [
-                  Text(key,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w800)),
-                  const SizedBox(width: 8),
-                  Text(trf('{n} 张', {'n': items.length}),
-                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                ])),
-            GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 3,
-                        mainAxisSpacing: 3),
-                itemCount: items.length,
-                itemBuilder: (_, i) {
-                  final e = items[i];
-                  return GestureDetector(
-                      onTap: () => _openViewer(items, i),
-                      child: AssetEntityImage(e,
-                          isOriginal: false,
-                          thumbnailSize: const ThumbnailSize.square(300),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const ColoredBox(color: Colors.black12)));
-                }),
-          ]);
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                    child: Row(children: [
+                      Text(key,
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 8),
+                      Text(trf('{n} 张', {'n': items.length}),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey)),
+                    ])),
+                GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 3,
+                            mainAxisSpacing: 3),
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final e = items[i];
+                      return GestureDetector(
+                          onTap: () => _openViewer(items, i),
+                          child: AssetEntityImage(e,
+                              isOriginal: false,
+                              thumbnailSize: const ThumbnailSize.square(300),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const ColoredBox(color: Colors.black12)));
+                    }),
+              ]);
         });
   }
 }
@@ -592,104 +605,129 @@ class _Vw extends State<_Viewer> {
   Widget build(BuildContext c) {
     final e = widget.photos[i];
     return Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(children: [
-          GestureDetector(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: GestureDetector(
               onTap: () => setState(() => _chrome = !_chrome),
               child: PageView.builder(
-                  controller: _pc,
-                  itemCount: widget.photos.length,
-                  onPageChanged: (v) => setState(() => i = v),
-                  itemBuilder: (_, idx) => InteractiveViewer(
-                      maxScale: 5,
-                      child: Center(
-                          child: AssetEntityImage(widget.photos[idx],
-                              fit: BoxFit.contain,
-                              loadingBuilder: (_, child, p) => p == null
-                                  ? child
-                                  : const CircularProgressIndicator()))))
-          if (_chrome) ...[
+                controller: _pc,
+                itemCount: widget.photos.length,
+                onPageChanged: (v) => setState(() => i = v),
+                itemBuilder: (_, idx) => InteractiveViewer(
+                  maxScale: 5,
+                  child: Center(
+                    child: AssetEntityImage(
+                      widget.photos[idx],
+                      fit: BoxFit.contain,
+                      loadingBuilder: (_, child, p) =>
+                          p == null ? child : const CircularProgressIndicator(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_chrome)
             Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                    decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0xBB000000), Colors.transparent])),
-                    child: SafeArea(
-                        bottom: false,
-                        child: Row(children: [
-                          IconButton(
-                              icon: const Icon(Icons.arrow_back,
-                                  color: Colors.white),
-                              onPressed: () => Navigator.pop(c)),
-                          Text('${i + 1}/${widget.photos.length}',
-                              style: const TextStyle(
-                                  fontSize: 13, color: Colors.white)),
-                          const Spacer(),
-                          IconButton(
-                              icon: Icon(
-                                  _viewerFav
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: _viewerFav
-                                      ? Colors.redAccent
-                                      : Colors.white),
-                              onPressed: () async {
-                                await widget.onFavorite(e);
-                                if (c.mounted) setState(() {});
-                              }),
-                          IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Colors.white),
-                              onPressed: () async {
-                                final ok = await showDialog<bool>(
-                                    context: c,
-                                    builder: (d) => AlertDialog(
-                                            title: Text(tr('删除这张照片?')),
-                                            actions: [
-                                              TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(d, false),
-                                                  child: Text(tr('取消'))),
-                                              FilledButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(d, true),
-                                                  child: Text(tr('删除'))),
-                                            ]));
-                                if (ok == true) {
-                                  await widget.onDelete(e);
-                                  if (c.mounted) Navigator.pop(c);
-                                }
-                              }),
-                        ]))),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xBB000000), Colors.transparent],
+                  ),
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: <Widget>[
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.pop(c),
+                      ),
+                      Text('${i + 1}/${widget.photos.length}',
+                          style: const TextStyle(
+                              fontSize: 13, color: Colors.white)),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(
+                          _viewerFav ? Icons.favorite : Icons.favorite_border,
+                          color: _viewerFav ? Colors.redAccent : Colors.white,
+                        ),
+                        onPressed: () async {
+                          await widget.onFavorite(e);
+                          if (c.mounted) setState(() {});
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            color: Colors.white),
+                        onPressed: () async {
+                          final ok = await showDialog<bool>(
+                            context: c,
+                            builder: (d) => AlertDialog(
+                              title: Text(tr('删除这张照片?')),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () => Navigator.pop(d, false),
+                                  child: Text(tr('取消')),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(d, true),
+                                  child: Text(tr('删除')),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (ok == true) {
+                            await widget.onDelete(e);
+                            if (c.mounted) Navigator.pop(c);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_chrome)
             Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
-                    decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [Color(0xBB000000), Colors.transparent])),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(e.title ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13, color: Colors.white)),
-                          const SizedBox(height: 3),
-                          Text(_date(e),
-                              style: const TextStyle(
-                                  fontSize: 11, color: Colors.white70)),
-                        ]))),
-          ],
-        ]));
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Color(0xBB000000), Colors.transparent],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      e.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(_date(e),
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white70)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
