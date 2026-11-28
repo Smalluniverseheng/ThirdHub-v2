@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:openhongguo/openhongguo.dart';
 
+import 'app_log.dart';
 import 'design_tokens.dart';
 import 'drama_gate.dart';
 import 'drama_player.dart';
@@ -410,7 +411,18 @@ class _DramaDetailPageState extends State<DramaDetailPage> {
     final ep = _episodes[idx];
     setState(() => _current = idx);
     try {
-      final r = await widget.client.resolvePlayback(ep.id);
+      // ★4.81.120：匿名模式偶发返回空（截图里的 ANONYMOUS_LIMITED），
+      //   先退避重试一次再判失败 —— 老代码一发不中就把英文异常甩给用户。
+      late dynamic r;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          r = await widget.client.resolvePlayback(ep.id);
+          break;
+        } catch (e) {
+          if (attempt == 1) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 900));
+        }
+      }
       final pb = r.playback;
       if (pb.streams.isEmpty) {
         if (mounted) {
@@ -443,10 +455,22 @@ class _DramaDetailPageState extends State<DramaDetailPage> {
         ),
       );
     } catch (e) {
+      final raw = '$e';
+      final limited = raw.contains('ANONYMOUS_LIMITED') ||
+          raw.toLowerCase().contains('anonymous') ||
+          raw.contains('response was empty');
+      AppLog.add('drama', 'warn', '播放失败 ep=${ep.id} err=$raw');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${tr('播放失败')}：$e')),
-        );
+        final msg = limited
+            ? tr('当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁')
+            : '${tr('播放失败')}：$raw';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(msg, style: const TextStyle(fontSize: 12)),
+          duration: const Duration(seconds: 6),
+          action: limited
+              ? SnackBarAction(label: tr('知道了'), onPressed: () {})
+              : null,
+        ));
       }
     }
   }

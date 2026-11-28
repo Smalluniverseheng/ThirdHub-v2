@@ -511,6 +511,10 @@ class I18n extends ChangeNotifier {
     i18nUiWords29.forEach((lang, words) {
       out[lang] = <String, String>{...?out[lang], ...words};
     });
+    // ★2026-11-28 第三十批：红果匿名受限提示（4.81.120）。
+    i18nUiWords30.forEach((lang, words) {
+      out[lang] = <String, String>{...?out[lang], ...words};
+    });
     return out;
   }
 

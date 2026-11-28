@@ -329,7 +329,22 @@ class ReadSync {
     final List<Map<String, dynamic>> target = _readBooks(p, '$prefix$kind');
     final int at = target.indexWhere((Map<String, dynamic> e) => _idOf(e) == id);
     if (at >= 0) {
-      target[at] = <String, dynamic>{...target[at], ...row};
+      final merged = <String, dynamic>{...target[at], ...row};
+      // ★4.81.120：内容一模一样就别再写一遍。
+      //   旧实现每次 pullAll 都 _writeBooks + return true，pullAll 于是报
+      //   "同步了 N 条"，回前台/登录就弹一次 —— 用户看到的就是「明明同步过了，
+      //   怎么每次登录又同步一遍」。数据本来就是幂等的，提示必须也幂等。
+      var same = merged.length == target[at].length;
+      if (same) {
+        for (final k in merged.keys) {
+          if (target[at][k] != merged[k]) {
+            same = false;
+            break;
+          }
+        }
+      }
+      if (same) return false;
+      target[at] = merged;
       _writeBooks(p, '$prefix$kind', target);
       _stripFromOtherKinds(p, prefix, kind, id);
       return true;

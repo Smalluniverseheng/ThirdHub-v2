@@ -3348,3 +3348,26 @@ const Map<String, Map<String, String>> i18nUiWords29 =
     '没有更多了': 'لا مزيد',
   },
 };
+
+/// 第 30 批（4.81.120）：红果匿名受限说明。
+const Map<String, Map<String, String>> i18nUiWords30 =
+    <String, Map<String, String>>{
+  'en': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': 'Anonymous access is limited (empty response). Try again later or unlock with an activation code.',
+  },
+  'ja': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': '匿名アクセスが制限されています（応答が空）。しばらくして再試行するか、アクティベーションコードで解除してください。',
+  },
+  'fr': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': 'Accès anonyme limité (réponse vide). Réessayez plus tard ou débloquez avec un code d’activation.',
+  },
+  'ru': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': 'Анонимный доступ ограничен (пустой ответ). Повторите позже или разблокируйте кодом активации.',
+  },
+  'es': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': 'Acceso anónimo limitado (respuesta vacía). Inténtalo más tarde o desbloquea con un código de activación.',
+  },
+  'ar': <String, String>{
+    '当前匿名访问被限制（接口返回空）。请稍后再试，或用激活码解锁': 'الوصول المجهود محدود (استجابة فارغة). أعد المحاولة لاحقًا أو فعّل برمز التفعيل.',
+  },
+};

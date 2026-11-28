@@ -488,28 +488,6 @@ class _BiliModulePageState extends State<BiliModulePage>
       controller: _tab,
       children: [for (final id in ids) _tabBody(id, ctx)],
     );
-    final tabBtn = IconButton(
-      visualDensity: VisualDensity.compact,
-      tooltip: tr('栏目'),
-      icon: const Icon(Icons.tune, size: 20),
-      onPressed: _openTabSheet,
-    );
-    final favBtn = IconButton(
-      visualDensity: VisualDensity.compact,
-      tooltip: tr('收藏夹'),
-      icon: const Icon(Icons.folder_outlined, size: 20),
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => BiliFavPage(ctx: ctx)),
-      ),
-    );
-    final laterBtn = IconButton(
-      visualDensity: VisualDensity.compact,
-      tooltip: tr('稍后再看'),
-      icon: const Icon(Icons.watch_later_outlined, size: 20),
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => BiliLaterPage(ctx: ctx)),
-      ),
-    );
     if (widget.embedded) {
       return Column(children: [
         _biliBanner(context, cs),
@@ -517,41 +495,18 @@ class _BiliModulePageState extends State<BiliModulePage>
         // 但「栏目」「链接下载」「下载管理」不能因此消失 —— 挪成 tab 右侧的小按钮。
         Row(children: [
           Expanded(child: tabs),
-          tabBtn,
-          favBtn,
-          laterBtn,
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: _biliLogged ? _biliName : tr('B站登录'),
-            icon: Icon(
-                _biliLogged ? Icons.verified_user : Icons.account_circle_outlined,
-                size: 20),
+            tooltip: tr('更多'),
+            icon: const Icon(Icons.more_vert, size: 20),
             onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const BiliAuthPage()),
-              );
-              if (!mounted) return;
-              await BiliAuth.I.load();
-              if (!mounted) return;
-              setState(() {
-                _biliLogged = BiliAuth.I.loggedIn;
-                _biliName = BiliAuth.I.name;
-              });
+              final box = context.findRenderObject() as RenderBox?;
+              final at = box == null
+                  ? Offset(MediaQuery.sizeOf(context).width - 12, 90)
+                  : box.localToGlobal(Offset(box.size.width - 12, 46));
+              final v = await _openMoreMenu(context, at);
+              if (v != null && mounted) await _onMore(v, context, ctx);
             },
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: tr('链接下载'),
-            icon: const Icon(Icons.link, size: 20),
-            onPressed: () => _openDownload(context, ctx),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: tr('下载管理'),
-            icon: const Icon(Icons.download_outlined, size: 20),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BiliDownPage()),
-            ),
           ),
         ]),
         Expanded(child: view),
@@ -561,38 +516,17 @@ class _BiliModulePageState extends State<BiliModulePage>
       appBar: AppBar(
         title: Text(tr('哔哩哔哩')),
         actions: [
-          tabBtn,
-          favBtn,
-          laterBtn,
           IconButton(
-            tooltip: _biliLogged ? _biliName : tr('B站登录'),
-            icon: Icon(_biliLogged
-                ? Icons.verified_user
-                : Icons.account_circle_outlined),
+            tooltip: tr('更多'),
+            icon: const Icon(Icons.more_vert),
             onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const BiliAuthPage()),
-              );
-              if (!mounted) return;
-              await BiliAuth.I.load();
-              if (!mounted) return;
-              setState(() {
-                _biliLogged = BiliAuth.I.loggedIn;
-                _biliName = BiliAuth.I.name;
-              });
+              final box = context.findRenderObject() as RenderBox?;
+              final at = box == null
+                  ? Offset(MediaQuery.sizeOf(context).width - 12, 12)
+                  : box.localToGlobal(Offset(box.size.width - 12, 56));
+              final v = await _openMoreMenu(context, at);
+              if (v != null && mounted) await _onMore(v, context, ctx);
             },
-          ),
-          IconButton(
-            tooltip: tr('链接下载'),
-            icon: const Icon(Icons.link),
-            onPressed: () => _openDownload(context, ctx),
-          ),
-          IconButton(
-            tooltip: tr('下载管理'),
-            icon: const Icon(Icons.download_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BiliDownPage()),
-            ),
           ),
         ],
         bottom: tabs,
@@ -602,6 +536,63 @@ class _BiliModulePageState extends State<BiliModulePage>
   }
 
   /// 统一外壳：独立页给 Scaffold，嵌入态直接交 body。
+  /// 右上角「更多」菜单（4.81.120）。
+  ///
+  /// 原来嵌在模块页时把「栏目/收藏/稍后再看/登录/链接下载/下载管理」六个按钮
+  /// 全塞在 TabBar 右侧 —— 用户截图里就是一堆图标挤成一团、一个都看不清。
+  /// 现在统一收进一个 ⋮，点开才展开，两种形态（嵌入式 / 独立页）口径一致。
+  Future<String?> _openMoreMenu(BuildContext c, Offset at) async {
+    return showMenu<String>(
+      context: c,
+      position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
+      items: [
+        PopupMenuItem(value: 'tabs', child: Text(tr('栏目'))),
+        PopupMenuItem(value: 'fav', child: Text(tr('收藏夹'))),
+        PopupMenuItem(value: 'later', child: Text(tr('稍后再看'))),
+        PopupMenuItem(
+            value: 'login',
+            child: Text(_biliLogged ? _biliName : tr('B站登录'))),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'link', child: Text(tr('链接下载'))),
+        PopupMenuItem(value: 'down', child: Text(tr('下载管理'))),
+      ],
+    );
+  }
+
+  Future<void> _onMore(String v, BuildContext c, BiliCtx ctx) async {
+    switch (v) {
+      case 'tabs':
+        _openTabSheet();
+        break;
+      case 'fav':
+        await Navigator.of(c)
+            .push(MaterialPageRoute(builder: (_) => BiliFavPage(ctx: ctx)));
+        break;
+      case 'later':
+        await Navigator.of(c)
+            .push(MaterialPageRoute(builder: (_) => BiliLaterPage(ctx: ctx)));
+        break;
+      case 'login':
+        await Navigator.of(c)
+            .push(MaterialPageRoute(builder: (_) => const BiliAuthPage()));
+        if (!mounted) return;
+        await BiliAuth.I.load();
+        if (!mounted) return;
+        setState(() {
+          _biliLogged = BiliAuth.I.loggedIn;
+          _biliName = BiliAuth.I.name;
+        });
+        break;
+      case 'link':
+        _openDownload(c, ctx);
+        break;
+      case 'down':
+        await Navigator.of(c)
+            .push(MaterialPageRoute(builder: (_) => const BiliDownPage()));
+        break;
+    }
+  }
+
   Widget _shell(Widget body) => widget.embedded
       ? body
       : Scaffold(appBar: AppBar(title: Text(tr('哔哩哔哩'))), body: body);
