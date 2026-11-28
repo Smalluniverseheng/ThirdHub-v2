@@ -278,7 +278,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     // ★4.81.121：播放器里切清晰度把 qn 带回来，重新取流即可（无需退出详情页）
     if (qn > 0) q.write('&qn=$qn');
     // 命中列表页长按预取：省掉一次 playurl 往返（2 分钟有效期）
-    final cached = qn == 0 ? _prefetch[_bvid] : null;
+    final cached = qn == 0 ? BiliVideoPage._prefetch[_bvid] : null;
     final j = (cached != null &&
             DateTime.now().millisecondsSinceEpoch - cached.at <
                 const Duration(minutes: 2).inMilliseconds)

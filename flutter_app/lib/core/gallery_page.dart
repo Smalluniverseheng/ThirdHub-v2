@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
@@ -40,6 +41,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
 
   final ScrollController _scroll = ScrollController();
   final Set<String> _selected = <String>{};
+  final Set<String> _favIds = <String>{};
   bool _selectMode = false;
 
   @override
@@ -48,6 +50,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     _tc.addListener(() {
       if (mounted) setState(() {});
     });
+    _loadFavs();
     _boot();
     _scroll.addListener(() {
       if (_scroll.position.pixels >
@@ -64,6 +67,15 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     _scroll.dispose();
     super.dispose();
   }
+
+  Future<void> _loadFavs() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      _favIds.addAll(p.getStringList('gallery_favs') ?? const <String>[]);
+    } catch (_) {}
+  }
+
+  bool _isFav(AssetEntity e) => _favIds.contains(e.id);
 
   Future<void> _boot() async {
     final ps = await PhotoManager.requestPermissionExtend();
@@ -114,10 +126,10 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
     final out = List<AssetEntity>.from(src);
     switch (_sort) {
       case 1:
-        out.sort((a, b) => a.createTimeSecond.compareTo(b.createTimeSecond));
+        out.sort((a, b) => (a.createDateSecond ?? 0).compareTo(b.createDateSecond ?? 0));
         break;
       case 2:
-        out.sort((a, b) => a.title.compareTo(b.title));
+        out.sort((a, b) => (a.title ?? '').compareTo(b.title ?? ''));
         break;
       default:
         out.sort((a, b) => b.createTimeSecond.compareTo(a.createTimeSecond));
@@ -149,10 +161,10 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
 
   List<AssetEntity> get _visiblePhotos {
     var list = _photos;
-    if (_tab == 3) list = list.where((e) => e.isFavorite).toList();
+    if (_tab == 3) list = list.where(_isFav).toList();
     if (_query.trim().isNotEmpty) {
       final q = _query.trim().toLowerCase();
-      list = list.where((e) => e.title.toLowerCase().contains(q)).toList();
+      list = list.where((e) => (e.title ?? '').toLowerCase().contains(q)).toList();
     }
     return list;
   }
@@ -204,15 +216,17 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
   }
 
   Future<void> _favorite(AssetEntity e) async {
+    final was = _isFav(e);
+    if (was) {
+      _favIds.remove(e.id);
+    } else {
+      _favIds.add(e.id);
+    }
     try {
-      final updated = await PhotoManager.editor.favoriteAsset(
-          entity: e, favorite: !e.isFavorite);
-      if (!mounted) return;
-      setState(() {
-        final i = _photos.indexWhere((x) => x.id == e.id);
-        if (i >= 0) _photos[i] = updated;
-      });
+      final p = await SharedPreferences.getInstance();
+      await p.setStringList('gallery_favs', _favIds.toList());
     } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   Future<void> _openViewer(List<AssetEntity> list, int idx) async {
@@ -223,6 +237,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
                 photos: list,
                 index: idx,
                 onFavorite: _favorite,
+                initialFavorite: _isFav(list[idx]),
                 onDelete: (e) async {
                   try {
                     await PhotoManager.editor.deleteWithIds([e.id]);
@@ -326,7 +341,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
           : visible.isEmpty
               ? Center(
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.photo_off_outlined,
+                    Icon(Icons.image_not_supported_outlined,
                         size: 44, color: cs.onSurface.withValues(alpha: .25)),
                     const SizedBox(height: 10),
                     Text(tr('这里还没有照片'),
@@ -482,7 +497,7 @@ class _Gp extends State<GalleryPage> with TickerProviderStateMixin {
   Widget _timeline(List<AssetEntity> list) {
     final groups = <String, List<AssetEntity>>{};
     for (final e in list) {
-      final d = e.creationDateTime;
+      final d = e.createDateTime;
       final key = '${d.year} 年 ${d.month} 月';
       groups.putIfAbsent(key, () => <AssetEntity>[]).add(e);
     }
@@ -537,11 +552,13 @@ class _Viewer extends StatefulWidget {
     required this.index,
     required this.onFavorite,
     required this.onDelete,
+    required this.initialFavorite,
   });
   final List<AssetEntity> photos;
   final int index;
   final Future<void> Function(AssetEntity) onFavorite;
   final Future<void> Function(AssetEntity) onDelete;
+  final bool initialFavorite;
   @override
   State<_Viewer> createState() => _Vw();
 }
@@ -550,6 +567,13 @@ class _Vw extends State<_Viewer> {
   late int i = widget.index;
   late final PageController _pc = PageController(initialPage: i);
   bool _chrome = true;
+  bool _viewerFav = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewerFav = widget.initialFavorite;
+  }
 
   @override
   void dispose() {
@@ -558,7 +582,7 @@ class _Vw extends State<_Viewer> {
   }
 
   String _date(AssetEntity e) {
-    final d = e.creationDateTime;
+    final d = e.createDateTime;
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
         '${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:'
         '${d.minute.toString().padLeft(2, '0')}';
@@ -583,7 +607,7 @@ class _Vw extends State<_Viewer> {
                               fit: BoxFit.contain,
                               loadingBuilder: (_, child, p) => p == null
                                   ? child
-                                  : const CircularProgressIndicator()))))),
+                                  : const CircularProgressIndicator()))))
           if (_chrome) ...[
             Positioned(
                 top: 0,
@@ -608,13 +632,16 @@ class _Vw extends State<_Viewer> {
                           const Spacer(),
                           IconButton(
                               icon: Icon(
-                                  e.isFavorite
+                                  _viewerFav
                                       ? Icons.favorite
                                       : Icons.favorite_border,
-                                  color: e.isFavorite
+                                  color: _viewerFav
                                       ? Colors.redAccent
                                       : Colors.white),
-                              onPressed: () => widget.onFavorite(e)),
+                              onPressed: () async {
+                                await widget.onFavorite(e);
+                                if (c.mounted) setState(() {});
+                              }),
                           IconButton(
                               icon: const Icon(Icons.delete_outline,
                                   color: Colors.white),
@@ -653,7 +680,7 @@ class _Vw extends State<_Viewer> {
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(e.title,
+                          Text(e.title ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(

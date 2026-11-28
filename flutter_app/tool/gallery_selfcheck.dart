@@ -36,7 +36,7 @@ void main() {
   print('== 2. 相册操作 ==');
   ok('长按多选', gallery.contains('onLongPress:'));
   ok('多选删除', gallery.contains('_deleteSelected'));
-  ok('收藏切换', gallery.contains('favoriteAsset('));
+  ok('收藏切换', gallery.contains('_favorite(') && gallery.contains('gallery_favs'));
   ok('按月分组时间线', gallery.contains('d.year') && gallery.contains('d.month'));
   ok('大图双击缩放', gallery.contains('InteractiveViewer(\n                      maxScale: 5'));
   ok('排序菜单', gallery.contains('_openSortMenu'));

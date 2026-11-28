@@ -373,19 +373,22 @@ class _ChannelGridState extends State<_ChannelGrid>
                       child: CircularProgressIndicator(strokeWidth: 2)));
             }
             final it = _items[i];
-            return _VideoCard(
-              ctx: widget.ctx,
-              item: it,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => BiliVideoPage(ctx: widget.ctx, item: it),
-              )),
-              // ★4.81.121：长按卡片预取播放地址，之后点进去少等一次往返
+            // ★4.81.121：长按卡片预取播放地址，之后点进去少等一次往返。
+            //   _VideoCard 没有 onLongPress 参数，所以在外面再包一层手势。
+            return GestureDetector(
               onLongPress: () {
                 BiliVideoPage.prefetch(widget.ctx, it);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text(tr('已提前准备播放地址')),
-                    duration: Duration(seconds: 2)));
+                    duration: const Duration(seconds: 2)));
               },
+              child: _VideoCard(
+                ctx: widget.ctx,
+                item: it,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => BiliVideoPage(ctx: widget.ctx, item: it),
+                )),
+              ),
             );
           },
         );
